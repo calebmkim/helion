@@ -156,6 +156,38 @@ def sdpa_xsa(
 
 
 # %%
+# Tritonbench Wrapper
+# -------------------
+
+
+# %%
+def xsa_tritonbench(
+    tb_op: object,
+    *args: torch.Tensor,
+) -> Callable[[], list[torch.Tensor]]:
+    """TritonBench wrapper used by ``benchmarks/run.py --kernel xsa``.
+
+    The XSA TritonBench operator wraps each ``(q, k, v)`` triple through a
+    ``multi_input_wrapper``, so a single benchmark input may contain multiple
+    Q/K/V triples. Mirror that here by returning a list of outputs.
+    """
+    assert len(args) % 3 == 0, (
+        f"xsa_tritonbench expects (q, k, v) triples, got {len(args)} tensors"
+    )
+    # pyrefly: ignore [missing-attribute]
+    eps = getattr(tb_op, "eps", 1e-6)
+
+    def run() -> list[torch.Tensor]:
+        outputs = []
+        for i in range(0, len(args), 3):
+            q, k, v = args[i : i + 3]
+            outputs.append(xsa_kernel(q, k, v, eps))
+        return outputs
+
+    return run
+
+
+# %%
 # Verification Functions
 # ----------------------
 

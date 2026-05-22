@@ -444,6 +444,16 @@ KERNEL_MAPPINGS: dict[str, tuple[str, ...]] = {
             "num_inputs": 6,  # flash_attention takes long time on Benchmark CI, so use fewer inputs instead.
         },
     ),
+    "xsa": (
+        "tritonbench.operators.xsa.operator",
+        "examples.xsa",
+        "xsa_tritonbench",
+        {
+            # Runtime cap for all-kernel/default runs. This mirrors the existing
+            # Helion flash_attention cap; it is not a TritonBench operator default.
+            "num_inputs": 6,
+        },
+    ),
     "cross_entropy": (
         "tritonbench.operators.cross_entropy.operator",
         "examples.cross_entropy",
@@ -883,6 +893,15 @@ KERNEL_METRIC_MAPPINGS: dict[str, dict[str, str]] = {
         "helion_fp8_attention_tritonbench-speedup": "helion_speedup",
         "helion_fp8_attention_tritonbench-accuracy": "helion_accuracy",
         "helion_fp8_attention_tritonbench-latency": "helion_latency_ms",
+    },
+    "xsa": {
+        "sdpa_xsa": "baseline",
+        "torch_compile_sdpa_xsa-speedup": "torch_compile_speedup",
+        "torch_compile_sdpa_xsa-accuracy": "torch_compile_accuracy",
+        "torch_compile_sdpa_xsa-latency": "torch_compile_latency_ms",
+        "helion_xsa_tritonbench-speedup": "helion_speedup",
+        "helion_xsa_tritonbench-accuracy": "helion_accuracy",
+        "helion_xsa_tritonbench-latency": "helion_latency_ms",
     },
     "jagged_softmax": {
         "torch_jagged_softmax_torch_sum": "baseline",
