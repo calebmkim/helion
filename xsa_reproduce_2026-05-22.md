@@ -12,8 +12,7 @@ The guide produces four artifacts:
 3. **(c)** A hand-edited copy of that file with the `[1]` dim removed.
 4. **(d)** A benchmark showing the hand-edit beats the autotuner pick.
 
-Hardware/build assumed by the headline numbers: NVIDIA H100 80GB HBM3, the
-Triton+PyTorch pin in `/home/dev/helion/.venv`, Helion `ab746cc`.
+Hardware/build assumed by the headline numbers: NVIDIA H100 80GB HBM3.
 
 Shape throughout: **B=4, H=48, T=2048, D=128, bf16**.
 
