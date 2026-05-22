@@ -18,13 +18,7 @@ HBM and read back by a separate epilogue kernel. The kernel still reads ``V``
 once in the inner attention loop and a second time in the per-tile epilogue to
 project ``y`` onto ``vn`` for the current rows.
 
-Scope of this first pass:
-
-- Non-causal attention.
-- Forward only.
-- Pre-projected ``Q/K/V`` of shape ``(B, H, T, D)``.
-- Self-attention only (``Q``, ``K``, ``V`` share sequence length ``T``).
-- No output projection ``W_o``.
+Reference: https://arxiv.org/abs/2603.09078
 """
 
 # %%
@@ -35,17 +29,17 @@ Scope of this first pass:
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import Callable
+from typing import cast
 
 import torch
+import torch.nn.functional as F
 
 import helion
 from helion._testing import DEVICE
+from helion._testing import HALF_DTYPE
 from helion._testing import run_example
 import helion.language as hl
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 
 # %%
@@ -127,55 +121,38 @@ def xsa_kernel(
 
 
 # %%
-# Pure-torch Reference
-# --------------------
+# Reference Implementations
+# -------------------------
 
 
 # %%
 def ref_xsa(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, eps: float = 1e-6
 ) -> torch.Tensor:
-    """Pure-torch reference for the fused XSA forward."""
+    """Manual reference for the XSA forward (matmul + softmax + epilogue)."""
     sm_scale = 1.0 / math.sqrt(q.shape[-1])
     p = torch.matmul(q, k.transpose(-2, -1)) * sm_scale
     p = torch.softmax(p.float(), dim=-1).to(q.dtype)
     y = torch.matmul(p, v)
-    vn = torch.nn.functional.normalize(v.float(), dim=-1, eps=eps)
+    vn = F.normalize(v.float(), dim=-1, eps=eps)
     z = y.float() - (y.float() * vn).sum(dim=-1, keepdim=True) * vn
     return z.to(y.dtype)
 
 
-# %%
-# Tritonbench Wrapper
-# -------------------
+def sdpa_xsa(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, eps: float = 1e-6
+) -> torch.Tensor:
+    """Unfused XSA: ``F.scaled_dot_product_attention`` + a separate epilogue.
 
-
-# %%
-def xsa_tritonbench(
-    tb_op: object,
-    *args: torch.Tensor,
-) -> Callable[[], list[torch.Tensor]]:
-    """TritonBench wrapper used by ``benchmarks/run.py --kernel xsa``.
-
-    The XSA TritonBench operator wraps each ``(q, k, v)`` triple through a
-    ``multi_input_wrapper``, so a single benchmark input may contain multiple
-    Q/K/V triples (e.g. with ``--gen-cache-size-inputs``). Mirror that here by
-    returning a list of outputs, one per triple.
+    Realistic eager-mode baseline: SDPA dispatches to FlashAttention /
+    mem-efficient backends, then the XSA epilogue runs as a separate kernel
+    that re-reads ``V``.
     """
-    assert len(args) % 3 == 0, (
-        f"xsa_tritonbench expects (q, k, v) triples, got {len(args)} tensors"
-    )
-    # pyrefly: ignore [missing-attribute]
-    eps = getattr(tb_op, "eps", 1e-6)
-
-    def run() -> list[torch.Tensor]:
-        outputs = []
-        for i in range(0, len(args), 3):
-            q, k, v = args[i : i + 3]
-            outputs.append(xsa_kernel(q, k, v, eps))
-        return outputs
-
-    return run
+    y = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+    y_float = y.float()
+    vn = F.normalize(v.float(), dim=-1, eps=eps)
+    z = y_float - (y_float * vn).sum(dim=-1, keepdim=True) * vn
+    return z.to(y.dtype)
 
 
 # %%
@@ -191,18 +168,27 @@ def check(
     d: int,
     dtype: torch.dtype = torch.bfloat16,
 ) -> None:
-    """Check ``xsa_kernel`` against the pure-torch reference for one shape."""
+    """Check ``xsa_kernel`` against eager and ``torch.compile`` baselines."""
     eps = 1e-6
     q = torch.randn((z, h, t, d), dtype=dtype, device=DEVICE)
     k = torch.randn_like(q)
     v = torch.randn_like(q)
 
+    compiled_sdpa_xsa = cast(
+        "Callable[..., torch.Tensor]",
+        torch.compile(sdpa_xsa, fullgraph=True),
+    )
+    baselines = {
+        "torch": lambda q, k, v: sdpa_xsa(q, k, v, eps),
+        "compile": lambda q, k, v: compiled_sdpa_xsa(q, k, v, eps),
+        "ref": lambda q, k, v: ref_xsa(q, k, v, eps),
+    }
+
     run_example(
         lambda q, k, v: xsa_kernel(q, k, v, eps),
-        lambda q, k, v: ref_xsa(q, k, v, eps),
+        baselines,
         (q, k, v),
         kernel_name="helion_xsa",
-        baseline_name="torch_eager",
     )
 
 
@@ -242,8 +228,8 @@ def check_near_zero_v(
 # %%
 def main() -> None:
     """Run the XSA kernel correctness check against the pure-torch reference."""
-    check(2, 4, 128, 64)
-    check(2, 4, 512, 64)
+    # Mirrors examples/attention.py: B=2, H=32, T=1024, D=64, half precision.
+    check(2, 32, 1024, 64, HALF_DTYPE)
     check_near_zero_v(2, 4, 128, 64)
 
 
