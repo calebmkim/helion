@@ -23,10 +23,14 @@ recipe formulas and constants, not the surrounding glue.
 **Stretch (INNER-classified kernels only — see §1):** match or approach
 `torch.compile` on most shapes (P1); outperform everywhere (P2).
 
-**Repos (verified paths):**
+**Repo variables (set these for the implementation environment):**
 
-- Helion: `/home/calebkim/helion-new-heuristics/local/helion/`
-- PyTorch (Inductor oracle): `/home/calebkim/helion-new-heuristics/local/pytorch/`
+- Helion: set `HELION_REPO` to the Helion clone path.
+- PyTorch (Inductor oracle): set `PYTORCH_REPO` to the PyTorch clone path.
+- Worktree destination: set `WORKTREE_ROOT` to a directory where git
+  worktrees may be created, and `HELION_WORKTREE` to
+  `$WORKTREE_ROOT/helion-reduction-heuristics`.
+- Logs/cache: set `LOG_DIR` and `CACHE_ROOT` to ignored scratch directories.
 
 ---
 
@@ -41,12 +45,19 @@ needed prerequisites. Base the stack on `origin/main` by default.
 Recommended setup:
 
 ```bash
-cd /home/calebkim/helion-new-heuristics/local/helion
+export HELION_REPO="<helion-clone>"
+export PYTORCH_REPO="<pytorch-clone>"
+export WORKTREE_ROOT="<worktree-root>"
+export HELION_WORKTREE="$WORKTREE_ROOT/helion-reduction-heuristics"
+export LOG_DIR="<ignored-log-dir>"
+export CACHE_ROOT="<ignored-cache-root>"
+
+cd "$HELION_REPO"
 git fetch origin fork
 git worktree add -b rh/compiler-seeds-effort-none \
-  /home/calebkim/helion-new-heuristics/worktrees/helion-reduction-heuristics \
+  "$HELION_WORKTREE" \
   origin/main
-cd /home/calebkim/helion-new-heuristics/worktrees/helion-reduction-heuristics
+cd "$HELION_WORKTREE"
 ```
 
 Push branches to the fork remote:
@@ -99,13 +110,12 @@ pushing for review.
 
 **File hygiene:**
 - Keep code edits inside the dedicated Helion worktree.
-- Treat `/home/calebkim/helion-new-heuristics/local/pytorch/` as read-only
-  oracle material.
+- Treat `$PYTORCH_REPO` as read-only oracle material.
 - The planning docs (`reduction_heuristics_plan.md`, `list_of_kernels.md`,
-  etc.) live outside the Helion repo. Do not assume edits to them are part of a
-  GitHub PR unless intentionally copied into the Helion worktree or summarized
-  in a PR description.
-- Put raw benchmark logs in `/tmp` or another ignored location. Commit only
+  etc.) may live outside the Helion repo. Do not assume edits to them are part
+  of a GitHub PR unless intentionally copied into the Helion worktree or
+  summarized in a PR description.
+- Put raw benchmark logs in `$LOG_DIR` or another ignored location. Commit only
   durable scripts, small fixtures, or summarized results.
 - Use a fresh `HELION_CACHE_DIR` per benchmark iteration as described in §7.2.
 
@@ -375,7 +385,7 @@ autotune path's tolerance: bad seed → warn + fall back, never crash.
 When *running tests with the flag on*, `.expected` golden files that pin
 `default_config()` codegen for kernels matching a seed-producing heuristic
 will shift. Iterate on those test files individually with
-`pytest test/<file> -k <name> -x -vv -s 2>&1 | tee /tmp/pytest.out`.
+`pytest test/<file> -k <name> -x -vv -s 2>&1 | tee "$LOG_DIR/pytest.out"`.
 
 **Do NOT** run the full suite under `HELION_AUTOTUNE_EFFORT=none` — Helion's
 `CLAUDE.md` explicitly warns this breaks tests by changing execution paths.
@@ -1036,9 +1046,10 @@ for shape in shapes:
 
 Run with (cwd MUST be the helion repo root so `examples.sum` resolves):
 ```bash
-cd /home/calebkim/helion-new-heuristics/local/helion && \
+mkdir -p "$LOG_DIR"
+cd "$HELION_WORKTREE" && \
 HELION_AUTOTUNE_EFFORT=none HELION_USE_COMPILER_SEEDS=1 HELION_PRINT_OUTPUT_CODE=1 \
-    python scripts/bench_reduction_heuristic.py 2>&1 | tee /tmp/bench_a.txt
+    python scripts/bench_reduction_heuristic.py 2>&1 | tee "$LOG_DIR/bench_a.txt"
 ```
 
 #### Signal (b): autotune-seed rank check
@@ -1046,9 +1057,10 @@ HELION_AUTOTUNE_EFFORT=none HELION_USE_COMPILER_SEEDS=1 HELION_PRINT_OUTPUT_CODE
 Use `HELION_LOGS=+autotune` to log the final-population fitness ranking:
 
 ```bash
-cd /home/calebkim/helion-new-heuristics/local/helion && \
+mkdir -p "$LOG_DIR"
+cd "$HELION_WORKTREE" && \
 HELION_AUTOTUNE_EFFORT=quick HELION_USE_COMPILER_SEEDS=1 HELION_LOGS=+autotune \
-    python scripts/bench_reduction_heuristic.py 2>&1 | tee /tmp/bench_b.txt
+    python scripts/bench_reduction_heuristic.py 2>&1 | tee "$LOG_DIR/bench_b.txt"
 ```
 
 In the log output, locate the heuristic's seed config (printed by
@@ -1060,15 +1072,15 @@ before landing.
 #### Signal (c): tritonbench end-to-end
 
 The Helion benchmarks entry point is
-`/home/calebkim/helion-new-heuristics/local/helion/benchmarks/run.py`. From
+`benchmarks/run.py` under `$HELION_WORKTREE`. From
 `helion/benchmarks/README.md`:
 
-All commands below require `cwd = /home/calebkim/helion-new-heuristics/local/helion`
-(the benchmarks runner resolves operator modules relative to the repo root,
-and TritonBench operator imports break from any other cwd).
+All commands below require `cwd = "$HELION_WORKTREE"` (the benchmarks runner
+resolves operator modules relative to the repo root, and TritonBench operator
+imports break from any other cwd).
 
 ```bash
-cd /home/calebkim/helion-new-heuristics/local/helion
+cd "$HELION_WORKTREE"
 
 # Single kernel, operator's default sweep (use as the train sweep).
 # --precision fp32 is REQUIRED: TritonBench operator defaults vary
@@ -1108,9 +1120,10 @@ a stale-config kernel.
 **Per-iteration discipline:**
 
 - Set a fresh cache dir per recipe iteration:
-  `HELION_CACHE_DIR=/tmp/helion_cache_recipe_$(git rev-parse --short HEAD)`
-  is a clean default — it changes whenever the recipe code commits change.
-  Alternatively, `rm -rf ~/.cache/helion` between runs.
+  `HELION_CACHE_DIR="$CACHE_ROOT/helion_cache_recipe_$(git rev-parse --short HEAD)"`
+  is a clean default when `CACHE_ROOT` points at an ignored scratch directory
+  — it changes whenever the recipe code commits change. Alternatively, clear
+  the active Helion cache directory between runs.
 - When comparing two recipe versions head-to-head, **always** use distinct
   cache dirs (one per version). Otherwise the "second" run is partly served
   from the "first" run's artifacts.
@@ -1395,7 +1408,7 @@ reused as-is.
 
 ## 10. Appendix
 
-### 10.1 File-path quick reference (all verified)
+### 10.1 Repo-relative file-path quick reference
 
 **Helion — files you will modify:**
 | File | Purpose |
