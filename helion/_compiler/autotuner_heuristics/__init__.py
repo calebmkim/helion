@@ -8,6 +8,7 @@ from .cute import CuteReductionTileHeuristic
 from .cute import CuteReductionWideChunkHeuristic
 from .cute import CuteTcgen05ClusterM2Heuristic
 from .triton import TritonSkinnyGemmHeuristic
+from .triton_reduction import TritonReductionHeuristic
 
 if TYPE_CHECKING:
     from ...runtime.config import Config
@@ -22,7 +23,7 @@ HEURISTICS_BY_BACKEND: dict[str, tuple[AutotunerHeuristicType, ...]] = {
         CuteReductionTileHeuristic,
         CuteReductionWideChunkHeuristic,
     ),
-    "triton": (TritonSkinnyGemmHeuristic,),
+    "triton": (TritonSkinnyGemmHeuristic, TritonReductionHeuristic),
 }
 
 log: logging.Logger = logging.getLogger(__name__)
