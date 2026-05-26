@@ -273,6 +273,58 @@ class TestAutotunerHeuristic(TestCase):
         self.assertEqual(len(messages), 1)
         self.assertIn("Failed to transfer compiler seed config 1", messages[0])
 
+    def test_default_or_seed_config_flag_off_returns_default(self) -> None:
+        spec = ConfigSpec(backend=TritonBackend())
+        spec.block_sizes.append(BlockSizeSpec(block_id=0, size_hint=1024))
+        spec.compiler_seed_configs = [helion.Config(block_sizes=[64])]
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("HELION_USE_COMPILER_SEEDS", None)
+            config = spec.default_or_seed_config("kernel_a")
+
+        self.assertEqual(config.config, spec.default_config().config)
+
+    def test_default_or_seed_config_flag_on_no_seeds(self) -> None:
+        spec = ConfigSpec(backend=TritonBackend())
+        spec.block_sizes.append(BlockSizeSpec(block_id=0, size_hint=1024))
+        spec.compiler_seed_configs = []
+
+        with patch.dict(os.environ, {"HELION_USE_COMPILER_SEEDS": "1"}):
+            config = spec.default_or_seed_config("kernel_a")
+
+        self.assertEqual(config.config, spec.default_config().config)
+
+    def test_default_or_seed_config_flag_on_returns_seed(self) -> None:
+        spec = ConfigSpec(backend=TritonBackend())
+        spec.block_sizes.append(BlockSizeSpec(block_id=0, size_hint=1024))
+        seed = helion.Config(block_sizes=[64])
+        spec.compiler_seed_configs = [seed]
+
+        with patch.dict(os.environ, {"HELION_USE_COMPILER_SEEDS": "1"}):
+            config = spec.default_or_seed_config("kernel_a")
+
+        self.assertEqual(config.config["block_sizes"], [64])
+        # Identity: it's the seed (now normalized in place), not default
+        self.assertIs(config, seed)
+
+    def test_default_or_seed_config_flag_on_invalid_seed_falls_back(self) -> None:
+        spec = ConfigSpec(backend=TritonBackend())
+        spec.block_sizes.append(BlockSizeSpec(block_id=0, size_hint=1024))
+        spec.compiler_seed_configs = [
+            # Non-power-of-two block size -> InvalidConfig at normalize
+            helion.Config(block_sizes=[63]),
+        ]
+
+        with (
+            patch.dict(os.environ, {"HELION_USE_COMPILER_SEEDS": "1"}),
+            self.assertLogs("helion.autotuner.config_spec", level="WARNING") as logs,
+        ):
+            config = spec.default_or_seed_config("kernel_a")
+
+        self.assertEqual(config.config, spec.default_config().config)
+        self.assertIn("kernel_a", "\n".join(logs.output))
+        self.assertIn("falling back to default_config", "\n".join(logs.output))
+
 
 class TestMatmulFacts(TestCase):
     @onlyBackends(["triton"])

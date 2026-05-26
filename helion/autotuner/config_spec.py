@@ -1328,6 +1328,34 @@ class ConfigSpec:
         self._shrink_for_numel_constraints(config)
         return config
 
+    def default_or_seed_config(self, kernel_name: str = "<unknown>") -> helion.Config:
+        """Return a launch config for the ``effort=none`` path.
+
+        When ``HELION_USE_COMPILER_SEEDS=1`` and at least one autotuner
+        heuristic produced a seed for this kernel, the first seed is
+        normalized and returned. The proactive normalize matches the
+        autotune path's tolerance: a bad seed warns and falls back to
+        ``default_config()``, never raises (which would otherwise surface
+        as a user-facing compile failure deep in ``BoundKernel.to_code``).
+        """
+        from ..runtime.settings import _use_compiler_seeds
+
+        seeds = self.compiler_seed_configs
+        if not (_use_compiler_seeds() and seeds):
+            return self.default_config()
+        seed = seeds[0]
+        try:
+            self.normalize(seed, _fix_invalid=False)
+        except InvalidConfig as e:
+            log.warning(
+                "compiler_seed_configs[0] failed normalize for kernel %s: %s; "
+                "falling back to default_config()",
+                kernel_name,
+                e,
+            )
+            return self.default_config()
+        return seed
+
     def _shrink_for_numel_constraints(self, config: helion.Config) -> None:
         """Shrink block_sizes in *config* in-place so every tensor numel
         constraint is satisfied.

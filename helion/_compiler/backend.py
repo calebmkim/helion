@@ -689,7 +689,9 @@ class Backend(abc.ABC):
         if bound_kernel.settings.autotune_effort == "none" and (
             force or not bound_kernel.kernel.configs
         ):
-            config = bound_kernel.config_spec.default_config()
+            config = bound_kernel.config_spec.default_or_seed_config(
+                bound_kernel.kernel.name
+            )
         elif not force and bound_kernel.kernel.configs:
             if len(bound_kernel.kernel.configs) == 1:
                 (config,) = bound_kernel.kernel.configs

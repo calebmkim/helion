@@ -120,6 +120,20 @@ def _env_get_bool(var_name: str, default: bool) -> bool:
     )
 
 
+def _use_compiler_seeds() -> bool:
+    """Whether ``effort=none`` should use compiler-emitted seed configs.
+
+    When ``HELION_USE_COMPILER_SEEDS=1``, the ``effort=none`` path consults
+    ``ConfigSpec.compiler_seed_configs`` (populated by registered autotuner
+    heuristics) and uses the first valid seed as the launch config; otherwise
+    it falls back to ``ConfigSpec.default_config()`` exactly as before.
+
+    Default off so the new heuristics don't shift existing user-visible
+    ``effort=none`` codegen until they are mature enough to flip on.
+    """
+    return _env_get_bool("HELION_USE_COMPILER_SEEDS", False)
+
+
 def _env_get_literal(
     var_name: str,
     default: _T,

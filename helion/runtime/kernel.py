@@ -1088,7 +1088,7 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
         if self.kernel.settings.autotune_effort == "none" and (
             len(self.kernel.configs) == 0 or self.settings.force_autotune
         ):
-            return self.config_spec.default_config()
+            return self.config_spec.default_or_seed_config(self.kernel.name)
         if self.settings.force_autotune:
             return None
         if len(self.kernel.configs) == 1:
@@ -1105,7 +1105,7 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
         if self.kernel.settings.autotune_effort == "none" and (
             len(configs) == 0 or self.settings.force_autotune
         ):
-            config = self.config_spec.default_config()
+            config = self.config_spec.default_or_seed_config(self.kernel.name)
             if not is_ref_mode_enabled(self.kernel.settings):
                 kernel_decorator = self.format_kernel_decorator(config, self.settings)
                 print(
