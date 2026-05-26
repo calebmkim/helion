@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from .._compiler.backend import Backend
+    from .._compiler.reduction_hint import ReductionHint
     from ..runtime.config import IndexingLiteral
     from ..runtime.config import PidTypeLiteral
     from .config_generation import ConfigGeneration
@@ -83,6 +84,38 @@ class MatmulFact(NamedTuple):
     static_k: int | None
     lhs_dtype: torch.dtype
     rhs_dtype: torch.dtype
+
+
+class ReductionFact(NamedTuple):
+    """Shape facts recorded when a rollable reduction is registered.
+
+    One entry per registered ReductionLoopSpec. Compiler-managed reductions
+    only; user-tiled reductions (BlockReductionStrategy) are not in this list.
+
+    Three distinct "R" values are tracked because they have different
+    semantics:
+
+    - static_rnumel: the actual reduction extent. May be non-power-of-two.
+      This is what the kernel actually reduces over.
+    - r_size_hint: the value ReductionLoopSpec uses for its persistent
+      decode boundary. Any r0_block we emit must be strictly less than
+      r_size_hint, or the flat-config autotune path silently reinterprets
+      it as persistent.
+    - effective r0_block for looped: computed in the recipe; must be a
+      power of two and strictly less than r_size_hint.
+    """
+
+    r_block_id: int
+    x_block_id: int | None
+    static_rnumel: int | None
+    r_size_hint: int
+    static_xnumel: int | None
+    hint: ReductionHint
+    num_load: int
+    num_reduction: int
+    num_store: int
+    accum_dtype: torch.dtype
+    is_rollable: bool
 
 
 def shrink_block_sizes_for_numel_constraints(
@@ -325,6 +358,7 @@ class ConfigSpec:
         self.compiler_seed_configs: list[helion.Config] = []
         self.autotuner_heuristics: list[str] = []
         self.matmul_facts: list[MatmulFact] = []
+        self.reduction_facts: list[ReductionFact] = []
         self.store_indices: list[int] = []
         self.backend_tunable_fragments = self.backend.tunable_fragments()
         unknown_tunables = set(self.backend_tunable_fragments) - BACKEND_TUNABLE_KEYS

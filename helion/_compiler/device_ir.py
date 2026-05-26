@@ -7,6 +7,7 @@ import contextlib
 import copy
 import dataclasses
 import functools
+import logging
 import math
 import operator
 import re
@@ -31,6 +32,7 @@ from torch.utils import _pytree as pytree
 from .. import Config
 from .. import exc
 from .. import language as hl
+from ..autotuner.config_spec import ReductionFact
 from ..autotuner.config_spec import ReductionLoopSpec
 from ..language import _tracing_ops
 from ..language._decorators import args_to_proxies
@@ -44,6 +46,7 @@ from .ast_extension import NodeVisitor
 from .ast_extension import create
 from .ast_extension import expr_from_string
 from .ast_read_writes import ReadWrites
+from .compile_environment import BlockSizeInfo
 from .compile_environment import CompileEnvironment
 from .host_function import HostFunction
 from .inductor_lowering import APIFuncLowering
@@ -54,6 +57,7 @@ from .loop_dependency_checker import LoopDependencyChecker
 from .matmul_utils import tensor_matmul_replacement
 from .matmul_utils import torch_matmul_replacement
 from .node_masking import remove_unnecessary_masking
+from .reduction_hint import ReductionHint
 from .roll_reduction import ReductionRoller
 from .source_location import current_location
 from .type_propagation import CallableType
@@ -84,6 +88,8 @@ if TYPE_CHECKING:
 
 
 tls: _TLS = cast("_TLS", threading.local())
+
+log = logging.getLogger(__name__)
 
 
 def _lerp_scalar_decomp(
@@ -878,6 +884,160 @@ class DeviceIR:
                             if block_id is not None:
                                 indexed_blocks.add(block_id)
             env.config_spec.cute_indexed_reduction_block_ids = indexed_blocks
+
+    def register_reduction_facts(self) -> None:
+        """Populate ``env.config_spec.reduction_facts`` with shape facts.
+
+        Runs after ``register_rollable_reductions`` so the populator can
+        emit one ReductionFact per registered ReductionLoopSpec. The walk
+        is whole-kernel — it counts every load/store/reduction node — and
+        skips ReductionLoopGraphInfo subgraph clones to avoid double counts.
+
+        Note: Helion's per-FX-node post-DCE walk reports slightly higher
+        load counts than Inductor's CSE-folded handler-emission counts
+        for kernels that re-load the same tile. The ``>= 10`` register-
+        intensive threshold preserves rankings under this skew.
+        """
+        env = CompileEnvironment.current()
+        env.config_spec.reduction_facts = []
+        try:
+            self._register_reduction_facts_inner(env)
+        except Exception:
+            log.warning(
+                "register_reduction_facts failed; clearing reduction_facts. "
+                "Heuristics will fall back to default_config().",
+                exc_info=True,
+            )
+            env.config_spec.reduction_facts = []
+
+    def _register_reduction_facts_inner(self, env: CompileEnvironment) -> None:
+        from ..language import memory_ops
+        from .inductor_lowering import ReductionLowering
+
+        reduction_specs = list(env.config_spec.reduction_loops)
+        if not reduction_specs:
+            return
+
+        # Whole-kernel counts. Skip ReductionLoopGraphInfo clones because
+        # they hold a copy of the reduction body and would double-count.
+        original_graphs = [
+            g for g in self.graphs if not isinstance(g, ReductionLoopGraphInfo)
+        ]
+        num_load = 0
+        num_store = 0
+        num_reduction = 0
+        for graph_info in original_graphs:
+            for node in graph_info.graph.nodes:
+                if node.op != "call_function":
+                    continue
+                if node.target is memory_ops.load:
+                    num_load += 1
+                elif node.target is memory_ops.store:
+                    num_store += 1
+                if isinstance(node.meta.get("lowering"), ReductionLowering):
+                    num_reduction += 1
+
+        rolled_rdim_block_ids = {spec.block_id for spec in reduction_specs}
+        block_sizes = list(env.block_sizes)
+        block_id_for_dim = _build_dim_to_block_id_resolver(env, block_sizes)
+
+        for spec in reduction_specs:
+            r_block_id = spec.block_id
+            r_info = next((bs for bs in block_sizes if bs.block_id == r_block_id), None)
+            if r_info is None:
+                continue
+
+            static_rnumel: int | None = None
+            if isinstance(r_info.size, int):
+                static_rnumel = int(r_info.size)
+            elif isinstance(r_info.size, torch.SymInt):
+                expr = r_info.size._sympy_()
+                if expr.is_Integer:
+                    static_rnumel = int(expr)
+
+            inner_vote = 0
+            outer_vote = 0
+            paired_x_block_ids: set[int] = set()
+            accum_dtype: torch.dtype | None = None
+
+            for graph_info in original_graphs:
+                for node in graph_info.graph.nodes:
+                    if node.op != "call_function":
+                        continue
+                    if node.target is not memory_ops.load:
+                        continue
+                    tensor_node = node.args[0]
+                    fake = tensor_node.meta.get("val")
+                    if not isinstance(fake, torch.Tensor):
+                        continue
+                    index = node.args[1] if len(node.args) >= 2 else []
+                    rdim_axis = _find_rdim_axis(
+                        fake, index, r_block_id, block_id_for_dim
+                    )
+                    if rdim_axis is None:
+                        continue
+                    stride = fake.stride()[rdim_axis]
+                    if stride == 1:
+                        inner_vote += 1
+                    else:
+                        outer_vote += 1
+                    for j, dim in enumerate(fake.size()):
+                        if j == rdim_axis:
+                            continue
+                        bid = block_id_for_dim(dim)
+                        if bid is not None:
+                            x_info = next(
+                                (bs for bs in block_sizes if bs.block_id == bid),
+                                None,
+                            )
+                            if x_info is not None and not x_info.reduction:
+                                paired_x_block_ids.add(bid)
+                    if accum_dtype is None:
+                        loaded_val = node.meta.get("val")
+                        if isinstance(loaded_val, torch.Tensor):
+                            accum_dtype = loaded_val.dtype
+
+            if inner_vote > outer_vote:
+                hint = ReductionHint.INNER
+            elif outer_vote > inner_vote:
+                hint = ReductionHint.OUTER
+            else:
+                hint = ReductionHint.DEFAULT
+
+            x_block_id: int | None = None
+            if len(paired_x_block_ids) == 1:
+                x_block_id = next(iter(paired_x_block_ids))
+
+            static_xnumel: int | None = None
+            if x_block_id is not None:
+                x_info = next(
+                    (bs for bs in block_sizes if bs.block_id == x_block_id), None
+                )
+                if x_info is not None and isinstance(x_info.size, int):
+                    static_xnumel = int(x_info.size)
+                elif x_info is not None and isinstance(x_info.size, torch.SymInt):
+                    expr = x_info.size._sympy_()
+                    if expr.is_Integer:
+                        static_xnumel = int(expr)
+
+            if accum_dtype is None:
+                accum_dtype = torch.float32
+
+            env.config_spec.reduction_facts.append(
+                ReductionFact(
+                    r_block_id=r_block_id,
+                    x_block_id=x_block_id,
+                    static_rnumel=static_rnumel,
+                    r_size_hint=spec.size_hint,
+                    static_xnumel=static_xnumel,
+                    hint=hint,
+                    num_load=num_load,
+                    num_reduction=num_reduction,
+                    num_store=num_store,
+                    accum_dtype=accum_dtype,
+                    is_rollable=r_block_id in rolled_rdim_block_ids,
+                )
+            )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:
         """Build and return graph copies with reduction rolling and epilogue subtiling applied.
@@ -2079,6 +2239,65 @@ class WalkHostAST(NodeVisitor):
             self.current_phase_roots = []
 
 
+def _find_rdim_axis(
+    fake: torch.Tensor,
+    index: object,
+    r_block_id: int,
+    block_id_for_dim: Callable[[object], int | None],
+) -> int | None:
+    """Identify which axis of ``fake`` is the reduction axis for this load.
+
+    The rdim axis is the one whose ``index[i]`` is a Python slice (Helion's
+    convention for compiler-managed reductions: ``x[tile_m, :]``) AND whose
+    fake.size()[i] matches r_block_id. Loads without a matching slice index
+    are not classified — gather/scatter loads are skipped to avoid misclassification.
+    """
+    if isinstance(index, (list, tuple)):
+        for i, idx in enumerate(index):
+            if (
+                isinstance(idx, slice)
+                and i < fake.ndim
+                and block_id_for_dim(fake.size()[i]) == r_block_id
+            ):
+                return i
+    return None
+
+
+def _build_dim_to_block_id_resolver(
+    env: CompileEnvironment, block_sizes: list[BlockSizeInfo]
+) -> Callable[[object], int | None]:
+    """Return a function that maps a fake-tensor dim to its block_id.
+
+    Handles both the static_shapes=True case (concrete int dims) and the
+    dynamic case (SymInt dims). For static dims, a concrete int that matches
+    a registered block size's size attribute is mapped to that block. If
+    multiple block sizes share the same concrete int, reduction dims win
+    over parallel dims (matches resolve_block_id's preference).
+    """
+    static_int_to_bid: dict[int, int] = {}
+    for bs in block_sizes:
+        if isinstance(bs.size, int):
+            existing = static_int_to_bid.get(bs.size)
+            if existing is None or (
+                bs.reduction and not block_sizes[existing].reduction
+            ):
+                static_int_to_bid[bs.size] = bs.block_id
+
+    def resolve(dim: object) -> int | None:
+        bid = env.get_block_id(dim) if isinstance(dim, (int, torch.SymInt)) else None
+        if bid is not None:
+            return bid
+        if isinstance(dim, int):
+            return static_int_to_bid.get(dim)
+        if isinstance(dim, torch.SymInt):
+            expr = dim._sympy_()
+            if getattr(expr, "is_Integer", False):
+                return static_int_to_bid.get(int(expr))
+        return None
+
+    return resolve
+
+
 def _count_device_loads_and_stores(
     device_ir: DeviceIR,
 ) -> tuple[int, int, list[int]]:
@@ -2305,6 +2524,7 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
         config_spec.epilogue_subtile_autotune_choices = None
 
         device_ir.register_rollable_reductions()
+        device_ir.register_reduction_facts()
         config_spec = CompileEnvironment.current().config_spec
         config_spec.raise_grid_block_minimums()
         if len(device_ir.root_ids) > 1:
