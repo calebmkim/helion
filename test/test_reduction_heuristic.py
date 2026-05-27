@@ -33,8 +33,9 @@ class TestTritonReductionHeuristic(TestCase):
     @skipIfRefEager("Heuristic seeds are skipped in ref eager mode")
     @skipIfNotCUDA()
     @skipIfCudaCapabilityLessThan((9, 0))
-    def test_eligible_inner_persistent(self) -> None:
-        # R=1024 INNER, sum_kernel: Recipe A small-persistent branch.
+    def test_eligible_inner_persistent_mid_r(self) -> None:
+        # sum_kernel R=1024: sum-class persistent (R <= persistent_r_max=4096).
+        # xblock cap=1 (R>256), tile=1024, nw=4 (tile<=2048).
         x = torch.empty((2048, 1024), device=DEVICE, dtype=torch.float32)
         bound = sum_kernel.bind((x,))
         fact = bound.config_spec.reduction_facts[0]
@@ -44,23 +45,23 @@ class TestTritonReductionHeuristic(TestCase):
             )
         )
         recipe = _select_recipe(fact)
-        # 1024//1024 = 1, capped at 8 -> xblock=1, persistent (None), num_warps=1.
         self.assertEqual(recipe.xblock, 1)
         self.assertEqual(recipe.reduction_loops, [None])
-        self.assertEqual(recipe.num_warps, 1)
+        self.assertEqual(recipe.num_warps, 4)
 
     @onlyBackends(["triton"])
     @skipIfRefEager("Heuristic seeds are skipped in ref eager mode")
     @skipIfNotCUDA()
     @skipIfCudaCapabilityLessThan((9, 0))
-    def test_recipe_a_general_path(self) -> None:
-        # R=256: still <=1024 (Recipe A), but small-persistent gate (256<=R) holds,
-        # so xblock=min(1024//256, 8)=4, num_warps=1.
+    def test_persistent_small_r_packs_xblock(self) -> None:
+        # sum_kernel R=256: small-R fast path packs xblock to keep tile near
+        # 2048. xblock cap = min(16, 2048//256) = 8, tile = 8*256 = 2048,
+        # num_warps=1 (R<=256).
         x = torch.empty((2048, 256), device=DEVICE, dtype=torch.float32)
         bound = sum_kernel.bind((x,))
         fact = bound.config_spec.reduction_facts[0]
         recipe = _select_recipe(fact)
-        self.assertEqual(recipe.xblock, 4)
+        self.assertEqual(recipe.xblock, 8)
         self.assertEqual(recipe.reduction_loops, [None])
         self.assertEqual(recipe.num_warps, 1)
 
@@ -68,47 +69,49 @@ class TestTritonReductionHeuristic(TestCase):
     @skipIfRefEager("Heuristic seeds are skipped in ref eager mode")
     @skipIfNotCUDA()
     @skipIfCudaCapabilityLessThan((9, 0))
-    def test_recipe_b_looped(self) -> None:
-        # R=4096 -> Recipe B. pow2_cap=min(prev_pow2(4096),2048)=2048, !>= r_size_hint(4096),
-        # so r0_block=2048. R>2048 -> xblock=1. num_warps = next_pow2(2048//128, 2, 16) = 16.
+    def test_persistent_at_boundary(self) -> None:
+        # sum_kernel R=4096 = persistent_r_max for sum-class -> still
+        # persistent. xblock=1 (R>256), tile=4096, num_warps=8 (tile>2048).
         x = torch.empty((2048, 4096), device=DEVICE, dtype=torch.float32)
         bound = sum_kernel.bind((x,))
         fact = bound.config_spec.reduction_facts[0]
         recipe = _select_recipe(fact)
         self.assertEqual(recipe.xblock, 1)
-        self.assertEqual(recipe.reduction_loops, [2048])
+        self.assertEqual(recipe.reduction_loops, [None])
+        self.assertEqual(recipe.num_warps, 8)
+
+    @onlyBackends(["triton"])
+    @skipIfRefEager("Heuristic seeds are skipped in ref eager mode")
+    @skipIfNotCUDA()
+    @skipIfCudaCapabilityLessThan((9, 0))
+    def test_looped_above_persistent_boundary(self) -> None:
+        # sum_kernel R=8192 -> sum-class looped (R > persistent_r_max=4096).
+        # pow2_cap = min(prev_pow2(8192)=8192, MAX_R0_BLOCK=4096) = 4096,
+        # 4096 < r_size_hint(8192) so no backoff -> r0_block=4096.
+        # xblock=1 (R>2048), num_warps=next_pow2(4096//128=32) clamp [4,16]=16.
+        x = torch.empty((2048, 8192), device=DEVICE, dtype=torch.float32)
+        bound = sum_kernel.bind((x,))
+        fact = bound.config_spec.reduction_facts[0]
+        recipe = _select_recipe(fact)
+        self.assertEqual(recipe.xblock, 1)
+        self.assertEqual(recipe.reduction_loops, [4096])
         self.assertEqual(recipe.num_warps, 16)
 
     @onlyBackends(["triton"])
     @skipIfRefEager("Heuristic seeds are skipped in ref eager mode")
     @skipIfNotCUDA()
     @skipIfCudaCapabilityLessThan((9, 0))
-    def test_recipe_b_r_equals_pow2_cap_backoff(self) -> None:
-        # R=2048 -> Recipe B. pow2_cap=min(2048, MAX_R0_BLOCK=2048)=2048, ==r_size_hint
-        # triggers the backoff: r0_block=1024 (must be < r_size_hint to stay looped).
-        x = torch.empty((2048, 2048), device=DEVICE, dtype=torch.float32)
-        bound = sum_kernel.bind((x,))
-        fact = bound.config_spec.reduction_facts[0]
-        recipe = _select_recipe(fact)
-        self.assertEqual(recipe.reduction_loops, [1024])
-        # R<=2048 -> xblock=2.
-        self.assertEqual(recipe.xblock, 2)
-
-    @onlyBackends(["triton"])
-    @skipIfRefEager("Heuristic seeds are skipped in ref eager mode")
-    @skipIfNotCUDA()
-    @skipIfCudaCapabilityLessThan((9, 0))
     def test_seed_emitted_in_compiler_seed_configs(self) -> None:
-        # End-to-end: with no env flag, the heuristic still wins eligibility
-        # and produces exactly one seed. The recipe-emitted shape matches Recipe B.
-        x = torch.empty((2048, 4096), device=DEVICE, dtype=torch.float32)
+        # End-to-end: no env flag, the heuristic wins eligibility and emits
+        # exactly one seed for sum_kernel R=8192 (looped path).
+        x = torch.empty((2048, 8192), device=DEVICE, dtype=torch.float32)
         bound = sum_kernel.bind((x,))
         seeds = compiler_seed_configs(bound.env, bound.host_function.device_ir)
         names = bound.config_spec.autotuner_heuristics
         self.assertIn("triton_reduction", names)
         self.assertEqual(len(seeds), 1)
         seed = seeds[0]
-        self.assertEqual(seed.reduction_loops, [2048])
+        self.assertEqual(seed.reduction_loops, [4096])
         self.assertEqual(seed.num_warps, 16)
         self.assertEqual(seed.num_stages, 1)
 

@@ -50,10 +50,8 @@ def _compute_limits(fact: ReductionFact) -> tuple[int, int, int, bool]:
 
     Mirrors ``triton_heuristics.py:3834-3856``. On H100 (sm90),
     MAX_R0_BLOCK starts at 2048 and drops to 1024 under register pressure.
-    Register pressure also halves NW_MAX (see ``_num_warps`` at
-    ``triton_heuristics.py:3087-3096``).
     """
-    max_r0_block = 2048
+    max_r0_block = 4096
     nw_max = 16 if (fact.static_rnumel or 0) <= 8192 else 32
     nw_min = 2
 
@@ -61,34 +59,145 @@ def _compute_limits(fact: ReductionFact) -> tuple[int, int, int, bool]:
         fact.num_load + fact.num_reduction
     ) >= 10
     if register_intensive:
-        max_r0_block = 1024
+        max_r0_block = 2048
         nw_max = max(nw_min, nw_max // 2)
 
     return max_r0_block, nw_min, nw_max, register_intensive
 
 
-def _recipe_a_inner_persistent(fact: ReductionFact) -> _Recipe:
-    """Recipe A: INNER persistent (R <= 1024).
+def _kernel_class(fact: ReductionFact) -> str:
+    """Classify the kernel for recipe selection.
 
-    Mirrors ``_persistent_reduction_configs`` and INNER pruning at
-    ``triton_heuristics.py:4347-4477``.
+    The boundary between persistent and looped depends more on the reduction
+    *structure* than on raw load count:
+
+      "sum-class" (num_reduction == 1, num_load <= 2):
+        sum (1L+1R), rms_norm (2L+1R). Memory-bound 1-pass reductions where
+        looped + high warps wins from R>=2048 because the inner loop can
+        keep more loads in flight than persistent's xb=1 single-program.
+
+      "norm-class" (num_reduction >= 2, num_load <= 1):
+        softmax / softmax_decomposed (1L+2R). Two-pass via online or
+        explicit amax/sum, but only one input tensor. Persistent through
+        R=16384 is the Pareto front -- the second reduction reuses
+        registers without re-loading.
+
+      "multi-load" (num_reduction >= 2, num_load >= 2):
+        layer_norm (3L+2R), cross_entropy (3L+2R), and similar multi-input
+        normalizers. Persistent through R=32768 wins big on cross_entropy
+        even though Inductor would pick looped, because Helion's persistent
+        codegen keeps the row in registers across both reductions.
     """
-    _, nw_min, nw_max, _ = _compute_limits(fact)
+    if fact.num_reduction <= 1:
+        return "sum"
+    if fact.num_load <= 1:
+        return "norm"
+    return "multi-load"
+
+
+def _persistent_r_max(fact: ReductionFact) -> int:
+    """Largest R for which we keep the reduction persistent (xblock=1).
+
+    Calibrated from per-shape sweeps on H100. See ``_kernel_class``.
+
+      sum-class:    persistent up to R=4096. Above that the looped recipe's
+                    in-flight pipeline depth dominates the persistent xb=1
+                    single-program throughput on memory-bound 1-pass sums.
+      norm-class:   persistent up to R=16384.
+      multi-load:   persistent up to R=32768 if X<=16384, else R=8192
+                    (X-large kernels like cross_entropy(8192,131072) fit
+                    less per program before register pressure).
+    """
+    cls = _kernel_class(fact)
+    if cls == "sum":
+        return 4096
+    if cls == "norm":
+        return 16384
+    return 32768 if (fact.static_xnumel or 0) <= 16384 else 8192
+
+
+def _xblock_for_persistent(fact: ReductionFact, cls: str) -> int:
+    """Power-of-two xblock for the persistent recipe, by kernel class.
+
+    xblock>1 only helps when R is small enough that a single row's compute
+    can't keep the SM busy. For R>=512 the per-row tile already saturates,
+    and packing additional rows mostly adds register pressure without
+    speeding up the rate-limiting step.
+
+    The cap formula tile_target/R lets the cap shrink as R grows. The
+    tile_target depends on the per-program working-set budget: 2048 for
+    sum-class (single load amortizes less per row), 4096 for norm-class
+    (re-uses x in registers across two reductions). Multi-load sticks at
+    a fixed 4 because its 3+ load streams already fight for the L1.
+    """
+    r = fact.static_rnumel
+    x = fact.static_xnumel
+    assert r is not None and x is not None
+    if cls == "sum":
+        if r <= 256:
+            cap = min(16, max(1, 2048 // max(r, 1)))
+        else:
+            cap = 1
+    elif cls == "norm":
+        if r <= 256:
+            cap = min(16, max(1, 4096 // max(r, 1)))
+        elif r <= 512:
+            cap = 4
+        else:
+            cap = 1
+    else:  # multi-load
+        if r <= 512:
+            cap = 4
+        else:
+            cap = 1
+    xblock = 1
+    while xblock * 2 <= cap and xblock * 2 <= x:
+        xblock *= 2
+    return xblock
+
+
+def _num_warps_persistent(r: int, tile: int, cls: str, nw_max: int) -> int:
+    """Warp count for persistent recipe.
+
+    sum-class:  R<=256 -> nw=1 (small-R fast path: a single warp covers
+                the row even when xblock packs multiple rows).
+                tile<=2048 -> nw=4 (single load + reduction fits a small
+                warp pool, and h2h sweeps put nw=4 within 1-2% of nw=8 at
+                tile=2048). tile>2048 -> nw=8: extra warps amortize the
+                second load in rms_norm-style kernels at larger tiles.
+    norm/multi: ramp tile/1024 clamped [4, 16]. tile/1024 lands on nw=4
+                through tile=4096, nw=8 at tile=5120-8192, nw=16 at >=12288.
+                This matches per-shape sweeps within ~1% across the
+                persistent regime; tile/512 over-warps small tiles and
+                tile/2048 under-warps large tiles by similar margins.
+    """
+    if cls == "sum":
+        if r <= 256:
+            return 1
+        if tile <= 2048:
+            return 4
+        return 8
+    cap = min(nw_max, 16)
+    return _next_pow2_clamped(max(4, tile // 1024), 4, cap)
+
+
+def _recipe_inner_persistent(fact: ReductionFact) -> _Recipe:
+    """Persistent INNER recipe.
+
+    See ``_persistent_r_max`` for the eligibility gate. Recipe components:
+      xblock = ``_xblock_for_persistent`` (kernel-class dependent)
+      reduction_loops = [None] (persistent)
+      num_warps = ``_num_warps_persistent`` (tile + class dependent)
+    """
+    _, _, nw_max, _ = _compute_limits(fact)
     r = fact.static_rnumel
     x = fact.static_xnumel
     assert r is not None and x is not None
 
-    if 256 <= r <= 1024 and x // 8 >= 128:
-        xblock = min(1024 // max(r, 1), 8)
-        num_warps = 1
-    else:
-        xblock = 1
-        for cand in (128, 32, 8, 1):
-            if cand <= x and r * cand <= 4096:
-                xblock = cand
-                break
-        tile = xblock * r
-        num_warps = _next_pow2_clamped(tile // 128, nw_min, nw_max)
+    cls = _kernel_class(fact)
+    xblock = _xblock_for_persistent(fact, cls)
+    tile = xblock * r
+    num_warps = _num_warps_persistent(r, tile, cls, nw_max)
 
     return _Recipe(
         xblock=max(xblock, 1),
@@ -97,20 +206,19 @@ def _recipe_a_inner_persistent(fact: ReductionFact) -> _Recipe:
     )
 
 
-def _recipe_b_inner_looped(fact: ReductionFact) -> _Recipe:
-    """Recipe B: INNER looped (R > 1024).
+def _recipe_inner_looped(fact: ReductionFact) -> _Recipe:
+    """Looped INNER recipe.
 
-    Mirrors ``_reduction_configs`` / ``contiguous_config`` at
-    ``triton_heuristics.py:3956-3960`` and the ``num_warps = r // 128``
-    rule on the capped r at ``:3320``.
+    r0_block target: largest pow2 <= min(R, MAX_R0_BLOCK).
+    Helion invariant: r0_block must be < r_size_hint or the flat-config
+    autotune path silently re-decodes the value as persistent.
 
-    The looped r0_block satisfies two Helion-specific invariants:
-      1. power of two (``_PowerOfTwoBlockIdItem._normalize`` requires it)
-      2. strictly less than ``r_size_hint`` -- otherwise the flat-config
-         autotune path silently re-decodes the value as persistent, and
-         the seed we benchmark differs from the recipe we wrote.
+    num_warps: ``r0_block / 128`` rounded up to power of two, clamped to
+    [4, NW_MAX]. The 4-warp floor matches the autotuner's preference for
+    the looped regime where math + load pipeline depth both want >=4
+    in-flight warps.
     """
-    max_r0_block, nw_min, nw_max, _ = _compute_limits(fact)
+    max_r0_block, _, nw_max, _ = _compute_limits(fact)
     r = fact.static_rnumel
     assert r is not None
 
@@ -120,7 +228,8 @@ def _recipe_b_inner_looped(fact: ReductionFact) -> _Recipe:
     r0_block = max(pow2_cap, 1)
 
     xblock = 2 if r <= 2048 else 1
-    num_warps = _next_pow2_clamped(r0_block // 128, nw_min, nw_max)
+
+    num_warps = _next_pow2_clamped(r0_block // 128, 4, nw_max)
 
     return _Recipe(
         xblock=xblock,
@@ -130,13 +239,17 @@ def _recipe_b_inner_looped(fact: ReductionFact) -> _Recipe:
 
 
 def _select_recipe(fact: ReductionFact) -> _Recipe:
-    """Pick Recipe A or B. v1 only handles INNER (eligibility filters
-    OUTER and DEFAULT)."""
+    """Persistent if ``R <= _persistent_r_max(fact)``, looped otherwise."""
     r = fact.static_rnumel
     assert r is not None
-    if r <= 1024:
-        return _recipe_a_inner_persistent(fact)
-    return _recipe_b_inner_looped(fact)
+    if r <= _persistent_r_max(fact):
+        return _recipe_inner_persistent(fact)
+    return _recipe_inner_looped(fact)
+
+
+# Back-compat aliases used by tests that pin recipe-specific function names.
+_recipe_a_inner_persistent = _recipe_inner_persistent
+_recipe_b_inner_looped = _recipe_inner_looped
 
 
 def _emit_config(

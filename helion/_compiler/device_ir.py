@@ -984,14 +984,44 @@ class DeviceIR:
                     for j, dim in enumerate(fake.size()):
                         if j == rdim_axis:
                             continue
+                        # j is by construction not the rdim axis -- prefer the
+                        # non-reduction block when dim sizes tie (e.g. square
+                        # M==N shapes where dim_to_block_id_resolver would
+                        # otherwise pick the reduction block).
                         bid = block_id_for_dim(dim)
-                        if bid is not None:
-                            x_info = next(
+                        x_info = (
+                            next(
                                 (bs for bs in block_sizes if bs.block_id == bid),
                                 None,
                             )
-                            if x_info is not None and not x_info.reduction:
-                                paired_x_block_ids.add(bid)
+                            if bid is not None
+                            else None
+                        )
+                        if x_info is None or x_info.reduction:
+                            for cand in block_sizes:
+                                if (
+                                    not cand.reduction
+                                    and isinstance(cand.size, int)
+                                    and cand.size == dim
+                                ):
+                                    bid = cand.block_id
+                                    x_info = cand
+                                    break
+                                if (
+                                    not cand.reduction
+                                    and isinstance(cand.size, torch.SymInt)
+                                    and isinstance(dim, torch.SymInt)
+                                    and cand.size._sympy_() == dim._sympy_()
+                                ):
+                                    bid = cand.block_id
+                                    x_info = cand
+                                    break
+                        if (
+                            bid is not None
+                            and x_info is not None
+                            and not x_info.reduction
+                        ):
+                            paired_x_block_ids.add(bid)
                     if accum_dtype is None:
                         loaded_val = node.meta.get("val")
                         if isinstance(loaded_val, torch.Tensor):
