@@ -1677,5 +1677,30 @@
    },
    "verdict": "GENERALIZES (no overfit). 6/8 kernels match-or-beat in-sample G out-of-sample (4 beat). The two negative gaps (cross_entropy -0.247, long_sum -0.372) are concentrated in the already-disclosed kernel-source / tc-split-reduction ceilings, over-sampled out-of-sample; both reproduce on re-run. Seed fires+used+correct on every validation shape (0 failures); deficit is the seed losing to torch.compile at the source ceiling, NOT a config mis-pick. No HELPER_REQUEST warranted (gaps are source-level, not config headroom)."
   }
+ },
+ "codegen_knob_stage1_pid_type": {
+  "date": "2026-05-29",
+  "decision": "REJECTED -- NO branch added. pid_type=persistent_interleaved + num_sm_multiplier does NOT generalize in matched-lever isolation; it is net-negative-to-neutral in EVERY regime tested. v6 stays champion UNCHANGED (byte-identical heuristic, 0 lines changed under helion/).",
+  "premise_in_brief": "sum (8192,256) oracle G=1.58 via pid=persistent_interleaved+num_sm_multiplier=2+maxnreg=128 vs v6 0.94 -- 'the biggest untapped Product-A win'. The premise is a CONFOUND: the oracle config bundles pid_type with block_sizes/reduction_loops/num_warps/num_stages; the win (where any exists) is the OTHER levers, and pid_type is a passenger.",
+  "env": "H100/sm_90 fp32 GPU2+GPU3 (verified no co-tenants via nvidia-smi); NUM_SM=132; do_bench median-of-5/7; correctness PASS every config (maxabs<=1.9e-6).",
+  "test1_matched_lever_vs_v6": {
+   "harness": "_lab/harness/pid_breakpoint_sweep.py",
+   "method": "build the EXACT v6 seed (block_sizes/reduction_loops/num_warps/num_stages held EQUAL), vary ONLY pid_type {flat, persistent_interleaved} x num_sm_multiplier {1,2,4}. Metric = flat_lat/variant_lat (>1 => persistent faster).",
+   "grid_bound_small_N_num_load1_sum": "flat WINS at EVERY shape. flat/pi ratios (best of m1/m2/m4): 8192x128 0.62, 8192x256 0.64, 8192x512 0.77, 8192x1024 0.84, 32768x256 0.70, 262144x256 1.00(tie). persistent_interleaved 1.5-4x SLOWER. best column = flat(1.00) for all 14 shapes.",
+   "grid_bound_small_N_num_load2_rms_norm": "flat WINS at EVERY shape. flat/pi (best mult): 8192x256 0.71, 32768x256 0.78, 32768x1024 0.93. best = flat(1.00) for all 10 shapes.",
+   "large_rnumel_tiny_M_long_sum": "TIE (no win, no regression): (1,131072) 1.00, (8,131072) 1.04, (16,262144) 0.99, (256,131072) 1.00. The grid is already tiny at M<=16 so the pid strategy barely matters; bandwidth-bound on the row.",
+   "large_rnumel_rms_norm": "slightly WORSE: (2048,16384) 0.97-0.98, (8192,8192) 0.95-0.96. No regression-protection issue but no benefit."
+  },
+  "test2_within_oracle_bundle": {
+   "harness": "_lab/harness/pid_within_oracle_bundle.py + pid_g_characterize.py",
+   "method": "the DECISIVE isolation: take the verbatim oracle lever bundle (block_sizes=[4], reduction_loops=[128], num_warps=1, num_stages=5) and flip ONLY pid_type within it. If pid is real-but-coupled the win survives the flip; if flat ties/beats persistent in the bundle, pid is a passenger.",
+   "result": "flat BEATS persistent_interleaved WITHIN the oracle bundle at every shape+multiplier. flat/pi: rms_norm 32768x256 m1=0.51/m2=0.72/m4=0.87; sum 32768x256 m1=0.44/m2=0.68/m4=0.83; sum 8192x256 m1=0.59/m2=0.84/m4=0.95. The oracle bundle with FLAT (rms_norm 34.98us, sum 24.80us) is FASTER than the identical bundle with persistent_interleaved (40-69us).",
+   "g_characterization": "G=tc/lat (median-of-7): sum 8192x256 G_v6=0.99 G_oracleFlat=1.00 G_oraclePI2=0.86; sum 32768x256 G_v6=1.02 G_oracleFlat=1.02 G_oraclePI2=0.70; rms_norm 8192x256 G_v6=0.89 G_oracleFlat=1.00 G_oraclePI2=0.75; rms_norm 32768x256 G_v6=0.94 G_oracleFlat=0.97 G_oraclePI2=0.72. The ONLY real grid-bound headroom (rms_norm ~3-11%) comes from the M-block/looped-chunk/warps levers via FLAT pid; adding persistent_interleaved DESTROYS it."
+  },
+  "mechanism": "flat launches one program per M-block (grid=ceil(M/M_BLOCK)) -> full grid occupancy for free. persistent_interleaved launches only num_sms*mult programs and serially loops virtual PIDs; for a tiny-rnumel reduction each row's work is small, so the serialized virtual-pid loop adds overhead with NO occupancy benefit (the SMs were already saturated by flat's large grid). PROOF: at extreme num_sm_multiplier=32 (persistent grid 132*32=4224 ~= flat grid 32768/4=8192) persistent_interleaved finally just TIES flat (sum 32768x256 flat/pi mult8=0.87, mult16=0.97, mult32=1.01, mult64=1.00) -- it degenerates into flat's near-one-program-per-block launch and never beats it. There is NO grid-occupancy physics win here; flat is already grid-saturated for these reductions.",
+  "g_premise_not_reproduced": "The brief's 'sum (8192,256) G=1.58' does NOT reproduce in matched do_bench: G_v6(sum 8192x256)=0.99 (already ~tc) and G_v6(sum 32768x256)=1.02 (already beats tc). sum has essentially NO Product-A headroom at these shapes. The 30.6us autotuner-INTERNAL oracle number (vs my fair do_bench of the same bundle = 34.98us flat / 40-69us pid) is the autotuner's own timing, not a fair re-bench -- and even taken at face value, flat beats pid in the identical bundle.",
+  "no_regression": "v6 heuristic UNCHANGED -> all 8 active kernels emit BYTE-IDENTICAL v6 seeds (no code change, inert-proof is trivially satisfied). O_8kernel = 0.9874 UNCHANGED.",
+  "honest_negative_verdict": "Per the brief's explicit instruction ('if persistent_interleaved does NOT generalize, DO NOT add the branch -- report the negative result'): the lever fails the matched-lever A/B across both regimes and both num_load classes, AND inside the oracle's own bundle. This is the v2-confound pattern (a coupled-config win misattributed to one lever). DO NOT seed pid_type/num_sm_multiplier for these reductions. Future Stage-2 (indexing/eviction) and the FLAT oracle bundle's M-block/looped-chunk/warps levers are where the small grid-bound headroom actually lives.",
+  "harness": "_lab/harness/{pid_breakpoint_sweep,pid_within_oracle_bundle,pid_g_characterize}.py"
  }
 }

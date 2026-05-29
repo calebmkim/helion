@@ -5,6 +5,10 @@
 > champion). The hub appends gate verdicts. Keep it current at every clean iteration boundary.
 
 ## Champion (current best heuristic)
+- **v6 STANDS UNCHANGED after the codegen-knob Stage-1 investigation (2026-05-29).** The proposed
+  `pid_type=persistent_interleaved + num_sm_multiplier` grid-bound branch was **REJECTED as a negative
+  result** — it does NOT generalize in matched-lever isolation (see "Codegen-knob Stage 1 — pid_type
+  REJECTED" below). No code change; all 8 active kernels emit byte-identical v6 seeds; O_8kernel=0.9874.
 - **v6 `triton_reduction_tile` (WORKER-PROPOSED 2026-05-29) — cross_entropy widening + welford out-of-scope.**
   Adds **cross_entropy** (T1, num_load=3, num_reduction_ops=2, wide-V logsumexp+gather) to the active set.
   ONE new general branch (the **multi-load persist byte-cap**): for `num_load >= 2` AND
@@ -361,6 +365,62 @@ quick profile. Harness: `_lab/harness/productB_{driver.py,run.sh,analyze.py}`; r
   num_load=3, wide-V) + **softmax_two_pass** (T2 Band A) + **kl_div, jsd** (T2 Band B) as of 2026-05-29 (v6) =
   **8 seeded kernels**. **welford: classified T2 but OUT-OF-SCOPE** (multi-tiled-pass; heuristic DECLINES → not
   seeded, falls back to default). Forward curriculum COMPLETE. Defer backward (Band D).
+
+## Codegen-knob Stage 1 — pid_type=persistent_interleaved + num_sm_multiplier REJECTED (negative result, 2026-05-29)
+**HONEST NEGATIVE RESULT: the lever does NOT generalize. NO branch added. v6 stays champion unchanged.**
+
+The brief framed `pid_type=persistent_interleaved + num_sm_multiplier` for grid-bound small-N as "the
+biggest untapped Product-A win" (sum (8192,256) oracle G=1.58 vs our 0.94). The required matched-lever A/B
+(STREAM_WARPS32_MIN_ELEMS discipline: hold ALL other levers EQUAL, sweep ONLY pid) shows the premise is a
+**CONFOUND** — the oracle bundles pid with block_sizes/reduction_loops/num_warps/num_stages, and pid is a
+**passenger**, not the cause. The lever is net-negative-to-neutral in EVERY regime tested.
+
+- **Test 1 — matched-lever vs the v6 seed** (`_lab/harness/pid_breakpoint_sweep.py`, H100/fp32 GPU2+GPU3,
+  NUM_SM=132, do_bench median-of-5, correctness PASS all). Build the EXACT v6 seed, vary ONLY pid_type
+  {flat, persistent_interleaved} × num_sm_multiplier {1,2,4}. Metric = flat_lat/variant_lat (>1 ⇒ persistent faster):
+  | regime | shapes | flat/pi (best mult) | verdict |
+  |---|---|---|---|
+  | grid-bound small-N, num_load=1 (sum) | 8192×{128..4096}, 32768×{128..4096}, 262144×{128..1024} (14 shapes) | 0.62–1.00 | **flat WINS all 14** (pi 1.5–4× slower) |
+  | grid-bound small-N, num_load=2 (rms_norm) | 8192×{128..1024}, 32768×{128..1024}, 262144×{256,512} (10) | 0.71–1.00 | **flat WINS all 10** |
+  | large-rnumel tiny-M (long_sum) | (1,131072),(8,131072),(16,262144),(256,131072) | 0.99–1.04 | TIE (grid already tiny; bandwidth-bound) |
+  | large-rnumel (rms_norm) | (2048,16384),(8192,8192) | 0.95–0.98 | slightly worse (no benefit) |
+  Both regimes, both num_load classes: persistent_interleaved never beats flat at matched other-levers.
+
+- **Test 2 — the DECISIVE isolation: pid WITHIN the oracle's own lever bundle**
+  (`pid_within_oracle_bundle.py` + `pid_g_characterize.py`). Take the documented verbatim oracle bundle
+  `block_sizes=[4], reduction_loops=[128], num_warps=1, num_stages=5` and flip ONLY pid_type:
+  flat BEATS persistent_interleaved at every shape (flat/pi: rms_norm 32768×256 m2=0.72; sum 32768×256
+  m2=0.68; sum 8192×256 m2=0.84). The bundle with FLAT (rms_norm 34.98us, sum 24.80us) is FASTER than the
+  identical bundle with pid (40–69us). G characterization (G=tc/lat, median-of-7):
+  | kernel/shape | G_v6 | G_oracleFlat | G_oraclePI2 |
+  |---|---|---|---|
+  | sum 8192×256 | 0.99 | 1.00 | 0.86 |
+  | sum 32768×256 | 1.02 | 1.02 | 0.70 |
+  | rms_norm 8192×256 | 0.89 | 1.00 | 0.75 |
+  | rms_norm 32768×256 | 0.94 | 0.97 | 0.72 |
+  The only real grid-bound headroom (rms_norm ~3–11%) comes from the **M-block/looped-chunk/warps levers via
+  FLAT pid**; adding persistent_interleaved DESTROYS it. So pid is a passenger the autotuner tolerated.
+
+- **The G=1.58 premise does NOT reproduce.** In matched do_bench sum is already at/above tc:
+  G_v6(sum 8192×256)=0.99, G_v6(sum 32768×256)=1.02. sum has essentially no Product-A headroom there. The
+  30.6us autotuner-INTERNAL oracle latency (vs a fair re-bench of the same bundle: 34.98us flat / 40–69us
+  pid) is the autotuner's own timing; even at face value flat beats pid in the identical bundle.
+
+- **Mechanism (why it's net-harmful, not just noise).** flat launches one program per M-block
+  (grid=ceil(M/M_BLOCK)) → full grid occupancy for free. persistent_interleaved launches only num_sms*mult
+  programs and serially loops virtual PIDs; for a tiny-rnumel reduction each row's work is small, so the
+  serialized loop adds overhead with NO occupancy benefit (the SMs are already saturated by flat's large
+  grid). PROOF: at extreme num_sm_multiplier=32 (persistent grid 132·32=4224 ≈ flat grid 32768/4=8192) it
+  finally just TIES flat (sum 32768×256 flat/pi: mult8=0.87, mult16=0.97, mult32=1.01, mult64=1.00) — it
+  degenerates into flat's near-one-program-per-block launch and never beats it. There is no grid-occupancy
+  physics win here; flat is already grid-saturated for these reductions.
+
+- **Decision: NO branch.** Per the brief ("if persistent_interleaved does NOT generalize, DO NOT add the
+  branch — report the negative result"). v6 heuristic is UNCHANGED (0 lines under `helion/`); all 8 active
+  kernels emit byte-identical v6 seeds (inert-proof trivially satisfied); O_8kernel=0.9874 unchanged. This is
+  the v2-confound pattern (a coupled-config win misattributed to one isolated lever). Future grid-bound
+  small-N headroom lives in the FLAT-pid M-block/looped-chunk/warps levers and Stage-2 indexing/eviction —
+  NOT in pid_type. Harness: `_lab/harness/{pid_breakpoint_sweep,pid_within_oracle_bundle,pid_g_characterize}.py`.
 
 ## v5 — T2 SUPPORT (user-tiled / manually-looped reductions): softmax_two_pass + kl_div + jsd (2026-05-29)
 **The heuristic now seeds BOTH tracks; T1 is byte-identical (no-regression PROVEN).**
