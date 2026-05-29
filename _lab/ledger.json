@@ -193,10 +193,50 @@
       "band": "A (scalar-accumulator inner; two-pass like rms_norm but with num_reduction_ops=2)",
       "added": "2026-05-29",
       "in_sample_shapes": [
-        [4096, 1024], [4096, 2048], [4096, 4096], [4096, 8192],
-        [4096, 12288], [4096, 15872],
-        [2048, 3584], [2048, 8192],
-        [8192, 4096], [8192, 5120], [8192, 7168]
+        [
+          4096,
+          1024
+        ],
+        [
+          4096,
+          2048
+        ],
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          8192
+        ],
+        [
+          4096,
+          12288
+        ],
+        [
+          4096,
+          15872
+        ],
+        [
+          2048,
+          3584
+        ],
+        [
+          2048,
+          8192
+        ],
+        [
+          8192,
+          4096
+        ],
+        [
+          8192,
+          5120
+        ],
+        [
+          8192,
+          7168
+        ]
       ],
       "reduction_fact_observed": {
         "num_load": 3,
@@ -216,8 +256,57 @@
       "track": "T2 (user-tiled / manually-looped: BOTH hl.tile axes are ordinary block_sizes entries, reduction=False; 0 reduction_loops; the .amax/.sum over the inner tile is realized by ReductionLowering reusing the existing user tile). reduction_facts populated by register_user_tiled_reductions. Reduction axis = block_id 1 (N), found via ReductionLowering predicate filtered vs grid_block_ids=[0].",
       "band": "A (scalar/row-accumulator inner: carries only [M_BLOCK] mi/di across the inner loop -> num_tiled_accumulators=0 -> persistent to the structural cap, no Band-B cap).",
       "added": "2026-05-29 (v5 T2 support)",
-      "in_sample_shapes": [[4096,256],[4096,512],[4096,1024],[4096,2048],[4096,4096],[4096,8192],[4096,12288],[4096,16384],[32768,256],[32768,1024]],
-      "reduction_fact_observed": {"num_load": 2, "num_store": 1, "num_reduction_ops": 2, "num_tiled_accumulators": 0, "dtype": "float32", "itemsize": 4, "note": "num_reduction_ops=2 (amax + sum over N). num_tiled_accumulators=0 (mi/di are [M_BLOCK] row state, NOT [M_BLOCK,R_BLOCK]) -> Band A, stays persistent."},
+      "in_sample_shapes": [
+        [
+          4096,
+          256
+        ],
+        [
+          4096,
+          512
+        ],
+        [
+          4096,
+          1024
+        ],
+        [
+          4096,
+          2048
+        ],
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          8192
+        ],
+        [
+          4096,
+          12288
+        ],
+        [
+          4096,
+          16384
+        ],
+        [
+          32768,
+          256
+        ],
+        [
+          32768,
+          1024
+        ]
+      ],
+      "reduction_fact_observed": {
+        "num_load": 2,
+        "num_store": 1,
+        "num_reduction_ops": 2,
+        "num_tiled_accumulators": 0,
+        "dtype": "float32",
+        "itemsize": 4,
+        "note": "num_reduction_ops=2 (amax + sum over N). num_tiled_accumulators=0 (mi/di are [M_BLOCK] row state, NOT [M_BLOCK,R_BLOCK]) -> Band A, stays persistent."
+      },
       "seed": "block_sizes=[m_floor, next_pow2(N)] (R_BLOCK=next_pow2(N) -> inner `for offset in tl.range(0,N,R_BLOCK)` runs ONCE, persistent); num_warps per rnumel ramp; no reduction_loops.",
       "default_config_behavior": "looped chunk 4096 once N>4096 -> LOSES 2-3x at wide rows (G_default 0.30-0.72).",
       "status": "WIN: G_seed=0.967 vs G_default=0.440 (+120%). Correctness PASS (maxabs ~1e-8 vs F.softmax fp32). DECISIVE A/B vs persistent/w32: seed/p32=1.50x (seed FASTER -- the rnumel warps ramp avoids the tiny-N/large-warps catastrophe: seed/p32=3.1x/2.4x/1.7x/3.0x at (4096,256)/(4096,512)/(4096,1024)/(32768,256), ties ~1.0 at wide rows). NO branch needed beyond the shared persistent+ramp.",
@@ -227,8 +316,40 @@
       "track": "T2 (user-tiled). Reduction axis = block_id 0 (V, size_hint 65536), grid_block_ids=[1]. 2 block_sizes both reduction=False, 0 reduction_loops, 1 reduction_fact, no matmul.",
       "band": "B (carries a [M_BLOCK,R_BLOCK] 2D accumulator across the inner loop -> num_tiled_accumulators=2 (kl_loss + loss_sum) -> the persistent live-state footprint scales with R_BLOCK -> Band-B R_BLOCK cap).",
       "added": "2026-05-29 (v5 T2 support)",
-      "in_sample_shapes": [[4096,4096],[4096,8192],[4096,16384],[4096,32768],[4096,65536],[4096,131072]],
-      "reduction_fact_observed": {"num_load": 2, "num_store": 1, "num_reduction_ops": 1, "num_tiled_accumulators": 2, "dtype": "float32", "itemsize": 4},
+      "in_sample_shapes": [
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          8192
+        ],
+        [
+          4096,
+          16384
+        ],
+        [
+          4096,
+          32768
+        ],
+        [
+          4096,
+          65536
+        ],
+        [
+          4096,
+          131072
+        ]
+      ],
+      "reduction_fact_observed": {
+        "num_load": 2,
+        "num_store": 1,
+        "num_reduction_ops": 1,
+        "num_tiled_accumulators": 2,
+        "dtype": "float32",
+        "itemsize": 4
+      },
       "seed": "block_sizes=[R_BLOCK, 1] with R_BLOCK=min(next_pow2(V), BANDB cap 4096); M_BLOCK pinned at floor (1) for the u0*u1<=2^20 numel constraint; num_warps per rnumel ramp (w32 at V>=65536).",
       "default_config_behavior": "looped chunk 4096 -> G_default 0.36-0.47 (loses ~2.5-3x).",
       "status": "WIN: G_seed=1.029 vs G_default=0.392 (+163%; seed BEATS tc on 4/6 shapes). Correctness rel-err<=1.2e-7 vs torch.nn.KLDivLoss(batchmean). Band-B branch VALIDATED: without the R-cap the full-N persistent seed is 1.2x slower at V>=65536 (s/AB 0.787); with R=4096 cap s/AB=0.99-1.41 (seed ties/beats the best simple looped alt). Narrow rows unaffected (persist/cap 0.995-1.000).",
@@ -238,8 +359,41 @@
       "track": "T2 (user-tiled). Reduction axis = block_id 0 (V), grid_block_ids=[1]. CRITICAL: raw ReductionLowering block_indices={0,1} (the dead beta==0/1 branches do amax(dim=0) over the M/grid tile); the `not in grid_block_ids` filter removes block 1 -> real V reduction = 0. Load-bearing filter.",
       "band": "B (carries TWO [M_BLOCK,R_BLOCK] 2D accumulators -> num_tiled_accumulators=2 (intermediate_loss + intermediate_dX); the WORST persistent-spill case -> Band-B R_BLOCK cap REQUIRED).",
       "added": "2026-05-29 (v5 T2 support)",
-      "in_sample_shapes": [[8192,4096],[8192,8192],[8192,16384],[8192,32768],[8192,65536],[8192,131072]],
-      "reduction_fact_observed": {"num_load": 2, "num_store": 2, "num_reduction_ops": 2, "num_tiled_accumulators": 2, "dtype": "float32", "itemsize": 4, "note": "num_store=2 (loss + dX) + num_reduction_ops=2 -- the Band-B signature. The t2_code_map predicted reductions=4; the active beta=0.5 branch has 2 (loss-sum + dX-sum)."},
+      "in_sample_shapes": [
+        [
+          8192,
+          4096
+        ],
+        [
+          8192,
+          8192
+        ],
+        [
+          8192,
+          16384
+        ],
+        [
+          8192,
+          32768
+        ],
+        [
+          8192,
+          65536
+        ],
+        [
+          8192,
+          131072
+        ]
+      ],
+      "reduction_fact_observed": {
+        "num_load": 2,
+        "num_store": 2,
+        "num_reduction_ops": 2,
+        "num_tiled_accumulators": 2,
+        "dtype": "float32",
+        "itemsize": 4,
+        "note": "num_store=2 (loss + dX) + num_reduction_ops=2 -- the Band-B signature. The t2_code_map predicted reductions=4; the active beta=0.5 branch has 2 (loss-sum + dX-sum)."
+      },
       "seed": "block_sizes=[R_BLOCK, 1] with R_BLOCK=min(next_pow2(V), 4096); M_BLOCK floor 1; warps per rnumel ramp.",
       "default_config_behavior": "looped chunk 4096 -> G_default ~0.64-0.67.",
       "status": "WIN: G_seed=0.996 vs G_default=0.665 (+50%; essentially ties tc all 6 shapes). Correctness loss rel-err 0.0 vs TorchJSDBaseline; dX matches default ~1e-12. Band-B branch ESSENTIAL: WITHOUT the R-cap the full-N persistent seed SPILLS catastrophically -- (8192,65536) persistent=19.8ms vs loop=2.0ms (G=0.10), (8192,131072) persistent unmeasurably slow. With R=4096 cap: s/AB=0.987-0.999 (ties best looped alt). benign TensorOperationInWrapper on host-side torch.sum(loss).",
@@ -249,8 +403,45 @@
       "track": "T1 (rollable rdim; 1 block_size=M/row, 1 reduction_loop, 1 reduction_fact, no matmul). Whole-row amax+sum over V (block_id=1) is rollable; 1 M-block (block_id=0). The label gather (hl.load at target indices) is an extra load, not a row reduction.",
       "band": "A (scalar-accumulator inner; wide-V two-pass logsumexp + gather)",
       "added": "2026-05-29 (v6)",
-      "in_sample_shapes": [[4096,4096],[4096,16384],[8192,32768],[16384,32768],[8192,65536],[16384,65536],[8192,131072]],
-      "reduction_fact_observed": {"num_load": 3, "num_store": 1, "num_reduction_ops": 2, "num_tiled_accumulators": 0, "dtype": "float32", "itemsize": 4, "note": "num_reduction_ops=2 (amax + exp-sum over V). num_load=3 (logits row read for amax, re-read for exp-sum, + the label gather). At the degenerate N==V (4096,4096) the RF dtype scan grabs the int64 labels (itemsize=8) -- INERT (num_tiled_accumulators=0 so the Band-B cap never reads itemsize; the seed is persistent/rnumel-warps regardless)."},
+      "in_sample_shapes": [
+        [
+          4096,
+          4096
+        ],
+        [
+          4096,
+          16384
+        ],
+        [
+          8192,
+          32768
+        ],
+        [
+          16384,
+          32768
+        ],
+        [
+          8192,
+          65536
+        ],
+        [
+          16384,
+          65536
+        ],
+        [
+          8192,
+          131072
+        ]
+      ],
+      "reduction_fact_observed": {
+        "num_load": 3,
+        "num_store": 1,
+        "num_reduction_ops": 2,
+        "num_tiled_accumulators": 0,
+        "dtype": "float32",
+        "itemsize": 4,
+        "note": "num_reduction_ops=2 (amax + exp-sum over V). num_load=3 (logits row read for amax, re-read for exp-sum, + the label gather). At the degenerate N==V (4096,4096) the RF dtype scan grabs the int64 labels (itemsize=8) -- INERT (num_tiled_accumulators=0 so the Band-B cap never reads itemsize; the seed is persistent/rnumel-warps regardless)."
+      },
       "seed": "T1 persistent (reduction_loops=[None]) up to 128 KiB; LOOPED (reduction_loops=[16384]) above via the v6 multi-load cap (num_load=3>=2). num_warps per rnumel ramp (w8/w16/w32).",
       "default_config_behavior": "looped chunk 4096 once V>4096 -> G_default 0.52-0.93 (loses ~2x at wide V).",
       "status": "WIN: G_seed=0.915 vs default 0.600 (+52%; do_bench median-of-7, fp32, GPU3, two runs 0.912/0.915). Correctness PASS vs F.cross_entropy (maxabs 0-1.9e-6, rel-err ~1e-7; bit-exact at narrow V). seed_used PASS (codegen persistent below cap / looped above; warps match). REQUIRED the v6 multi-load persist cap: WITHOUT it (8192,131072) persistent = 8067us (G=0.24) -- the wide multi-load row spills; WITH the cap it goes looped 3576us (G=0.54). The ONLY sub-0.9 shape is (8192,131072) G=0.54: a kernel-source gap (Helion CE re-reads the row for the exp-sum pass vs tc's online softmax; best CORRECT Helion looped 3485us still loses to tc 1928us; num_stages doesn't help), NOT config headroom. seed/p32=1.21 (beats fixed-persistent/w32 by correctly looping wide rows). benign TensorOperationInWrapper on host-side losses.mean().",
@@ -260,8 +451,33 @@
       "track": "T2 (user-tiled) but OUT-OF-SCOPE for the single-axis seed. 3 block_sizes (M grid block 0 + TWO tile_n loops over the SAME N: Welford-combine pass = detected reduction axis block 1, normalize pass = block 2 NOT a reduction), 0 reduction_loops. After the v6 'single non-grid tile' decline guard: 0 reduction_facts, 0 seeds.",
       "band": "C (structured 3-scalar Welford combine: count/mean/M2; manually looped over D + a second normalize pass)",
       "added": "2026-05-29 (v6 -- classified + assessed + DECLINED, not seeded)",
-      "in_sample_shapes": [[262144,1024],[262144,1536],[262144,2048],[262144,4096]],
-      "reduction_fact_observed": {"num_load": 4, "num_store": 1, "num_reduction_ops": 2, "num_tiled_accumulators": 0, "dtype": "float32", "itemsize": 4, "note": "acc_cnt/acc_mean/acc_m2 are [M_BLOCK] row scalars (zeros_like(x[tile_m,0])), NOT 2D -> num_tiled_accumulators=0. TWO tile_n loops over N (block 1 reduction + block 2 normalize)."},
+      "in_sample_shapes": [
+        [
+          262144,
+          1024
+        ],
+        [
+          262144,
+          1536
+        ],
+        [
+          262144,
+          2048
+        ],
+        [
+          262144,
+          4096
+        ]
+      ],
+      "reduction_fact_observed": {
+        "num_load": 4,
+        "num_store": 1,
+        "num_reduction_ops": 2,
+        "num_tiled_accumulators": 0,
+        "dtype": "float32",
+        "itemsize": 4,
+        "note": "acc_cnt/acc_mean/acc_m2 are [M_BLOCK] row scalars (zeros_like(x[tile_m,0])), NOT 2D -> num_tiled_accumulators=0. TWO tile_n loops over N (block 1 reduction + block 2 normalize)."
+      },
       "why_out_of_scope": "The single-axis T2 seed FIRES (pre-guard) but is BROKEN: it controls only block 1 (the reduction axis) and FLOORS block 2 (normalize pass) to width 1 -> N iterations of width 1 -> G_seed=0.051 (10-20x SLOWER than tc AND than the un-seeded default G=0.526; (262144,1024) seed 11769us vs tc 979us vs default 1821us -- the seed actively HARMS welford). ALSO numerically WRONG for non-pow2 N (in-sample 1536: R1=next_pow2=2048 masked -> err=0.696 FAILS allclose). Root cause = a kernel bug: the Welford combine uses Tn=chunk.size(-1) for the per-chunk count; a masked persistent tile makes Tn=tile-width not valid-width, so sum_x/Tn divides by the wrong count. A CORRECT persistent welford needs R1 to DIVIDE N (looped divisor chunk, factorization-dependent, NOT next_pow2).",
       "decline_mechanism": "register_user_tiled_reductions now declines when len(non_grid_tiles)!=1 (welford has 2: Welford pass + normalize pass). Working T2 kernels (softmax/kl_div/jsd) have exactly 1 non-grid tile. General, keyed on WORKLOAD structure (# of non-grid user tiles), NOT kernel identity. Same decline pattern as jagged_softmax (dynamic-size) / longsum_manual. welford falls back to its CORRECT un-seeded default (G=0.53).",
       "what_welford_needs": "(HELPER_REQUEST for future, both welford-shaped -> need >=2 kernels to validate, no held-out coverage now): (1) widen the SECOND N-axis tile (normalize, block 2) to persistent -- the ceiling sweep (welford_ceiling.py) shows M=1/R1=R2=N/w8-16 ties tc G~0.99 at pow2 N; (2) a non-pow2 correctness guard seeding R1 (Welford-combine tile) as a looped DIVISOR chunk instead of next_pow2 (masked R1 breaks the count). Until validated on multiple kernels: DECLINE is the honest choice.",
@@ -287,39 +503,192 @@
       },
       "best_perf_vs_gen_median_ms": {
         "_axis": "best-perf-so-far vs generation index [g0,g1,g2,g3,g4,g5], median of 3 random seeds",
-        "rms_norm_(2048,16384)": {"seeded": [0.1470,0.1293,0.1288,0.1286,0.1277,0.1276], "unseeded": [0.1825,0.1443,0.1332,0.1322,0.1288,0.1288]},
-        "rms_norm_(8192,8192)":  {"seeded": [0.2566,0.2516,0.2516,0.2494,0.2488,0.2487], "unseeded": [0.3352,0.2526,0.2518,0.2514,0.2496,0.2488]},
-        "long_sum_(8,131072)":   {"seeded": [0.0101,0.0100,0.0081,0.0078,0.0077,0.0077], "unseeded": [0.0387,0.0141,0.0106,0.0093,0.0089,0.0089]},
-        "sum_(2048,16384)":      {"seeded": [0.0756,0.0698,0.0692,0.0691,0.0691,0.0678], "unseeded": [0.0762,0.0757,0.0707,0.0695,0.0695,0.0694]}
+        "rms_norm_(2048,16384)": {
+          "seeded": [
+            0.147,
+            0.1293,
+            0.1288,
+            0.1286,
+            0.1277,
+            0.1276
+          ],
+          "unseeded": [
+            0.1825,
+            0.1443,
+            0.1332,
+            0.1322,
+            0.1288,
+            0.1288
+          ]
+        },
+        "rms_norm_(8192,8192)": {
+          "seeded": [
+            0.2566,
+            0.2516,
+            0.2516,
+            0.2494,
+            0.2488,
+            0.2487
+          ],
+          "unseeded": [
+            0.3352,
+            0.2526,
+            0.2518,
+            0.2514,
+            0.2496,
+            0.2488
+          ]
+        },
+        "long_sum_(8,131072)": {
+          "seeded": [
+            0.0101,
+            0.01,
+            0.0081,
+            0.0078,
+            0.0077,
+            0.0077
+          ],
+          "unseeded": [
+            0.0387,
+            0.0141,
+            0.0106,
+            0.0093,
+            0.0089,
+            0.0089
+          ]
+        },
+        "sum_(2048,16384)": {
+          "seeded": [
+            0.0756,
+            0.0698,
+            0.0692,
+            0.0691,
+            0.0691,
+            0.0678
+          ],
+          "unseeded": [
+            0.0762,
+            0.0757,
+            0.0707,
+            0.0695,
+            0.0695,
+            0.0694
+          ]
+        }
       },
       "slice1_same_budget_seeded_advantage": {
         "_metric": "unseeded_ms / seeded_ms (>1 => seeded faster) at budget, median of 3 seeds",
-        "rms_norm_(2048,16384)": {"gen1": 1.116, "gen2": 1.034, "gen5_guardrail": 1.009},
-        "rms_norm_(8192,8192)":  {"gen1": 1.004, "gen2": 1.001, "gen5_guardrail": 1.000},
-        "long_sum_(8,131072)":   {"gen1": 1.409, "gen2": 1.306, "gen5_guardrail": 1.145},
-        "sum_(2048,16384)":      {"gen1": 1.085, "gen2": 1.020, "gen5_guardrail": 1.024},
+        "rms_norm_(2048,16384)": {
+          "gen1": 1.116,
+          "gen2": 1.034,
+          "gen5_guardrail": 1.009
+        },
+        "rms_norm_(8192,8192)": {
+          "gen1": 1.004,
+          "gen2": 1.001,
+          "gen5_guardrail": 1.0
+        },
+        "long_sum_(8,131072)": {
+          "gen1": 1.409,
+          "gen2": 1.306,
+          "gen5_guardrail": 1.145
+        },
+        "sum_(2048,16384)": {
+          "gen1": 1.085,
+          "gen2": 1.02,
+          "gen5_guardrail": 1.024
+        },
         "guardrail": "PASS all 4: seeded >= unseeded at full budget (no regression). Sharpest at small budget as expected."
       },
       "slice2_time_to_target_HEADLINE": {
         "_metric": "wall-clock (s) to first reach 95% of unseeded-full-budget perf; speedup=unseeded_t/seeded_t (>1 => seeded sooner). median[min,max] of 3 seeds.",
-        "rms_norm_(2048,16384)": {"seeded_s": 8.86, "spread": [6.54,13.59], "unseeded_s": 15.76, "uns_spread": [11.51,41.90], "speedup": 1.78},
-        "rms_norm_(8192,8192)":  {"seeded_s": 5.25, "spread": [4.71,9.47],  "unseeded_s": 8.94,  "uns_spread": [7.80,12.85], "speedup": 1.70},
-        "long_sum_(8,131072)":   {"seeded_s": 19.38,"spread": [13.39,32.72],"unseeded_s": 20.18, "uns_spread": [16.29,24.06], "speedup": 1.04, "note": "unseeded reached target 2/3; tiny-M ~10us noise floor"},
-        "sum_(2048,16384)":      {"seeded_s": 9.30, "spread": [6.01,9.62],  "unseeded_s": 14.17, "uns_spread": [6.98,26.59], "speedup": 1.52},
-        "at_98pct_target_speedup": {"rms_norm_(2048,16384)": 2.59, "rms_norm_(8192,8192)": 1.17, "long_sum_(8,131072)": 1.17, "sum_(2048,16384)": 1.52}
+        "rms_norm_(2048,16384)": {
+          "seeded_s": 8.86,
+          "spread": [
+            6.54,
+            13.59
+          ],
+          "unseeded_s": 15.76,
+          "uns_spread": [
+            11.51,
+            41.9
+          ],
+          "speedup": 1.78
+        },
+        "rms_norm_(8192,8192)": {
+          "seeded_s": 5.25,
+          "spread": [
+            4.71,
+            9.47
+          ],
+          "unseeded_s": 8.94,
+          "uns_spread": [
+            7.8,
+            12.85
+          ],
+          "speedup": 1.7
+        },
+        "long_sum_(8,131072)": {
+          "seeded_s": 19.38,
+          "spread": [
+            13.39,
+            32.72
+          ],
+          "unseeded_s": 20.18,
+          "uns_spread": [
+            16.29,
+            24.06
+          ],
+          "speedup": 1.04,
+          "note": "unseeded reached target 2/3; tiny-M ~10us noise floor"
+        },
+        "sum_(2048,16384)": {
+          "seeded_s": 9.3,
+          "spread": [
+            6.01,
+            9.62
+          ],
+          "unseeded_s": 14.17,
+          "uns_spread": [
+            6.98,
+            26.59
+          ],
+          "speedup": 1.52
+        },
+        "at_98pct_target_speedup": {
+          "rms_norm_(2048,16384)": 2.59,
+          "rms_norm_(8192,8192)": 1.17,
+          "long_sum_(8,131072)": 1.17,
+          "sum_(2048,16384)": 1.52
+        }
       },
       "total_full_search_wallclock_median_s": {
         "_caveat": "the SEED makes the FULL 5-gen search LONGER (LFBO explores around the extra good config -> more neighbor configs compiled). Product-B value is TIME-TO-TARGET + early-budget perf, NOT a cheaper full search. The lever: with a seed you can SHRINK the budget (stop at gen1-2) and still land near the full-budget optimum.",
-        "rms_norm_(2048,16384)": {"seeded": 62.3, "unseeded": 35.9},
-        "rms_norm_(8192,8192)":  {"seeded": 55.7, "unseeded": 23.7},
-        "long_sum_(8,131072)":   {"seeded": 43.1, "unseeded": 34.1},
-        "sum_(2048,16384)":      {"seeded": 23.8, "unseeded": 21.5}
+        "rms_norm_(2048,16384)": {
+          "seeded": 62.3,
+          "unseeded": 35.9
+        },
+        "rms_norm_(8192,8192)": {
+          "seeded": 55.7,
+          "unseeded": 23.7
+        },
+        "long_sum_(8,131072)": {
+          "seeded": 43.1,
+          "unseeded": 34.1
+        },
+        "sum_(2048,16384)": {
+          "seeded": 23.8,
+          "unseeded": 21.5
+        }
       },
       "verdict": "Seeding shifts the convergence curve UP-and-LEFT on all 4 shapes. Headline time-to-95% win 1.5-1.8x on 3/4 shapes (rms_norm x2, sum); long_sum ~tie on time-to-target but big gen0 win (3.8x at g0; absolute latencies ~10us noise floor). Full-budget no-regression holds. Achieved with the persistent lever DEGRADED on injection -- a lower bound. Honest: it is NOT a cheaper full search; the win is reaching a good config sooner / being able to shrink the budget.",
       "artifacts": {
         "raw_csvs": "logs/productB/<kernel>_<M>_<N>_<mode>_s<seed>.csv (24)",
         "verification": "logs/productB/*.driver.log",
-        "analysis_txt": ["logs/productB/analysis_t95.txt", "logs/productB/analysis_t98.txt"],
+        "analysis_txt": [
+          "logs/productB/analysis_t95.txt",
+          "logs/productB/analysis_t98.txt"
+        ],
         "results_json": "logs/productB/results.json",
         "driver": "_lab/harness/productB_driver.py",
         "runner": "_lab/harness/productB_run.sh",
@@ -330,38 +699,117 @@
     "run_2026_05_29_POSTFIX": {
       "what": "Product B re-run AFTER the persistent-seed round-trip fix (ReductionLoopSpec._encode_flat_value .default->.high). The injected gen0 seed now carries reduction_loops=[None] (persistent), not [4096] looped. Same protocol/budget as run_2026_05_29: quick effort, HELION_FORCE_AUTOTUNE=1, cold cache per run, seeds {0,1,2}, NOT HELION_SKIP_CACHE. 3 shapes where the persistent lever matters.",
       "env": "H100/sm_90 fp32; GPU3; one autotune run at a time (serial, not parallel).",
-      "shapes": ["rms_norm (2048,16384) rnumel=16384", "rms_norm (8192,8192) rnumel=8192", "long_sum (8,131072) rnumel=131072"],
+      "shapes": [
+        "rms_norm (2048,16384) rnumel=16384",
+        "rms_norm (8192,8192) rnumel=8192",
+        "long_sum (8,131072) rnumel=131072"
+      ],
       "seed_injection_verification": "PROVEN per run: all 9 seeded .driver.log SEED-FLAT-ENCODE lines read 'raw reduction_loops=[None] -> flat-normalized reduction_loops=[None] PRESERVED' (6 at w16 rms_norm, 3 at w32 long_sum). Pre-fix the identical line read DEGRADED(persistent->looped) [4096]. Unseeded n_seeds=0 confirmed. No run FAILED.",
       "gen0_seed_quality_advantage_GREW": {
         "_metric": "gen0 seeded-advantage = unseeded_gen0_best / seeded_gen0_best (median of 3 seeds); the direct measure of the injected seed's perf quality. GREW on all 3 shapes -- the headline effect of the fix (seed now carries persistent, not just num_warps).",
-        "rms_norm_(2048,16384)": {"prefix": 1.241, "postfix": 1.408},
-        "rms_norm_(8192,8192)":  {"prefix": 1.306, "postfix": 1.325},
-        "long_sum_(8,131072)":   {"prefix": 3.829, "postfix": 4.023}
+        "rms_norm_(2048,16384)": {
+          "prefix": 1.241,
+          "postfix": 1.408
+        },
+        "rms_norm_(8192,8192)": {
+          "prefix": 1.306,
+          "postfix": 1.325
+        },
+        "long_sum_(8,131072)": {
+          "prefix": 3.829,
+          "postfix": 4.023
+        }
       },
       "slice1_same_budget_seeded_advantage": {
         "_metric": "unseeded_ms / seeded_ms at budget (>1 => seeded faster), median of 3 seeds.",
-        "rms_norm_(2048,16384)": {"gen1": 1.123, "gen2": 1.035, "gen5_guardrail": 1.020},
-        "rms_norm_(8192,8192)":  {"gen1": 1.005, "gen2": 1.002, "gen5_guardrail": 1.000},
-        "long_sum_(8,131072)":   {"gen1": 1.452, "gen2": 1.202, "gen5_guardrail": 1.008},
+        "rms_norm_(2048,16384)": {
+          "gen1": 1.123,
+          "gen2": 1.035,
+          "gen5_guardrail": 1.02
+        },
+        "rms_norm_(8192,8192)": {
+          "gen1": 1.005,
+          "gen2": 1.002,
+          "gen5_guardrail": 1.0
+        },
+        "long_sum_(8,131072)": {
+          "gen1": 1.452,
+          "gen2": 1.202,
+          "gen5_guardrail": 1.008
+        },
         "guardrail": "PASS all 3: seeded >= unseeded at full budget (no regression)."
       },
       "slice2_time_to_target_HEADLINE": {
         "_metric": "wall-clock (s) to first reach 95% of unseeded-full-budget perf; speedup=unseeded_t/seeded_t. median[min,max] of 3 seeds. COMPARE prefix speedup.",
-        "rms_norm_(2048,16384)": {"seeded_s": 4.53, "spread": [4.50,4.68], "unseeded_s": 8.55, "uns_spread": [7.54,30.15], "speedup_postfix": 1.89, "speedup_prefix": 1.78, "speedup_at_98pct": 2.00},
-        "rms_norm_(8192,8192)":  {"seeded_s": 4.74, "spread": [4.72,4.83], "unseeded_s": 9.15, "uns_spread": [8.53,11.38], "speedup_postfix": 1.93, "speedup_prefix": 1.70, "speedup_at_98pct": 1.93},
-        "long_sum_(8,131072)":   {"seeded_s": 29.19, "spread": [12.56,35.55], "unseeded_s": 13.98, "uns_spread": [12.24,33.59], "speedup_postfix": 0.479, "speedup_prefix": 1.04, "note": "REGRESSED on this metric but it is a NOISE-FLOOR + total-wallclock artifact, NOT a real loss. The 95% target = 0.0081ms (8.1us) sits in the ~7-10us tiny-M (M=8) noise floor where BOTH modes reach target via random LFBO dips; the wallclock-to-target is dominated by total search time. Post-fix the persistent seed makes LFBO compile MANY more neighbors (seeded total wall-clock 17.6-47s vs unseeded 14.6-40s -- the documented 'seeded full search is longer' caveat), so a lucky unseeded run trips the razor-thin 8.1us threshold sooner. Was already a near-tie pre-fix (1.04x). The HONEST long_sum claim is the PERF win (gen0 4.0x, Slice-1 gen1 1.45x), which the fix INCREASED."}
+        "rms_norm_(2048,16384)": {
+          "seeded_s": 4.53,
+          "spread": [
+            4.5,
+            4.68
+          ],
+          "unseeded_s": 8.55,
+          "uns_spread": [
+            7.54,
+            30.15
+          ],
+          "speedup_postfix": 1.89,
+          "speedup_prefix": 1.78,
+          "speedup_at_98pct": 2.0
+        },
+        "rms_norm_(8192,8192)": {
+          "seeded_s": 4.74,
+          "spread": [
+            4.72,
+            4.83
+          ],
+          "unseeded_s": 9.15,
+          "uns_spread": [
+            8.53,
+            11.38
+          ],
+          "speedup_postfix": 1.93,
+          "speedup_prefix": 1.7,
+          "speedup_at_98pct": 1.93
+        },
+        "long_sum_(8,131072)": {
+          "seeded_s": 29.19,
+          "spread": [
+            12.56,
+            35.55
+          ],
+          "unseeded_s": 13.98,
+          "uns_spread": [
+            12.24,
+            33.59
+          ],
+          "speedup_postfix": 0.479,
+          "speedup_prefix": 1.04,
+          "note": "REGRESSED on this metric but it is a NOISE-FLOOR + total-wallclock artifact, NOT a real loss. The 95% target = 0.0081ms (8.1us) sits in the ~7-10us tiny-M (M=8) noise floor where BOTH modes reach target via random LFBO dips; the wallclock-to-target is dominated by total search time. Post-fix the persistent seed makes LFBO compile MANY more neighbors (seeded total wall-clock 17.6-47s vs unseeded 14.6-40s -- the documented 'seeded full search is longer' caveat), so a lucky unseeded run trips the razor-thin 8.1us threshold sooner. Was already a near-tie pre-fix (1.04x). The HONEST long_sum claim is the PERF win (gen0 4.0x, Slice-1 gen1 1.45x), which the fix INCREASED."
+        }
       },
       "total_full_search_wallclock_median_s": {
         "_caveat": "seed still makes the FULL search LONGER (LFBO explores around the better config). The Product-B value is gen0/early-budget PERF + time-to-target on shapes above the noise floor (rms_norm), NOT a cheaper full search.",
-        "rms_norm_(2048,16384)": {"seeded": 19.48, "unseeded": 19.93},
-        "rms_norm_(8192,8192)":  {"seeded": 26.54, "unseeded": 19.57},
-        "long_sum_(8,131072)":   {"seeded": 30.96, "unseeded": 15.43}
+        "rms_norm_(2048,16384)": {
+          "seeded": 19.48,
+          "unseeded": 19.93
+        },
+        "rms_norm_(8192,8192)": {
+          "seeded": 26.54,
+          "unseeded": 19.57
+        },
+        "long_sum_(8,131072)": {
+          "seeded": 30.96,
+          "unseeded": 15.43
+        }
       },
       "verdict": "The fix ENLARGED the win exactly as predicted on the shapes above the noise floor: rms_norm Slice-2 time-to-95% grew 1.78->1.89x (2048,16384) and 1.70->1.93x (8192,8192); gen0 seed-quality advantage grew on ALL 3 shapes (the seed now injects the persistent lever, not just num_warps). long_sum's Slice-2 metric regressed to 0.479x but this is a tiny-M noise-floor/total-wallclock artifact (its PERF lever grew: gen0 4.0x, gen1 1.45x); the metric is unreliable at 7-10us absolute latency. Full-budget guardrail PASSES all 3.",
       "artifacts": {
         "raw_csvs": "logs/productB_postfix/<kernel>_<M>_<N>_<mode>_s<seed>.csv (18)",
         "verification": "logs/productB_postfix/*.driver.log (SEED-FLAT-ENCODE PRESERVED)",
-        "analysis_txt": ["logs/productB_postfix/analysis_t95.txt", "logs/productB_postfix/analysis_t98.txt"],
+        "analysis_txt": [
+          "logs/productB_postfix/analysis_t95.txt",
+          "logs/productB_postfix/analysis_t98.txt"
+        ],
         "roundtrip_proof": "_lab/harness/roundtrip_probe.py",
         "runner": "_lab/harness/productB_postfix_run.sh",
         "new_test": "test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel"
@@ -514,18 +962,35 @@
       "change_vs_v4": "NONE. Adds layer_norm_fwd to the active set. v4's persistent workhorse + rnumel warps ramp handle it directly (same mechanism as rms_norm). num_reduction_ops=2 + num_load=3 are DATA in the ReductionFact, not gated on.",
       "G_layer_norm_seed": 0.989,
       "G_layer_norm_default_baseline": 0.886,
-      "two_runs": [0.9888, 0.9891],
+      "two_runs": [
+        0.9888,
+        0.9891
+      ],
       "per_shape_G_seed": {
-        "(4096,1024)": 0.99, "(4096,2048)": 0.99, "(4096,4096)": 0.98,
-        "(4096,8192)": 0.99, "(4096,12288)": 0.99, "(4096,15872)": 0.99,
-        "(2048,3584)": 0.99, "(2048,8192)": 0.99,
-        "(8192,4096)": 1.00, "(8192,5120)": 0.99, "(8192,7168)": 0.99
+        "(4096,1024)": 0.99,
+        "(4096,2048)": 0.99,
+        "(4096,4096)": 0.98,
+        "(4096,8192)": 0.99,
+        "(4096,12288)": 0.99,
+        "(4096,15872)": 0.99,
+        "(2048,3584)": 0.99,
+        "(2048,8192)": 0.99,
+        "(8192,4096)": 1.0,
+        "(8192,5120)": 0.99,
+        "(8192,7168)": 0.99
       },
       "per_shape_G_default_baseline": {
-        "(4096,1024)": 0.99, "(4096,2048)": 0.99, "(4096,4096)": 0.98,
-        "(4096,8192)": 0.80, "(4096,12288)": 0.79, "(4096,15872)": 0.68,
-        "(2048,3584)": 1.00, "(2048,8192)": 0.85,
-        "(8192,4096)": 0.99, "(8192,5120)": 0.92, "(8192,7168)": 0.81
+        "(4096,1024)": 0.99,
+        "(4096,2048)": 0.99,
+        "(4096,4096)": 0.98,
+        "(4096,8192)": 0.8,
+        "(4096,12288)": 0.79,
+        "(4096,15872)": 0.68,
+        "(2048,3584)": 1.0,
+        "(2048,8192)": 0.85,
+        "(8192,4096)": 0.99,
+        "(8192,5120)": 0.92,
+        "(8192,7168)": 0.81
       },
       "all_shapes_codegen": "persistent (every in-sample rnumel <= 15872 < 2^20 cap); warps ramp w4/w8/w16 (no in-sample shape crosses the w32 breakpoint 16384).",
       "oracle_field_diff": "quick-autotune + fair re-bench of FULL verbatim winner, 6-shape subset: G_seed=1.003 vs G_oracle=1.009 (~0.6%, noise). Oracle KEEPS persistent (reduction_loops=[None]) at the widest rows; where it picks w32 or a looped chunk it is perf-NEUTRAL vs the seed. Only real headroom: (4096,1024) small-N (oracle w2 + looped-256, ~4%) -- same tiny-N regime as rms_norm(32768,256)/sum, an unseeded indexing lever. => num_reduction_ops=2 does NOT shift the warps/stages optimum; no num_reduction_ops branch warranted.",
@@ -539,9 +1004,25 @@
       "what": "Adds T2 (user-tiled / manually-looped) reductions: softmax_two_pass (T2 Band A), kl_div + jsd (T2 Band B). Plumbing in device_ir.py (register_user_tiled_reductions, guarded) + config_spec.py (ReductionFact.num_tiled_accumulators) + triton.py (gate broadened to reduction_facts==1; get_seed_config T1-vs-T2 routing; Band-B R_BLOCK cap).",
       "T1_no_regression": "BYTE-IDENTICAL. layer_norm_no_regression_proof.py 27/27 OK (rms_norm/sum/long_sum) + layer_norm 11/11 OK = 38/38 v4 seeds unchanged. test_reductions.py 24 passed. The gate broadening + guarded T2 populate + new fact field (default 0) are T1-transparent.",
       "branches_added": "ONE: the Band-B R_BLOCK footprint cap (BANDB_R_BLOCK_BYTES=16384 -> 4096 fp32 elems), gated on fact.num_tiled_accumulators>=1. Validated by matched A/B vs persistent (NOT default): best-or-tied at every in-sample Band-B row (narrow: persist/cap 0.995-1.017 no-regression; wide: recovers a 1.2-9.7x persistent SPILL). softmax (num_tiled=0) + all T1 unaffected. ALSO: a dynamic-size guard in register_user_tiled_reductions (declines a None-size jagged reduction axis -- found by test_jagged_softmax regressing).",
-      "per_kernel_G_seed": {"rms_norm_fwd": 0.980, "sum": 0.937, "long_sum": 1.099, "layer_norm_fwd": 0.989, "softmax_two_pass": 0.9672, "kl_div": 1.0293, "jsd": 0.9960},
-      "per_kernel_G_default_baseline": {"softmax_two_pass": 0.4396, "kl_div": 0.3917, "jsd": 0.6653},
-      "decisive_AB": {"softmax_two_pass": "seed/persistent-w32 = 1.50x (seed faster; rnumel ramp avoids tiny-N/large-warps catastrophe)", "kl_div": "seed (R=4096 cap)/best-simple-AB s/AB=0.99-1.41 (ties/beats; without cap full-N persistent 0.787 slower at V>=65536)", "jsd": "seed/best-looped-AB s/AB=0.987-0.999 (ties; without cap full-N persistent SPILLS 0.10/unmeasurable)"},
+      "per_kernel_G_seed": {
+        "rms_norm_fwd": 0.98,
+        "sum": 0.937,
+        "long_sum": 1.099,
+        "layer_norm_fwd": 0.989,
+        "softmax_two_pass": 0.9672,
+        "kl_div": 1.0293,
+        "jsd": 0.996
+      },
+      "per_kernel_G_default_baseline": {
+        "softmax_two_pass": 0.4396,
+        "kl_div": 0.3917,
+        "jsd": 0.6653
+      },
+      "decisive_AB": {
+        "softmax_two_pass": "seed/persistent-w32 = 1.50x (seed faster; rnumel ramp avoids tiny-N/large-warps catastrophe)",
+        "kl_div": "seed (R=4096 cap)/best-simple-AB s/AB=0.99-1.41 (ties/beats; without cap full-N persistent 0.787 slower at V>=65536)",
+        "jsd": "seed/best-looped-AB s/AB=0.987-0.999 (ties; without cap full-N persistent SPILLS 0.10/unmeasurable)"
+      },
       "O_7kernel_geomean": 0.9985,
       "O_note": "O_4kernel was 0.9995; adding softmax (0.967)/kl_div (1.029)/jsd (0.996) -- two high-but-sub-1, one >1 -- nets a small geomean nudge. Honest PER-KERNEL: no kernel regresses (4 T1 byte-identical), 3 new clean wins vs un-seeded default (softmax +120%, kl_div +163%, jsd +50%).",
       "correctness": "softmax maxabs ~1e-8 vs F.softmax; kl_div rel-err<=1.2e-7 vs torch.nn.KLDivLoss(batchmean); jsd loss rel-err 0.0 vs TorchJSDBaseline, dX ~1e-12. All seed-used PASS (T2 codegen: _BLOCK_SIZE_<red>=tl.constexpr(R) with R>=N for persistent rows -> inner loop runs once).",
@@ -553,10 +1034,61 @@
       "what": "Adds cross_entropy (T1, num_load=3) to the seeded active set + classifies welford OUT-OF-SCOPE (declined). ONE new general branch (multi-load persist byte-cap) in triton.py + ONE general decline guard (single non-grid tile) in device_ir.py. No config_spec change (num_load/itemsize already exist).",
       "heuristic_change": "(1) triton.py: MULTILOAD_PERSIST_MAX_BYTES=131072 + a 4-line branch in get_seed_config: if fact.num_load>=2 and fact.size_hint*itemsize>cap: can_persist=False (go looped). (2) device_ir.py register_user_tiled_reductions: decline if len(non_grid_tiles)!=1 (welford has 2). git diff: triton.py 74+/8- (mostly comments; functional = 1 const + 4-line branch), device_ir.py ~20 lines (1 const-free guard + comment).",
       "T1_T2_no_regression": "BYTE-IDENTICAL. ce_inert_proof_7.py = 27/27 existing seeds unchanged (rms_norm/sum/long_sum/layer_norm T1 + softmax/kl_div/jsd T2; long_sum 262144/w32 persistent UNCHANGED -- num_load=1, the multi-load cap does not apply). layer_norm_no_regression_proof.py = 27/27. test_reductions 24 passed; test_examples (welford/jagged/softmax/ce/kl/jsd/ln/rms) 19 passed. The multi-load cap is INERT in-sample (every num_load>=2 kernel <=64 KiB << 128 KiB cap); the decline guard only triggers on >1 non-grid tile (only welford).",
-      "per_kernel_G_seed": {"rms_norm_fwd": 0.980, "sum": 0.937, "long_sum": 1.099, "layer_norm_fwd": 0.989, "softmax_two_pass": 0.967, "kl_div": 1.026, "jsd": 0.997, "cross_entropy": 0.915},
-      "per_kernel_G_default_baseline": {"cross_entropy": 0.600},
-      "cross_entropy_per_shape": {"(4096,4096)": {"codegen": "persist", "w": 8, "g": 0.92}, "(4096,16384)": {"codegen": "persist", "w": 16, "g": 1.00}, "(8192,32768)": {"codegen": "persist", "w": 32, "g": 1.05}, "(16384,32768)": {"codegen": "persist", "w": 32, "g": 1.05}, "(8192,65536)": {"codegen": "looped", "w": 32, "g": 1.00}, "(16384,65536)": {"codegen": "looped", "w": 32, "g": 0.99}, "(8192,131072)": {"codegen": "looped", "w": 32, "g": 0.54, "note": "kernel-source gap vs tc online softmax, not config headroom; best CORRECT Helion looped 3485us vs tc 1928us"}},
-      "decisive_AB": {"cross_entropy": "seed/persistent-w32 = 1.21 geomean (seed FASTER -- correctly loops the wide multi-load rows the v6 cap targets). The crossover A/B (persist_crossover_by_numload.py + ce_crossover_tight.py, matched warps): num_load=1 (sum) P/L~1.0 to 1 MiB (no change); num_load>=2 (rms_norm/layer_norm/cross_entropy) P/L 0.96-1.04 to 256 KiB then 1.6-4x looped-wins from 288 KiB up -- sharp num_load-dependent crossover, holds across M=8 and M=1024.", "welford": "DECLINED. The (pre-guard) single-axis seed G=0.051 (10-20x WORSE than the un-seeded default 0.526) AND wrong at non-pow2 N (err=0.696). Best ACHIEVABLE welford config (welford_ceiling.py: M=1/R1=R2=N/w8-16) ties tc G~0.99 at pow2 N -- but unreachable by the single-axis seed (it cannot widen block 2) and incorrect at non-pow2 N. So decline -> correct default fallback."},
+      "per_kernel_G_seed": {
+        "rms_norm_fwd": 0.98,
+        "sum": 0.937,
+        "long_sum": 1.099,
+        "layer_norm_fwd": 0.989,
+        "softmax_two_pass": 0.967,
+        "kl_div": 1.026,
+        "jsd": 0.997,
+        "cross_entropy": 0.915
+      },
+      "per_kernel_G_default_baseline": {
+        "cross_entropy": 0.6
+      },
+      "cross_entropy_per_shape": {
+        "(4096,4096)": {
+          "codegen": "persist",
+          "w": 8,
+          "g": 0.92
+        },
+        "(4096,16384)": {
+          "codegen": "persist",
+          "w": 16,
+          "g": 1.0
+        },
+        "(8192,32768)": {
+          "codegen": "persist",
+          "w": 32,
+          "g": 1.05
+        },
+        "(16384,32768)": {
+          "codegen": "persist",
+          "w": 32,
+          "g": 1.05
+        },
+        "(8192,65536)": {
+          "codegen": "looped",
+          "w": 32,
+          "g": 1.0
+        },
+        "(16384,65536)": {
+          "codegen": "looped",
+          "w": 32,
+          "g": 0.99
+        },
+        "(8192,131072)": {
+          "codegen": "looped",
+          "w": 32,
+          "g": 0.54,
+          "note": "kernel-source gap vs tc online softmax, not config headroom; best CORRECT Helion looped 3485us vs tc 1928us"
+        }
+      },
+      "decisive_AB": {
+        "cross_entropy": "seed/persistent-w32 = 1.21 geomean (seed FASTER -- correctly loops the wide multi-load rows the v6 cap targets). The crossover A/B (persist_crossover_by_numload.py + ce_crossover_tight.py, matched warps): num_load=1 (sum) P/L~1.0 to 1 MiB (no change); num_load>=2 (rms_norm/layer_norm/cross_entropy) P/L 0.96-1.04 to 256 KiB then 1.6-4x looped-wins from 288 KiB up -- sharp num_load-dependent crossover, holds across M=8 and M=1024.",
+        "welford": "DECLINED. The (pre-guard) single-axis seed G=0.051 (10-20x WORSE than the un-seeded default 0.526) AND wrong at non-pow2 N (err=0.696). Best ACHIEVABLE welford config (welford_ceiling.py: M=1/R1=R2=N/w8-16) ties tc G~0.99 at pow2 N -- but unreachable by the single-axis seed (it cannot widen block 2) and incorrect at non-pow2 N. So decline -> correct default fallback."
+      },
       "O_7kernel_geomean": 0.9982,
       "O_8kernel_geomean": 0.9874,
       "O_note": "O_7kernel UNCHANGED (the 7 are byte-identical). O_8kernel=0.9874: cross_entropy at 0.915 mechanically nudges the geomean down (same effect as sum/layer_norm); held sub-1 only by the (8192,131072) Helion-source gap. Honest PER-KERNEL: NO kernel regresses (7 byte-identical), cross_entropy is a clean +52% vs un-seeded default. welford NOT in the active G set (declined, falls back to correct default).",
@@ -812,9 +1344,9 @@
       "heuristic_version": "v4 triton_reduction_tile (UNCHANGED -- byte-identical, git 0 lines under helion/)",
       "change": "NO heuristic change. Classified layer_norm_fwd as T1 (1 block_size/1 reduction_loop/1 reduction_fact/no matmul; the two reductions mean+var share ONE N rdim so the eligibility gate passes). Confirmed heuristic FIRES (1 seed, triton_reduction_tile; seed used + correct). ReductionFact: num_reduction_ops=2, num_load=3 (with bias)/2 (no bias), num_store=3. Measured G_layer_norm, oracle field-diff, and proved no-regression on the other 3 (byte-identical seeds). Added new harness scripts (classify/measure/oracle/no_regression_proof for layer_norm).",
       "per_kernel_G_seed": {
-        "rms_norm_fwd": 0.980,
+        "rms_norm_fwd": 0.98,
         "sum": 0.937,
-        "long_sum": 1.10,
+        "long_sum": 1.1,
         "layer_norm_fwd": 0.989,
         "note": "rms_norm/sum/long_sum UNCHANGED (byte-identical seeds, 27/27; git 0 lines changed). layer_norm_fwd NEW: 0.989 vs default 0.886 (+11.7%), two runs 0.9888/0.9891."
       },
@@ -837,7 +1369,15 @@
       "heuristic_version": "v5 triton_reduction_tile (T2 plumbing + Band-B branch)",
       "change": "(1) device_ir.register_user_tiled_reductions() -- new, guarded by `if not reduction_facts`, finds the T2 reduction axis via ReductionLowering predicate filtered vs grid_block_ids (load-bearing for jsd), builds ONE ReductionFact; declines on non-unique / non-block-size / dynamic-None-size axes (jagged_softmax guard). Shared _count_reduction_workload() used by T1+T2. (2) config_spec.ReductionFact.num_tiled_accumulators (count of [M,R] 2D accumulators carried across the inner loop; default 0). (3) triton._triton_reduction_eligible broadened to reduction_facts==1 and not matmul_facts. (4) get_seed_config T1-vs-T2 routing (shared persistent+ramp lever; T2 sets block_sizes[red_idx]=R_BLOCK, others at floor, no reduction_loops). (5) Band-B branch: cap R_BLOCK at BANDB_R_BLOCK_BYTES//itemsize when num_tiled_accumulators>=1.",
       "T1_no_regression": "BYTE-IDENTICAL 38/38 (rms_norm 13 + sum 9 + long_sum 5 = 27/27 via layer_norm_no_regression_proof.py; layer_norm 11/11 separate). test_reductions 24 passed; test_jagged_softmax passes (was a regression -> fixed by the dynamic-size guard).",
-      "per_kernel_G_seed": {"rms_norm_fwd": 0.980, "sum": 0.937, "long_sum": 1.099, "layer_norm_fwd": 0.989, "softmax_two_pass": 0.9672, "kl_div": 1.0293, "jsd": 0.9960},
+      "per_kernel_G_seed": {
+        "rms_norm_fwd": 0.98,
+        "sum": 0.937,
+        "long_sum": 1.099,
+        "layer_norm_fwd": 0.989,
+        "softmax_two_pass": 0.9672,
+        "kl_div": 1.0293,
+        "jsd": 0.996
+      },
       "O_4kernel": 0.9995,
       "O_7kernel": 0.9985,
       "verdict": "WORKER-PROPOSED champion v5. T1 byte-identical (no-regression sacred gate PASSED). 3 new T2 kernels, all correct (loss kernels rel-err<=1.2e-7). ONE new branch (Band-B R_BLOCK cap, gated on num_tiled_accumulators -- a WORKLOAD live-state property, not kernel identity) VALIDATED by matched A/B vs persistent (best-or-tied every Band-B row; recovers a 1.2-9.7x persistent spill on jsd/kl_div wide rows; softmax+T1 unaffected). softmax/kl_div/jsd = +120%/+163%/+50% vs un-seeded default. Awaiting referee + auditor."
@@ -848,29 +1388,53 @@
       "heuristic_version": "v6 triton_reduction_tile (multi-load persist byte-cap + welford decline guard)",
       "change": "(1) cross_entropy is T1 (1 block_size/1 reduction_loop/1 reduction_fact; whole-row amax+sum over V; num_load=3, num_reduction_ops=2). It FIRES but exposed that 'persistent to the 2^20 structural cap' (validated only on num_load=1) is WRONG for num_load>=2 at large rnumel: a matched-WARPS persist-vs-loop A/B across num_load shows num_load=1 ties to 1 MiB but num_load>=2 LOSES 1.6-4x above ~256 KiB (sharp crossover at 256->288 KiB, holds across M). NEW BRANCH (triton.py): MULTILOAD_PERSIST_MAX_BYTES=128 KiB -- if num_load>=2 and rnumel*itemsize>cap -> looped. Keyed on num_load+bytes (workload), not kernel id. INERT in-sample for all 7 (<=64 KiB). (2) welford is T2 but OUT-OF-SCOPE: it has TWO tile_n loops over N (Welford pass + normalize pass); the single-axis seed floors the second to width 1 (G=0.05, 10-20x worse than default) AND is numerically wrong at non-pow2 N (masked Welford count). NEW DECLINE GUARD (device_ir.py): register_user_tiled_reductions declines if >1 non-grid tile. welford falls back to its correct un-seeded default.",
       "T1_T2_no_regression": "BYTE-IDENTICAL 27/27 (ce_inert_proof_7.py: rms_norm/sum/long_sum/layer_norm T1 + softmax/kl_div/jsd T2 all unchanged; long_sum 262144/w32 persistent UNCHANGED). test_reductions 24 passed; test_examples 19 passed (incl welford/jagged).",
-      "per_kernel_G_seed": {"rms_norm_fwd": 0.980, "sum": 0.937, "long_sum": 1.099, "layer_norm_fwd": 0.989, "softmax_two_pass": 0.967, "kl_div": 1.026, "jsd": 0.997, "cross_entropy": 0.915},
+      "per_kernel_G_seed": {
+        "rms_norm_fwd": 0.98,
+        "sum": 0.937,
+        "long_sum": 1.099,
+        "layer_norm_fwd": 0.989,
+        "softmax_two_pass": 0.967,
+        "kl_div": 1.026,
+        "jsd": 0.997,
+        "cross_entropy": 0.915
+      },
       "O_7kernel": 0.9982,
       "O_8kernel": 0.9874,
       "verdict": "WORKER-PROPOSED champion v6. cross_entropy +52% vs un-seeded default (G=0.915; the only sub-0.9 shape (8192,131072) G=0.54 is a Helion-source gap vs tc's online softmax, not config headroom). welford honestly OUT-OF-SCOPE (declined, correct default fallback; forcing a seed would be a kernel-id hack AND numerically wrong at non-pow2 N). ONE new general branch (multi-load persist cap, num_load A/B-validated) + ONE general decline guard (single non-grid tile). No kernel regresses (7 byte-identical). Awaiting referee + auditor."
     }
   ],
   "champion": {
-    "heuristic_version": "v6 triton_reduction_tile (WORKER-PROPOSED 2026-05-29; T1+T2, Bands A+B+C-decline; multi-load persist cap). PRIOR ACCEPTED champion = v5 (commit 63142bde).",
+    "heuristic_version": "v6 triton_reduction_tile (ACCEPTED 2026-05-29; commit 54ac64e3; both gates PASS; T1+T2, Bands A+B+C-decline; multi-load persist cap). Forward curriculum COMPLETE.",
     "O": 0.9874,
     "O_note": "O over the 8-kernel SEEDED active set {rms_norm_fwd, sum, long_sum, layer_norm_fwd, cross_entropy, softmax_two_pass, kl_div, jsd}. O_7kernel (the prior 7) UNCHANGED at 0.9982 (byte-identical). cross_entropy at 0.915 mechanically dilutes the 8-kernel geomean (held sub-1 only by the (8192,131072) Helion-source gap vs tc online softmax). Per-kernel: NO regression (7 byte-identical), cross_entropy +52% vs un-seeded default. welford classified OUT-OF-SCOPE (declined, not seeded -> not in the active G set; correct default fallback).",
-    "active_kernels": ["rms_norm_fwd", "sum", "long_sum", "layer_norm_fwd", "cross_entropy", "softmax_two_pass", "kl_div", "jsd"],
-    "out_of_scope_kernels": ["welford (T2 multi-tiled-pass; declined; correct default fallback)"],
+    "active_kernels": [
+      "rms_norm_fwd",
+      "sum",
+      "long_sum",
+      "layer_norm_fwd",
+      "cross_entropy",
+      "softmax_two_pass",
+      "kl_div",
+      "jsd"
+    ],
+    "out_of_scope_kernels": [
+      "welford (T2 multi-tiled-pass; declined; correct default fallback)"
+    ],
     "per_kernel_G": {
-      "rms_norm_fwd": 0.980,
+      "rms_norm_fwd": 0.98,
       "sum": 0.937,
-      "long_sum": 1.10,
+      "long_sum": 1.1,
       "layer_norm_fwd": 0.989,
       "cross_entropy": 0.915,
       "softmax_two_pass": 0.967,
       "kl_div": 1.026,
       "jsd": 0.997
     },
-    "v6_change_note": "v6 (WORKER-PROPOSED) adds cross_entropy + the multi-load persist byte-cap (num_load>=2 AND rnumel*itemsize>128 KiB -> looped; INERT in-sample for all 7, 27/27 byte-identical) and the welford decline guard (>1 non-grid tile -> no fact). See product_A_measurements.v6_cross_entropy_welford + iteration_history iter=8 + kernels.{cross_entropy,welford}. Awaiting referee + auditor.",
+    "v6_change_note": "v6 adds cross_entropy + the multi-load persist byte-cap (num_load>=2 AND rnumel*itemsize>128 KiB -> looped) and the welford decline guard (>1 non-grid tile -> no fact). See product_A_measurements.v6_cross_entropy_welford + iteration_history iter=8 + kernels.{cross_entropy,welford}.",
+    "v6_gate_verdicts": {
+      "results_referee": "ACCEPT. cross_entropy G=0.918/0.912 (worker 0.915) vs default 0.600 (+52%); seed/p32=1.20. O_8kernel=0.9875, O_7kernel=0.9983. 7 kernels 27/27 byte-identical (identical sha256). welford declines (0 seeds, reduction_facts=0) + correct default. cross_entropy correct (maxabs<=9.5e-7) + seed used (codegen persistent<=128KiB, looped above). (8192,131072) G=0.54 confirmed genuine Helion-source gap (Helion-best 3486us loses to tc 1931us).",
+      "adversarial_auditor": "PASS. Multi-load cap is REAL num_load physics (matched warps: nl=1 P/L~1.0 no fence; nl>=2 looped wins at large rnumel even at equal warps -- NOT the v3 confound). SUPERSEDES v4 (not regresses): on v4-recovered OOS shapes v6 looped/w32 is 2.3-2.5x FASTER than v4 persistent/w32. NOT a cross_entropy fence (helps rms_norm 2.96x / layer_norm 1.47x / CE held-out alike). 128KiB conservative-but-harmless (no in-sample shape in the (128,224]KiB band). welford decline general structural (verified seed breaks it 166-238x + numerically wrong non-pow2). cross_entropy honest (bit-exact). 7 byte-identical (kl_div/jsd cap fires but Band-B R_BLOCK cap dominates -> same seed). NON-BLOCKING: raising cap to ~192-256KiB optional polish (recovers a few OOS mid-V shapes; no in-sample effect)."
+    },
     "v5_gate_verdicts": {
       "results_referee": "ACCEPT. T1 38/38 byte-identical (cross-commit seed dump). softmax 0.968/kl_div 1.026/jsd 0.997 reproduced; O_7kernel=0.9982. Correctness honest (kl_div bit-identical to torch KLDivLoss; softmax maxabs 6e-8). Caught+re-ran 2 GPU-co-tenant shapes via spread-tracking.",
       "adversarial_auditor": "PASS. Band-B branch is GENERALIZABLE PHYSICS not a fence: num_tiled_accumulators from generic IR; softmax_two_pass=0 is the smoking-gun control (T2 kernel correctly NOT capped). 16KiB cap near-optimal plateau; generalizes held-out (jsd full-N 19-28x worse OOS). T1 byte-identical (only longsum_manual newly seeds = intended T2 admission). softmax win = shared warps ramp. Correctness passes 100x tighter tol. Dynamic-size guard correct."
@@ -910,6 +1474,17 @@
       "oos_recovery_proof": "AUDITOR_v4_oos_recovery.py: live v4 emits w32 for ALL held-out large-rnumel rms_norm(nl=2)+layer_norm(nl=3); layer_norm A/B w32/w16: (1,131072)=0.760,(16,131072)=0.641,(16,262144)=0.540. AUDITOR_rmsnorm_largeN_warps.py: rms_norm A/B w32/w16 (1,131072)=0.734,(16,131072)=0.617,(16,262144)=0.616.",
       "rnumel_guard_note": "The tiny-rnumel w32 catastrophe ((32768,256): w16=570us->w32=1174us) is at rnumel=256, already excluded by the >16384 guard -- an rnumel guard, NOT a num_load one.",
       "verdict": "WORKER-PROPOSED. Awaiting focused adversarial-auditor re-check (num_load fence gone, in-sample byte-identical, OOS multi-load w32 recovered)."
+    },
+    "v6_triton_reduction_tile": {
+      "adversarial_auditor": "PASS (with one noted-but-non-blocking nuance). The v6 multi-load persist cap (num_load>=2 AND row_bytes>128KiB -> looped) is REAL generalizable num_load physics, NOT a repeat of the rejected v3 num_load fence and NOT in conflict with the accepted v4 OOS recovery. Independently reproduced on GPU1/fp32.",
+      "A1_matched_warps_physics": "CONFIRMED real, not a num_warps confound. Independent held-warps-EQUAL A/B (AUDITOR_multiload_crossover.py): sum nl=1 control P/L~1.00 at EVERY rnumel 16K..1M (both M=1024 and M=8) -> no fence for nl=1, correct. nl>=2 (rms_norm/cross_entropy) P/L stays >1 at large rnumel even holding warps equal (e.g. rms_norm 512KiB M=1024 w16:3.87 w32:2.91; CE 512KiB w16:3.67). The looped win survives equal warps => genuine num_load physics. Unlike v3, this gate FIRES in-sample (cross_entropy) and is true on the physics.",
+      "A2_threshold_sweep": "Cap=128KiB is CONSERVATIVE and slightly-but-harmlessly low. Tight (128,256]KiB sweep (AUDITOR_threshold_tight.py, 3 reps): at M=1024 persistent still WINS for rms_norm (~0.94 P/L) and cross_entropy (~0.95-0.99) up through ~224KiB; layer_norm and ALL grid-starved M=8 cases already prefer looped from ~160-192KiB. So the real crossover is num_load/M/kernel-dependent and SMEARED across 128-256KiB, not the sharp 256->288 the worker comment claims. Capping at 128KiB loops some grid-occupied rms/CE shapes in (128,224]KiB that persistent would win by ~5%. NON-BLOCKING: NO in-sample shape lands in this band (all in-sample nl>=2 have rnumel<=16384=64KiB<<cap); the only affected shapes are hypothetical OOS mid-V. Worst-case cost ~5% on never-seen shapes; benefit is up to 3-4x on the wide rows. A threshold of 192-256KiB would be marginally better but the 128KiB choice is defensible (conservative, errs toward looping which is the safer wide-row default).",
+      "A3_v4_v6_consistency": "v6 SUPERSEDES v4 cleanly -- NO regression of the accepted OOS multi-load recovery. On the EXACT v4-recovery shapes (AUDITOR_v4_vs_v6_consistency.py, reproduced 2x within 2%): v6_looped/w32 vs v4_persist/w32: rms_norm(1,131072) 21.3 vs 50.8 = 2.38x faster; rms_norm(16,262144) 45.6 vs 102.9 = 2.26x; layer_norm(1,131072) 26.3 vs 66.7 = 2.54x; layer_norm(16,262144) 55.8 vs 131.3 = 2.35x. v4 recovered w32 but kept persistent; v6 shows looped/w32 is ~2.3x faster. The prompt-suspected conflict (v6 loops what v4 made persistent) is REFUTED: v6 IMPROVES those exact shapes 2-2.5x.",
+      "A4_fence_check": "NOT a cross_entropy fence -- helps nl>=2 GENERALLY. Held-out rms_norm(4096,131072) 2.96x faster looped; layer_norm(2048,65536) 1.47x; held-out CE(8192,128000) 2.35x, CE(2048,128256) 2.13x. The win spans rms_norm+layer_norm+cross_entropy. Near-128KiB CE (32000 V=125KiB<cap) correctly stays persistent (looped would be ~3% slower there -> cap correctly excludes it).",
+      "A5_welford_decline": "GENERAL structural rule + HONEST out-of-scope. Decline keys on len(non_grid_tiles)!=1: welford has 2 non-grid tiles [reduction pass, normalize pass]; softmax_two_pass/kl_div/jsd have exactly 1 (AUDITOR_welford_breakproof.py). All 7 in-scope + cross_entropy still FIRE; welford declines (reduction_facts=0). Wrongness VERIFIED: forcing the single-axis persistent seed (normalize tile pinned at width 1) = 166-238x SLOWER than the un-seeded default (worse than the worker claimed 10-20x), AND numerically WRONG at non-pow2 N: (4096,1536) forced-seed maxabs_err=6.8e-1 vs default 9.5e-7. welford correctly falls back to its un-seeded default.",
+      "A6_cross_entropy_honesty": "(8192,131072) G~0.54 is a GENUINE kernel-source gap, not skipped headroom. Independent GPU1 reproduction (AUDITOR_ce_sourcegap.py, median-of-7): v6 seed 3575us (G_vs_tc=0.539, matches worker 3576us/0.54). BROAD config sweep (rl in {None,4096..65536} x warps{8,16,32} x stages{1,2,3}) best CORRECT Helion = 3485us (G=0.553) -- matches worker best-correct 3485us; even the absolute best correct config loses to torch.compile 1928us (Helion CE re-reads the row for exp-sum vs tcs online softmax). Correctness: v6 seed maxabs_err=0.0 (bit-exact) vs F.cross_entropy at (8192,131072),(8192,65536),(4096,16384). seed_used: pipeline emits reduction_loops=[16384] and codegen emits for roffset_1 in tl.range(0,131072,_REDUCTION_BLOCK_1) -- looped reduction genuinely used.",
+      "A7_no_regression": "CONFIRMED byte-identical v5(6430b37e)->HEAD for all 7 kernels. Code diff is surgical: only the multi-load cap (triton.py: if num_load>=2 and row_bytes>cap: can_persist=False) + the welford non-grid-tile decline (device_ir.py). nl<2 kernels (sum/long_sum/softmax_two_pass) never touched by the cap. rms_norm/layer_norm in-sample rows <=64KiB<<cap (inert). kl_div/jsd are nl>=2 with in-sample rows>128KiB so cap_would_fire=True, BUT v6 seed == v5 seed byte-for-byte (AUDITOR_kldiv_jsd_inert.py) because the Band-B R_BLOCK cap (->4096) dominates whether can_persist is True or False. So the cap changes ONLY cross_entropy (the new kernel) in-sample.",
+      "verdict": "PASS. The multi-load cap is real, generalizable, num_load-keyed physics (matched-warps verified); does NOT regress (128,256]KiB any IN-SCOPE shape (none exist there) and only ~5% on hypothetical OOS mid-V; does NOT regress the v4 OOS recovery (it IMPROVES those exact shapes 2-2.5x, superseding v4); is NOT a cross_entropy fence (helps rms_norm/layer_norm OOS too); welford decline is a general structural rule with honest+verified out-of-scope; cross_entropy is honest (source gap real, bit-exact, seed used). RECOMMENDATION (non-blocking): consider raising the cap to ~192-256KiB to recover the few grid-occupied mid-V rms/CE shapes, OR keep 128KiB as the conservative wide-row-safe default; either is defensible."
     }
   },
   "logs_index": [
