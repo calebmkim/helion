@@ -49,6 +49,19 @@
 - **Self-fooling caught + corrected** (honest, not cheating): (2048,2048) is a real ~1.4% regression (not a
   tie/artifact); oracle_field_diff.py has a lever-isolation bug. Both corrected in ledger; worker to fix
   notebook + the script next.
-- Next: WORKER invocation 2 -- (a) corrections, (b) raise PERSIST_MAX by synthetic-crossover evidence +
-  strengthen looped branch (rms_norm G unchanged), (c) WIDEN to sum + long_sum (T1 Band A; long_sum
-  exercises the looped branch) -> recompute O over active kernels. All GPUs idle (bg autotune finished).
+- **Worker invocation 2 -> v2 PROPOSED, then MECHANISM REJECTED (split gate, auditor wins).** v2:
+  corrections + PERSIST_MAX 64->256KiB + looped warps32 + grid-occupancy branch; widened to sum (wash,
+  root-caused to num_load=1) + long_sum (claimed 3.3x win). Commits 700e2bdc/47ae968f/f5a91837/91acb0b2.
+- **Gates (parallel, GPUs 2/1):** results-referee ACCEPT (long_sum G~1.03 reproduces, no regressions,
+  correctness honest) BUT adversarial-auditor **FAIL on mechanism**: the long_sum win is ENTIRELY from
+  num_warps=32, not the looped/grid-occupancy branches. Controlled A/B (warps held EQUAL) shows
+  **persistent/w32 beats the shipped looped/w32 on 8/9 long_sum shapes** (up to 2.65x on held-out). The
+  grid-occupancy branch premise was a CONFOUND (worker A/B'd persistent/w16 vs looped/w32) and effectively
+  fences long_sum. Both worker+referee only compared vs the catastrophic DEFAULT strawman.
+- **Decision: REJECT v2 mechanism** (the safety gate working as designed). Champion stays v1-mechanism.
+  SALVAGE for v3: corrections, PERSIST_MAX raise direction, num_warps=32 (move to persistent path), kernel
+  widening. KEY METHODOLOGY LESSON for worker: A/B every branch vs the best SIMPLE alternative
+  (persistent/w32), never vs the default strawman.
+- Next: WORKER invocation 3 (v3) -- seed persistent+warps32 for tiny-M huge-row; looped ONLY for >~1MiB
+  rows (re-derive crossover holding warps equal); delete/re-key grid-occupancy branch; extend num_warps
+  ramp to 32 in persistent path; re-measure long_sum/sum/rms_norm vs persistent/w32 baseline. Then gate.
