@@ -144,6 +144,12 @@ class TritonReductionHeuristic(AutotunerHeuristic):
       looped chunk. The threshold is in BYTES (via ``itemsize``) so it
       generalizes across dtypes — see the constant.
 
+    A second lever is **grid occupancy** (M-extent = #rows = grid size): a
+    persistent reduction runs one pass per program, so with very few programs
+    (grid ≪ SM count) the GPU is under-filled and the looped+high-warps recipe
+    wins even for rows under the byte ceiling (see ``GRID_OCCUPANCY_MIN`` — the
+    long_sum tiny-M / huge-rnumel regime).
+
     ``num_warps`` scales with the reduction extent: more independent lane work
     ⇒ more warps amortize the cross-lane reduction tree and keep the SMs fed.
     """
@@ -190,6 +196,26 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # few programs ⇒ each must extract max ILP/parallelism over the long row.
     # The persistent branch keeps the lower rnumel-scaled warps (_num_warps).
     LOOPED_NUM_WARPS = 32
+    # Grid-occupancy override (the second branch lever, on M-EXTENT = #rows =
+    # grid size, since the M-block is ~1 row/program). A persistent reduction
+    # runs ONE pass per program; with very few programs the GPU's SMs sit idle
+    # and the single pass can't hide memory latency. EVIDENCE
+    # (_lab/harness/grid_occupancy_probe.py — sum_kernel, persistent/warps16 vs
+    # looped(16384)/warps32, sweeping the grid size M at rnumel 32768 & 65536,
+    # both UNDER the 256 KiB persistent ceiling):
+    #   M(grid):  1     2     4     8     16    32  | 64    128   256   1024
+    #   pers/loop 1.17  1.20  1.19  1.14  1.05  1.10|0.98  1.00  1.00  1.01
+    # i.e. for a grid well below the H100's ~132 SMs (M ≲ 32) the looped+warps32
+    # recipe beats persistent by 5–21%; at M ≳ 64 they wash (grid fills the SMs).
+    # So when the grid is starved we use the looped recipe even for rows under
+    # the byte ceiling — provided the row is big enough that looping is
+    # meaningful (>= LOOPED_MIN_BYTES; never loop a tiny row just because M is
+    # small). This is the long_sum (tiny-M, huge-rnumel) regime; it does NOT
+    # touch rms_norm/sum (their M-extent is >= 2048). Threshold ~= SMs/2.
+    GRID_OCCUPANCY_MIN = 64
+    LOOPED_MIN_BYTES = 131072  # 128 KiB; 32768 fp32 elems (the smallest row
+    # where the grid-starved looped win was observed; below this a persistent
+    # pass is cheap enough that looping just adds overhead).
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
     @classmethod
@@ -215,6 +241,23 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         return 16
 
     @classmethod
+    def _m_extent(cls, env: CompileEnvironment, fact: ReductionFact) -> int:
+        """Total non-reduction (row) extent = the M-axis grid size.
+
+        Product of the kept (non-reduction) tile size_hints. With the M-block at
+        its floor (~1 row/program) this is the number of programs launched along
+        the row axis, i.e. how much of the GPU the kernel fills. Used to detect
+        a grid-starved launch (few rows) where the looped+high-warps recipe wins
+        over a one-pass persistent reduction (see GRID_OCCUPANCY_MIN).
+        """
+        spec = env.config_spec
+        extent = 1
+        for mid in fact.m_block_ids:
+            bs = spec.block_sizes.block_id_lookup(mid)
+            extent *= bs.size_hint
+        return extent
+
+    @classmethod
     def _m_block_size(cls, env: CompileEnvironment) -> int:
         """M-axis (non-reduction) block size = the autotuner's floor.
 
@@ -235,17 +278,27 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         spec = env.config_spec
         fact = spec.reduction_facts[0]
         rnumel_bytes = fact.size_hint * fact.itemsize
-        if rnumel_bytes <= cls.PERSIST_MAX_BYTES:
+        m_extent = cls._m_extent(env, fact)
+        # Grid-starved iff few rows (programs) AND the row is big enough that a
+        # looped multi-warp pass pays off (see GRID_OCCUPANCY_MIN / LOOPED_MIN_
+        # BYTES). In that case the looped+high-warps recipe beats a one-pass
+        # persistent reduction even under the byte ceiling.
+        grid_starved = (
+            m_extent < cls.GRID_OCCUPANCY_MIN
+            and rnumel_bytes >= cls.LOOPED_MIN_BYTES
+        )
+        if rnumel_bytes <= cls.PERSIST_MAX_BYTES and not grid_starved:
             # Persistent (single-pass) reduction. normalize() realizes None as
             # the full power-of-2 extent at codegen (no `for roffset` loop).
             # num_warps scales with the (bounded) reduction extent.
             reduction_loops: list[int | None] = [None]
             num_warps = cls._num_warps(fact)
         else:
-            # Looped reduction over a fixed R_BLOCK chunk. The row is too large
-            # for a single persistent pass; loop over LOOPED_CHUNK-element
-            # chunks. Here the row is huge, so use the high looped warp count
-            # (see LOOPED_NUM_WARPS) rather than the persistent rnumel ramp.
+            # Looped reduction over a fixed R_BLOCK chunk. Either the row is too
+            # large for a single persistent pass (rnumel_bytes > ceiling), or the
+            # grid is starved (few programs) so a looped multi-warp pass extracts
+            # more parallelism per program. Use the high looped warp count (see
+            # LOOPED_NUM_WARPS) rather than the persistent rnumel ramp.
             reduction_loops = [cls.LOOPED_CHUNK]
             num_warps = cls.LOOPED_NUM_WARPS
         seed: dict[str, Any] = {
