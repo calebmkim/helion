@@ -151,16 +151,45 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     name = "triton_reduction_tile"
     backend = "triton"
 
-    # Persistent-reduction ceiling for a single fp32 contiguous row, in
-    # ELEMENTS. Above this the row no longer fits a single-pass persistent
-    # reduction comfortably and a looped chunk wins. Starting value 16384 (=
-    # 64 KiB at fp32) — chosen so the rms_norm in-sample range (rnumel up to
-    # 16384) stays persistent, matching what tc/Helion-max do. This is the
-    # primary lever to A/B against the oracle field-diff; expressed in BYTES
-    # via itemsize so it generalizes across dtypes (NOT hardcoded to fp32).
-    PERSIST_MAX_BYTES = 65536
+    # Persistent-reduction ceiling for a contiguous row, in BYTES (NOT
+    # hardcoded to fp32 — multiplied by the ReductionFact's itemsize so it
+    # generalizes to bf16/fp16). Below it we keep the reduction single-pass
+    # (persistent); above it a looped chunk wins.
+    #
+    # EVIDENCE (synthetic persistent-vs-looped crossover sweep on H100/fp32,
+    # rms_norm_fwd, best-persistent vs best-looped over warps/stages, median
+    # do_bench — _lab/harness/crossover_sweep.py):
+    #   rnumel(elem) | KiB | M=8 pers/loop | M=1024 | M=4096   (>1 ⇒ looped wins)
+    #     16384      |  64 |    0.95 pers  |  0.98  |  0.98
+    #     32768      | 128 |    0.97 pers  |  0.80  |  0.78
+    #     49152      | 192 |    0.96 pers  |  0.76  |  0.74
+    #     65536      | 256 |    1.06 LOOP  |  0.86  |  0.87   ← occupied still persist
+    #     98304      | 384 |    2.15 LOOP  |  2.94  |  3.07   ← looped wins big
+    #    131072      | 512 |    3.10 LOOP  |  3.45  |  3.67
+    #    262144      |1024 |    2.93 LOOP  |  3.60  |  3.68
+    # So persistent keeps winning to ~256 KiB/row for grid-OCCUPIED shapes
+    # (M≥1024) and to ~192 KiB for grid-starved tiny-M; the crossover is
+    # ~64–256 KiB, grid-occupancy-modulated. We pick the OCCUPIED crossover
+    # (256 KiB = 65536 fp32 elems): rnumel ≤ that → persistent (right for the
+    # common case; tiny-M loses only ~6% exactly at 65536); rnumel > that →
+    # looped (where looped wins 2–3.7×). This is ~4× higher than the prior
+    # 65536-BYTE fence (=16384 elems), which was set at the in-sample max row
+    # and made the looped branch fire ~4× too early.
+    PERSIST_MAX_BYTES = 262144  # 256 KiB; 65536 fp32 elems
     # Looped fallback chunk for rows above the persistent ceiling (power of 2).
-    LOOPED_CHUNK = 4096
+    # EVIDENCE (_lab/harness/looped_chunk_probe.py, looped-winning region): in
+    # the looped regime a LARGER R_BLOCK keeps the reduction efficient — per
+    # chunk best-us at M=8/rnumel=131072: 2048→36.4, 4096→25.1, 8192→23.5,
+    # 16384→22.0; same ordering at M=4/8/16 and M=1024. 16384 beats the old
+    # 4096 by ~15–25%. (Chunk is always < rnumel here since looped only fires
+    # above 65536 elems.)
+    LOOPED_CHUNK = 16384
+    # num_warps for the LOOPED branch (huge rnumel). EVIDENCE: in the looped
+    # region warps=32 dominates for the (tiny-M, huge-rnumel) long_sum regime
+    # (best (w,s) was (32,1) at essentially every looped case in the probe) —
+    # few programs ⇒ each must extract max ILP/parallelism over the long row.
+    # The persistent branch keeps the lower rnumel-scaled warps (_num_warps).
+    LOOPED_NUM_WARPS = 32
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
     @classmethod
@@ -209,13 +238,20 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         if rnumel_bytes <= cls.PERSIST_MAX_BYTES:
             # Persistent (single-pass) reduction. normalize() realizes None as
             # the full power-of-2 extent at codegen (no `for roffset` loop).
+            # num_warps scales with the (bounded) reduction extent.
             reduction_loops: list[int | None] = [None]
+            num_warps = cls._num_warps(fact)
         else:
+            # Looped reduction over a fixed R_BLOCK chunk. The row is too large
+            # for a single persistent pass; loop over LOOPED_CHUNK-element
+            # chunks. Here the row is huge, so use the high looped warp count
+            # (see LOOPED_NUM_WARPS) rather than the persistent rnumel ramp.
             reduction_loops = [cls.LOOPED_CHUNK]
+            num_warps = cls.LOOPED_NUM_WARPS
         seed: dict[str, Any] = {
             "block_sizes": [cls._m_block_size(env)],
             "reduction_loops": reduction_loops,
-            "num_warps": cls._num_warps(fact),
+            "num_warps": num_warps,
             "num_stages": 1,
         }
         return Config(**seed)
