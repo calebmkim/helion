@@ -73,7 +73,7 @@ Observed for rms_norm (all shapes): num_load=2, num_store=2, num_reduction_ops=1
 | shape | codegen | warps | G_seed | G_default(baseline) |
 |---|---|---|---|---|
 | (2048,1024) | persist | 4 | 1.03 | 1.00 |
-| (2048,2048) | persist | 8 | 0.87* | 0.88* |
+| (2048,2048) | persist | 8 | 0.87 | 0.88 |
 | (2048,4096) | persist | 8 | 1.00 | 0.99 |
 | (2048,8192) | persist | 16 | 0.99 | 0.81 |
 | (2048,16384) | persist | 16 | 0.99 | 0.70 |
@@ -87,23 +87,24 @@ Observed for rms_norm (all shapes): num_load=2, num_store=2, num_reduction_ops=1
 | (32768,1024) | persist | 4 | 0.99 | 0.99 |
 | **GEOMEAN** | | | **0.983** | **0.908** |
 
-\* (2048,2048) ANOMALY: in the full 13-shape sweep BOTH seed (~19.8us) and default (~19.6us) read slow
-  → G≈0.87 for both. But an ISOLATED probe of the exact same seed config reads 13.5us → **G=1.32**. So
-  the 0.87 is an in-process MEASUREMENT-CONTEXT artifact (not a property of the config, and not a
-  regression my seed introduces — seed TIES default there). Likely the seed+default+tc kernels for that
-  one shape contend / a dynamo-state interaction. Flagged for the results-referee; true G_rms_norm is
-  likely HIGHER than 0.983 once this is resolved (re-measuring each shape in a fresh process).
+(2048,2048) — REFEREE CORRECTION (was wrongly called a measurement artifact): this is a REAL G≈0.87,
+  NOT an artifact. In a fresh-subprocess-per-shape re-measure it is stable at G_seed≈0.87 — torch.compile
+  is genuinely faster at this medium shape (tc≈17.6us vs both Helion variants ≈20us). The prior worker's
+  "isolated probe reads 13.5us → G=1.32" claim does NOT reproduce (worker error). Worse, the SEED
+  (num_warps=8 here) mildly REGRESSES ≈1.4% vs the un-seeded default (num_warps=4): so at this one shape
+  the heuristic's warps=8 breakpoint is slightly wrong vs warps=4. It is well within the −10% backstop
+  (a real ~1.4% local loss, not a tie/win), but it is a genuine small loss, not an artifact. Open lever:
+  revisit the num_warps breakpoints with a COUPLED warps×block A/B (warps and block are coupled — never
+  A/B warps with block pinned).
 
 ## Tried and rejected (with why it failed)
 - _Gate `M-floor <= 1` (CuTe template's): REJECTED — silently dropped (32768,*) shapes whose autotuner_min
   is 2. Replaced with "accept any floor, seed block at the floor"._
 
 ## Open hypotheses
-- **(2048,2048) measurement artifact** — re-measure each shape in a fresh subprocess (results-referee).
-  If the artifact clears, G_rms_norm rises.
-- **num_warps tuning** — isolated (2048,2048) probe: warps=8 persist best (13.47us) vs warps=2 (13.66)
-  /4 (13.82)/16 (14.08). Small spread; current breakpoints look reasonable but the oracle field-diff
-  will say what max-autotune picks per shape.
+- **(2048,2048) RESOLVED — not an artifact** (referee). Real G≈0.87 (tc genuinely faster), seed warps=8
+  mildly regresses ~1.4% vs default warps=4. The prior "isolated warps=8 best at 13.47us" probe does NOT
+  reproduce and was a worker error. Revisit num_warps breakpoints with a COUPLED warps×block A/B.
 - **LOOPED_CHUNK / num_stages for >PERSIST_MAX rows** — no rms_norm in-sample shape currently exceeds
   16384 elems (all persistent), so the looped branch is UNTESTED on rms_norm. Will matter for long_sum
   (Band A, huge rnumel) and as we widen. Need a shape that triggers it.
@@ -111,21 +112,25 @@ Observed for rms_norm (all shapes): num_load=2, num_store=2, num_reduction_ops=1
   rms_norm rows are <=16384 so we never cross it here. Probe a synthetic wide row (e.g. 32768/65536) to
   find where persistent stops winning, to set this threshold by evidence rather than by the in-sample max.
 
-## Oracle field-diff (answer key) — IMPORTANT caveat about the oracle
-- **(32768,256) full-autotune oracle "best"** (8 generations): `reduction_loops=[None]` (persistent —
-  MATCHES my seed), `block_sizes=[1]` (mine seeds [2] at the autotuner_min floor), **`num_warps=32`**,
-  num_stages 1-3, some tensor_descriptor indexing + eviction tuning. Autotuner-internal do_bench
-  reported 73.6us for that config.
-- **BUT the oracle's num_warps=32 is a measurement ARTIFACT** — re-run in the FAIR end-to-end do_bench:
-  (32768,256) bs=1/warps=32 = **1183us (G=0.029)**, bs=1/warps=16 = 574us — catastrophic. The fair
-  optimum is **low warps**: bs=1/warps=4 = 35.9us (G=0.950) ≈ bs=2/warps=4 = 36.1us (G=0.945, = MY SEED).
-  (32768,1024): warps=4 best (G=1.00-1.005), warps=32 = G=0.70. So the autotuner's own timing disagrees
-  with fair do_bench for tiny-N/large-M shapes (likely L2-residency / launch-overhead sensitivity that the
-  autotuner's repeated-launch timing hides). DO NOT chase oracle num_warps here. → HELPER_REQUEST:
-  harness-integrity should reconcile the autotuner-internal do_bench vs fair do_bench for these shapes.
-- **Field-diff verdict for small-N/large-M:** my seed (persistent, warps=4, block=floor) is at/near the
-  FAIR ceiling. The only real lever the oracle exposes is block=1 vs my block=floor=2 on (32768,256) —
-  worth ~0.5% (35.9 vs 36.1us), within noise. Not worth violating the autotuner_min floor for.
+## Oracle field-diff (answer key) — CORRECTED per harness-integrity
+- **(32768,256) full-autotune VERBATIM winner** (re-parsed from /tmp/autotune_log_32768_256.csv, the
+  real full-autotune CSV): `block_sizes=[4]`, **`reduction_loops=[128]` (LOOPED, not persistent!)**,
+  `num_warps=1`, `num_stages=5`, persistent_interleaved pid, some tensor_descriptor indexing + eviction.
+  Autotuner perf 30.6us. The top-8 are all `block_sizes=[2 or 4]`, `reduction_loops=[128]`, warps 1-2.
+- **CORRECTION (harness-integrity):** the earlier "oracle num_warps=32 is an artifact" story was itself a
+  FIELD-DIFF BUG in our oracle_field_diff.py — it flattened a coupled multi-field winner and re-benched a
+  FABRICATED block=1 config. warps×block are COUPLED; block=1/w32 (1174us) is a config the autotuner NEVER
+  tested (raise_grid_block_minimums floors the M-block at 2 for 32768 rows). The autotuner do_bench is NOT
+  biased (3 timing methods agree <1%). So the FIX: always re-bench the FULL verbatim oracle config (all
+  levers together), never a single isolated lever. (Done — see oracle_field_diff.py guard.)
+- **Field-diff verdict for small-N/large-M (32768,256):** the oracle reaches ~30.6us with
+  block=4 + LOOPED chunk 128 + warps=1; my seed is persistent + block=2(floor) + warps=4 at ~36us. So the
+  oracle exposes a real ~15% headroom here via (a) a larger M-block (more rows/program → better grid
+  occupancy at tiny N) and (b) a small looped chunk + warps=1 (at N=256 a single warp suffices; 1 row
+  doesn't saturate even 4 warps). This is a tiny-N / large-M regime the persistent-warps=4 seed
+  under-serves — a candidate lever once sum/long_sum widen (long_sum is the extreme of this regime).
+- (32768,1024): fair A/B warps: warps=4 best (G=1.00-1.005); high warps hurt (w32=G0.70). Seed warps=4 is
+  fair-optimal there.
 - Medium/large shapes: my seed already hits G≈0.98-0.99 (≈ the G_oracle_ceiling of ~1.0 from step1), so
   the field-diff headroom there is small; deferred a clean quick-effort oracle sweep for the full 13.
 
