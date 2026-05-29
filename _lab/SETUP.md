@@ -59,6 +59,58 @@ CUDA_VISIBLE_DEVICES=2 PYTHONPATH=/home/calebkim/helion-new-heuristics/wt-reduct
 - default_config at (2048,4096): `reduction_loops=[None]` (persistent), `block_sizes=[1]`, num_warps=4, num_stages=1.
 - `rms_norm_pytorch(x, weight, eps)` is the fp32 reference in examples/rms_norm.py.
 
+## tritonbench edit wiring (VERIFIED by measurement-harness-verifier, 2026-05-28)
+**The two editables resolve DIFFERENTLY — proven with sentinels:**
+- `helion` editable = a plain `.pth` (`_editable_impl_helion.pth`) adding the ORIGINAL checkout to
+  `sys.path`. PYTHONPATH=worktree comes earlier in `sys.path`, so **`import helion` AND
+  `import examples.*` resolve to the WORKTREE.** Sentinel in `examples/rms_norm.py:rms_norm_tritonbench`
+  fired from the worktree copy. So the **helion-side wrapper + the kernel under test ARE editable via
+  PYTHONPATH** — no special handling.
+- `tritonbench` editable = a `MetaPathFinder` (`__editable___tritonbench_0_0_1_finder.py`, appended to
+  `sys.meta_path`) whose `MAPPING` is HARDCODED to
+  `/home/calebkim/helion-new-heuristics/local/helion/benchmarks/tritonbench/tritonbench`. The worktree has
+  **no `benchmarks/tritonbench/` dir**, so PYTHONPATH cannot shadow it. Sentinel in the tritonbench
+  rms_norm `operator.py` fired from the **ORIGINAL checkout**, confirming the gotcha.
+- **Net for the rms_norm benchmark path:** the Helion kernel under test runs through the WORKTREE's
+  `examples.rms_norm` (good — that's our code); the tritonbench operator (input gen, eager/torch.compile
+  baselines, accuracy) runs from the ORIGINAL checkout.
+
+**How to make a tritonbench-operator edit take effect (NO `pip install`), in priority order:**
+1. **PRIMARY (proven, simplest):** edit the operator IN the original checkout
+   `/home/calebkim/helion-new-heuristics/local/helion/benchmarks/tritonbench/.../operators/<op>/operator.py`.
+   Pure-Python, picked up immediately (no rebuild). This is where the editable resolves, so the edit runs.
+   Downside: lives outside the worktree's git — fine for third-party benchmark-harness code (e.g. adding
+   the `torch_compile_<op>_default` Product-A baseline variant). **Verify with a one-line sentinel print
+   before trusting any operator edit**, then remove it.
+2. **ALT (in-worktree, version-controlled):** install a targeted `sys.meta_path` finder (insert at index
+   0, before both `PathFinder` and the editable `_EditableFinder`) that redirects only
+   `tritonbench.operators.<op>.operator` to a worktree overlay file. Tested working — BUT the overlay must
+   be a COMPLETE operator module (its `__init__` does `from .operator import Operator`), so the overlay
+   should `from <original module> import *` then add the new variant. More moving parts; use only if the
+   edit must be in worktree git.
+   - A FULL `tritonbench/` package on PYTHONPATH does win over the editable finder (PathFinder@idx3 beats
+     _EditableFinder@idx4), but that shadows ALL of tritonbench (components/kernels/data) — do NOT do a
+     partial full-package overlay. And do NOT vendor under `benchmarks/tritonbench/`: `run.py`'s
+     `check_and_setup_tritonbench()` treats that path as a "local checkout" and may `git clone` over it.
+
+## Bare-seed measurement (VERIFIED; canonical scripts in `_lab/harness/`)
+- `_lab/harness/bare_seed_run.py` — `run_bare_seed(fn, build_args, reference, shape, seed_dict, ...)`:
+  asserts worktree helion; runs `helion.kernel(fn.fn, configs=[seed])` (len==1 short-circuit -> NO
+  autotune); inspects normalized `bound._config`; confirms seed used (persistent-vs-looped + num_warps in
+  generated Triton); correctness vs reference (fp32 tol params, default rtol=1e-3/atol=1e-4); median-of-N
+  `triton.testing.do_bench` + spread. dtype is a param (default fp32, NOT hardcoded). CLI demo = rms_norm
+  (2048,4096) fp32.
+- `_lab/harness/evidence_block.py` — `format_evidence_block(EvidenceFields(...))` emits the FIXED receipt
+  every agent reuses.
+- Mechanism facts proven: (a) no CSV at `HELION_AUTOTUNE_LOG` => no real search; (b) `configs=[seed]` +
+  eager `config_spec.normalize(seed)` makes a structurally-invalid seed RAISE (e.g. `num_warps=7` ->
+  `AssertionError: num_warps must be a power of 2`) instead of being silently dropped; (c) distinct config
+  -> distinct Triton (persistent `reduction_loops=[None]` has NO `for roffset` loop; looped
+  `reduction_loops=[512]` HAS one; num_warps reflected in the launcher call). Note: `config_spec.normalize`
+  does NOT collapse `reduction_loops` value>=size_hint to `None` at the spec level — the
+  persistent-vs-looped choice is realized at CODEGEN, so always inspect the generated Triton, not just the
+  normalized dict.
+
 ## Measurement
 - Trust TritonBench's own latency (do_bench, ~+/-2%) over naive CUDA-event timing (~+/-12% at sub-0.1ms).
   The results-referee measures via TritonBench, not hand timing.
