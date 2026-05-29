@@ -189,3 +189,11 @@
   at ceiling + exhaustively verified. The next workstream (backward kernels, Band D) is EXPLICITLY wip-deferred =
   a scope decision for the human. Durable state (ledger/notebook/FINAL_REPORT/harness) is ready to resume Band-D or any
   scope expansion losslessly. Not stopping on my own judgement; surfacing the converged signal per the manager protocol.
+- **GENERALITY (NEW REDUCTION OP) PASSED — final/strongest dimension.** Frozen v8 seeds max/min (a different
+  accumulator) out-of-the-box: G_seed~1.0, EXACT correctness, op-agnostic levers confirmed (keys on
+  size_hint/num_load/bytes, not the op). helion/ byte-identical. Commit 46ba7059. => Heuristic generalizes across
+  ALL THREE dimensions: shapes (TEST -0.036 ex-welford), structures (softmax T1<->T2 +34%), reduction ops (max/min).
+  No gap. This conclusively validates "general heuristics."
+- **FORWARD TASK EXHAUSTIVELY COMPLETE + AT CEILING + GENERALITY-PROVEN (3 dims).** No in-scope seedable Product-A
+  angle remains; all generality dimensions validated. The only further work is wip-DEFERRED (backward Band D) =
+  a human scope decision. Durable state ready to resume losslessly. Holding at the converged forward milestone.
