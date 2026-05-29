@@ -62,6 +62,17 @@
   SALVAGE for v3: corrections, PERSIST_MAX raise direction, num_warps=32 (move to persistent path), kernel
   widening. KEY METHODOLOGY LESSON for worker: A/B every branch vs the best SIMPLE alternative
   (persistent/w32), never vs the default strawman.
-- Next: WORKER invocation 3 (v3) -- seed persistent+warps32 for tiny-M huge-row; looped ONLY for >~1MiB
-  rows (re-derive crossover holding warps equal); delete/re-key grid-occupancy branch; extend num_warps
-  ramp to 32 in persistent path; re-measure long_sum/sum/rms_norm vs persistent/w32 baseline. Then gate.
+- **Worker invocation 3 -> v3 (honest fix). Gates SPLIT again (auditor wins).** v3 deleted the v2
+  grid-occ + byte-fence branches; persistent workhorse + rnumel-based w32 ramp + structural looped tail
+  (only above the 2^20 compile cap). long_sum 1.018->1.10 (+8%), O=1.005 (>1.0!), no regression, and
+  v3==persistent/w32 (proving v2's branches didn't earn their place). Commit 2d087e78.
+- **Gates (parallel GPUs 2/1):** referee ACCEPT. auditor FAIL on a NEW subtler fence: the `num_load==1`
+  condition on the w32 gate is INERT in-sample (0/27 change), FALSE physics (matched-pair A/B: w32 keyed
+  on rnumel for BOTH num_load), and HARMFUL out-of-sample (rms_norm/layer_norm large-rnumel want w32 but
+  the gate gives w16, -30-40%). A curriculum-split fence dressed as physics.
+- **Decision: REJECT the num_load gate; ACCEPT the rest of v3.** Surgical v4 fix: gate w32 on
+  rnumel>16384 ALONE (byte-identical in-sample so O~1.005 holds; recovers 30-40% on held-out large-rnumel
+  multi-load). LESSON for worker: gate on the DIRECTLY-measured property (rnumel for warps) and TEST the
+  gate where it actually fires (synthetic/OOS large-rnumel multi-load), not just in-sample.
+- Next: WORKER invocation 4 (surgical v4) -> then a FOCUSED auditor re-check (fence gone + no regression
+  + OOS recovered). If PASS, v4 becomes champion (O~1.005 over 3 kernels). Then iter 5 = Product B.
