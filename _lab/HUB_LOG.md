@@ -114,3 +114,23 @@
   reduction_facts==1, knob=block_sizes[red_idx], reuse rnumel/warps logic, Band-B watch for jsd (num_store=2).
 - Next: WORKER widens to T2 (softmax_two_pass, kl_div, jsd) per t2_code_map. Then gate (auditor esp. on the
   gate-broadening no-regression + Band B). Then Band C (welford). All gates green so far; loop healthy.
+
+## 2026-05-29 (endgame)
+- **v5 ACCEPTED** (T1+T2, Bands A+B, 7 kernels, O=0.9982); **layer_norm earlier**; **v6 ACCEPTED**
+  (cross_entropy + multi-load persist cap + welford decline; 8 seeded kernels, O=0.9874; welford out-of-scope).
+  All gates PASS. Forward curriculum (8 seedable) complete.
+- **Product B FULL (8 kernels): median time-to-95% = 1.94x** (cross_entropy 6x, jsd 2.9x, softmax 2.4x);
+  referee ADMITTED. **VALIDATION sweep: generalizes, no overfit** (4/8 kernels beat in-sample OOS; the 2
+  negative gaps = documented source ceilings).
+- **Codegen-knob workstream EXHAUSTED with a verified negative** (consolidation auditor): pid_type=confound
+  (flat wins everywhere); indexing=no matched win; eviction=real +11-23% but AUTOTUNER-ONLY (mutually
+  contradictory per-slot patterns, no seedable rule); M-block=regime-conflict fence. The oracle Gs are REAL
+  (sum oracle 1.75) but the residual is NOT seedable -> it's Product-B territory. **v6 at its true
+  deterministic-seed Product-A ceiling.**
+- **SOFT-CONVERGENCE FLAG (non-blocking, for the human):** the 8-kernel forward Product-A seed has reached
+  its seedable ceiling (O~0.99, generalizes; remaining headroom is autotuner-only). You may consider this
+  milestone "done" for the forward reduction-seed. Still grinding: welford (Band C, its own treatment) is the
+  last untried in-curriculum angle; then the terminal TEST read + generalization report. (Backward Band D is
+  explicitly deferred / out of scope for this run.)
+- Next: welford Band-C attempt (keyed on is_structured_combine, correctness-first; keep out-of-scope if not
+  generalizably+correctly seedable). Then FREEZE + terminal TEST read on the final champion.
