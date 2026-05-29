@@ -12,4 +12,30 @@
 - **Architecture note.** `SendMessage` is unavailable in this harness, so the "persistent worker" is
   implemented as fresh worker invocations driven off the durable `_lab/notebook.md` + `_lab/ledger.json`
   (the wip blesses this as lossless). Hub stays in the loop, spawns all helpers, runs independent gates.
-- Next: spawn measurement-harness-verifier for Step 0b (bare-seed mechanism + tritonbench-edit proof).
+- **Step 0b DONE (measurement-harness-verifier, certified).** Bare-seed mechanism sound. rms_norm_fwd
+  (2048,4096) fp32: persistent (reduction_loops=[None]), num_warps=4, median 0.03498ms, correctness PASS
+  (max_abs 1.9e-6). configs=[seed] -> no autotune (no CSV); invalid seed RAISES; distinct config->distinct
+  Triton (looped [512]/warps8 -> 0.0378ms). Canonical scripts `_lab/harness/{bare_seed_run,evidence_block}.py`.
+  Commit 38bca573.
+  - GOTCHA 1: tritonbench operators resolve to the ORIGINAL checkout (hardcoded meta-path finder); the
+    Helion kernel-under-test runs from worktree. `torch_compile_<op>_default` baseline must be added in the
+    original checkout (or a worktree meta-path overlay). See SETUP.md "tritonbench edit wiring".
+  - GOTCHA 2: normalize() does NOT collapse reduction_loops>=size_hint to None; persistent-vs-looped is a
+    CODEGEN fact. Always inspect generated Triton for the loop, not just the normalized dict.
+- **Spawn-mechanism decision (per human latitude):** hybrid. Direct Agent calls for persistent worker +
+  trust gates; Workflow scripts for parallel non-timing fan-outs (classification/investigation/verification,
+  GPU-partitioned 1/2/3); measurement sweeps = serial scripts on one pinned GPU (parallel GPU timing corrupts
+  do_bench).
+- **Step 1 DONE (harness-integrity, CERTIFIED unbiased).** Hand-rolled standalone harness reconciles with
+  TritonBench to <1% both sides at (4096,8192) fp32 (Helion-default +0.52%, tc-default -0.05%); 1 CUDA
+  kernel/call each (no hidden host-side split). 5-way sanity (x vs eager): Helion-default 2.89/2.78,
+  quick 3.76/3.71, max 3.74/3.72, tc-default 3.75/3.73, tc-max 3.77/3.75 at (4096,8192)/(8192,8192).
+  Ordering as expected; no HALT. KEY: Helion default_config picks a LOOPED reduction and loses ~23-25% to
+  tc-default -> that's the real seed-quality gap (oracle G_rms_norm~=1.0, no-seed baseline G~=0.77).
+  `torch_compile_rms_norm_default` baseline added (orig checkout; patch in _lab/harness/patches/).
+  Report `_lab/harness/step1_harness_integrity.md`; scripts sanity_5way.py, crosscheck_bias.py. Commit bbd89997.
+- **Step 2 map DONE (code-investigator).** Saved to `_lab/step2_code_map.md` (ReductionFact site, populate
+  point, heuristic clone target, registration). reduction_loops: value>=size_hint -> persistent at codegen;
+  Triton max_reduction_threads=None; default_config = persistent for N<=4096, looped chunk 4096 for N>4096.
+- Next: launch persistent WORKER (invocation 1) for Step 2 implement+verify + first bare-seed G_rms_norm
+  vs tc-default. Worker on GPU 2; GPU 3 free for parallel background oracle sweeps.

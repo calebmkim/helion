@@ -3,11 +3,25 @@
     "branch": "reduction-heuristics-autotuner",
     "created": "2026-05-28",
     "objective": "maximize O = geomean_k G_k; G_k = geomean over in-sample shapes of tc_default_lat/seed_lat",
-    "firewall": "hill-climb on IN-SAMPLE only. VALIDATION read at adversarial checkpoints. TEST read ONCE at the very end."
+    "firewall": "hill-climb on IN-SAMPLE only. VALIDATION read at adversarial checkpoints. TEST read ONCE at the very end.",
+    "harness_certified": "step1 harness-integrity: TritonBench unbiased (<1% vs hand-rolled, 1 kernel/call). commit bbd89997.",
+    "gpu": "CUDA_VISIBLE_DEVICES=2 primary; GPU 3 free for parallel oracle sweeps. re-check nvidia-smi."
   },
-  "kernels": {},
+  "kernels": {
+    "rms_norm_fwd": {
+      "track": "T1 (rollable rdim; reduction_loops has 1 entry)",
+      "band": "A (scalar-accumulator inner)",
+      "in_sample_shapes": [[2048,1024],[2048,2048],[2048,4096],[2048,8192],[2048,16384],[4096,1536],[4096,3584],[4096,5120],[4096,7168],[8192,4096],[8192,8192],[32768,256],[32768,1024]],
+      "reference_observations": {
+        "note": "x vs eager speedup from step1 sanity (fp32, GPU2). G = tc_default_lat/seed_lat.",
+        "(4096,8192)": {"helion_default_x": 2.89, "helion_quick_x": 3.76, "helion_max_x": 3.74, "tc_default_x": 3.75, "tc_max_x": 3.77, "G_default": 0.77, "G_oracle_ceiling": 1.0},
+        "(8192,8192)": {"helion_default_x": 2.78, "helion_quick_x": 3.71, "helion_max_x": 3.72, "tc_default_x": 3.73, "tc_max_x": 3.75, "G_default": 0.745, "G_oracle_ceiling": 0.997}
+      },
+      "default_config_behavior": "persistent (reduction_loops=[None]) for size_hint<=4096; looped chunk 4096 for size_hint>4096"
+    }
+  },
   "oracle_cache": {},
   "iteration_history": [],
-  "champion": {"heuristic_version": null, "O": null, "per_kernel_G": {}},
-  "logs_index": []
+  "champion": {"heuristic_version": null, "O": null, "per_kernel_G": {}, "note": "no Triton reduction heuristic registered yet; pre-Step-2 baseline = default_config (no seed)"},
+  "logs_index": ["_lab/harness/step1_harness_integrity.md", "_lab/harness/crosscheck_artifacts (gitignored)"]
 }
