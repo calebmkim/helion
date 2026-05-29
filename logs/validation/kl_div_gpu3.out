@@ -1,0 +1,142 @@
+GPU=3 helion=/home/calebkim/helion-new-heuristics/wt-reduction/helion/__init__.py kernel=kl_div kind=T2 (VALIDATION/out-of-sample fp32)
+
+           shape                  label    codegen   w    seed_us    dflt_us      tc_us  G_seed  G_dflt  used  corr       err
+-----------------------------------------------------------------------------------------------------------------------------
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+   (4096, 32000)                            looped  32      474.6     1866.5      620.0   1.306   0.332  True  True   0.0e+00
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+   (8192, 65536)                            looped  32     1853.4     2982.1     1906.5   1.029   0.639  True  True   6.0e-08
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+  (2048, 128256)                            looped  32      926.5     7226.2      965.3   1.042   0.134  True  True   6.0e-08
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+  (1024, 256000)                            looped  32      926.9    14297.8      965.2   1.041   0.068  True  True   0.0e+00
+-----------------------------------------------------------------------------------------------------------------------------
+GEOMEAN  G_seed=1.0988  G_default=0.2092  (n=4)
+
+===JSON_BEGIN===
+{"kernel": "kl_div", "kind": "T2", "gpu": "3", "rows": [{"shape": [4096, 32000], "label": null, "seed": {"block_sizes": [4096, 1], "num_warps": 32, "num_stages": 1}, "warps": 32, "codegen": "looped", "codegen_detail": "t2_persistent_used=False", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "tc_correct": true, "seed_lat_us": 474.5759963989258, "default_lat_us": 1866.4640188217163, "tc_lat_us": 619.9679970741272, "g_seed": 1.3063618930970662, "g_default": 0.3321617726472477}, {"shape": [8192, 65536], "label": null, "seed": {"block_sizes": [4096, 1], "num_warps": 32, "num_stages": 1}, "warps": 32, "codegen": "looped", "codegen_detail": "t2_persistent_used=False", "seed_used": true, "seed_correct": true, "seed_err": 5.961051798970919e-08, "default_correct": true, "tc_correct": true, "seed_lat_us": 1853.4079790115356, "default_lat_us": 2982.0799827575684, "tc_lat_us": 1906.4960479736328, "g_seed": 1.0286434878684456, "g_default": 0.6393175431232636}, {"shape": [2048, 128256], "label": null, "seed": {"block_sizes": [4096, 1], "num_warps": 32, "num_stages": 1}, "warps": 32, "codegen": "looped", "codegen_detail": "t2_persistent_used=False", "seed_used": true, "seed_correct": true, "seed_err": 5.960813729750892e-08, "default_correct": true, "tc_correct": true, "seed_lat_us": 926.4800250530243, "default_lat_us": 7226.240158081055, "tc_lat_us": 965.2639925479889, "g_seed": 1.0418616337602582, "g_default": 0.13357762424606673}, {"shape": [1024, 256000], "label": null, "seed": {"block_sizes": [4096, 1], "num_warps": 32, "num_stages": 1}, "warps": 32, "codegen": "looped", "codegen_detail": "t2_persistent_used=False", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "tc_correct": true, "seed_lat_us": 926.8800020217896, "default_lat_us": 14297.840118408203, "tc_lat_us": 965.2159810066223, "g_seed": 1.041360239622401, "g_default": 0.06750781747544685}], "summary": {"geomean_g_seed": 1.0988409999470055, "geomean_g_default": 0.20918884086559017, "n_shapes": 4}}
+===JSON_END===

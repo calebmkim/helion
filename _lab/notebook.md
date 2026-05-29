@@ -98,6 +98,51 @@
     the geomean — same effect as adding sum; the honest claim is per-kernel: no kernel regresses, layer_norm
     is a clean +11.7% win). No per-kernel referee-confirmed G regresses >10% (none regress at all).
 
+## VALIDATION (out-of-sample) generalization checkpoint — v6 champion (2026-05-29) — READ-ONLY
+The adversarial health check BEFORE the terminal TEST read. Bare-seed Product-A G (do_bench
+median-of-7, fp32; GPU1+GPU3, GPU2 co-tenant avoided) on the `list_of_kernels.md` "Out-of-sample"
+shapes (M shrunk where noted, N/V kept). TEST shapes NOT touched. Harness:
+`_lab/harness/measure_g_validation.py` (parametrized, reuses each in-sample `measure_g_*.py`
+methodology verbatim). Raw: `logs/validation/{kernel}_{gpu}.out`(+`_rerun.out`),
+`consolidated_validation.json`; welford via `welford_decline_validation.py`.
+
+- **HEADLINE: in-sample geomean O = 0.9874 vs validation geomean = 0.9272 → GAP = -0.060.**
+  **Seed FIRES + is USED + CORRECT on EVERY validation shape (8 kernels, 60 shapes, 0 failures).**
+  welford still DECLINES (0 seeds, reduction_facts=0) + correct default on all OOS shapes.
+
+| kernel | kind | in-samp G | valid G | GAP | verdict |
+|---|---|---|---|---|---|
+| rms_norm | T1 | 0.980 | 0.970 | -0.010 | clean (noise) |
+| layer_norm | T1 | 0.989 | 1.012 | +0.023 | clean (validation BETTER) |
+| softmax | T2 | 0.967 | 1.057 | +0.090 | clean (validation BETTER) |
+| sum | T1 | 0.937 | 0.937 | +0.000 | clean (wash both, num_load=1) |
+| kl_div | T2 | 1.026 | 1.099 | +0.073 | clean (validation BETTER) |
+| jsd | T2 | 0.997 | 1.030 | +0.033 | clean (validation BETTER) |
+| **cross_entropy** | T1 | 0.915 | **0.668** | **-0.247** | FLAG — disclosed source gap, NOT overfit |
+| **long_sum** | T1 | 1.099 | **0.727** | **-0.372** | FLAG — disclosed split-reduction tail, NOT overfit |
+
+- **6/8 kernels match-or-beat in-sample G out-of-sample (4 BEAT it).** The two negative gaps are
+  BOTH concentrated in the extreme-N regimes already documented as kernel-source / tc-split-reduction
+  ceilings (see "Open hypotheses"). Both reproduce on a fresh-GPU re-run (no transient).
+- **cross_entropy 0.668 (run1 0.668 / run2 0.669, 0.2% spread).** Per-shape: narrow V=32000 G~1.0
+  (persistent), V>=128000 all G~0.55 (looped chunk-16384/w32, CORRECT). SAME disclosed gap as
+  in-sample (8192,131072) G=0.54: Helion CE re-reads the wide row for the exp-sum pass while tc
+  fuses an online single-pass softmax. In-sample had only 1/7 shapes in the wide-V regime;
+  validation has 5/7 → geomean drops. Seed USED+CORRECT+beats default everywhere. Kernel-source
+  ceiling (needs online-logsumexp rewrite, out of scope for a config seed), NOT a config error.
+- **long_sum 0.727 (run1 0.743 / run2 0.712, 4.1% spread — tiny-M noise floor 7–30us).** Per-shape:
+  (1,100000) G~1.05, (32,65536) G~1.17 WIN; (1,1048576) G~0.35, (4,262143) G~0.65 lose. The losers
+  are single huge rows where tc uses a multi-stage/split reduction a single Helion kernel can't match
+  (the disclosed looped-tail-vs-tc story). NOTE (1,1048576)=rnumel=2^20 = EXACTLY the persist cap;
+  the looped branch fires for rnumel > cap, so it stays PERSISTENT, compiles, and is correct — the
+  brief's "above the 2^20 cap → looped tail" is off by the boundary (2^20 is AT the cap). Seed
+  USED+CORRECT+beats default 10-20x. Validation over-samples M=1/4 extreme rows → geomean drops.
+- **Generalization verdict: GENERALIZES (no overfit).** No validation shape emitted a wrong config,
+  failed correctness, or failed to fire/use the seed. The -0.060 gap is the seed losing to tc at the
+  two documented source ceilings (over-sampled out-of-sample), not the heuristic mis-picking.
+  HELPER_REQUEST: none warranted — both gaps are kernel-source, not config headroom (no in-sample-
+  justified fix exists; the CE online-softmax + long_sum split-reduction rewrites are source-level).
+
 ## Objective
 - Product A: maximize `O = geomean_k G_k`, `G_k = geomean over kernel k's in-sample shapes of
   (tc_default_latency / seed_latency)`. Accept iff O improves AND gates pass (correctness; seed used;

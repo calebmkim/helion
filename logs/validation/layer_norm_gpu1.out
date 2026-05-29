@@ -1,0 +1,260 @@
+GPU=1 helion=/home/calebkim/helion-new-heuristics/wt-reduction/helion/__init__.py kernel=layer_norm kind=T1 (VALIDATION/out-of-sample fp32)
+
+           shape                  label    codegen   w    seed_us    dflt_us      tc_us  G_seed  G_dflt  used  corr       err
+-----------------------------------------------------------------------------------------------------------------------------
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+      (16, 4096)                        persistent   8        6.4        7.3        5.2   0.820   0.719  True  True   1.4e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+     (128, 4096)                        persistent   8        7.6        7.8        6.6   0.866   0.848  True  True   1.4e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+    (2048, 1023)                        persistent   4       13.6       13.6       13.1   0.958   0.958  True  True   1.9e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+    (2048, 1536)                        persistent   8       16.7       16.9       12.2   0.729   0.720  True  True   1.9e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+    (2048, 2047)                        persistent   8       18.0       17.7       20.2   1.127   1.141  True  True   1.9e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+    (4096, 6144)                        persistent  16       97.5      106.0       95.1   0.975   0.897  True  True   2.9e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+   (1024, 32768)                        persistent  32      130.7      240.8      130.9   1.002   0.544  True  True   2.9e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+   (1024, 36864)                            looped  32      151.8      281.1      213.3   1.405   0.759  True  True   1.9e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+   (8192, 36864)     1152,36864->M=8192     looped  32     1134.7     2182.4     1847.3   1.628   0.846  True  True   2.9e-06
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+     (8192, 256)     262144,256->M=8192 persistent   4       13.3       11.9       11.9   0.899   1.000  True  True   1.9e-06
+-----------------------------------------------------------------------------------------------------------------------------
+GEOMEAN  G_seed=1.0116  G_default=0.8273  (n=10)
+
+===JSON_BEGIN===
+{"kernel": "layer_norm", "kind": "T1", "gpu": "1", "rows": [{"shape": [16, 4096], "label": null, "seed": {"block_sizes": [1], "reduction_loops": [null], "num_warps": 8, "num_stages": 1}, "warps": 8, "codegen": "persistent", "codegen_detail": "want_looped=False got_looped=False", "seed_used": true, "seed_correct": true, "seed_err": 1.430511474609375e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 6.399999838322401, "default_lat_us": 7.296000141650438, "tc_lat_us": 5.247999913990498, "g_seed": 0.8200000072759578, "g_default": 0.7192982198604152}, {"shape": [128, 4096], "label": null, "seed": {"block_sizes": [1], "reduction_loops": [null], "num_warps": 8, "num_stages": 1}, "warps": 8, "codegen": "persistent", "codegen_detail": "want_looped=False got_looped=False", "seed_used": true, "seed_correct": true, "seed_err": 1.430511474609375e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 7.615999784320593, "default_lat_us": 7.7760000713169575, "tc_lat_us": 6.591999903321266, "g_seed": 0.8655462303048534, "g_default": 0.8477366053064905}, {"shape": [2048, 1023], "label": null, "seed": {"block_sizes": [1], "reduction_loops": [null], "num_warps": 4, "num_stages": 1}, "warps": 4, "codegen": "persistent", "codegen_detail": "want_looped=False got_looped=False", "seed_used": true, "seed_correct": true, "seed_err": 1.9073486328125e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 13.632000423967838, "default_lat_us": 13.632000423967838, "tc_lat_us": 13.055999763309956, "g_seed": 0.9577464317236114, "g_default": 0.9577464317236114}, {"shape": [2048, 1536], "label": null, "seed": {"block_sizes": [1], "reduction_loops": [null], "num_warps": 8, "num_stages": 1}, "warps": 8, "codegen": "persistent", "codegen_detail": "want_looped=False got_looped=False", "seed_used": true, "seed_correct": true, "seed_err": 1.9073486328125e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 16.672000288963318, "default_lat_us": 16.896000131964684, "tc_lat_us": 12.160000391304493, "g_seed": 0.7293666135163326, "g_default": 0.7196969872354348}, {"shape": [2048, 2047], "label": null, "seed": {"block_sizes": [1], "reduction_loops": [null], "num_warps": 8, "num_stages": 1}, "warps": 8, "codegen": "persistent", "codegen_detail": "want_looped=False got_looped=False", "seed_used": true, "seed_correct": true, "seed_err": 1.9073486328125e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 17.952000722289085, "default_lat_us": 17.72800087928772, "tc_lat_us": 20.22399939596653, "g_seed": 1.1265596358213459, "g_default": 1.1407941331723972}, {"shape": [4096, 6144], "label": null, "seed": {"block_sizes": [1], "reduction_loops": [null], "num_warps": 16, "num_stages": 1}, "warps": 16, "codegen": "persistent", "codegen_detail": "want_looped=False got_looped=False", "seed_used": true, "seed_correct": true, "seed_err": 2.86102294921875e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 97.53599762916565, "default_lat_us": 106.01600259542465, "tc_lat_us": 95.13600170612335, "g_seed": 0.9753937419888077, "g_default": 0.897373975409908}, {"shape": [1024, 32768], "label": null, "seed": {"block_sizes": [1], "reduction_loops": [null], "num_warps": 32, "num_stages": 1}, "warps": 32, "codegen": "persistent", "codegen_detail": "want_looped=False got_looped=False", "seed_used": true, "seed_correct": true, "seed_err": 2.86102294921875e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 130.72000443935394, "default_lat_us": 240.79999327659607, "tc_lat_us": 130.94399869441986, "g_seed": 1.0017135422847223, "g_default": 0.5437873851765868}, {"shape": [1024, 36864], "label": null, "seed": {"block_sizes": [1], "reduction_loops": [16384], "num_warps": 32, "num_stages": 1}, "warps": 32, "codegen": "looped", "codegen_detail": "want_looped=True got_looped=True", "seed_used": true, "seed_correct": true, "seed_err": 1.9073486328125e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 151.7760008573532, "default_lat_us": 281.1200022697449, "tc_lat_us": 213.28000724315643, "g_seed": 1.4052287979547426, "g_default": 0.7586795870843317}, {"shape": [8192, 36864], "label": "1152,36864->M=8192", "seed": {"block_sizes": [1], "reduction_loops": [16384], "num_warps": 32, "num_stages": 1}, "warps": 32, "codegen": "looped", "codegen_detail": "want_looped=True got_looped=True", "seed_used": true, "seed_correct": true, "seed_err": 2.86102294921875e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 1134.6880197525024, "default_lat_us": 2182.368040084839, "tc_lat_us": 1847.3119735717773, "g_seed": 1.6280351439461853, "g_default": 0.8464713282274623}, {"shape": [8192, 256], "label": "262144,256->M=8192", "seed": {"block_sizes": [1], "reduction_loops": [null], "num_warps": 4, "num_stages": 1}, "warps": 4, "codegen": "persistent", "codegen_detail": "want_looped=False got_looped=False", "seed_used": true, "seed_correct": true, "seed_err": 1.9073486328125e-06, "default_correct": true, "tc_correct": true, "seed_lat_us": 13.279999606311321, "default_lat_us": 11.935999616980553, "tc_lat_us": 11.935999616980553, "g_seed": 0.8987951785260572, "g_default": 1.0}], "summary": {"geomean_g_seed": 1.0115910529290348, "geomean_g_default": 0.8273419924347915, "n_shapes": 10}}
+===JSON_END===

@@ -1,0 +1,1004 @@
+{
+ "meta": {
+  "date": "2026-05-29",
+  "champion": "v6 (commit 54ac64e3)",
+  "kind": "READ-ONLY VALIDATION / out-of-sample generalization checkpoint",
+  "precision": "fp32 (softmax measured fp32 to match in-sample G_softmax)",
+  "method": "bare seed configs=[seed], do_bench median-of-7, GPU1+GPU3 (GPU2 co-tenant avoided)",
+  "tc_baseline": "torch.compile default mode of each fp32 reference"
+ },
+ "in_sample_G": {
+  "rms_norm": 0.98,
+  "layer_norm": 0.989,
+  "softmax": 0.967,
+  "sum": 0.937,
+  "long_sum": 1.099,
+  "cross_entropy": 0.915,
+  "kl_div": 1.026,
+  "jsd": 0.997
+ },
+ "per_kernel": {
+  "rms_norm": {
+   "kind": "T1",
+   "in_sample_G": 0.98,
+   "validation_G": 0.9702,
+   "validation_G_default": 0.8788,
+   "gap": -0.0098,
+   "n_shapes": 10,
+   "flag": null,
+   "rows": [
+    {
+     "shape": [
+      16,
+      4096
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.865,
+     "g_default": 0.786,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 9.5367431640625e-07
+    },
+    {
+     "shape": [
+      128,
+      4096
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.84,
+     "g_default": 0.749,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.430511474609375e-06
+    },
+    {
+     "shape": [
+      2048,
+      1023
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 1.039,
+     "g_default": 1.041,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      2048,
+      2047
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.871,
+     "g_default": 0.888,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      2048,
+      3072
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 1.2,
+     "g_default": 1.153,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      2048,
+      6144
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 16,
+     "g_seed": 1.019,
+     "g_default": 0.873,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.86102294921875e-06
+    },
+    {
+     "shape": [
+      4096,
+      12288
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 16,
+     "g_seed": 0.987,
+     "g_default": 0.714,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.86102294921875e-06
+    },
+    {
+     "shape": [
+      1024,
+      32768
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 1.002,
+     "g_default": 0.68,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      8192,
+      256
+     ],
+     "label": "262144,256->M=8192",
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 0.967,
+     "g_default": 1.016,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      8192,
+      256
+     ],
+     "label": "589824,256->M=8192",
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 0.962,
+     "g_default": 1.016,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.430511474609375e-06
+    }
+   ]
+  },
+  "layer_norm": {
+   "kind": "T1",
+   "in_sample_G": 0.989,
+   "validation_G": 1.0116,
+   "validation_G_default": 0.8273,
+   "gap": 0.0226,
+   "n_shapes": 10,
+   "flag": null,
+   "rows": [
+    {
+     "shape": [
+      16,
+      4096
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.82,
+     "g_default": 0.719,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.430511474609375e-06
+    },
+    {
+     "shape": [
+      128,
+      4096
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.866,
+     "g_default": 0.848,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.430511474609375e-06
+    },
+    {
+     "shape": [
+      2048,
+      1023
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 0.958,
+     "g_default": 0.958,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      2048,
+      1536
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.729,
+     "g_default": 0.72,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      2048,
+      2047
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 1.127,
+     "g_default": 1.141,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      4096,
+      6144
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 16,
+     "g_seed": 0.975,
+     "g_default": 0.897,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.86102294921875e-06
+    },
+    {
+     "shape": [
+      1024,
+      32768
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 1.002,
+     "g_default": 0.544,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.86102294921875e-06
+    },
+    {
+     "shape": [
+      1024,
+      36864
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.405,
+     "g_default": 0.759,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    },
+    {
+     "shape": [
+      8192,
+      36864
+     ],
+     "label": "1152,36864->M=8192",
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.628,
+     "g_default": 0.846,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.86102294921875e-06
+    },
+    {
+     "shape": [
+      8192,
+      256
+     ],
+     "label": "262144,256->M=8192",
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 0.899,
+     "g_default": 1.0,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.9073486328125e-06
+    }
+   ]
+  },
+  "softmax": {
+   "kind": "T2",
+   "in_sample_G": 0.967,
+   "validation_G": 1.0573,
+   "validation_G_default": 0.1245,
+   "gap": 0.0903,
+   "n_shapes": 8,
+   "flag": null,
+   "rows": [
+    {
+     "shape": [
+      16,
+      4096
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 1.078,
+     "g_default": 0.086,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 4.656612873077393e-10
+    },
+    {
+     "shape": [
+      128,
+      4096
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.864,
+     "g_default": 0.053,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.862645149230957e-09
+    },
+    {
+     "shape": [
+      2048,
+      1023
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 1.003,
+     "g_default": 0.227,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 7.450580596923828e-09
+    },
+    {
+     "shape": [
+      2048,
+      2047
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 1.082,
+     "g_default": 0.198,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 3.725290298461914e-09
+    },
+    {
+     "shape": [
+      2048,
+      32768
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 1.052,
+     "g_default": 0.186,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.3283064365386963e-10
+    },
+    {
+     "shape": [
+      512,
+      65536
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.082,
+     "g_default": 0.069,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.3283064365386963e-10
+    },
+    {
+     "shape": [
+      128,
+      131072
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.45,
+     "g_default": 0.027,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.1641532182693481e-10
+    },
+    {
+     "shape": [
+      8192,
+      256
+     ],
+     "label": "262144,256->M=8192",
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 0.936,
+     "g_default": 0.811,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.2351741790771484e-08
+    }
+   ]
+  },
+  "sum": {
+   "kind": "T1",
+   "in_sample_G": 0.937,
+   "validation_G": 0.9373,
+   "validation_G_default": 0.9285,
+   "gap": 0.0003,
+   "n_shapes": 8,
+   "flag": null,
+   "rows": [
+    {
+     "shape": [
+      1,
+      4096
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.93,
+     "g_default": 0.973,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    },
+    {
+     "shape": [
+      16,
+      4096
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.939,
+     "g_default": 0.912,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.52587890625e-05
+    },
+    {
+     "shape": [
+      2048,
+      1023
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 0.963,
+     "g_default": 0.969,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 1.52587890625e-05
+    },
+    {
+     "shape": [
+      2048,
+      2047
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 8,
+     "g_seed": 0.955,
+     "g_default": 0.94,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 2.288818359375e-05
+    },
+    {
+     "shape": [
+      4096,
+      6144
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 16,
+     "g_seed": 0.862,
+     "g_default": 0.858,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 4.9591064453125e-05
+    },
+    {
+     "shape": [
+      1024,
+      32768
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 0.93,
+     "g_default": 0.915,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0001220703125
+    },
+    {
+     "shape": [
+      512,
+      65536
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 0.934,
+     "g_default": 0.911,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.00018310546875
+    },
+    {
+     "shape": [
+      8192,
+      256
+     ],
+     "label": "262144,256->M=8192",
+     "codegen": "persistent",
+     "warps": 4,
+     "g_seed": 0.991,
+     "g_default": 0.955,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 7.62939453125e-06
+    }
+   ]
+  },
+  "long_sum": {
+   "kind": "T1",
+   "in_sample_G": 1.099,
+   "validation_G": 0.7426,
+   "validation_G_default": 0.1218,
+   "gap": -0.3564,
+   "n_shapes": 4,
+   "flag": "REGRESS: validation geomean <0.9 while in-sample was higher",
+   "rows": [
+    {
+     "shape": [
+      1,
+      100000
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 1.099,
+     "g_default": 0.223,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 3.0517578125e-05
+    },
+    {
+     "shape": [
+      1,
+      1048576
+     ],
+     "label": "4MiB-row->looped-tail",
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 0.357,
+     "g_default": 0.047,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 3.0517578125e-05
+    },
+    {
+     "shape": [
+      4,
+      262143
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 0.66,
+     "g_default": 0.041,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.000274658203125
+    },
+    {
+     "shape": [
+      32,
+      65536
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 1.174,
+     "g_default": 0.518,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 9.1552734375e-05
+    }
+   ]
+  },
+  "cross_entropy": {
+   "kind": "T1",
+   "in_sample_G": 0.915,
+   "validation_G": 0.6681,
+   "validation_G_default": 0.536,
+   "gap": -0.2469,
+   "n_shapes": 7,
+   "flag": "REGRESS: validation geomean <0.9 while in-sample was higher",
+   "rows": [
+    {
+     "shape": [
+      2048,
+      32000
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 0.978,
+     "g_default": 0.546,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 9.5367431640625e-07
+    },
+    {
+     "shape": [
+      4096,
+      32000
+     ],
+     "label": null,
+     "codegen": "persistent",
+     "warps": 32,
+     "g_seed": 1.036,
+     "g_default": 0.543,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    },
+    {
+     "shape": [
+      8192,
+      128000
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 0.584,
+     "g_default": 0.524,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 9.5367431640625e-07
+    },
+    {
+     "shape": [
+      2048,
+      128256
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 0.573,
+     "g_default": 0.541,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    },
+    {
+     "shape": [
+      4096,
+      129280
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 0.58,
+     "g_default": 0.526,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 9.5367431640625e-07
+    },
+    {
+     "shape": [
+      2048,
+      151936
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 0.553,
+     "g_default": 0.527,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    },
+    {
+     "shape": [
+      1024,
+      256000
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 0.547,
+     "g_default": 0.545,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    }
+   ]
+  },
+  "kl_div": {
+   "kind": "T2",
+   "in_sample_G": 1.026,
+   "validation_G": 1.0988,
+   "validation_G_default": 0.2092,
+   "gap": 0.0728,
+   "n_shapes": 4,
+   "flag": null,
+   "rows": [
+    {
+     "shape": [
+      4096,
+      32000
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.306,
+     "g_default": 0.332,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    },
+    {
+     "shape": [
+      8192,
+      65536
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.029,
+     "g_default": 0.639,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 5.961051798970919e-08
+    },
+    {
+     "shape": [
+      2048,
+      128256
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.042,
+     "g_default": 0.134,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 5.960813729750892e-08
+    },
+    {
+     "shape": [
+      1024,
+      256000
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.041,
+     "g_default": 0.068,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    }
+   ]
+  },
+  "jsd": {
+   "kind": "T2",
+   "in_sample_G": 0.997,
+   "validation_G": 1.0304,
+   "validation_G_default": 0.2413,
+   "gap": 0.0334,
+   "n_shapes": 4,
+   "flag": null,
+   "rows": [
+    {
+     "shape": [
+      4096,
+      128256
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.021,
+     "g_default": 0.393,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    },
+    {
+     "shape": [
+      4096,
+      129280
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.024,
+     "g_default": 0.394,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    },
+    {
+     "shape": [
+      2048,
+      151936
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.04,
+     "g_default": 0.209,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    },
+    {
+     "shape": [
+      1024,
+      256000
+     ],
+     "label": null,
+     "codegen": "looped",
+     "warps": 32,
+     "g_seed": 1.037,
+     "g_default": 0.105,
+     "seed_used": true,
+     "seed_correct": true,
+     "err": 0.0
+    }
+   ]
+  }
+ },
+ "reruns": {
+  "cross_entropy": {
+   "validation_G": 0.6694,
+   "per_shape": [
+    {
+     "shape": [
+      2048,
+      32000
+     ],
+     "g_seed": 0.986
+    },
+    {
+     "shape": [
+      4096,
+      32000
+     ],
+     "g_seed": 1.036
+    },
+    {
+     "shape": [
+      8192,
+      128000
+     ],
+     "g_seed": 0.586
+    },
+    {
+     "shape": [
+      2048,
+      128256
+     ],
+     "g_seed": 0.573
+    },
+    {
+     "shape": [
+      4096,
+      129280
+     ],
+     "g_seed": 0.58
+    },
+    {
+     "shape": [
+      2048,
+      151936
+     ],
+     "g_seed": 0.553
+    },
+    {
+     "shape": [
+      1024,
+      256000
+     ],
+     "g_seed": 0.547
+    }
+   ]
+  },
+  "long_sum": {
+   "validation_G": 0.7118,
+   "per_shape": [
+    {
+     "shape": [
+      1,
+      100000
+     ],
+     "g_seed": 1.021
+    },
+    {
+     "shape": [
+      1,
+      1048576
+     ],
+     "g_seed": 0.345
+    },
+    {
+     "shape": [
+      4,
+      262143
+     ],
+     "g_seed": 0.63
+    },
+    {
+     "shape": [
+      32,
+      65536
+     ],
+     "g_seed": 1.158
+    }
+   ]
+  }
+ },
+ "geomean_in_sample": 0.9874,
+ "geomean_validation": 0.9272,
+ "geomean_gap": -0.0602,
+ "all_seed_used": true,
+ "all_seed_correct": true,
+ "welford": {
+  "status": "OUT-OF-SCOPE (declined)",
+  "oos_shapes_checked": [
+   "(262144,2560)->M16384",
+   "(262144,3072)->M16384",
+   "(65536,16384)->M8192"
+  ],
+  "reduction_facts": 0,
+  "compiler_seeds": 0,
+  "default_correct": true,
+  "note": "declines (0 seeds) on all OOS shapes; un-seeded default correct maxabs~2-5e-6"
+ },
+ "flagged": {
+  "cross_entropy": {
+   "validation_G": 0.668,
+   "in_sample_G": 0.915,
+   "gap": -0.247,
+   "reproduced": "run1 0.668 / run2 0.669 (0.2% spread)",
+   "root_cause": "disclosed Helion-source gap (CE re-reads wide row for exp-sum vs tc fused online softmax). Validation V are ALL huge (32000-256000): narrow V=32000 G~1.0, V>=128000 all G~0.55. In-sample had only 1/7 in this wide-V regime (G=0.54); validation has 5/7. Seed USED (wide-V correctly looped chunk-16384/w32) + CORRECT + beats default everywhere. NOT overfit, NOT config error -- a kernel-source ceiling.",
+   "is_overfit": false
+  },
+  "long_sum": {
+   "validation_G": 0.727,
+   "in_sample_G": 1.099,
+   "gap": -0.372,
+   "reproduced": "run1 0.743 / run2 0.712 (4.1% spread, tiny-M noise floor 7-30us)",
+   "root_cause": "disclosed single-huge-row-vs-tc tail. (1,1048576)=2^20 cap single 4MiB row G~0.35 (tc uses multi-stage split reduction); (4,262143) single huge row G~0.65. Non-extreme (1,100000) G~1.05, (32,65536) G~1.16 WIN. Seed USED (persistent/w32 at <=cap; note 2^20 IS the cap so stays persistent, compiles+correct) + CORRECT + beats default 10-20x. Validation over-samples M=1/4 extreme rows. NOT overfit -- a kernel/tc-split-reduction ceiling.",
+   "is_overfit": false
+  }
+ }
+}
