@@ -153,3 +153,20 @@
   Genuinely-remaining angles are out-of-scope (backward Band D deferred) or not-seedable (codegen eviction =
   Product-B/autotuner; welford prime-N = kernel-structure). Continuing per never-stop with a GENERALITY
   STRESS-TEST: does frozen v7 seed NEW (non-curriculum) forward reductions well out-of-the-box?
+- **GENERALITY STRESS-TEST PASSED (strong).** Frozen v7 seeds BRAND-NEW kernels well out-of-the-box: simple
+  softmax (T1 whole-row, a different code path) G=0.881 (+34%), softmax_decomposed 0.865 (+34%), both correct;
+  jagged_mean/jagged_softmax correctly DECLINE (dynamic rdim). Only residual = disclosed tiny-M ceiling. NO new
+  gap. helion/ unchanged. Commit 5eb23859. -> Strong evidence the heuristic GENERALIZES to kernels it wasn't built on.
+- **HARNESS-INTEGRITY RE-CERT: still unbiased** (hand-rolled vs TritonBench <1% on rms_norm + cross_entropy;
+  headline G's match ledger; GPU2 had a co-tenant mid-run -> GPU pinning vindicated). Whole result body trustworthy.
+  Commit be8210b3.
+- **CODE REVIEW: APPROVE w/ minor fixes** (design/evidence/generalization/correctness PR-ready; 3 mechanical
+  blockers + 2 cleanups). **PR-READINESS FIXES applied + verified byte-identical (9/9 seeds, sha256 identical):**
+  return-annotation, ruff format, PIE804, dead _m_extent removed, boolean simplified, + a new unit test
+  (TestTritonReductionHeuristic). ruff/pyrefly clean; tests 24/107/46/10 green. Commit d63faba7.
+- **DELIVERABLE COMPLETE + MERGEABLE.** Product A (9 forward kernels, O~0.98, at deterministic-seed ceiling,
+  generalizes to TEST + brand-new kernels) + Product B (1.94x time-to-target). Harness re-certified. Code PR-ready.
+  Final report `_lab/FINAL_REPORT.md`. Adversarial gates caught+rejected 5 cheats/confounds across the run.
+- Next: final comprehensive adversarial audit of the COMPLETE v7 (whole-curriculum overfit/cheat/fence sweep +
+  FINAL_REPORT claim check). Then the forward reduction-seed task is at its honest end (Band D backward = wip-deferred,
+  out of scope; codegen-eviction = autotuner-only; welford prime-N = kernel-structure). Soft-convergence: FORWARD COMPLETE.
