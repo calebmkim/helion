@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "branch": "reduction-heuristics-autotuner",
+    "created": "2026-05-28",
+    "objective": "maximize O = geomean_k G_k; G_k = geomean over in-sample shapes of tc_default_lat/seed_lat",
+    "firewall": "hill-climb on IN-SAMPLE only. VALIDATION read at adversarial checkpoints. TEST read ONCE at the very end."
+  },
+  "kernels": {},
+  "oracle_cache": {},
+  "iteration_history": [],
+  "champion": {"heuristic_version": null, "O": null, "per_kernel_G": {}},
+  "logs_index": []
+}
