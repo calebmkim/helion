@@ -224,6 +224,49 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # they stay persistent to the structural cap. EVIDENCE:
     # _lab/harness/t2_bandb_chunk_sweep.py + t2_bandb_narrow_check.py.
     BANDB_R_BLOCK_BYTES = 16384
+    # Persistent byte ceiling for MULTI-LOAD reductions (num_load >= 2), in BYTES
+    # (per row, via itemsize so it generalizes across dtypes). Above this a
+    # multi-load reduction loops over a fixed chunk instead of staying persistent.
+    #
+    # WHY this is num_load-gated (the cross_entropy widening, 2026-05-29). The
+    # champion's "persistent to the 2**20 structural cap" was validated ONLY on
+    # num_load=1 (sum_kernel, v3_crossover_sweep). A direct persistent-vs-looped
+    # A/B at MATCHED warps across num_load (_lab/harness/persist_crossover_by_numload.py
+    # + ce_crossover_tight.py, H100/fp32) shows the crossover is num_load-DEPENDENT:
+    #
+    #   rnumel(KiB) | sum nl=1 P/L | rms_norm nl=2 P/L | cross_entropy nl=3 P/L
+    #     64 (16K)  |    1.01      |      0.99         |       0.98
+    #    128 (32K)  |    1.00      |      0.96         |       0.98
+    #    256 (64K)  |    1.00      |      0.99         |       1.04 (~tie)
+    #    288 (72K)  |     -        |      2.75         |       1.09
+    #    384 (96K)  |    1.01      |      3.00         |       1.61
+    #    512(128K)  |    1.00      |      2.91         |       3.97
+    #
+    # num_load=1 (sum) ties persistent==looped at EVERY rnumel up to 1 MiB (P/L~1.0
+    # at M=8 AND M=1024) — so the structural-cap policy stays correct for it (no
+    # regression). num_load>=2 (rms_norm, layer_norm, cross_entropy) persistent
+    # wins/ties only up to ~256 KiB then LOSES decisively (looped 1.6-4x faster) —
+    # a multi-load reduction re-streams the wide row on each load pass, and a
+    # persistent kernel that holds the whole row resident spills, while a looped
+    # chunk streams. The crossover is SHARP at 256->288 KiB and holds at both
+    # grid-occupied (M=1024) and grid-starved (M=8). Cap at 256 KiB: persistent at
+    # the boundary (256 KiB) is still a tie/win, looped only from 288 KiB up.
+    #
+    # CAP = 128 KiB. The crossover region (rnumel 32768->65536, i.e. 128->256 KiB
+    # fp32) is where persistent flips from win/tie to loss for num_load>=2:
+    #   - 32768 (128 KiB): nl=2 P/L=0.96, nl=3 P/L=0.98  -> persistent wins (keep)
+    #   - 65536 (256 KiB): nl=2 P/L=0.99 (tie), nl=3 looped ~5% faster AND the
+    #     w32-on-persistent ramp is suboptimal there (cross_entropy (8192,65536)
+    #     persistent/w32 1195us vs looped ~990us = tc) -> send looped.
+    # So cap at 128 KiB: <=128 KiB persistent, >128 KiB looped for multi-load.
+    #
+    # In-sample EFFECT: every existing num_load>=2 kernel (rms_norm/layer_norm/
+    # softmax_two_pass) has rnumel <= 16384 (<=64 KiB) << this cap, so all stay
+    # persistent BYTE-IDENTICALLY (no-regression). It fires only for the wide
+    # cross_entropy rows (V=65536 = 256 KiB and V=131072 = 512 KiB go looped).
+    # num_load=1 (sum/long_sum) and the Band-B kernels (kl_div/jsd, whose tighter
+    # 16 KiB R_BLOCK cap already dominates) are unaffected.
+    MULTILOAD_PERSIST_MAX_BYTES = 131072
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
     @classmethod
@@ -340,13 +383,29 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         # the reduction extent (fact.size_hint = rnumel) and the backend's
         # per-tile element cap, NOT on the knob mechanism. Persistent is the
         # workhorse for EVERY row the backend can compile as a single pass; the
-        # ONLY structural limit is Triton's max_tensor_numel (2**20 elems), above
-        # which the whole-row `tl.arange` is rejected at codegen. A
+        # structural limit is Triton's max_tensor_numel (2**20 elems), above which
+        # the whole-row `tl.arange` is rejected at codegen.
+        #
+        # For SINGLE-LOAD reductions (num_load==1: sum, long_sum) a
         # warps-held-equal sweep (_lab/harness/v3_crossover_sweep.py) shows
-        # persistent wins or ties at every feasible byte size up to the cap, so
+        # persistent wins or ties at every feasible byte size up to that cap, so
         # there is no perf byte fence below it.
+        #
+        # For MULTI-LOAD reductions (num_load>=2: rms_norm, layer_norm,
+        # cross_entropy) a matched-warps A/B (persist_crossover_by_numload.py +
+        # ce_crossover_tight.py) shows persistent LOSES to a looped chunk above
+        # ~256 KiB/row (1.6-4x slower — the wide row is re-streamed per load pass
+        # and a persistent kernel that holds it resident spills). So multi-load
+        # reductions get an additional PERF byte ceiling (MULTILOAD_PERSIST_MAX_
+        # BYTES) below the structural one. This fires only for the wide
+        # cross_entropy rows in-sample; every existing num_load>=2 kernel has
+        # rnumel <= 64 KiB and is unaffected (byte-identical).
         persist_cap = env.backend.max_tensor_numel  # None ⇒ no element cap
         can_persist = persist_cap is None or fact.size_hint <= persist_cap
+        if fact.num_load >= 2:
+            row_bytes = fact.size_hint * max(1, fact.itemsize)
+            if row_bytes > cls.MULTILOAD_PERSIST_MAX_BYTES:
+                can_persist = False
         from ..._utils import next_power_of_2 as _np2
 
         if can_persist:
@@ -358,11 +417,18 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             num_warps = cls._num_warps(fact)
             persistent = True
         else:
-            # Row exceeds the backend's persistent element cap — a single pass
-            # cannot compile, so loop over a fixed R_BLOCK chunk with the high
-            # streaming warp count. NOTE: no in-sample shape reaches this cap;
-            # this branch is a synthetic/structural generalization tail (see the
-            # notebook "looped tail" disclosure).
+            # Looped (chunked) reduction. Reached for EITHER reason:
+            #  (a) the row exceeds the backend's persistent element cap (2**20),
+            #      so a single whole-row pass cannot compile — a structural tail
+            #      with no in-sample coverage (the notebook "looped tail"
+            #      disclosure); OR
+            #  (b) num_load>=2 AND the row exceeds MULTILOAD_PERSIST_MAX_BYTES —
+            #      a PERF crossover (the cross_entropy widening: wide multi-load
+            #      rows are 1.6-4x faster looped). This DOES fire in-sample, for
+            #      cross_entropy V=131072 (512 KiB).
+            # Either way: loop over a fixed R_BLOCK chunk with the high streaming
+            # warp count (looped wide rows want chunk 16384 / w32 — A/B in
+            # _lab/harness/ce_persist_vs_loop.py).
             extent = cls.LOOPED_CHUNK
             num_warps = cls.LOOPED_NUM_WARPS
             persistent = False

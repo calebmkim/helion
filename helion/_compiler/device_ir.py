@@ -938,6 +938,26 @@ class DeviceIR:
         # The reduction axis must be a user tile in the block_sizes spec.
         if red_block_id not in spec.block_sizes.valid_block_ids():
             return
+        # SINGLE non-grid tile only. The seed controls exactly ONE inner tile (the
+        # reduction axis); a kernel with a SECOND independent user tile over a
+        # non-grid axis is a multi-pass pattern this single-axis seed cannot serve
+        # — it would floor that second tile to width 1 (catastrophic) while only
+        # widening the reduction tile. welford is the canonical case: a Welford
+        # reduction pass (tile #1 over N) AND a separate normalize pass (tile #2
+        # over the SAME N). Seeding it persistent leaves the normalize tile at
+        # width 1 -> ~10-20x slower than the un-seeded default AND numerically
+        # wrong for non-power-of-2 N (the masked Welford count breaks). The
+        # working T2 kernels (softmax_two_pass, kl_div, jsd) have exactly ONE
+        # non-grid tile (the reduction axis). Decline so the gate
+        # (reduction_facts==1) does NOT fire — welford falls back to the correct
+        # un-seeded default. This keys on the WORKLOAD structure (number of
+        # non-grid user tiles), NOT kernel identity. See the notebook "welford
+        # out-of-scope" section + _lab/harness/welford_probe.py / welford_ceiling.py.
+        non_grid_tiles = [
+            b for b in spec.block_sizes.valid_block_ids() if b not in grid_ids
+        ]
+        if len(non_grid_tiles) != 1:
+            return
         try:
             block_info = env.block_sizes[red_block_id]
         except (IndexError, KeyError):

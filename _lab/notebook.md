@@ -5,12 +5,27 @@
 > champion). The hub appends gate verdicts. Keep it current at every clean iteration boundary.
 
 ## Champion (current best heuristic)
-- **v5 `triton_reduction_tile` (WORKER-PROPOSED 2026-05-29) — T2 SUPPORT.** Adds user-tiled/manually-looped
-  reductions (softmax_two_pass T2 Band A; kl_div, jsd T2 Band B) on top of the v4 T1 champion. T1 seeds are
-  BYTE-IDENTICAL (38/38 unchanged). ONE new branch (the Band-B R_BLOCK footprint cap, gated on
+- **v6 `triton_reduction_tile` (WORKER-PROPOSED 2026-05-29) — cross_entropy widening + welford out-of-scope.**
+  Adds **cross_entropy** (T1, num_load=3, num_reduction_ops=2, wide-V logsumexp+gather) to the active set.
+  ONE new general branch (the **multi-load persist byte-cap**): for `num_load >= 2` AND
+  `rnumel*itemsize > MULTILOAD_PERSIST_MAX_BYTES (128 KiB)` the reduction goes LOOPED instead of persistent.
+  Validated by a matched-WARPS persistent-vs-looped A/B *across num_load* (`persist_crossover_by_numload.py`,
+  `ce_crossover_tight.py`): num_load=1 (sum) ties persistent==looped at EVERY rnumel up to 1 MiB (NO change,
+  the structural-cap policy stays correct for it); num_load>=2 (rms_norm/layer_norm/cross_entropy) persistent
+  WINS to ~128 KiB then LOSES 1.6-4x (sharp crossover at 256->288 KiB). **welford: classified T2 but
+  OUT-OF-SCOPE** for the single-axis seed (it has a SECOND user tile over the reduction extent — the normalize
+  pass — that the seed floors to width 1, ~10-20x slower AND numerically wrong for non-pow2 N). Heuristic now
+  DECLINES welford (a general "single non-grid tile" guard in `register_user_tiled_reductions`) → falls back to
+  the correct un-seeded default. T1+T2 no-regression BYTE-IDENTICAL (27/27 inert proof; test_reductions 24;
+  test_examples 19). **G_cross_entropy = 0.915** (+52% vs default 0.600). O_7kernel UNCHANGED 0.9982;
+  **O_8kernel = 0.9874** (cross_entropy mechanically dilutes the geomean — per-kernel no regression). See the
+  "v6 — cross_entropy + welford" section below. HELPER_REQUEST queued (referee + auditor). Awaiting commit hash.
+- **v5 `triton_reduction_tile` (ACCEPTED 2026-05-29; commit 6430b37e/63142bde) — T2 SUPPORT.** Adds user-tiled/
+  manually-looped reductions (softmax_two_pass T2 Band A; kl_div, jsd T2 Band B) on top of the v4 T1 champion.
+  T1 seeds are BYTE-IDENTICAL (38/38 unchanged). ONE new branch (the Band-B R_BLOCK footprint cap, gated on
   `num_tiled_accumulators>=1`, validated by matched A/B vs persistent). Per-kernel G: softmax 0.967 (+120% vs
-  default), kl_div 1.029 (+163%), jsd 0.996 (+50%); 4 T1 kernels unchanged. O_7kernel=0.9985. See the "v5 — T2
-  SUPPORT" section below for full evidence. HELPER_REQUEST queued (referee + auditor). Awaiting commit hash.
+  default), kl_div 1.029 (+163%), jsd 0.996 (+50%); 4 T1 kernels unchanged. O_7kernel=0.9982 (referee+auditor
+  both PASS). See the "v5 — T2 SUPPORT" section below for full evidence.
 - **v1 `triton_reduction_tile`** (ACCEPTED 2026-05-28). Referee-confirmed **G_rms_norm = 0.979** vs
   un-seeded `default_config` baseline 0.908 (+7.8%). Auditor PASS. Code:
   `helion/_compiler/autotuner_heuristics/triton.py` `TritonReductionHeuristic`.
@@ -223,9 +238,10 @@ quick profile. Harness: `_lab/harness/productB_{driver.py,run.sh,analyze.py}`; r
   WORKER-PROPOSED; HELPER_REQUEST queued for results-referee spot-repro of Slice-2 on (2048,16384).
 
 ## Active kernels (curriculum)
-- Active: **rms_norm_fwd, sum, long_sum, layer_norm_fwd** (T1, Band A) + **softmax_two_pass** (T2 Band A) +
-  **kl_div, jsd** (T2 Band B) as of 2026-05-29 (v5). Widen next to: welford (Band C). Forward only;
-  defer backward (Band D).
+- Active (SEEDED): **rms_norm_fwd, sum, long_sum, layer_norm_fwd** (T1, Band A) + **cross_entropy** (T1, Band A,
+  num_load=3, wide-V) + **softmax_two_pass** (T2 Band A) + **kl_div, jsd** (T2 Band B) as of 2026-05-29 (v6) =
+  **8 seeded kernels**. **welford: classified T2 but OUT-OF-SCOPE** (multi-tiled-pass; heuristic DECLINES → not
+  seeded, falls back to default). Forward curriculum COMPLETE. Defer backward (Band D).
 
 ## v5 — T2 SUPPORT (user-tiled / manually-looped reductions): softmax_two_pass + kl_div + jsd (2026-05-29)
 **The heuristic now seeds BOTH tracks; T1 is byte-identical (no-regression PROVEN).**
@@ -295,6 +311,108 @@ high-but-sub-1 kernels mechanically nudges the geomean down, same effect as addi
 all vs un-seeded default). Harness: `_lab/harness/{t2_classify,t2_seed_probe,t2_codegen_probe,measure_g_softmax,
 measure_g_lossk,measure_g_jsd,t2_bandb_chunk_sweep,t2_bandb_narrow_check,t2_lossk_correct}.py`.
 
+## v6 — cross_entropy widening (general multi-load persist cap) + welford OUT-OF-SCOPE (2026-05-29)
+
+### cross_entropy — T1, FIRES, but needed a GENERAL heuristic change (the multi-load persist cap)
+- **Classification: T1** (rollable rdim). `len(block_sizes)==1` (the M/row tile), `len(reduction_loops)==1`,
+  `len(reduction_facts)==1`, no matmul. The `logits[tile_n, :]` whole-row `amax`+`sum` over V is a rollable
+  reduction (block_id=1 = the V axis); 1 M-block (block_id=0). RF: **num_load=3, num_store=1,
+  num_reduction_ops=2** (amax + exp-sum), num_tiled_accumulators=0. Plus a label gather (`hl.load`). Heuristic
+  FIRES 1 seed (`triton_reduction_tile`). NOTE: at the degenerate (4096,4096) shape (N==V) the RF dtype scan
+  grabs the int64 labels (itemsize=8) — INERT (num_tiled_accumulators=0 so the Band-B cap never reads it; the
+  seed is persistent/rnumel-warps regardless). At V!=N it correctly reads fp32/4.
+- **Seed USED + CORRECT:** bare-seed codegen is persistent (no `for roffset`) below the cap / looped above;
+  num_warps matches the rnumel ramp. Correct vs `F.cross_entropy` fp32: maxabs 0–1.9e-6, rel-err ~1e-7
+  (bit-exact at narrower V). Benign `TensorOperationInWrapper` on the host-side `losses.mean()` (documented).
+- **THE FINDING (overturns a champion assumption): the "persistent to the 2^20 structural cap" policy was
+  validated ONLY on num_load=1 (sum, v3_crossover_sweep). It is WRONG for num_load>=2 at large rnumel.** A
+  matched-WARPS persistent-vs-looped A/B *across num_load* (`persist_crossover_by_numload.py` +
+  `ce_crossover_tight.py`, H100/fp32):
+  | rnumel(KiB) | sum nl=1 P/L | rms_norm nl=2 P/L | cross_entropy nl=3 P/L |
+  |---|---|---|---|
+  | 64 (16K)  | 1.01 | 0.99 | 0.98 |
+  | 128 (32K) | 1.00 | 0.96 | 0.98 |
+  | 256 (64K) | 1.00 | 0.99 | 1.04 (~tie) |
+  | 288 (72K) | —    | **2.75** | 1.09 |
+  | 384 (96K) | 1.01 | **3.00** | **1.61** |
+  | 512(128K) | 1.00 | **2.91** | **3.97** |
+  num_load=1 (sum) ties persistent==looped at EVERY rnumel up to 1 MiB at BOTH M=8 (starved) and M=1024
+  (occupied) → the structural-cap policy stays correct for it (NO regression). num_load>=2 persistent wins/ties
+  to ~256 KiB then LOSES decisively (a multi-load reduction re-streams the wide row per load pass; a persistent
+  kernel holding the whole row resident spills, looped streams). Crossover SHARP at 256->288 KiB, holds across
+  M. This is the SAME finding for rms_norm/layer_norm/cross_entropy — NOT cross_entropy-specific. It has NO
+  in-sample coverage in the prior 7 (rms_norm/layer_norm max rnumel 16384/15872; sum/long_sum are num_load=1).
+  Distinct from the v3/v4 `num_load` debate: that was about the **num_warps=32 ramp** (rnumel-driven for all
+  num_load — correct). THIS is the **persistent-vs-looped** lever, which IS num_load-dependent.
+- **THE BRANCH (the only new one): `MULTILOAD_PERSIST_MAX_BYTES = 131072 (128 KiB)`.** For `num_load >= 2` AND
+  `rnumel*itemsize > 128 KiB` → go looped (T1: `reduction_loops=[LOOPED_CHUNK=16384]`; T2: cap R_BLOCK). Cap at
+  128 KiB (not 256): at 65536 (256 KiB) persistent is a tie BUT the w32 ramp is suboptimal there
+  (CE(8192,65536) persist/w32 1195us vs looped ~990us = tc) so looped is the better+robust choice. Keyed on the
+  WORKLOAD property `num_load` (already a ReductionFact field) + a byte threshold (generalizes via itemsize),
+  NOT kernel identity. **In-sample INERT for all 7** (every num_load>=2 kernel <=64 KiB; ce_inert_proof_7.py =
+  27/27 byte-identical). num_load=1 (sum/long_sum: long_sum 262144/w32 persistent UNCHANGED) and Band-B
+  (kl/jsd, tighter 16 KiB cap dominates) unaffected.
+- **Per-shape G_cross_entropy (v6 seed, do_bench median-of-7, fp32, GPU3; two runs agree 0.912/0.915):**
+  | shape | codegen | warps | G_seed | G_default | s/p32 |
+  |---|---|---|---|---|---|
+  | (4096,4096) | persist | 8 | 0.92 | 0.93 | 1.13 |
+  | (4096,16384) | persist | 16 | 1.00 | 0.73 | 1.01 |
+  | (8192,32768) | persist | 32 | 1.05 | 0.54 | 1.00 |
+  | (16384,32768) | persist | 32 | 1.05 | 0.53 | 1.00 |
+  | (8192,65536) | **looped** | 32 | 1.00 | 0.53 | 1.21 |
+  | (16384,65536) | **looped** | 32 | 0.99 | 0.52 | 1.21 |
+  | (8192,131072) | **looped** | 32 | 0.54 | 0.52 | 2.25 |
+  | **GEOMEAN** | | | **0.915** | **0.600** | **1.21** |
+  G_cross_entropy = **0.915** (+52% vs default). The ONLY sub-0.9 shape is (8192,131072) G=0.54: a kernel-source
+  limit, NOT config headroom — the best CORRECT Helion looped config (chunk 32768/w32 = 3485us; my seed
+  16384/w32 = 3575us, within 2.5%) still loses to tc's 1928us because Helion CE re-reads the row for the
+  exp-sum pass while tc fuses an online softmax (num_stages doesn't help; sweep confirmed). Disclosed gap,
+  analogous to the long_sum looped-tail-vs-tc story. seed/p32=1.21 → the seed BEATS fixed-persistent/w32
+  (correctly loops the wide rows).
+
+### welford — T2, FIRES, but the seed is BROKEN; classified OUT-OF-SCOPE → heuristic now DECLINES
+- **Classification: T2 (user-tiled), num_tiled_accumulators=0 (Band-A-like), but STRUCTURALLY DISTINCT.** 3
+  block_sizes (block 0 = M grid, autotuner_min=16 at M=262144; block 1 = Welford-combine `tile_n`; block 2 =
+  normalize `tile_n` — BOTH over the SAME N), 0 reduction_loops, 1 reduction_fact. The detector finds block 1
+  as the reduction axis (it has the ReductionLowering); block 2 is NOT a reduction → treated as a row/grid axis
+  and FLOORED to width 1. RF: num_load=4, num_store=1, num_reduction_ops=2, num_tiled_accumulators=0 (acc_cnt/
+  acc_mean/acc_m2 are `[M_BLOCK]` row scalars, not 2D).
+- **The seed FIRES but is CATASTROPHIC + INCORRECT.** Persistent seed `block_sizes=[16, next_pow2(N), 1]`:
+  - **G_seed = 0.051** (10-20x slower than tc AND than the un-seeded default G=0.526) — because the SECOND
+    `tile_n` loop (normalize pass) is floored to width 1 → N iterations of width 1. (262144,1024): seed
+    11769us vs tc 979us vs default 1821us. The seed actively HARMS welford.
+  - **NUMERICALLY WRONG for non-pow2 N** (in-sample 1536): R1=next_pow2(1536)=2048 with masking → err=0.696
+    (FAILS allclose). ROOT CAUSE = a kernel bug: the Welford combine uses `Tn = chunk.size(-1)` for the
+    per-chunk count; a masked persistent tile makes `Tn`=tile-width (2048) not valid-width (1536), so
+    `sum_x/Tn` divides by the wrong count. A CORRECT persistent welford needs R1 to DIVIDE N (looped divisor
+    chunk, e.g. 512 for 1536) — factorization-dependent, NOT next_pow2. (`welford_probe.py`,
+    `welford_ceiling.py`.)
+- **What welford WOULD need (the HELPER_REQUEST):** (1) the seed must control BOTH N-axis tiles (widen block 2,
+  the normalize pass, to persistent — the ceiling sweep shows M=1, R1=R2=N, w8-16 ties tc G~0.99 at pow2 N);
+  (2) a non-pow2 correctness guard that picks a looped DIVISOR chunk for the Welford-combine tile (R1) instead
+  of next_pow2 (masked R1 breaks the count). Both are welford-shaped and validated on ONE kernel only (no
+  held-out coverage) → forcing them now would be a kernel-identity hack. Per the brief's out-of-scope track:
+  DECLINE per-axis seeding, document why.
+- **THE DECLINE (general, structural):** `register_user_tiled_reductions` now declines when there is **>1
+  non-grid user tile** (`len(non_grid_tiles) != 1`). The working T2 kernels (softmax/kl_div/jsd) have EXACTLY 1
+  non-grid tile (the reduction axis itself); welford has 2 (Welford pass + normalize pass). The single-axis
+  seed is undefined for a multi-pass / multi-tiled-axis kernel. Keys on WORKLOAD structure (# of non-grid user
+  tiles), NOT kernel identity. welford now emits 0 seeds → falls back to the CORRECT un-seeded default (G=0.53)
+  instead of the broken G=0.05 seed. Same decline pattern as jagged_softmax (dynamic-size) / longsum_manual.
+- **No-regression:** softmax/kl_div/jsd still fire with byte-identical seeds (the decline guard only triggers on
+  >1 non-grid tile, which they don't have). test_examples (welford/jagged/softmax/ce/kl/jsd/ln/rms) 19 passed;
+  test_reductions 24 passed.
+
+### O over the active set (v6: 8 seeded kernels; welford declined/out-of-scope)
+Per-kernel G (v6): rms_norm 0.980, sum 0.937, long_sum 1.099, layer_norm 0.989, softmax_two_pass 0.967,
+kl_div 1.026, jsd 0.997 (all 7 BYTE-IDENTICAL, UNCHANGED) + **cross_entropy 0.915** (new). **O_8kernel =
+0.9874** (O_7kernel UNCHANGED at 0.9982; cross_entropy at 0.915 mechanically nudges the geomean down — same
+effect as adding sum/layer_norm; the (8192,131072) Helion-source gap holds it sub-1). Honest PER-KERNEL: NO
+kernel regresses (7 byte-identical; cross_entropy +52% vs un-seeded default). welford is NOT seeded (declined)
+so it is not in the active G set — falls back to its correct default. Harness:
+`_lab/harness/{classify_ce_welford,ce_seed_used,measure_g_ce,ce_persist_vs_loop,persist_crossover_by_numload,
+ce_crossover_tight,wide_rnumel_persist_vs_loop,ce_inert_proof_7,welford_probe,welford_ceiling}.py`.
+
 ## layer_norm_fwd — WIDENED 2026-05-29 (v4 SUFFICES UNCHANGED; byte-identical heuristic)
 The cleanest possible outcome: **adding layer_norm_fwd to the active set required ZERO heuristic change**
 (git shows 0 lines changed under `helion/`; the 3 existing kernels emit byte-identical v4 champion seeds —
@@ -349,6 +467,18 @@ says w32 is correct for num_load>=2 too — see v4 OOS recovery: layer_norm (1,1
 - **long_sum (`longsum_manual`): OUT-OF-SCOPE.** Uses an explicit `hl.tile(n)` inner reduction loop →
   2 block_sizes entries, 0 reduction_loops, 0 reduction_facts (manual T2, not rollable). Heuristic
   correctly emits 0 seeds. Not a target.
+- **cross_entropy: T1** confirmed (classify_ce_welford.py). 1 block_size (M/row), 1 reduction_loop, 1 RF, no
+  matmul → eligibility gate PASSES. The whole-row `amax`+`sum` over V (block_id=1) is rollable; 1 M-block
+  (block_id=0). RF: **num_load=3, num_store=1, num_reduction_ops=2** (amax + exp-sum), num_tiled_accumulators=0,
+  static_rnumel=V. Plus a label gather (`hl.load`, not counted as a row reduction). Heuristic FIRES 1 seed,
+  seed used + correct vs F.cross_entropy. Needed the v6 multi-load persist cap (num_load>=2, >128 KiB → looped).
+- **welford: T2 (user-tiled) but OUT-OF-SCOPE** (classify_ce_welford.py). 3 block_sizes (M grid + TWO `tile_n`
+  loops over the SAME N: the Welford-combine pass = the detected reduction axis block 1, and the normalize pass
+  = block 2, NOT a reduction), 0 reduction_loops, 1 RF (block 1). RF: num_load=4, num_store=1,
+  num_reduction_ops=2, num_tiled_accumulators=0. The single-axis seed FIRES but is BROKEN: it floors the second
+  tile (normalize, block 2) to width 1 → G=0.05 (10-20x worse than default) AND is numerically wrong for
+  non-pow2 N (masked Welford count). The heuristic now DECLINES it (general guard: >1 non-grid tile → no fact),
+  so welford falls back to its correct un-seeded default. See "v6 — welford OUT-OF-SCOPE" + welford_probe.py.
 - **layer_norm_fwd: T1** confirmed (classify_layer_norm.py). 1 block_size, 1 reduction_loop, 1 RF, no
   matmul → eligibility gate (`len(reduction_loops)==1`) PASSES. The TWO reductions over N (mean=`sum(x)`,
   var=`sum(centered^2)`) reduce over the SAME N rdim → ONE rollable rdim → 1 reduction_loop (the gate's
@@ -379,11 +509,24 @@ Observed for rms_norm (all shapes): num_load=2, num_store=2, num_reduction_ops=1
   WHY persistent: the un-seeded Triton default goes LOOPED (chunk=min(next_pow2,4096)) once rnumel>4096,
   which LOSES big at wide shapes ((2048,16384) G_default=0.70, etc.) because tc/Helion-max keep the row
   PERSISTENT. Seeding persistent recovers all to G≈0.99.
-- **[v3] Persistent-vs-looped lever = the STRUCTURAL cap ONLY.** Persistent (`reduction_loops=[None]`)
-  for every row up to `env.backend.max_tensor_numel` (Triton's `TRITON_MAX_TENSOR_NUMEL` = 2**20 elems);
-  looped chunk ONLY above it. WHY: above the cap a single `tl.arange` over the row is REJECTED at codegen
-  (`numel exceeds triton maximum tensor numel`) — so looped is structurally REQUIRED, not a perf choice.
-  Below the cap, persistent always wins/ties (next bullet), so there is NO perf-based byte fence.
+- **[v6] Multi-load persist byte-cap (`MULTILOAD_PERSIST_MAX_BYTES = 128 KiB`).** REFINES the v3 "structural
+  cap only" claim, which was correct ONLY for num_load=1. For `num_load >= 2` AND `rnumel*itemsize > 128 KiB`
+  → LOOPED (T1: `reduction_loops=[16384]`; T2: cap R_BLOCK). WHY (the cross_entropy widening): a matched-WARPS
+  persistent-vs-looped A/B across num_load (persist_crossover_by_numload.py, ce_crossover_tight.py) shows the
+  crossover is num_load-DEPENDENT — num_load=1 (sum) ties persistent==looped to 1 MiB (no change), num_load>=2
+  (rms_norm/layer_norm/cross_entropy) persistent LOSES 1.6-4x above ~256 KiB (a multi-load reduction re-streams
+  the wide row per load pass; a persistent kernel holding it resident spills). Cap at 128 KiB (sends 65536/
+  256 KiB looped — at 256 KiB persistent ties but the w32 ramp is suboptimal there, looped is the robust
+  choice). INERT in-sample for all 7 (every num_load>=2 kernel <=64 KiB; ce_inert_proof_7.py = 27/27 byte-
+  identical). Distinct lever from the v3/v4 num_warps debate (that was the w32 ramp = rnumel-driven for all
+  num_load; THIS is persistent-vs-looped = num_load-driven). Keyed on the WORKLOAD (num_load + bytes), NOT
+  kernel identity.
+- **[v3] Persistent-vs-looped lever (for num_load=1) = the STRUCTURAL cap ONLY.** Persistent
+  (`reduction_loops=[None]`) for every num_load=1 row up to `env.backend.max_tensor_numel` (Triton's
+  `TRITON_MAX_TENSOR_NUMEL` = 2**20 elems); looped chunk ONLY above it. WHY: above the cap a single `tl.arange`
+  over the row is REJECTED at codegen (`numel exceeds triton maximum tensor numel`) — so looped is structurally
+  REQUIRED, not a perf choice. Below the cap, persistent wins/ties for num_load=1 (next bullet), so there is NO
+  perf-based byte fence for num_load=1. (num_load>=2 gets the v6 cap above.)
   - This DELETES v1's 64-KiB fence and v2's 256-KiB `PERSIST_MAX_BYTES` fence. The auditor proved v2's
     fence was net-harmful: it sent every in-sample long_sum row (128 KiB–1 MiB) LOOPED, but persistent/w32
     beats looped/w32 on all of them. The fences were a CONFOUND with num_warps (the real lever).
@@ -578,6 +721,21 @@ See `_lab/harness/v3_looped_tail_check.py`. No silent caps.
 - **Looped tail vs tc** — above the structural cap (>2**20 elems) the single looped Helion kernel loses to
   tc's multi-stage split reduction (G~0.30 at 2M elems). A split-K / atomic-accumulate looped recipe could
   close it, but NO in-sample shape reaches the cap — pure generalization-tail headroom, deferred.
+- **[v6] cross_entropy (8192,131072) G=0.54 — kernel-source gap, not config headroom.** The best CORRECT
+  Helion looped config (chunk 32768/w32=3485us; my seed 16384/w32=3575us, within 2.5%) loses to tc's 1928us
+  because Helion CE re-reads the wide row for the exp-sum pass while tc fuses an online (single-pass) softmax.
+  num_stages doesn't help. Closing it needs a kernel-source rewrite (online logsumexp), out of scope for a
+  config seed. Bumping LOOPED_CHUNK 16384->32768 would recover ~2.5% (tiny; 16384 is the validated chunk).
+- **[v6 OPEN — welford future work, the HELPER_REQUEST]** welford is OUT-OF-SCOPE for the current single-axis
+  T2 seed (declined). A correct+fast welford seed needs TWO things, both welford-shaped (validated on ONE
+  kernel → no held-out coverage; do NOT force as a kernel-identity hack now): (1) **widen the SECOND N-axis
+  tile** (the normalize pass, block 2) to persistent too — the ceiling sweep (welford_ceiling.py) shows
+  M=1/R1=R2=N/w8-16 ties tc (G~0.99) at pow2 N; (2) a **non-pow2 correctness guard** that seeds the
+  Welford-combine tile (R1) as a looped DIVISOR chunk (e.g. 512 | 1536) instead of next_pow2 — a masked
+  persistent R1 makes `Tn=chunk.size(-1)` count the padding and breaks the mean/variance (err=0.696 at
+  N=1536). This is a general "multi-pass user-tiled reduction" treatment; needs >=2 such kernels to validate
+  the secondary-tile-widening rule and the non-pow2 guard before shipping. Until then: DECLINE (correct
+  default fallback) is the honest choice.
 
 ## Oracle field-diff (answer key) — CORRECTED per harness-integrity
 - **(32768,256) full-autotune VERBATIM winner** (re-parsed from /tmp/autotune_log_32768_256.csv, the
