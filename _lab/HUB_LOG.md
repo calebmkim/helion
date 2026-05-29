@@ -134,3 +134,22 @@
   explicitly deferred / out of scope for this run.)
 - Next: welford Band-C attempt (keyed on is_structured_combine, correctness-first; keep out-of-scope if not
   generalizably+correctly seedable). Then FREEZE + terminal TEST read on the final champion.
+
+## 2026-05-29 (FORWARD CURRICULUM COMPLETE — milestone)
+- **v7 ACCEPTED (both gates PASS): welford Band-C seeded** via is_structured_combine (proven-generalizable
+  structural signal; built a different structured-combine -> gate fires). welford 0.526->0.894 (+70%), CORRECT
+  at non-pow2 incl PRIME N. All 9 forward kernels now seeded. O_in-sample=0.9765. Commit 53ed8762.
+- **TERMINAL TEST read DONE (ledger-keeper, once).** In-sample->TEST geomean gap -0.114 (O_TEST 0.8628), NOT
+  broad overfit: 8-kernel gap only -0.036; cross_entropy/kl_div/jsd BEAT in-sample on TEST. Dominant driver =
+  welford -0.498 at prime/poorly-factored N (correctness forces combine=largest_pow2_div(N)->1 at prime N;
+  fast masked tile is numerically WRONG -> a welford-KERNEL-STRUCTURE limit, not a seedable miss).
+  rms_norm/layer_norm -0.13/-0.15 = tiny-M sub-25us noise-floor edges (at-ceiling on grid-occupied shapes).
+- **Fresh-oracle re-validation: seed/oracle = 1.007 geomean** (within 0-1.6% everywhere) -> oracle hasn't
+  drifted, champion holds, seed at the DETERMINISTIC-SEED CEILING. `_lab/FINAL_REPORT.md` written (commit 1de57007).
+- **DELIVERABLES COMPLETE:** Product A (9 forward kernels, O~0.98, at ceiling, generalizes) + Product B
+  (median time-to-95% 1.94x). Adversarial gates caught+rejected 5 cheats/confounds (v2 looped/grid-occ, v3
+  num_load fence, pid confound, indexing no-win, M-block regime-conflict) -- the safety mechanism worked.
+- **STATUS for human (non-blocking):** the defined forward reduction-seed task is COMPLETE & at ceiling.
+  Genuinely-remaining angles are out-of-scope (backward Band D deferred) or not-seedable (codegen eviction =
+  Product-B/autotuner; welford prime-N = kernel-structure). Continuing per never-stop with a GENERALITY
+  STRESS-TEST: does frozen v7 seed NEW (non-curriculum) forward reductions well out-of-the-box?
