@@ -39,16 +39,17 @@
         "(4096,1536)": 1.033, "(4096,3584)": 1.003, "(4096,5120)": 0.909, "(4096,7168)": 0.833,
         "(8192,4096)": 0.996, "(8192,8192)": 0.754, "(32768,256)": 0.985, "(32768,1024)": 0.993
       },
-      "anomaly": "(2048,2048): full-sweep reads ~19.8us for BOTH seed and default (G~0.87 both) but isolated probe of the SAME seed config reads 13.5us (G=1.32). In-process measurement-context artifact, not a config property and not a regression vs default (they tie). FLAGGED for results-referee: re-measure each shape in a fresh subprocess.",
+      "anomaly_RESOLVED": "(2048,2048): REFEREE CORRECTION -- NOT an artifact. Fresh-subprocess measurement is stable at G_seed~0.87 (tc genuinely faster at this shape: tc~17.6us vs both Helion variants ~20us). The seed (warps=8) mildly REGRESSES ~1.4% vs default (warps=4). The worker's 'isolated G~1.3' does NOT reproduce (worker error). Within -10% backstop but a real small loss, not a tie/win.",
       "all_shapes_codegen": "persistent (every in-sample rnumel <= 16384 elems = PERSIST_MAX); looped branch UNTESTED on rms_norm"
     }
   },
   "oracle_cache": {
-    "_note": "field-diff via _lab/harness/oracle_field_diff.py (Helion effort=full winner vs seed). Full-effort is SLOW (>10min/shape) and its INTERNAL do_bench is BIASED for tiny-N shapes (see caveat). Prefer quick-effort + fair re-bench.",
+    "_note": "field-diff via _lab/harness/oracle_field_diff.py (Helion effort=full winner vs seed). Full-effort is SLOW (>10min/shape). NOTE the autotuner do_bench is NOT biased (harness-integrity proved <1% vs fair do_bench, 3 methods); the (32768,256) 'w32 artifact' was a FIELD-DIFF reconstruction error, see harness_integrity_correction. Prefer quick-effort + fair re-bench of the FULL verbatim winner (all levers).",
     "rms_norm_fwd": {
       "(32768,256)": {
         "oracle_full_best_config": {"reduction_loops": [null], "block_sizes": [1], "num_warps": 32, "num_stages": "1-3", "note": "8 generations; autotuner-internal do_bench reported 73.6us"},
-        "fair_rebench_caveat": "oracle num_warps=32 is an ARTIFACT: fair end-to-end do_bench gives bs1/w32=1183us (G=0.029), bs1/w16=574us. FAIR optimum is LOW warps: bs1/w4=35.9us (G=0.950) ~= my seed bs2/w4=36.1us (G=0.945).",
+        "harness_integrity_correction": "NO autotuner bug. The 73.6us w32 result was NOT block=1 -- it was num_warps=32 paired with a LARGE M-block (block_sizes=[32]/[128], confirmed in autotune CSV). w32 is catastrophic ONLY at block=1 (1174us); at block>=8 w32 is ~36-41us. The field-diff mis-paired the winner's w32 with block=1 and re-benched that fabricated config. PROOF: (a) fair, autotuner do_bench, and interleaved_bench all agree <1% (block1/w32=1174us is REAL; 73.6us is a DIFFERENT config, also REAL); (b) full LFBO search tested block_sizes=[1] ZERO times (raise_grid_block_minimums floors M-block at 2 for 32768 rows); (c) the autotuner's OWN fastest-per-warps are all ~31-35us incl w32=34.3us, and it ranks LOW warps (w1=30.98us) best, NOT w32. See _lab/harness/autotuner_timing_bias.md. warps and block are COUPLED: never A/B warps with block fixed at 1. True fair optimum ~31us (low warps, block 2-4, looped reduction).",
+        "fair_rebench_caveat": "[SUPERSEDED by harness_integrity_correction] oracle num_warps=32 is an ARTIFACT: fair end-to-end do_bench gives bs1/w32=1183us (G=0.029), bs1/w16=574us. FAIR optimum is LOW warps: bs1/w4=35.9us (G=0.950) ~= my seed bs2/w4=36.1us (G=0.945).",
         "seed": {"reduction_loops": [null], "block_sizes": [2], "num_warps": 4},
         "field_diff": "persistent MATCHES; warps: oracle=32 (artifact) vs seed=4 (fair-optimal); block: oracle=1 vs seed=2 (floor), worth ~0.5% (noise). Seed at/near FAIR ceiling.",
         "fair_ab_warps": {"bs1": {"4": "35.9us/G0.950", "8": "43.0us/G0.793", "16": "574us", "32": "1183us"}, "bs2": {"4": "36.1us/G0.945", "8": "38.5us/G0.886", "16": "46.6us/G0.733", "32": "87.3us/G0.391"}}
@@ -58,8 +59,8 @@
         "field_diff": "warps=4 fair-optimal (seed uses 4); high warps hurt. Seed at FAIR ceiling."
       },
       "(2048,2048)": {
-        "fair_ab_isolated": {"note": "isolated-process probe (NOT the contended full-sweep)", "w8_persist": "13.47us/G1.319", "w4_persist": "13.82us/G1.286", "w2_persist": "13.66us/G1.301", "w16_persist": "14.08us/G1.262"},
-        "field_diff": "persistent + warps~8 is great in isolation (G=1.32). The full-sweep G=0.87 is a measurement-context artifact, not a config problem."
+        "REFEREE_CORRECTION": "The isolated G~1.3 numbers below do NOT reproduce in fresh subprocesses. True stable value G_seed~0.87 (tc genuinely faster ~17.6us vs ~20us). Seed warps=8 mildly slower than default warps=4 (-1.4%). Open lever: warps=8 may be slightly wrong here vs warps=4; small, within backstop.",
+        "field_diff": "tc is genuinely faster at this medium shape; seed at warps=8 mildly regresses vs default warps=4. Minor; revisit num_warps breakpoints with coupled warps x block A/B."
       }
     }
   },
@@ -71,9 +72,16 @@
       "change": "Defined ReductionFact + populate in register_rollable_reductions; cloned CuteReductionTileHeuristic -> TritonReductionHeuristic (backend=triton); registered in HEURISTICS_BY_BACKEND['triton']. Persistent-vs-looped by rnumel-bytes; num_warps by rnumel; M-block at autotuner floor.",
       "G_rms_norm_seed": 0.983,
       "G_rms_norm_baseline": 0.908,
-      "verdict": "PROPOSED CHAMPION (beats no-seed baseline ~8% aggregate; no per-shape regression vs default). Pending results-referee + adversarial-auditor."
+      "verdict": "ACCEPTED. Referee-confirmed G_seed=0.9793 vs default 0.9083 (worker's 0.983 within noise). Auditor PASS. Champion. Next levers: raise PERSIST_MAX (fence) + strengthen looped branch; widen to more Band A kernels."
     }
   ],
-  "champion": {"heuristic_version": "v1 triton_reduction_tile (PROPOSED, pending gates)", "O": 0.983, "per_kernel_G": {"rms_norm_fwd": 0.983}, "note": "first registered Triton reduction heuristic; vs pre-Step-2 baseline (no seed / default_config) G=0.908"},
+  "champion": {"heuristic_version": "v1 triton_reduction_tile (ACCEPTED 2026-05-28)", "O": 0.979, "per_kernel_G": {"rms_norm_fwd": 0.979}, "note": "first registered Triton reduction heuristic. Referee-confirmed G_seed=0.9793 vs no-seed default 0.9083 (+7.8%, fresh-subprocess-per-shape, worst per-shape -6.3% within -10% backstop). Auditor PASS (in-sample->held-out gap ~2.1%, still +9% over default on held-out; no kernel-identity smuggling)."},
+  "gate_verdicts": {
+    "v1_triton_reduction_tile": {
+      "results_referee": "ACCEPT. G_seed=0.9793 vs G_default=0.9083 (fresh subprocess/shape, N>=9 do_bench median). Correctness PASS all 13, seed used all 13. Worst per-shape -6.3% (32768,256). CORRECTION: (2048,2048) is NOT an artifact -- real G~0.87 (tc genuinely faster), seed mildly REGRESSES ~1.4% vs default there; worker's 'isolated G~1.3' does NOT reproduce.",
+      "adversarial_auditor": "PASS. No fabrication/wrong-thing/metric-gaming/autotune-smuggling. Overfit gap ~2.1% (held-out 0.962). DEFECT 1: PERSIST_MAX_BYTES=65536 is a FENCE at in-sample max; synthetic sweep shows persistent wins to ~65536 ELEMENTS (256KiB fp32) [16384,24576,32768,49152(1.356),65536(1.182) persist wins; 131072 looped wins]. Costs ~1.38x on held-out (1024,32768). DEFECT 2: (2048,2048) narrative wrong (small ~2-3% regression, not tie). NOTE: sum kernel is a wash (G_seed~=G_default~=0.94) -> rms_norm win is partly memory-pattern-specific; widen to validate generality.",
+      "harness_integrity": "NO autotuner timing bug (3 timing methods agree <1%). The w32 'anomaly' was a bug in OUR oracle_field_diff.py (flattened coupled multi-field winner, re-benched fabricated block=1/w32). warps x block are COUPLED. Oracle is trustworthy; field-diff must re-bench FULL verbatim configs. See _lab/harness/autotuner_timing_bias.md."
+    }
+  },
   "logs_index": ["_lab/harness/step1_harness_integrity.md", "_lab/harness/crosscheck_artifacts (gitignored)", "_lab/harness/verify_step2.py", "_lab/harness/measure_g_rms_norm.py", "_lab/harness/oracle_field_diff.py"]
 }

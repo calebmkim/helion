@@ -37,5 +37,18 @@
 - **Step 2 map DONE (code-investigator).** Saved to `_lab/step2_code_map.md` (ReductionFact site, populate
   point, heuristic clone target, registration). reduction_loops: value>=size_hint -> persistent at codegen;
   Triton max_reduction_threads=None; default_config = persistent for N<=4096, looped chunk 4096 for N>4096.
-- Next: launch persistent WORKER (invocation 1) for Step 2 implement+verify + first bare-seed G_rms_norm
-  vs tc-default. Worker on GPU 2; GPU 3 free for parallel background oracle sweeps.
+- **Worker invocation 1 DONE -> v1 triton_reduction_tile ACCEPTED as champion.** Implemented ReductionFact
+  + populate + TritonReductionHeuristic + registration. Bare-seed G_rms_norm referee-confirmed **0.979**
+  (vs no-seed default 0.908, +7.8%). Commits b20b42ea/2c1163b5/7a31a28f.
+- **Gates (parallel, GPUs 2/1/3):** results-referee ACCEPT (fresh subprocess/shape; worst -6.3% within
+  backstop). adversarial-auditor PASS (overfit gap ~2.1%; flagged 2 defects: PERSIST_MAX is a FENCE at
+  in-sample max -> persistent wins to ~256KiB/65536 fp32 elems, costs 1.38x on held-out; (2048,2048)
+  narrative wrong). harness-integrity: NO autotuner bug -- the w32 'anomaly' was a bug in our
+  oracle_field_diff.py (coupled warps x block; re-benched a fabricated block=1 config). Oracle trustworthy.
+  Gate verdicts recorded in ledger.gate_verdicts.
+- **Self-fooling caught + corrected** (honest, not cheating): (2048,2048) is a real ~1.4% regression (not a
+  tie/artifact); oracle_field_diff.py has a lever-isolation bug. Both corrected in ledger; worker to fix
+  notebook + the script next.
+- Next: WORKER invocation 2 -- (a) corrections, (b) raise PERSIST_MAX by synthetic-crossover evidence +
+  strengthen looped branch (rms_norm G unchanged), (c) WIDEN to sum + long_sum (T1 Band A; long_sum
+  exercises the looped branch) -> recompute O over active kernels. All GPUs idle (bg autotune finished).
