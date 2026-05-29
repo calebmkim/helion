@@ -8,23 +8,34 @@
 - **v1 `triton_reduction_tile`** (ACCEPTED 2026-05-28). Referee-confirmed **G_rms_norm = 0.979** vs
   un-seeded `default_config` baseline 0.908 (+7.8%). Auditor PASS. Code:
   `helion/_compiler/autotuner_heuristics/triton.py` `TritonReductionHeuristic`.
-- **v2 `triton_reduction_tile` (PROPOSED, 2026-05-29) — WIDENED to 3 kernels + raised thresholds.**
-  WORKER-measured (kernel-only do_bench, fp32, GPU2; awaiting referee). Per-kernel G_seed vs the
-  un-seeded default baseline:
-  - rms_norm_fwd: **0.982** (champion 0.979 — UNCHANGED; all in-sample rows still persistent, threshold
-    raise is a no-op here). default baseline 0.914.
-  - sum:          **0.931** — a WASH (default baseline 0.933; the seed neither helps nor hurts — see
-    "sum is a wash, why" below). No regression; tc is just genuinely a bit faster for a 1-load sum.
-  - long_sum:     **1.018** — HUGE generalization win: default baseline **0.311** (the un-seeded default
-    loops chunk-4096/warps-4 → 3.3× too slow on these huge rows). The seed reaches/slightly beats tc.
-  v2 changes vs v1: PERSIST_MAX_BYTES 65536→**262144** (64→256 KiB), LOOPED_CHUNK 4096→**16384**, looped
-  num_warps→**32**, and a NEW **grid-occupancy** branch (M-extent<64 ∧ rnumel≥128KiB → looped/warps32).
-  rms_norm + sum are byte-for-byte unaffected; the wins are entirely on long_sum (the looped + grid-
-  occupancy branches, previously UNTESTED, now validated). NOT yet referee-confirmed (HELPER_REQUEST).
-  NOTE on O: prior O=0.979 was rms_norm-ONLY; new 3-kernel geomean O=**0.976** is NOT directly comparable
-  (adding a 0.93 wash mechanically lowers a geomean even though the heuristic strictly improved). The
-  honest claim is per-kernel: every active kernel beats/matches its default, no kernel regresses, and
-  long_sum is a 3.3× generalization win.
+- **v2 `triton_reduction_tile` — MECHANISM-REJECTED 2026-05-29 by the adversarial auditor.** The long_sum
+  win was REAL but came ENTIRELY from num_warps=32, NOT the looped/grid-occupancy branches. Controlled
+  A/B holding warps EQUAL: persistent/w32 BEATS the v2 shipped looped/w32 seed on 8/9 long_sum shapes. The
+  grid-occupancy branch's premise was a CONFOUND (compared persistent/w16 vs looped/w32). v2's branches
+  were net-harmful + effectively fenced long_sum's shapes. SUPERSEDED by v3.
+
+- **v3 `triton_reduction_tile` (PROPOSED, 2026-05-29) — the HONEST FIX.** WORKER-measured (do_bench, fp32;
+  rms_norm/sum on GPU2/3 median-of-7, long_sum fresh-process-per-shape median-of-9; awaiting referee).
+  Per-kernel G_seed vs un-seeded default baseline:
+  - rms_norm_fwd: **0.9815** (champion 0.979 — UNCHANGED; byte-for-byte identical codegen/warps to v1/v2).
+  - sum:          **0.9449** — still a WASH (no regression; default baseline 0.9365). Byte-for-byte
+    identical to v2 (sum's max in-sample rnumel=16384 stays at w16; the w32 step is gated STRICTLY ABOVE
+    16384 — see `STREAM_WARPS32_MIN_ELEMS`).
+  - long_sum:     **1.099** — the v3 fix: all 5 in-sample shapes now land on **persistent/w32** (was
+    looped/w32 in v2). Recovers the 1.04–1.16× the v2 looped branch was LOSING in-sample. default 0.310.
+  **3-kernel geomean O = 1.0064** (v2 was 0.9763). No kernel regresses >10% vs champion (none regress at
+  all; rms_norm +0.3%). long_sum geomean ROSE from 1.018→1.099 (+8%) exactly as predicted — recovering
+  the looped branch's in-sample loss.
+  v3 changes vs v2 (the auditor's fix list, all applied):
+  - **DELETED** the byte-fence (`PERSIST_MAX_BYTES`) AND the grid-occupancy branch (its premise was a
+    confound). The ONLY persistent-vs-looped lever now is the **structural** one: persistent up to the
+    backend's per-tile element cap `env.backend.max_tensor_numel` (Triton = 2**20 elems); looped only
+    ABOVE it, where a single `tl.arange` over the row literally cannot compile.
+  - **Moved num_warps=32 into the PERSISTENT path**, gated on `num_load==1` (the real workload lever) AND
+    rnumel > 16384 — NOT a generic huge-rnumel ramp. rms_norm (num_load=2) keeps the conservative v1 ramp
+    (it NEVER wants w32 — w32 is catastrophic at large-M/tiny-N: (32768,256) w16=574us, w32=1182us).
+  - The looped branch is now a **synthetic/structural generalization tail with NO in-sample coverage** —
+    disclosed (see "looped tail disclosure" below). No silent caps.
 
 ## Objective
 - Product A: maximize `O = geomean_k G_k`, `G_k = geomean over kernel k's in-sample shapes of
@@ -72,35 +83,47 @@ Observed for rms_norm (all shapes): num_load=2, num_store=2, num_reduction_ops=1
   WHY persistent: the un-seeded Triton default goes LOOPED (chunk=min(next_pow2,4096)) once rnumel>4096,
   which LOSES big at wide shapes ((2048,16384) G_default=0.70, etc.) because tc/Helion-max keep the row
   PERSISTENT. Seeding persistent recovers all to G≈0.99.
-- **[v2] PERSIST_MAX_BYTES = 262144 (256 KiB = 65536 fp32 elems)** — was 65536 BYTES (16384 elems) in v1,
-  which the auditor correctly flagged as a FENCE set at the in-sample rms_norm max row (~16× too low).
-  EVIDENCE (synthetic crossover sweep, _lab/harness/crossover_sweep.py, best-persist vs best-loop over
-  warps/stages): persistent KEEPS WINNING up to ~256 KiB for grid-occupied shapes —
-  rnumel 16384/32768/49152/65536 all persist-win at M≥1024 (pers/loop 0.98/0.80/0.74/0.86); looped only
-  wins from 98304 (384 KiB: 2.9–3.1×). For grid-starved M=8 the crossover is a touch lower (~192 KiB).
-  We pick the OCCUPIED crossover 256 KiB; tiny-M loses only ~6% exactly at 65536 elems (and the
-  grid-occupancy branch below catches that case anyway). rms_norm is unaffected (all rows ≤64 KiB).
-- **[v2] LOOPED_CHUNK = 16384** (was 4096). EVIDENCE (_lab/harness/looped_chunk_probe.py): in the
-  looped-winning region a LARGER R_BLOCK wins — at M=8/rnumel=131072 best-us by chunk: 2048→36.4,
-  4096→25.1, 8192→23.5, **16384→22.0**; same ordering at M=4/16/1024. ~15–25% over old 4096.
-- **num_warps:** persistent branch scales with rnumel (`<=1024→4`, `<=4096→8`, else `16`). Looped branch
-  uses **LOOPED_NUM_WARPS=32** [v2] — EVIDENCE: in the looped/grid-starved regime best (w,s) was (32,1)
-  at essentially every probe case; few programs ⇒ each must extract max ILP over the long row.
-- **[v2] Grid-occupancy lever (SECOND branch, on M-extent = #rows = grid size).** When `m_extent < 64`
-  AND `rnumel >= 128 KiB` → force the LOOPED+warps32 recipe even UNDER the byte ceiling.
-  WHY (generalizable, occupancy): a persistent reduction runs ONE pass per program; with a grid far below
-  the H100's ~132 SMs the GPU is under-filled and a single pass can't hide memory latency. EVIDENCE
-  (_lab/harness/grid_occupancy_probe.py — sum_kernel, persistent/16 vs looped(16384)/32, sweeping the
-  grid M at rnumel 32768 & 65536, both UNDER 256 KiB):
-    M(grid):  1    2    4    8    16   32  | 64   128  256  1024
-    pers/loop 1.17 1.20 1.19 1.14 1.05 1.10| 0.98 1.00 1.00 1.01
-  i.e. for M≲32 looped+warps32 wins 5–21%; at M≳64 they wash. Threshold 64 ≈ SMs/2. The `rnumel≥128 KiB`
-  guard (smallest row where the grid-starved win was observed) prevents looping a tiny row just because M
-  is small. This branch fires ONLY for long_sum's tiny-M shapes ((1,32768),(2,65536)); rms_norm/sum have
-  M≥2048 so it never touches them. Lifted long_sum (1,32768) G 1.24→1.32, (2,65536) 0.94→1.09.
-- **num_stages=1.** Persistent + looped both run a single (rolled) reduction pass; default is 1. The
-  long_sum oracle field-diff hinted at stages=3 on a couple of huge shapes (4,130000)/(16,262144) — small
-  residual headroom, OPEN.
+- **[v3] Persistent-vs-looped lever = the STRUCTURAL cap ONLY.** Persistent (`reduction_loops=[None]`)
+  for every row up to `env.backend.max_tensor_numel` (Triton's `TRITON_MAX_TENSOR_NUMEL` = 2**20 elems);
+  looped chunk ONLY above it. WHY: above the cap a single `tl.arange` over the row is REJECTED at codegen
+  (`numel exceeds triton maximum tensor numel`) — so looped is structurally REQUIRED, not a perf choice.
+  Below the cap, persistent always wins/ties (next bullet), so there is NO perf-based byte fence.
+  - This DELETES v1's 64-KiB fence and v2's 256-KiB `PERSIST_MAX_BYTES` fence. The auditor proved v2's
+    fence was net-harmful: it sent every in-sample long_sum row (128 KiB–1 MiB) LOOPED, but persistent/w32
+    beats looped/w32 on all of them. The fences were a CONFOUND with num_warps (the real lever).
+- **[v3] Step-A crossover sweep (warps HELD EQUAL).** `_lab/harness/v3_crossover_sweep.py`: sum_kernel
+  (num_load=1, same memory class as long_sum), persistent vs looped both at warps∈{16,32}, fp32/H100,
+  median-of-9. Metric bestP/bestL over warps (>1 ⇒ looped wins):
+    rnumel | KiB  | bestP/bestL across M∈{1,4,16,64,256}   | verdict
+    131072 |  512 | 0.92–1.00                              | PERSISTENT
+    262144 | 1024 | 0.87–1.01                              | PERSISTENT
+    393216 | 1536 | 0.52–0.97                              | PERSISTENT
+    524288 | 2048 | 1.20–1.22 @M≤16, ~1.0 @M≥64            | (looped@small-M*)
+    786432 | 3072 | 0.54–1.08                              | PERSISTENT
+   1048576 | 4096 | 1.00–1.10 (noisy ~tie)                 | PERSISTENT (= cap)
+   >1048576|      | persistent FAILS to compile            | LOOPED ONLY
+  i.e. persistent wins or ties at EVERY feasible byte size; the only clean looped win (524288/small-M) is
+  non-monotone (persistent wins at 393216 AND 786432 around it) so it is NOT keyed. This corrects the v2
+  crossover_sweep, which conflated num_warps with the loop flip (it compared *best*-persist vs *best*-loop
+  over different warps).
+- **[v3] num_warps ramp, gated on `num_load` (the generalizable lever, NOT kernel identity).**
+  `_num_warps`: for `num_load==1` (single-stream: sum, long_sum) AND rnumel > 16384 → **32**; else the v1
+  ramp (`<=1024→4`, `<=4096→8`, else `16`). EVIDENCE (_lab/harness/v3_persist_warps_ramp.py, sum_kernel
+  PERSISTENT path): w32 dominates from rnumel 32768 up (rnumel 262144/M=1: w4=47.9us → **w32=11.1us**, a
+  4.3× speedup). The w32 step sits STRICTLY ABOVE 16384 so sum's max in-sample row (16384) is unchanged.
+  - **WHY gated on num_load, not just rnumel:** rms_norm (num_load=2, re-reads x) NEVER wants w32.
+    EVIDENCE (_lab/harness/v3_rmsnorm_warps_ab.py): rms_norm best warp is w4–w16 everywhere; at large-M
+    tiny-N (32768,256) w16=574us and w32=**1182us** (catastrophic — high warps couple badly with the
+    small M-block, consistent with the harness-integrity coupled-warps×block finding). So the w32 win is a
+    num_load=1 property (streaming, bandwidth-bound), not a generic huge-rnumel one. This is the
+    generalize-don't-pattern-match distinction the auditor demanded.
+- **[v3] DELETED the grid-occupancy branch.** Its premise ("looped wins at small M") was a CONFOUND: the
+  worker's grid_occupancy_probe compared persistent/**w16** vs looped/**w32**, attributing a pure
+  num_warps win to the loop flip. At equal warps persistent wins. `_m_extent` is kept as a DIAGNOSTIC-only
+  helper (no branch keys on it) for trace/audit scripts.
+- **LOOPED_CHUNK = 16384, LOOPED_NUM_WARPS = 32** (unchanged from v2): only reached above the structural
+  cap; re-confirmed adequate for the >1 MiB rows in v3_crossover_sweep.py.
+- **num_stages=1.** Both paths run a single (rolled) reduction pass; default is 1.
 
 ## sum is a WASH, why (auditor's finding, root-caused — a generalizable property, not kernel identity)
 - G_seed(sum)≈G_default(sum)≈0.93 while rms_norm WON big. The seed DOES change codegen for sum (at
@@ -158,31 +181,56 @@ Observed for rms_norm (all shapes): num_load=2, num_store=2, num_reduction_ops=1
 NOTE: v2 (raised thresholds) is a NO-OP on rms_norm (all rows ≤64 KiB stay persistent with identical
 warps); re-measured G_rms_norm=0.982, codegen/warps identical to v1. So the v1 table above still stands.
 
-## Per-shape G_sum (v2 seed, kernel-only do_bench, fp32, GPU2) — a WASH
+## Per-shape G_sum (v3 seed, do_bench median-of-7, fp32, GPU3) — a WASH (UNCHANGED from v2)
 | shape | codegen | warps | G_seed | G_default | maxrel |
 |---|---|---|---|---|---|
-| (2048,1024) | persist | 4 | 0.96 | 0.96 | 8e-5 |
-| (2048,4096) | persist | 8 | 0.89 | 0.90 | 3e-4 |
-| (2048,16384) | persist | 16 | 0.93 | 0.93 | 2e-4 |
-| (4096,1536) | persist | 8 | 0.89 | 0.91 | 9e-5 |
-| (4096,5120) | persist | 16 | 0.85 | 0.84 | 2e-3 |
-| (8192,256) | persist | 4 | 1.00 | 0.97 | 4e-4 |
-| (8192,4096) | persist | 8 | 0.89 | 0.89 | 3e-4 |
-| (32768,256) | persist | 4 | 0.99 | 1.00 | 1e-2* |
-| (32768,1024) | persist | 4 | 1.00 | 1.00 | 2e-3 |
-| **GEOMEAN** | | | **0.931** | **0.933** | |
-\* maxrel 1e-2 at (32768,256) is on near-zero row sums (256 random normals sum ≈0 → tiny denominator
-blows up relative error); absolute error «atol=1e-3, allclose PASSES. Standard fp32-sum-near-zero.
+| (2048,1024) | persist | 4 | 1.003 | 1.006 | 7e-4 |
+| (2048,4096) | persist | 8 | 0.899 | 0.895 | 2e-3 |
+| (2048,16384) | persist | 16 | 0.930 | 0.925 | 3e-4 |
+| (4096,1536) | persist | 8 | 0.936 | 0.914 | 2e-3 |
+| (4096,5120) | persist | 16 | 0.844 | 0.842 | 3e-3 |
+| (8192,256) | persist | 4 | 1.003 | 0.970 | 9e-4 |
+| (8192,4096) | persist | 8 | 0.886 | 0.885 | 3e-2* |
+| (32768,256) | persist | 4 | 1.018 | 1.006 | 1e-2* |
+| (32768,1024) | persist | 4 | 1.001 | 1.001 | 9e-3* |
+| **GEOMEAN** | | | **0.9449** | **0.9365** | |
+\* high maxrel is on near-zero row sums (random normals sum ≈0 → tiny denominator blows up RELATIVE
+error); absolute error «atol=1e-3, allclose PASSES. Standard fp32-sum-near-zero. NOTE: warps are IDENTICAL
+to v2 — the w32 step is gated rnumel>16384, and sum's max in-sample row is exactly 16384 → stays w16.
 
-## Per-shape G_long_sum (v2 seed, kernel-only do_bench, fp32, GPU2) — BIG win over default
-| shape | codegen | warps | G_seed | G_default | note |
-|---|---|---|---|---|---|
-| (1,32768) | LOOPED | 32 | 1.32 | 0.67 | grid-occupancy branch (M=1<64, 128KiB≥128KiB) |
-| (2,65536) | LOOPED | 32 | 1.09 | 0.37 | grid-occupancy branch (M=2<64, 256KiB≥128KiB) |
-| (4,130000) | LOOPED | 32 | 0.88 | 0.19 | byte-ceiling branch (508KiB>256KiB) |
-| (8,131072) | LOOPED | 32 | 1.00 | 0.27 | byte-ceiling branch (512KiB>256KiB) |
-| (16,262144) | LOOPED | 32 | 0.87 | 0.23 | byte-ceiling branch (1MiB>256KiB) |
-| **GEOMEAN** | | | **1.018** | **0.311** | seed = 3.3× the un-seeded default |
+## Per-shape G_long_sum (v3 seed, fresh-process-per-shape do_bench median-of-9, fp32, GPU2) — the FIX
+v3 seed = PERSISTENT/w32 for ALL in-sample shapes (was LOOPED/w32 in v2). G_p32 column = the decisive A/B
+(v3 seed should TIE persistent/w32 since it IS that config). seed_used=True, correctness PASS all shapes.
+| shape | codegen | warps | G_seed | G_default | G_p32 | seed/p32 | note |
+|---|---|---|---|---|---|---|---|
+| (1,32768) | persist | 32 | 1.328 | 0.636 | 1.440 | 1.084† | tiny-M, 5us, noise floor |
+| (2,65536) | persist | 32 | 1.135 | 0.367 | 1.214 | 1.070† | tiny-M, 7us, noise floor |
+| (4,130000) | persist | 32 | 1.057 | 0.192 | 1.057 | 1.000 | exact tie |
+| (8,131072) | persist | 32 | 1.123 | 0.277 | 1.123 | 1.000 | exact tie |
+| (16,262144) | persist | 32 | 0.897 | 0.230 | 0.897 | 1.000 | exact tie |
+| **GEOMEAN** | | | **1.099** | **0.310** | | | v2 geomean was 1.018 |
+† seed/p32 = 1.08/1.07 at the two tiny-M shapes is NOISE on BYTE-IDENTICAL configs (5–7us latencies, near
+the do_bench floor). Earlier 3-run measures of the same configs gave 1.000/1.009. The seed IS persistent/
+w32 (branch trace + codegen confirm rl=[None],w32). On the 3 larger shapes seed/p32 = 1.000 exactly.
+
+### High-M held-out long_sum (lift above the noise floor) — v3 persistent/w32, seed/p32 = 1.000 exactly
+| shape | G_seed | G_default | seed/p32 |
+|---|---|---|---|
+| (256,131072) | 1.038 | 0.935 | 1.000 |
+| (256,262144) | 1.094 | 0.992 | 1.000 |
+| (128,131072) | 0.920 | 0.649 | 1.000 |
+These confirm the persistent/w32 win generalizes across M (not just tiny-M) and is real above the noise
+floor; default still loses (0.65–0.99). v3 seed == persistent/w32 exactly at these higher latencies.
+
+## Looped tail DISCLOSURE (no in-sample coverage; synthetic/structural evidence ONLY)
+The looped branch fires ONLY for rnumel > the backend element cap (Triton 2**20 = 1048576 elems). **NO
+in-sample shape — and no held-out shape below ~1 MiB rows — reaches it.** Proof it is structurally REQUIRED
+(not a perf fence): for (1,2097152) the persistent/w32 config FAILS to compile ("numel 2097152 exceeds
+triton maximum tensor numel 1048576"); the v3 seed correctly goes LOOPED, is correct (maxabs 3.7e-4), and
+beats the un-seeded Helion default 10.8× (42.6us vs 462us). It still LOSES to torch.compile there
+(G_seed=0.303 — tc uses a multi-stage/atomic split reduction for enormous rows that a single looped Helion
+kernel doesn't match) — but this is a disclosed generalization tail with no in-sample coverage, NOT tuned.
+See `_lab/harness/v3_looped_tail_check.py`. No silent caps.
 
 ## Oracle field-diff — sum + long_sum (next levers)
 - **sum** (quick-autotune, fair re-bench of FULL verbatim winner): oracle ≈ seed within ~1–3% at most
@@ -204,24 +252,31 @@ blows up relative error); absolute error «atol=1e-3, allclose PASSES. Standard 
 ## Tried and rejected (with why it failed)
 - _Gate `M-floor <= 1` (CuTe template's): REJECTED — silently dropped (32768,*) shapes whose autotuner_min
   is 2. Replaced with "accept any floor, seed block at the floor"._
+- **[v2, REJECTED in v3] Byte-fence `PERSIST_MAX_BYTES` + grid-occupancy branch.** Both were a CONFOUND
+  with num_warps. The v2 crossover/grid-occupancy probes compared persistent/**w16** vs looped/**w32** and
+  attributed the warp win to the loop flip. At EQUAL warps (Step-A sweep) persistent wins/ties at every
+  feasible byte size; the fences sent in-sample long_sum rows looped and LOST 1.04–1.16×. DELETED in v3;
+  the warps=32 lever moved to the persistent path (gated on num_load). The METHODOLOGY LESSON: A/B every
+  branch against the best SIMPLE alternative (persistent/w32), holding all OTHER levers equal — never vs
+  the catastrophic default strawman, never conflating warps with loop-flip.
 
 ## Open hypotheses
-- **(2048,2048)** resolved-as-real (see above); num_warps=8 vs 4 there is a small open lever (coupled
-  warps×block A/B).
-- **[v2 RESOLVED] PERSIST_MAX_BYTES + LOOPED_CHUNK + looped warps** — set by the crossover + chunk sweeps
-  (256 KiB / 16384 / 32). Looped branch now TESTED (long_sum). Done.
-- **[v2 RESOLVED] grid-occupancy** — tiny-M wants looped/warps32 even under the byte ceiling; added the
-  branch (M-extent<64 ∧ rnumel≥128KiB). Done.
-- **num_stages>1 for the very largest looped rows** — long_sum oracle field-diff picks stages=3 on
-  (4,130000) (G 0.88→0.98 persistent+stages3) and (16,262144) (G 0.87→1.14). NEXT lever: try stages=2–3
-  in the looped branch for huge rnumel (gated on rnumel, generalizable). Must re-check it doesn't hurt
-  the smaller looped shapes. (perf-investigator: why does stages help only the largest rows?)
-- **sum vs tc gap** — sum is a wash vs default; the ~10–15% gap to tc is a codegen/indexing lever we don't
+- **(2048,2048)** resolved-as-real; rms_norm num_warps=8 vs 4 there is a small open lever (coupled
+  warps×block A/B). v3 unchanged here.
+- **[v3 RESOLVED] persistent-vs-looped crossover (warps held equal)** — persistent wins to the structural
+  cap (2**20 elems); looped only above it. The byte fence + grid-occupancy branch are DELETED. Done.
+- **[v3 RESOLVED] num_warps=32 lever** — it is a num_load==1 (streaming) property, moved into the
+  persistent path gated on num_load AND rnumel>16384. rms_norm (num_load=2) excluded (A/B'd, never wants
+  w32). Done.
+- **num_stages>1 for the very largest rows** — long_sum oracle field-diff picked stages=3 on (4,130000)/
+  (16,262144). Now those rows are PERSISTENT (not looped); re-A/B stages 2–3 in the persistent path for
+  huge num_load=1 rows (gated on rnumel, generalizable). Open; small residual headroom. (16,262144) is the
+  one in-sample long_sum shape still <1.0 (G 0.897) — stages may be the lever; revisit.
+- **sum vs tc gap** — sum is a wash vs default; the ~5–15% gap to tc is a codegen/indexing lever we don't
   expose. Low priority.
-- **(4,130000) oracle prefers PERSISTENT** while our byte-ceiling sends it looped (508KiB>256KiB), 5% gap.
-  The byte ceiling is right for occupied shapes; for tiny-M the persistent-vs-looped crossover at huge
-  rnumel is subtler (oracle: persistent+stages3). Possible refinement: tiny-M may want persistent+stages
-  even above 256KiB up to some larger bound. Needs its own sweep; small headroom.
+- **Looped tail vs tc** — above the structural cap (>2**20 elems) the single looped Helion kernel loses to
+  tc's multi-stage split reduction (G~0.30 at 2M elems). A split-K / atomic-accumulate looped recipe could
+  close it, but NO in-sample shape reaches the cap — pure generalization-tail headroom, deferred.
 
 ## Oracle field-diff (answer key) — CORRECTED per harness-integrity
 - **(32768,256) full-autotune VERBATIM winner** (re-parsed from /tmp/autotune_log_32768_256.csv, the
