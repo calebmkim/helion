@@ -76,3 +76,14 @@
   gate where it actually fires (synthetic/OOS large-rnumel multi-load), not just in-sample.
 - Next: WORKER invocation 4 (surgical v4) -> then a FOCUSED auditor re-check (fence gone + no regression
   + OOS recovered). If PASS, v4 becomes champion (O~1.005 over 3 kernels). Then iter 5 = Product B.
+- **Worker invocation 4 -> v4 DONE (surgical, one line).** Deleted the `num_load` condition; w32 step now
+  gates on `rnumel > 16384` ALONE in `_num_warps`. Verified: (1) **in-sample byte-identical** —
+  AUDITOR_gate_inert_proof.py = **0/27** mismatch, so O~1.005 + per-kernel G unchanged + correctness PASS
+  (seed spot-checks rms_norm(2048,16384)=w16, long_sum(8,131072)=w32, both persistent). (2) **OOS recovery**
+  — live v4 emits w32 for all held-out large-rnumel rms_norm(nl=2)/layer_norm(nl=3); measured w32/w16:
+  rms_norm (16,131072)=0.617 / (16,262144)=0.616; layer_norm (16,131072)=0.641 / (16,262144)=0.540
+  (recovers 30-46%). (3) **matched-pair physics** re-confirmed (AUDITOR_numload_warps_ab.py): num_load=2
+  ALSO wants w32 at rnumel=131072 (w32/w16=0.57) -> w32 is rnumel-driven, num_load-agnostic. num_load/
+  num_store kept in ReductionFact as DATA, just not gated. notebook+ledger updated, committed. NEVER pushed.
+- Next: FOCUSED adversarial-auditor re-check (num_load fence gone, in-sample byte-identical/no regression,
+  OOS large-rnumel multi-load now w32). If PASS, v4 = champion. Then iter 5 = Product B.

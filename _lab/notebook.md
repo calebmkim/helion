@@ -14,7 +14,10 @@
   grid-occupancy branch's premise was a CONFOUND (compared persistent/w16 vs looped/w32). v2's branches
   were net-harmful + effectively fenced long_sum's shapes. SUPERSEDED by v3.
 
-- **v3 `triton_reduction_tile` (PROPOSED, 2026-05-29) — the HONEST FIX.** WORKER-measured (do_bench, fp32;
+- **v3 `triton_reduction_tile` (2026-05-29) — the HONEST FIX; SUPERSEDED by v4 (auditor FAILED its
+  `num_load` gate).** Referee ACCEPT but the adversarial auditor rejected the `num_load==1` w32-gate
+  condition (see v4 below for the resolving one-line fix). v3's other parts (structural persistent/looped
+  split, branch deletions, rnumel w32 breakpoint) all STAND in v4 byte-identical. WORKER-measured (do_bench, fp32;
   rms_norm/sum on GPU2/3 median-of-7, long_sum fresh-process-per-shape median-of-9; awaiting referee).
   Per-kernel G_seed vs un-seeded default baseline:
   - rms_norm_fwd: **0.9815** (champion 0.979 — UNCHANGED; byte-for-byte identical codegen/warps to v1/v2).
@@ -36,6 +39,37 @@
     (it NEVER wants w32 — w32 is catastrophic at large-M/tiny-N: (32768,256) w16=574us, w32=1182us).
   - The looped branch is now a **synthetic/structural generalization tail with NO in-sample coverage** —
     disclosed (see "looped tail disclosure" below). No silent caps.
+
+- **v4 `triton_reduction_tile` (WORKER-PROPOSED champion candidate, 2026-05-29) — the SURGICAL auditor fix.**
+  v3 was gate-split: referee ACCEPT, but the **adversarial auditor FAILED the `num_load==1` condition** on
+  the w32 ramp. v4 is the one-line resolving fix: **delete the `num_load` condition**, gate the w32 step on
+  **`rnumel > 16384` ALONE**. Everything else is byte-identical to v3 (persistent workhorse @ structural
+  cap; warps ramp <=1024→4 / <=4096→8 / then 16 / then 32 above 16384; structural looped tail above
+  `max_tensor_numel`; all v3 deletions). `num_load`/`num_store` stay in `ReductionFact` as DATA — just not
+  gated on. Before/after:
+  ```
+  - if fact.num_load <= 1 and rnumel > cls.STREAM_WARPS32_MIN_ELEMS:   # v3
+  + if rnumel > cls.STREAM_WARPS32_MIN_ELEMS:                          # v4
+  ```
+  - **In-sample byte-identical → O unchanged.** `AUDITOR_gate_inert_proof.py`: **0/27 mismatches** between
+    v4 and the rnumel-only gate (= v3 in-sample), so O_3kernel stays ~1.005 and every per-kernel G_seed is
+    UNCHANGED (rms_norm 0.9815, sum 0.9449, long_sum 1.099). Correctness PASS (seed spot-checks:
+    rms_norm(2048,16384)=w16 persistent maxabs 1.9e-6; sum(2048,16384)=w16 persistent maxabs 9.9e-5;
+    long_sum(8,131072)=w32 persistent maxabs 1.3e-4).
+  - **OOS recovery (the auditor's harm, now fixed).** Live v4 emits w32 for ALL held-out large-rnumel
+    multi-load shapes; w32 is measured FASTER (recovers 30-40%):
+    - rms_norm (num_load=2): w32/w16 (1,131072)=**0.734**, (16,131072)=**0.617**, (16,262144)=**0.616**.
+    - layer_norm (num_load=3): w32/w16 (1,131072)=**0.760**, (16,131072)=**0.641**, (16,262144)=**0.540**.
+  - **WHY num_load-agnostic (matched-pair A/B physics).** `AUDITOR_numload_warps_ab.py` (num_load=1 vs
+    num_load=2, IDENTICAL structure) shows the w32 benefit is driven by **rnumel, NOT num_load** —
+    num_load=2 ALSO wants w32 at large rnumel (rnumel=131072: w32/w16=**0.57** for num_load=2). The v3
+    num_load fence was a curriculum-split fence dressed as physics: inert in-sample (the condition never
+    fires — no in-sample num_load>=2 kernel has rnumel>16384), false on the matched pair, harmful OOS.
+  - The tiny-rnumel w32 catastrophe ((32768,256): w16=570us→w32=1174us) is at **rnumel=256, already
+    excluded by `>16384`** — an rnumel guard, NOT a num_load one. This is the only thing the num_load fence
+    ever "protected against," and the rnumel breakpoint already covers it.
+  - Evidence: `_lab/harness/AUDITOR_gate_inert_proof.py`, `AUDITOR_rmsnorm_largeN_warps.py`,
+    `AUDITOR_numload_warps_ab.py`, `AUDITOR_v4_oos_recovery.py` (live-seed + layer_norm A/B).
 
 ## Objective
 - Product A: maximize `O = geomean_k G_k`, `G_k = geomean over kernel k's in-sample shapes of
@@ -265,9 +299,14 @@ See `_lab/harness/v3_looped_tail_check.py`. No silent caps.
   warps×block A/B). v3 unchanged here.
 - **[v3 RESOLVED] persistent-vs-looped crossover (warps held equal)** — persistent wins to the structural
   cap (2**20 elems); looped only above it. The byte fence + grid-occupancy branch are DELETED. Done.
-- **[v3 RESOLVED] num_warps=32 lever** — it is a num_load==1 (streaming) property, moved into the
-  persistent path gated on num_load AND rnumel>16384. rms_norm (num_load=2) excluded (A/B'd, never wants
-  w32). Done.
+- **[v4 RESOLVED, supersedes v3] num_warps=32 lever** — it is an **rnumel** property, NOT a num_load one.
+  The w32 step is gated on `rnumel > 16384` ALONE in the persistent path. The v3 `num_load==1` gate was
+  REJECTED (inert in-sample 0/27, false on the matched-pair A/B where num_load=2 ALSO wants w32 at large
+  rnumel — rnumel=131072 w32/w16=0.57, harmful OOS where it denied rms_norm/layer_norm a 30-40% w32 win).
+  rms_norm (num_load=2) and layer_norm (num_load=3) now correctly get w32 at large rnumel. The earlier
+  "rms_norm never wants w32" claim was an ARTIFACT of only testing in-sample rnumel<=16384 (where nobody
+  wants w32) plus the (32768,256) catastrophe — which is an rnumel=256 effect, already excluded by >16384.
+  Done.
 - **num_stages>1 for the very largest rows** — long_sum oracle field-diff picked stages=3 on (4,130000)/
   (16,262144). Now those rows are PERSISTENT (not looped); re-A/B stages 2–3 in the persistent path for
   huge num_load=1 rows (gated on rnumel, generalizable). Open; small residual headroom. (16,262144) is the

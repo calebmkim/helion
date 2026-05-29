@@ -174,12 +174,12 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     structural cap, so the looped branch has NO in-sample coverage — it is a
     synthetic/structural generalization tail, disclosed in the notebook.)
 
-    ``num_warps`` scales with the reduction extent AND ``num_load`` (a workload
-    arith-intensity fact, NEVER kernel identity): single-stream reductions
-    (``num_load==1``: sum, long_sum) ramp up to 32 warps at huge rnumel where
-    the persistent pass is purely bandwidth-bound; re-reading reductions
-    (``num_load==2``: rms_norm) do NOT — high warps hurt them.  See
-    ``_num_warps``.
+    ``num_warps`` scales with the reduction extent (``rnumel``) ALONE: at huge
+    rnumel the persistent pass is bandwidth-bound and ramps up to 32 warps,
+    regardless of ``num_load``.  A matched-pair A/B (v4) showed the w32 win
+    tracks rnumel for both num_load==1 and num_load>=2; the earlier num_load
+    fence was inert in-sample, false on the physics, and harmful out-of-sample,
+    so it was deleted.  See ``_num_warps``.
     """
 
     name = "triton_reduction_tile"
@@ -195,13 +195,16 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # num_warps for the LOOPED branch (huge rnumel beyond the persistent cap).
     # In that regime warps=32 dominates (long_sum num_load=1 streaming class).
     LOOPED_NUM_WARPS = 32
-    # rnumel breakpoint (in ELEMENTS) above which a single-stream (num_load==1)
-    # reduction wants the maximum warp count (32) in the PERSISTENT path. EVIDENCE
-    # (_lab/harness/v3_persist_warps_ramp.py, sum_kernel persistent path, best
+    # rnumel breakpoint (in ELEMENTS) above which a reduction wants the maximum
+    # warp count (32) in the PERSISTENT path. Gated on rnumel ALONE (NOT
+    # num_load — see _num_warps; the matched-pair A/B shows w32 is rnumel-driven
+    # for every num_load). EVIDENCE (_lab/harness/v3_persist_warps_ramp.py, best
     # num_warps per rnumel): w32 dominates from rnumel=32768 up (e.g. rnumel
     # 262144/M=1: w4=47.9us → w32=11.1us = 4.3×). The breakpoint is set STRICTLY
     # ABOVE 16384 so that sum's max in-sample row (rnumel=16384) is BYTE-FOR-BYTE
-    # unchanged (stays at the _num_warps ramp's w16) — no-regression on sum.
+    # unchanged (stays at the _num_warps ramp's w16) — no-regression on sum. The
+    # tiny-rnumel w32 catastrophe ((32768,256): w16=570us->w32=1174us) is at
+    # rnumel=256, already excluded by this guard — an rnumel guard, not num_load.
     STREAM_WARPS32_MIN_ELEMS = 16384
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
@@ -211,36 +214,56 @@ class TritonReductionHeuristic(AutotunerHeuristic):
 
     @classmethod
     def _num_warps(cls, fact: ReductionFact) -> int:
-        """Scale num_warps with the reduction extent (elems) AND ``num_load``.
+        """Scale num_warps with the reduction extent (elems) ALONE.
 
         A wider row gives each warp more independent lane work and more memory
         traffic to overlap; too few warps under-occupies the SM, too many waste
         the cross-lane reduction tree. Power-of-2 (NumWarpsFragment requires it).
 
-        Two regimes, keyed on the WORKLOAD fact ``num_load`` (arith intensity),
-        NOT on kernel identity:
+        The ramp keys on ``rnumel`` ONLY (NOT num_load, NOT kernel identity):
 
-        - ``num_load == 1`` (single-stream reductions: sum, long_sum): the
-          persistent pass is purely bandwidth-bound on a huge row, so the warp
-          count ramps all the way to 32. EVIDENCE
-          (_lab/harness/v3_persist_warps_ramp.py): w32 best from rnumel 32768 up
-          (262144/M=1: w4 47.9us → w32 11.1us). The w32 step sits STRICTLY above
-          16384 so sum's max in-sample row (16384) is unchanged.
-        - ``num_load >= 2`` (re-reading reductions: rms_norm reloads x for the
-          normalize pass): high warps HURT. EVIDENCE
-          (_lab/harness/v3_rmsnorm_warps_ab.py): rms_norm NEVER prefers w32 — at
-          (32768,256) w16=574us and w32=1182us (catastrophic at large-M/tiny-N
-          where warps couple badly with the small M-block); at its wide rows
-          warps barely matter. So multi-load reductions keep the conservative
-          v1 ramp (caps at 16), preserving the rms_norm champion.
+            rnumel <= 1024  -> 4
+            rnumel <= 4096  -> 8
+            rnumel <= 16384 -> 16
+            rnumel >  16384 -> 32
 
-        This is the generalizable distinction the v2 auditor demanded: the
-        warps=32 win is a num_load=1 property, not a generic huge-rnumel one.
+        EVIDENCE that the w32 step is rnumel-driven, not num_load-driven:
+
+        - [v4] A matched-pair synthetic A/B (num_load=1 vs num_load=2, IDENTICAL
+          structure) shows the w32 benefit tracks ``rnumel`` for BOTH: at
+          rnumel=131072 w32/w16=0.57 even for num_load=2. So num_load is NOT the
+          lever — the persistent pass is bandwidth-bound on a huge row
+          regardless of how many times each element is read.
+          (_lab/harness/AUDITOR_numload_warps_ab.py)
+        - The persistent w32 ramp (single-stream sum/long_sum) is confirmed in
+          _lab/harness/v3_persist_warps_ramp.py: w32 best from rnumel 32768 up
+          (262144/M=1: w4 47.9us → w32 11.1us).
+        - Real multi-load reductions ALSO want w32 at large rnumel: real
+          rms_norm (num_load=2) (1,131072) w32/w16=0.725, and layer_norm
+          (num_load=3) (1,131072) is ~34% slower at w16 than w32.
+          (_lab/harness/AUDITOR_rmsnorm_largeN_warps.py)
+
+        WHY the earlier num_load fence was deleted (v3 -> v4): the
+        ``num_load==1`` condition was a curriculum-split fence dressed as
+        physics. It was INERT in-sample (no in-sample num_load>=2 kernel has
+        rnumel>16384, so the condition never fired — 0/27 seeds change if you
+        drop it; AUDITOR_gate_inert_proof.py), FALSE on the matched-pair physics
+        above, and HARMFUL out-of-sample (it denied real rms_norm/layer_norm a
+        real 30-40% w32 win at large rnumel). The tiny-rnumel w32 catastrophe
+        ((32768,256): w16=570us -> w32=1174us) is at rnumel=256, already
+        excluded by the ``> 16384`` guard — an rnumel guard, not a num_load one.
         """
         rnumel = fact.size_hint
-        if fact.num_load <= 1 and rnumel > cls.STREAM_WARPS32_MIN_ELEMS:
-            # Single-stream, huge row: bandwidth-bound persistent pass wants the
-            # max warp count to keep the SM fed and amortize the reduction tree.
+        if rnumel > cls.STREAM_WARPS32_MIN_ELEMS:
+            # Huge row: the bandwidth-bound persistent pass wants the max warp
+            # count to keep the SM fed and amortize the reduction tree. This is
+            # gated on rnumel ALONE — the w32 win is driven by the reduction
+            # extent, NOT by num_load. A matched-pair A/B (num_load=1 vs
+            # num_load=2, identical structure) shows BOTH want w32 at large
+            # rnumel (rnumel=131072: w32/w16=0.57 even for num_load=2). The
+            # tiny-rnumel w32 catastrophe (e.g. (32768,256): w16=570us ->
+            # w32=1174us) is at rnumel=256, already excluded by `> 16384` — it
+            # is an rnumel guard, not a num_load one.
             return 32
         if rnumel <= 1024:
             return 4
@@ -302,7 +325,7 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         if can_persist:
             # Persistent (single-pass) reduction. normalize() realizes None as
             # the full power-of-2 extent at codegen (no `for roffset` loop).
-            # num_warps scales with rnumel AND num_load (see _num_warps).
+            # num_warps scales with rnumel ALONE (see _num_warps).
             reduction_loops: list[int | None] = [None]
             num_warps = cls._num_warps(fact)
         else:
