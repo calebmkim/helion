@@ -170,3 +170,22 @@
 - Next: final comprehensive adversarial audit of the COMPLETE v7 (whole-curriculum overfit/cheat/fence sweep +
   FINAL_REPORT claim check). Then the forward reduction-seed task is at its honest end (Band D backward = wip-deferred,
   out of scope; codegen-eviction = autotuner-only; welford prime-N = kernel-structure). Soft-convergence: FORWARD COMPLETE.
+- **CAPSTONE AUDIT of complete v7: PASS** (honest, general, coherent routing, correct; multi-load cap generalizes to
+  wide softmax = real physics). Surfaced a missed seedable lever: welford apply-tile should be capped/looped at wide N.
+- **v8 ACCEPTED (both gates PASS) — FINAL CHAMPION.** welford apply-tile cap + coupled combine cap: (262144,4096)
+  0.706->0.757 (block_sizes ceiling closed), welford 0.894->0.9105, O 0.9765->**0.9786**. 8 kernels + welford small-N
+  byte-identical; correct at non-pow2 + PRIME N. The capstone's "27% seedable" was itself an overstatement (apply-cap
+  alone +2.5%; the 0.968 oracle is autotuner-only codegen knobs, proven by knob-isolation) -> CORRECTED in report+ledger.
+  Commit daca67c4 (+ verdicts ca9d76d2). FINAL_REPORT finalized to v8 (TEST carried from v7 per read-once; v8's
+  welford-large-N change doesn't touch the dominant prime-N TEST driver).
+- **=== RUN COMPLETE (forward reduction-seed task at its honest ceiling) ===**
+  Product A: v8, 9 forward kernels, in-sample O=0.9786, generalizes (TEST -0.036 ex-welford; +34% on BRAND-NEW kernels;
+  fresh-oracle seed/oracle=1.007). Product B: median time-to-95% 1.94x (~half the autotune budget). Harness re-certified
+  unbiased. Code PR-ready (lint/type/tests green + unit test; byte-identical-verified fixes). Adversarial chain
+  caught+corrected ~7 cheats/confounds/overstatements. All residuals are kernel-source (cross_entropy online-softmax;
+  welford prime-N count-logic) or autotuner-only codegen knobs (eviction/indexing/pid) = Product-B territory, NOT
+  deterministic-seedable. NO in-scope seedable Product-A angle remains.
+- **SOFT-CONVERGENCE FLAG (strong, non-blocking, for human):** the defined forward reduction-seed task is COMPLETE +
+  at ceiling + exhaustively verified. The next workstream (backward kernels, Band D) is EXPLICITLY wip-deferred =
+  a scope decision for the human. Durable state (ledger/notebook/FINAL_REPORT/harness) is ready to resume Band-D or any
+  scope expansion losslessly. Not stopping on my own judgement; surfacing the converged signal per the manager protocol.
