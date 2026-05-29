@@ -44,7 +44,24 @@
     }
   },
   "oracle_cache": {
-    "_note": "field-diff via _lab/harness/oracle_field_diff.py (Helion effort=full winner vs seed). Run in flight at commit time; append results when complete."
+    "_note": "field-diff via _lab/harness/oracle_field_diff.py (Helion effort=full winner vs seed). Full-effort is SLOW (>10min/shape) and its INTERNAL do_bench is BIASED for tiny-N shapes (see caveat). Prefer quick-effort + fair re-bench.",
+    "rms_norm_fwd": {
+      "(32768,256)": {
+        "oracle_full_best_config": {"reduction_loops": [null], "block_sizes": [1], "num_warps": 32, "num_stages": "1-3", "note": "8 generations; autotuner-internal do_bench reported 73.6us"},
+        "fair_rebench_caveat": "oracle num_warps=32 is an ARTIFACT: fair end-to-end do_bench gives bs1/w32=1183us (G=0.029), bs1/w16=574us. FAIR optimum is LOW warps: bs1/w4=35.9us (G=0.950) ~= my seed bs2/w4=36.1us (G=0.945).",
+        "seed": {"reduction_loops": [null], "block_sizes": [2], "num_warps": 4},
+        "field_diff": "persistent MATCHES; warps: oracle=32 (artifact) vs seed=4 (fair-optimal); block: oracle=1 vs seed=2 (floor), worth ~0.5% (noise). Seed at/near FAIR ceiling.",
+        "fair_ab_warps": {"bs1": {"4": "35.9us/G0.950", "8": "43.0us/G0.793", "16": "574us", "32": "1183us"}, "bs2": {"4": "36.1us/G0.945", "8": "38.5us/G0.886", "16": "46.6us/G0.733", "32": "87.3us/G0.391"}}
+      },
+      "(32768,1024)": {
+        "fair_ab_warps": {"bs1": {"4": "G1.000", "8": "G0.996", "16": "G0.924", "32": "G0.698"}, "bs2": {"4": "G1.005", "8": "G0.996", "16": "G0.993", "32": "G0.891"}},
+        "field_diff": "warps=4 fair-optimal (seed uses 4); high warps hurt. Seed at FAIR ceiling."
+      },
+      "(2048,2048)": {
+        "fair_ab_isolated": {"note": "isolated-process probe (NOT the contended full-sweep)", "w8_persist": "13.47us/G1.319", "w4_persist": "13.82us/G1.286", "w2_persist": "13.66us/G1.301", "w16_persist": "14.08us/G1.262"},
+        "field_diff": "persistent + warps~8 is great in isolation (G=1.32). The full-sweep G=0.87 is a measurement-context artifact, not a config problem."
+      }
+    }
   },
   "iteration_history": [
     {

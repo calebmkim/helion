@@ -111,6 +111,25 @@ Observed for rms_norm (all shapes): num_load=2, num_store=2, num_reduction_ops=1
   rms_norm rows are <=16384 so we never cross it here. Probe a synthetic wide row (e.g. 32768/65536) to
   find where persistent stops winning, to set this threshold by evidence rather than by the in-sample max.
 
+## Oracle field-diff (answer key) — IMPORTANT caveat about the oracle
+- **(32768,256) full-autotune oracle "best"** (8 generations): `reduction_loops=[None]` (persistent —
+  MATCHES my seed), `block_sizes=[1]` (mine seeds [2] at the autotuner_min floor), **`num_warps=32`**,
+  num_stages 1-3, some tensor_descriptor indexing + eviction tuning. Autotuner-internal do_bench
+  reported 73.6us for that config.
+- **BUT the oracle's num_warps=32 is a measurement ARTIFACT** — re-run in the FAIR end-to-end do_bench:
+  (32768,256) bs=1/warps=32 = **1183us (G=0.029)**, bs=1/warps=16 = 574us — catastrophic. The fair
+  optimum is **low warps**: bs=1/warps=4 = 35.9us (G=0.950) ≈ bs=2/warps=4 = 36.1us (G=0.945, = MY SEED).
+  (32768,1024): warps=4 best (G=1.00-1.005), warps=32 = G=0.70. So the autotuner's own timing disagrees
+  with fair do_bench for tiny-N/large-M shapes (likely L2-residency / launch-overhead sensitivity that the
+  autotuner's repeated-launch timing hides). DO NOT chase oracle num_warps here. → HELPER_REQUEST:
+  harness-integrity should reconcile the autotuner-internal do_bench vs fair do_bench for these shapes.
+- **Field-diff verdict for small-N/large-M:** my seed (persistent, warps=4, block=floor) is at/near the
+  FAIR ceiling. The only real lever the oracle exposes is block=1 vs my block=floor=2 on (32768,256) —
+  worth ~0.5% (35.9 vs 36.1us), within noise. Not worth violating the autotuner_min floor for.
+- Medium/large shapes: my seed already hits G≈0.98-0.99 (≈ the G_oracle_ceiling of ~1.0 from step1), so
+  the field-diff headroom there is small; deferred a clean quick-effort oracle sweep for the full 13.
+
 ## Oracle cache pointers
 - See `_lab/ledger.json` `oracle_cache`. Field-diff script: `_lab/harness/oracle_field_diff.py`
-  (Helion effort=full winning config vs seed for 3 representative shapes). [oracle run in progress]
+  (Helion effort=full). NOTE: full-effort autotune over 3 shapes is SLOW (>10min/shape) and its internal
+  timing is biased for tiny-N (see above) — prefer quick-effort + a FAIR re-bench of the winner.
