@@ -632,15 +632,18 @@
     }
   ],
   "champion": {
-    "heuristic_version": "v1 triton_reduction_tile (ACCEPTED 2026-05-28)",
-    "O": 0.979,
+    "heuristic_version": "v4 triton_reduction_tile (ACCEPTED 2026-05-29; commit 37b27f67)",
+    "O": 1.005,
     "per_kernel_G": {
-      "rms_norm_fwd": 0.979
+      "rms_norm_fwd": 0.980,
+      "sum": 0.937,
+      "long_sum": 1.10
     },
-    "note": "first registered Triton reduction heuristic. Referee-confirmed G_seed=0.9793 vs no-seed default 0.9083 (+7.8%, fresh-subprocess-per-shape, worst per-shape -6.3% within -10% backstop). Auditor PASS (in-sample->held-out gap ~2.1%, still +9% over default on held-out; no kernel-identity smuggling)."
+    "note": "Persistent workhorse up to the 2^20 structural compile cap; num_warps ramp 4/8/16/32 gated on rnumel (w32 for rnumel>16384); looped tail ONLY above the cap. GATES PASSED: referee ACCEPT (in-sample O~1.005 over 3 kernels; v4==persistent/w32); auditor PASS (num_load fence removed, gate rnumel-only, in-sample byte-identical to v3 [0/27], OOS large-rnumel multi-load now gets w32 -> rms_norm +27-38% / layer_norm +23-46%; no new fence). History: v1 (rms_norm only, accepted) -> v2 (REJECTED looped/grid-occ misattribution) -> v3 (REJECTED num_load fence) -> v4 (ACCEPTED).",
+    "open_issue": "PRODUCT-B SEED DEGRADATION: reduction_loops=[None] (persistent) does NOT round-trip through the autotuner flat-encode (ReductionLoopSpec._encode_flat_value maps None->min(next_pow2(rnumel),4096), decodes back to None only if >=size_hint -> false for rnumel>4096). So the injected seed loses its persistent lever (keeps num_warps). Product-A bare-seed path UNAFFECTED. Product-B wins (1.5-1.8x time-to-target) are a LOWER BOUND. Fix pending blast-radius scoping."
   },
   "proposed_champion": {
-    "heuristic_version": "v4 (WORKER-PROPOSED, awaiting auditor re-check) = v3 minus the num_load gate",
+    "heuristic_version": "v4 ACCEPTED 2026-05-29 (auditor re-check PASSED) -> now the champion. = v3 minus the num_load gate",
     "v3_note": "The HONEST FIX for the v2 mechanism rejection. DELETED the byte-fence + grid-occupancy branch (both confounds with num_warps); persistent-vs-looped now keyed ONLY on the STRUCTURAL cap (env.backend.max_tensor_numel = Triton 2**20 elems) -- persistent below, looped only above where it cannot compile. Moved num_warps=32 into the PERSISTENT path gated on num_load==1 AND rnumel>16384 (the real lever; rms_norm num_load=2 excluded by explicit A/B -- it never wants w32). All 5 in-sample long_sum shapes now PERSISTENT/w32 (== the auditor's persistent/w32 alternative, decisive A/B seed/p32==1.000 on the 3 non-noise-floor shapes). O_3kernel=1.0064 (v2 0.9763); long_sum geomean 1.018->1.099 (+8%, recovering the v2 looped in-sample loss); rms_norm 0.9815/sum 0.9449 UNCHANGED (no regression). Looped branch is a disclosed synthetic/structural tail with NO in-sample coverage. See product_A_measurements.v3 + gate_verdicts.v3 (pending).",
     "note": "v4 DONE. v3 num_load==1 condition on the w32 ramp DELETED (it was inert in-sample [0/27], false physics [matched-pair: w32 keyed on rnumel for all num_load], harmful OOS [denied real rms_norm/layer_norm a 30-40% w32 win at large rnumel]). Surgical: w32 step now gates on rnumel>16384 ALONE. In-sample byte-identical (O~1.005 holds, correctness PASS); OOS large-rnumel multi-load recovers 30-40% (rms_norm w32/w16=0.62-0.73, layer_norm 0.54-0.76). v3 persistent workhorse + rnumel w32 ramp + structural looped tail + branch deletions all stand byte-identical. Evidence: AUDITOR_gate_inert_proof.py (0/27), AUDITOR_rmsnorm_largeN_warps.py, AUDITOR_v4_oos_recovery.py. See iteration_history iter=4 + gate_verdicts.v4_triton_reduction_tile."
   },

@@ -85,5 +85,18 @@
   (recovers 30-46%). (3) **matched-pair physics** re-confirmed (AUDITOR_numload_warps_ab.py): num_load=2
   ALSO wants w32 at rnumel=131072 (w32/w16=0.57) -> w32 is rnumel-driven, num_load-agnostic. num_load/
   num_store kept in ReductionFact as DATA, just not gated. notebook+ledger updated, committed. NEVER pushed.
-- Next: FOCUSED adversarial-auditor re-check (num_load fence gone, in-sample byte-identical/no regression,
-  OOS large-rnumel multi-load now w32). If PASS, v4 = champion. Then iter 5 = Product B.
+- **v4 auditor re-check: PASS -> v4 is the ACCEPTED CHAMPION** (O~1.005 over {rms_norm,sum,long_sum};
+  generalizes to multi-load large-rnumel). Gate now rnumel-only; fence gone; no new cliff.
+- **Product B DONE (iter 5, GPUs 2+3).** Seeded vs unseeded quick-autotune, N=3 seeds, cold cache, 4 shapes.
+  HEADLINE Slice-2 time-to-95%: seeded **1.5-1.8x** less wall-clock on 3/4 shapes (rms_norm (2048,16384)
+  1.78x, (8192,8192) 1.70x, sum (2048,16384) 1.52x; long_sum ~tie at noise floor but big early-budget win).
+  Slice-1 gen0/gen1 seeded clearly ahead; full-budget guardrail passes (no regression). Curve shifts
+  up-and-left. Commit 057f70bd; traces in logs/productB/.
+- **CRITICAL BUG found by Product B: persistent seed silently DEGRADED on autotuner injection.**
+  reduction_loops=[None] flat-encodes to looped-4096 (ReductionLoopSpec._encode_flat_value maps
+  None->min(next_pow2(rnumel),4096); round-trips to None only if >=size_hint -> false for rnumel>4096). So
+  the injected seed loses its DOMINANT lever (persistent), keeping only num_warps. Product-A bare-seed path
+  (configs=[seed]) UNAFFECTED. => Product-B 1.5-1.8x is a LOWER BOUND; fixing the round-trip should enlarge it.
+- Next: code-investigator (read-only) scopes the round-trip fix blast radius BEFORE touching core autotuner
+  code. Then worker fixes _encode_flat_value + re-runs Product B. Then widen Product A (layer_norm-fwd next:
+  num_load>=2, benefits from v4 w32 fix; then softmax = T2).
