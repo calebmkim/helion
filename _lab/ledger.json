@@ -1473,9 +1473,9 @@
   }
  ],
  "champion": {
-  "heuristic_version": "v6 triton_reduction_tile (ACCEPTED 2026-05-29; commit 54ac64e3; both gates PASS; T1+T2, Bands A+B+C-decline; multi-load persist cap). Forward curriculum COMPLETE.",
-  "O": 0.9874,
-  "O_note": "O over the 8-kernel SEEDED active set {rms_norm_fwd, sum, long_sum, layer_norm_fwd, cross_entropy, softmax_two_pass, kl_div, jsd}. O_7kernel (the prior 7) UNCHANGED at 0.9982 (byte-identical). cross_entropy at 0.915 mechanically dilutes the 8-kernel geomean (held sub-1 only by the (8192,131072) Helion-source gap vs tc online softmax). Per-kernel: NO regression (7 byte-identical), cross_entropy +52% vs un-seeded default. welford classified OUT-OF-SCOPE (declined, not seeded -> not in the active G set; correct default fallback).",
+  "heuristic_version": "v7 triton_reduction_tile (ACCEPTED 2026-05-29; commit 53ed8762; both gates PASS; T1+T2, Bands A+B+C; is_structured_combine welford treatment). FORWARD CURRICULUM COMPLETE — all 9 forward kernels seeded.",
+  "O": 0.9765,
+  "O_note": "O over the 9-kernel SEEDED active set {rms_norm_fwd, sum, long_sum, layer_norm_fwd, cross_entropy, softmax_two_pass, kl_div, jsd, welford}. O_8kernel UNCHANGED 0.9874 (byte-identical); adding welford (G=0.894) mechanically dilutes the geomean ~1%. Per-kernel: NO regression (8 byte-identical), welford a +70% win vs un-seeded default (0.526->0.894) and CORRECT at non-pow2 incl prime N. The heuristic is at its DETERMINISTIC-SEED CEILING: 8-kernel residual is autotuner-only (codegen-knob eviction, not seedable); welford (262144,4096) has ~7% residual via a full-combine+looped-apply structure the seed doesn't explore (auditor correction: seed/oracle~=0.93, NOT the worker's overstated 1.04). cross_entropy 0.915 + welford 0.894 are kernel-SOURCE/structure ceilings, not config misses.",
   "active_kernels": [
    "rms_norm_fwd",
    "sum",
@@ -1484,11 +1484,10 @@
    "cross_entropy",
    "softmax_two_pass",
    "kl_div",
-   "jsd"
+   "jsd",
+   "welford"
   ],
-  "out_of_scope_kernels": [
-   "welford (T2 multi-tiled-pass; declined; correct default fallback)"
-  ],
+  "out_of_scope_kernels": [],
   "per_kernel_G": {
    "rms_norm_fwd": 0.98,
    "sum": 0.937,
@@ -1497,7 +1496,12 @@
    "cross_entropy": 0.915,
    "softmax_two_pass": 0.967,
    "kl_div": 1.026,
-   "jsd": 0.997
+   "jsd": 0.997,
+   "welford": 0.894
+  },
+  "v7_gate_verdicts": {
+   "results_referee": "ACCEPT. welford correct at ALL shapes incl non-pow2 (262144,1536) maxabs 1.2e-6 + extra canaries (65536,1536; 262144,2560; 262144,3072; prime 1021/1537). Proved divisor-chunk fix load-bearing: non-divisor combine (2048/1024 at N=1536) gives maxabs 0.68 (WRONG); divisor (512) correct. G_welford geomean 0.894 reproduced (vs default 0.526). 18/18 byte-identical no-regression on the 8 (is_structured_combine=False for all).",
+   "adversarial_auditor": "PASS. is_structured_combine is a PROVEN-GENERALIZABLE structural signal (>1 non-grid tile + apply tile over same extent) -- built a DIFFERENT structured combine (max_normalize) -> gate fires; single-pass -> False; NOT a welford fence. Correct at ALL non-pow2 incl PRIME N (combine=1 stride-1, Tn=true count). Cap (8192 bytes=2048 fp32 elems) evidence-based (full-N combine spills G=0.13). Byte-identical no-regression (8 kernels). HONESTY CORRECTION: (262144,4096) seed/oracle~=0.93 not 1.04 (oracle reaches 0.757 via full-combine+looped-apply; ~7% residual the seed doesn't explore). Non-fatal."
   },
   "v6_change_note": "v6 adds cross_entropy + the multi-load persist byte-cap (num_load>=2 AND rnumel*itemsize>128 KiB -> looped) and the welford decline guard (>1 non-grid tile -> no fact). See product_A_measurements.v6_cross_entropy_welford + iteration_history iter=8 + kernels.{cross_entropy,welford}.",
   "v6_gate_verdicts": {
