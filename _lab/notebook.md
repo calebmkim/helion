@@ -5,6 +5,13 @@
 > champion). The hub appends gate verdicts. Keep it current at every clean iteration boundary.
 
 ## Champion (current best heuristic)
+- **v8 WELFORD APPLY-TILE CAP (WORKER 2026-05-29) — current champion.** Adds the welford apply-tile
+  byte-cap (looped normalize at wide N) + the coupled combine cap, in the is_structured_combine branch of
+  triton.py ONLY. Recovers (262144,4096) G 0.706→0.757 (the block_sizes ceiling); welford G 0.894→0.9105;
+  O_9kernel 0.9765→0.9785. 8 other kernels + welford small-N BYTE-IDENTICAL. Correct at ALL welford shapes
+  incl non-pow2 + prime N. Also corrected the brief's overstated "27% apply-tile win" (it's +2.5% from the
+  apply tile alone; the oracle's G=0.968 is autotuner-only codegen knobs, NOT seedable). See "## v8 —
+  welford APPLY-TILE byte-cap" below + ledger product_A_measurements.v8_welford_apply_cap.
 - **v7 PR-READINESS FINALIZE (WORKER 2026-05-29) — mechanical code-review fixes ONLY, heuristic logic BYTE-IDENTICAL.**
   Applied exactly the review-flagged, behavior-preserving fixes; the frozen v7 logic is UNTOUCHED.
   (1) `device_ir.py::_count_reduction_workload` return annotation `tuple[...,int]` (5) -> `tuple[...,int,int]` (6)
@@ -764,6 +771,61 @@ kl_div 1.026, jsd 0.997, cross_entropy 0.915 (all 8 BYTE-IDENTICAL, UNCHANGED) +
 **O_8kernel UNCHANGED 0.9874; O_9kernel = 0.9765** (welford at 0.894 mechanically nudges the geomean down —
 same effect as adding cross_entropy/sum; the (4096) welford-structure ceiling holds it sub-1). Honest
 PER-KERNEL: NO kernel regresses (8 byte-identical; welford +70% vs un-seeded default, correct at non-pow2).
+
+## v8 — welford APPLY-TILE byte-cap (looped normalize at wide N) + COUPLED combine cap 2026-05-29
+The capstone audit flagged a seedable wide-N win on welford and a v7 overstatement. v8 captures the
+block_sizes-only win and CORRECTS the claim. Built on v7 (commit c7684686); only triton.py changed.
+
+### What changed (is_structured_combine branch, triton.py)
+- **apply tile = `min(next_pow2(N), STRUCTURED_APPLY_CAP_BYTES//itemsize = 2048 fp32)`** (was
+  next_pow2(N) PERSISTENT). At N≤2048 np2(N)≤cap ⇒ persistent (unchanged); at N=4096 it LOOPS at 2048.
+  The apply/normalize pass is a pure masked element-wise write (`y=(x-mean)*rstd*w+b; out[...]=y`), so ANY
+  apply tile is correct — verified incl non-pow2 (3072/6144) and prime (1543/3079). It is a pure PERF lever.
+- **combine cap COUPLED**: `16 KiB (=4096 fp32) when the apply is looped, else 8 KiB (=2048)`. The combine
+  spills ONLY when paired with a FULL apply ((262144,4096) combine=4096/apply=4096 = 30 ms, G=0.13);
+  looping the apply frees the working set ⇒ a full pow2-divisor combine becomes spill-safe AND faster.
+
+### The EVIDENCE (matched A/B, all other levers equal — GPU2/3, do_bench median, fp32)
+Apply-tile sweep at (262144,4096), combine held at v7's 2048 (`wf_apply_sweep.py`):
+| apply tile | 4096 (persist) | 2048 (loop) | 1024 (loop) | 512 (loop) |
+|---|---|---|---|---|
+| G | 0.704 | **0.722** | 0.703 | 0.688 |
+⇒ apply-cap ALONE is **+2.5%** (0.704→0.722), NOT the 27% the brief premised. The full ~7% to G=0.757
+needs the COUPLED full combine: combine 2048→4096 with apply looped@2048 lifts G 0.722→0.757
+(`wf_v8_decision.py` rule geomeans: R0 v7 0.8944, R1 apply-cap-only 0.8999, R2/R3 full-combine+apply-cap
+**0.9105**). Combine cap = 16 KiB is the spill-safe ceiling: `wf_combine_largeN_safety.py` shows combine
+>16 KiB REGRESSES at N≥32768 even with a looped apply (N=32768: combine 4096 G0.666 vs 16384 G0.614).
+
+### G_welford v8 (do_bench median, fp32, GPU2/GPU3 both) — CORRECT at ALL shapes
+| shape | v8 seed | warps | G_v8 | G_v7 | maxabs |
+|---|---|---|---|---|---|
+| (262144,1024) | [16,1024,1024] | 4 | 0.996 | 0.996 | 1.7e-6 | (=v7) |
+| (262144,1536) | [16,512,2048] | 8 | 0.924 | 0.925 | 1.2e-6 | (=v7, non-pow2 canary) |
+| (262144,2048) | [16,2048,2048] | 8 | 0.988 | 0.988 | 1.7e-6 | (=v7) |
+| (262144,4096) | **[16,4096,2048]** | 8 | **0.757** | 0.706 | 1.7e-6 | (v8 CHANGE) |
+| **GEOMEAN** | | | **0.9105** | 0.894 | | |
+Correct incl prime N: (262144,1543) maxabs 6.3e-6, (131072,3079) maxabs 8.6e-6 (apply LOOPED + combine=1);
+non-pow2-looped-apply (262144,3072)/(131072,6144) maxabs 1.2e-6. The looped apply does NOT break
+correctness (`wf_v8_correct_nonpow2_prime.py`: ALL CORRECT).
+
+### OVERSTATEMENT CORRECTED (the brief's premise + the v7 §6/ledger claims)
+The brief claimed [16,2048,2048] gives G=0.968 (27% from the apply tile alone). Matched A/B
+(`wf_brief_repro.py`): [16,2048,4096]=0.704 (reproduces) but [16,2048,2048]=**0.722** (NOT 0.968). The
+fresh quick-autotune oracle DOES report G=0.968 — but `wf_oracle_knob_isolate.py` PROVES it is ENTIRELY
+autotuner-only codegen knobs: the oracle's OWN block_sizes [16,2048,2048] at DEFAULT knobs = 0.722
+(= our bare A/B); adding ONLY `indexing=[…,tensor_descriptor,tensor_descriptor,…]` +
+`load_eviction_policies=['last','first',…]` + `range_multi_buffers`/`range_num_stages` lifts it
+0.722→0.968 (same knobs on the v8 seed → 0.757→0.947). So beyond v8's block_sizes ceiling (0.757) the
+residual is the SAME autotuner-only codegen-knob residual as the 8 grid-bound kernels — NOT seedable, NOT
+a config the seed missed. The prior "oracle reaches 0.737/0.757 as the full ceiling; seed/oracle≈0.93/1.04"
+are corrected: v8 IS the block_sizes ceiling; seed/oracle on block_sizes ≈ 1.0.
+
+### No-regression (BYTE-IDENTICAL)
+`wf_no_regression_8.py`: 18/18 seeds across the 8 other kernels, is_structured_combine=False (the v8 change
+is entirely inside the is_structured_combine branch ⇒ inert by construction). welford small-N byte-identical
+(`wf_v8_smallN_byteidentical.py`: N∈{1024,1536,2048} IDENTICAL to v7; only N=4096 changes). test_reductions
+24 passed + 11 subtests; test_examples 25 passed. git diff helion/: triton.py only (+67/-13, mostly
+evidence-cited comments). **O_9kernel 0.9765 → 0.9785; O_8kernel UNCHANGED 0.9874.**
 
 ## layer_norm_fwd — WIDENED 2026-05-29 (v4 SUFFICES UNCHANGED; byte-identical heuristic)
 The cleanest possible outcome: **adding layer_norm_fwd to the active set required ZERO heuristic change**

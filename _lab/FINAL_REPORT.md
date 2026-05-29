@@ -1,10 +1,12 @@
-# FINAL REPORT — H100/fp32 Triton Reduction-Heuristic (v7, FROZEN)
+# FINAL REPORT — H100/fp32 Triton Reduction-Heuristic (v8, FROZEN)
 
 **Author:** ledger-keeper (terminal step). **Date:** 2026-05-29.
-**Heuristic:** `triton_reduction_tile` v7, **FROZEN** at commit `53ed8762` (champion accept
-`44df990d`). All 9 forward kernels seeded. **Not modified by this step.**
-**Read-once discipline:** this is the ONLY agent that read the held-out **TEST** shapes. They
-were read EXACTLY ONCE, here, and were NOT tuned to. The heuristic is unchanged.
+**Heuristic:** `triton_reduction_tile` v8 (welford Band-C apply-tile cap), built on the v7
+champion. v8 adds the welford apply-tile byte-cap (looped normalize at wide N) + the coupled
+combine cap; all OTHER kernels BYTE-IDENTICAL. Latest commit at this write: see §9.
+**Read-once discipline:** the terminal TEST read (§0/§2 TEST column) was done ONCE under v7 and
+is unchanged — v8 only alters the welford in-sample WIDE-N (N=4096) config (in-sample
+block_sizes ceiling), so the TEST column is carried forward; it was NOT re-read for v8.
 
 ---
 
@@ -12,8 +14,18 @@ were read EXACTLY ONCE, here, and were NOT tuned to. The heuristic is unchanged.
 
 | metric | in-sample O | TEST O | gap | ratio |
 |---|---|---|---|---|
-| **9-kernel geomean** | **0.9765** | **0.8628** | **−0.114** | 0.88 |
+| **9-kernel geomean** | **0.9785** (v8; v7 was 0.9765) | **0.8628** (v7) | — | — |
 | 8-kernel (excl. welford) | 0.9874 | 0.9511 | −0.036 | 0.96 |
+
+> **v8 update (welford apply-tile cap).** The welford in-sample G rose 0.894 → **0.9105**
+> (+1.7%), lifting the 9-kernel in-sample O 0.9765 → **0.9785**. The win is the (262144,4096)
+> shape: G 0.706 → **0.757** by LOOPING the apply/normalize pass (capping the apply tile at
+> 8 KiB) AND raising the coupled combine tile to its full pow2-divisor (4096) — which is
+> spill-safe ONLY because the looped apply frees the working set. This closes the **block_sizes**
+> headroom at (262144,4096): the v8 seed is now at the deterministic-seed (block_sizes) ceiling.
+> A residual to the autotuner ORACLE (G=0.968) remains, but it is **NOT seedable** — it is the
+> tensor_descriptor-indexing + load-eviction-policy codegen knobs (see §6, corrected). The TEST
+> O is the v7 number (TEST not re-read for v8; the 8 other kernels are byte-identical).
 
 **Verdict: a real but well-understood generalization gap, NOT broad overfit.** Every one of the
 56 TEST shapes across 9 kernels: seed **fires** (exactly 1 seed), is **used** (codegen verified),
@@ -68,11 +80,19 @@ looped). Bands: **A** (scalar/row accumulator), **B** (2D `[M,R]` accumulator), 
   (both `hl.tile` axes are block_sizes; reduction realized by a ReductionLowering reusing the user
   tile; reduction axis found by a predicate filtered vs `grid_block_ids` — load-bearing for jsd).
 - **`is_structured_combine` welford treatment** (Band C, §6). Gate: `>1 non-grid tile AND ≥1 apply
-  tile over the SAME extent` (a reduce-then-apply two-pass over one axis). Seed: combine tile =
-  `min(largest_pow2_div(N), 2048)`, apply tile = `next_pow2(N)` persistent. *Why pow2-divisor:* the
-  Welford `Tn=chunk.size(-1)` lowers to the tile constexpr (not the masked count), so a masked combine
-  tile divides by the padded width → WRONG at non-pow2 N. A pow2 divisor makes every chunk full →
-  correct. **INERT for all 8 other kernels** (`is_structured_combine=False`; byte-identical seeds).
+  tile over the SAME extent` (a reduce-then-apply two-pass over one axis). Seed (v8):
+  **apply tile = `min(next_pow2(N), 8 KiB)`** — persistent at small N, LOOPED at wide N (the apply pass
+  is a masked element-wise write, correct at any tile width incl. non-pow2 N; at wide N a looped apply
+  is faster); **combine tile = `min(largest_pow2_div(N), cap)`** where `cap = 16 KiB if the apply is
+  looped else 8 KiB`. *Why pow2-divisor:* the Welford `Tn=chunk.size(-1)` lowers to the tile constexpr
+  (not the masked count), so a masked combine tile divides by the padded width → WRONG at non-pow2 N; a
+  pow2 divisor makes every chunk full → correct. *Why the coupled combine cap:* a full combine paired
+  with a full apply SPILLS ((262144,4096) combine=4096/apply=4096 = 30 ms, G=0.13); looping the apply
+  frees the working set so the combine can go to its full pow2-divisor (4096), which is faster
+  ((262144,4096) G 0.706 → 0.757) — but the cap stays 16 KiB because a bigger combine spills again at
+  N≥32768 even with a looped apply (evidence: `wf_combine_largeN_safety.py`). **INERT for all 8 other
+  kernels** (`is_structured_combine=False`; byte-identical seeds) AND for welford small-N (N≤2048; apply
+  persistent ⇒ v8 seed byte-identical to v7).
 - **The looped tail.** Fires ONLY above the 2^20 structural cap (no in-sample coverage). A single
   looped Helion kernel loses to torch.compile's multi-stage split reduction there (disclosed tail).
 
@@ -92,11 +112,14 @@ G = `tc_default_lat / seed_lat`, do_bench median-of-7, fp32, H100 (GPU 1/2/3, id
 | softmax_two_pass | 0.967 | 1.057 | **0.900** | −0.067 |
 | kl_div | 1.026 | 1.099 | **1.114** | **+0.088** |
 | jsd | 0.997 | 1.030 | **1.039** | **+0.042** |
-| welford | 0.894 | (declined¹) | **0.396** | −0.498 |
-| **GEOMEAN O** | **0.9765** | — | **0.8628** | **−0.114** |
+| welford | **0.911** (v8; v7 0.894) | (declined¹) | **0.396** (v7) | — |
+| **GEOMEAN O** | **0.9785** (v8; v7 0.9765) | — | **0.8628** (v7) | — |
 
-¹ welford was OUT-OF-SCOPE at the v6 validation read (declined); it was seeded in v7. The v7 welford
-in-sample G=0.894 is the comparison baseline.
+¹ welford was OUT-OF-SCOPE at the v6 validation read (declined); it was seeded in v7. v8 raised the
+in-sample welford G 0.894 → 0.911 via the wide-N (N=4096) apply-tile cap (per-shape: (262144,1024)
+0.996, (262144,1536) 0.924, (262144,2048) 0.988, **(262144,4096) 0.706 → 0.757**). The TEST welford
+column (0.396) was measured under v7 and is NOT re-read for v8; v8 changes ONLY the wide-N block_sizes,
+so the TEST prime/poorly-factored-N gaps in §6 are unchanged.
 
 **Product-A summary:** O_in-sample = **0.9765** over the 9-kernel seeded set. Per-kernel, the seed
 beats the un-seeded default on every kernel both in-sample and on TEST. The sub-1 kernels are
@@ -186,9 +209,24 @@ method is the documented-trustworthy one.)
   (3485us) loses to torch.compile (1928us) because Helion CE re-reads the wide row for the exp-sum pass
   while tc fuses an online (single-pass) softmax. Needs an online-logsumexp source rewrite, not a
   config seed. (TEST avoided this extreme shape; (4096,98304) G=0.788 is the echo.)
-- **welford (262144,4096) ~7% residual** — quick-autotune oracle reaches G=0.757 via a full-combine +
-  looped-apply structure the deterministic seed does not explore (seed/oracle ≈ 0.93; the worker's
-  earlier 1.04 was overstated, corrected by the auditor).
+- **welford (262144,4096) — block_sizes residual CLOSED in v8; remaining gap is autotuner-only
+  codegen knobs (NOT seedable).** The v7 seed `[16,2048,4096]` (combine capped 2048, apply PERSISTENT
+  next_pow2(N)=4096) gave G=0.706. v8 seeds `[16,4096,2048]` (combine = full pow2-divisor 4096, apply
+  LOOPED at the 8 KiB cap) → **G=0.757**, the block_sizes-only ceiling — confirmed by a matched A/B
+  sweep over apply ∈ {512,1024,2048,4096} × combine ∈ {128…4096} (`_lab/harness/wf_apply_sweep.py`,
+  `wf_v8_decision.py`, `wf_brief_repro.py`): no block_sizes config (default codegen knobs) beats
+  `[16,4096,2048]`. **CORRECTION of the prior overstatement:** an earlier note claimed a ~27% (G≈0.968)
+  seedable win from the apply tile alone, and a prior note claimed the oracle reaches only G=0.757. Both
+  are wrong. Capping the apply tile *alone* (combine held at 2048) lifts G only 0.706 → 0.722 (~2.5%);
+  the full ~7% to G=0.757 needs the COUPLED combine-uncap (spill-safe only with a looped apply). The
+  *fresh quick-autotune oracle* actually reaches **G=0.968** — but a knob-isolation A/B
+  (`wf_oracle_knob_isolate.py`) proves that win is ENTIRELY the autotuner-only codegen knobs
+  `indexing=[…,tensor_descriptor,tensor_descriptor,…]` + `load_eviction_policies=['last','first',…]` +
+  `range_multi_buffers`/`range_num_stages`: the oracle's OWN block_sizes `[16,2048,2048]` at DEFAULT
+  knobs measures G=0.722 (= our bare A/B), and adding ONLY those knobs to it lifts G 0.722 → 0.968
+  (adding the same knobs to the v8 seed lifts it 0.757 → 0.947). So the ~22% beyond v8 is the same
+  autotuner-only codegen-knob residual as the first bullet — NOT a block_sizes config the seed missed.
+  v8 is at the deterministic-seed (block_sizes) ceiling here.
 - **welford prime / poorly-factored N — the NEW TEST finding (config-headroom gap).** The
   correctness-first seed sizes the combine tile = `largest_pow2_div(N)` (capped 2048). At well-factored
   N (all in-sample: lpd≥512) this is fine. TEST exposed the cliff:
@@ -247,10 +285,13 @@ method is the documented-trustworthy one.)
   forward curriculum. (List "Could Implement In Future": logsumexp, log_softmax, argmax/argmin, norms,
   mse, sparsemax, etc.)
 - **Codegen-knob (eviction / indexing / pid) seeding** would require teaching the AUTOTUNER, not a
-  deterministic seed (these knobs aren't in the seed's reach). The grid-bound tiny-N residual lives here.
-- **welford full-combine + looped-apply (~7% residual @4096)** and the **prime / poorly-factored-N
-  perf cliff** (§6): both need a smarter Band-C scheme (or autotuner) than the correctness-first
-  divisor-chunk seed. The current seed is correct everywhere (incl. prime N) but slow there.
+  deterministic seed (these knobs aren't in the seed's reach). The grid-bound tiny-N residual lives here,
+  AND the remaining welford (262144,4096) gap to the oracle G=0.968 (v8 reaches the block_sizes ceiling
+  G=0.757; the rest is the tensor_descriptor-indexing + load-eviction knobs — §6, knob-isolation proof).
+- **welford full-combine + looped-apply @4096 — DONE in v8** (G 0.706 → 0.757, the block_sizes ceiling).
+  The **prime / poorly-factored-N perf cliff** (§6) remains: it needs a smarter Band-C scheme (or
+  autotuner) than the correctness-first divisor-chunk combine seed. The current seed is correct
+  everywhere (incl. prime N) but slow there (combine tile floors to 1 at prime N).
 - **cross_entropy online-logsumexp source rewrite** to close the wide-V source gap.
 - **long_sum split-K / atomic-accumulate looped recipe** to close the >2^20-elem looped tail vs
   torch.compile's multi-stage split reduction (no in-sample coverage; pure generalization tail).
@@ -259,21 +300,32 @@ method is the documented-trustworthy one.)
 
 ## 9. Key commits
 
+- **v8 (current HEAD — see `git log -1`, on branch `reduction-heuristics-autotuner`): welford apply-tile
+  byte-cap (looped normalize at wide N) + coupled combine cap. (262144,4096) G 0.706 → 0.757 [block_sizes
+  ceiling]; welford in-sample G 0.894 → 0.911; 9-kernel O 0.9765 → 0.9785. 8 other kernels + welford
+  small-N BYTE-IDENTICAL.** (The hash is omitted here because it would be self-referential — this report
+  file is part of the v8 commit.)
+- `c7684686` — v7 endgame: generality stress-test PASS, harness re-cert clean, code PR-ready
+  (byte-identical 9/9). (the v7 frozen state v8 was built on.)
+- `44df990d` — v7 ACCEPTED (all 9 forward kernels seeded, O=0.9765); gate verdicts + 4096 honesty
+  correction.
 - `53ed8762` — v7: welford Band-C structured-combine seeded (was out-of-scope).
-- `44df990d` — champion: v7 ACCEPTED (all 9 forward kernels seeded, O=0.9765); gate verdicts +
-  4096 honesty correction; heuristic FROZEN at the deterministic-seed ceiling. **(current HEAD)**
 - `664a9524` — persistent-seed round-trip fix (ReductionLoopSpec._encode_flat_value) — unblocked
   Product-B injection; heuristic / Product-A byte-identical.
 - Lineage: v1 (rms_norm) → v2 (REJECTED) → v3 (REJECTED num_load fence) → v4 (ACCEPTED; +layer_norm
-  byte-identical) → v5 (T2: softmax/kl_div/jsd) → v6 (cross_entropy + multi-load cap) → **v7 (welford
-  Band-C)**.
+  byte-identical) → v5 (T2: softmax/kl_div/jsd) → v6 (cross_entropy + multi-load cap) → v7 (welford
+  Band-C) → **v8 (welford apply-tile cap)**.
 
 ---
 
 ## 10. Read-once attestation
 
 The TEST set (56 shapes, 9 kernels) was constructed disjoint from BOTH in-sample and validation
-(asserted at runtime: `DISJOINTNESS CHECK PASS`), read EXACTLY ONCE, and was **not** used to tune the
-heuristic (which is frozen at `53ed8762`). Harnesses: `_lab/harness/TEST_readonce.py` (TEST G + seed
-fires/used/correct + disjointness), `_lab/harness/TEST_fresh_oracle.py` (fresh-oracle re-validation),
-`/tmp/wf_prime_probe.py` (welford prime-N characterization). Raw logs: `logs/test/*.out`.
+(asserted at runtime: `DISJOINTNESS CHECK PASS`), read EXACTLY ONCE under v7, and was **not** used to
+tune the heuristic. v8 did NOT re-read TEST; it only changed the welford in-sample wide-N (N=4096)
+block_sizes (the 8 other kernels + welford small-N are byte-identical), so the v7 TEST column carries
+forward. Harnesses: `_lab/harness/TEST_readonce.py` (TEST G + seed fires/used/correct + disjointness),
+`_lab/harness/TEST_fresh_oracle.py` (fresh-oracle re-validation), `/tmp/wf_prime_probe.py` (welford
+prime-N characterization). v8 evidence: `_lab/harness/wf_{apply_sweep,brief_repro,v8_decision,
+combine_cap_generalize,combine_largeN_safety,impl_verify,v8_correct_nonpow2_prime,v8_smallN_byteidentical,
+v8_seed_vs_oracle,oracle_knob_isolate}.py`. Raw logs: `logs/test/*.out`.

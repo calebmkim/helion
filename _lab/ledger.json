@@ -485,7 +485,7 @@
       "the_non_pow2_bug_rootcause": "The single-axis seed (pre-v7) FLOORED block 2 (normalize) to width 1 -> ~10-20x slower (G=0.05) AND was numerically WRONG at non-pow2 N. ROOT CAUSE confirmed by codegen: the Welford combine uses Tn=chunk.size(-1), which lowers to the tile constexpr _BLOCK_SIZE (NOT the masked valid count). When the combine tile = next_pow2(N) > N (masked, e.g. 2048 at N=1536) Tn=2048 != 1536 -> sum_x/Tn divides by the padded width -> err=0.69 FAILS allclose. The fix: size the combine tile as a power-of-2 DIVISOR of N so every chunk is FULL (no mask) -> Tn == true count. Helion also REJECTS a non-pow2 exact-N combine tile (PowerOfTwoFragment: 'must be a power of two, got 1536'), so 'exact-N tile' is impossible -> a pow2 divisor (512 for 1536) is the only correct option.",
       "seed": "is_structured_combine branch: combine tile (block 1) = min(largest_pow2_div(N), STRUCTURED_COMBINE_CAP_BYTES//itemsize=2048 fp32); apply tile (block 2) = next_pow2(N) persistent (masked output write drops only invalid lanes -> correct); M_BLOCK at floor (16 at M=262144); num_warps per the existing rnumel ramp. Per shape: (1024)->[16,1024,1024]/w4; (1536)->[16,512,2048]/w8 (looped divisor combine, persistent normalize); (2048)->[16,2048,2048]/w8; (4096)->[16,2048,4096]/w8.",
       "default_config_behavior": "deterministic default_config() = block_sizes=[16,16,16] (both tiles chunk-16) -> CORRECT (16 divides all in-sample N) but SLOW: G_default 0.51-0.54.",
-      "status": "WIN (correct + near-oracle): G_welford=0.894 geomean vs default 0.526 (+70%). do_bench median, fp32, GPU3. CORRECT at ALL 4 shapes incl the non-pow2 canary (262144,1536): maxabs<=1.7e-6, maxrel<=8.8e-3 vs torch.nn.functional.layer_norm fp32 (allclose rtol/atol=1e-3 PASS). Per-shape G: (1024)=0.996, (1536)=0.925, (2048)=0.988, (4096)=0.706. The 4096 floor is a welford-STRUCTURE ceiling, NOT config headroom: quick-autotune ORACLE only reaches G=0.737 ([16,128,2048]/w8); my seed G=0.706 (seed/oracle=1.04, within 4%). At 1536 oracle=0.989 ([16,64,1024]/w16); my seed=0.925 (seed/oracle=1.07). tc beats Helion welford at wide N because the 3-scalar combine + chunk*chunk + 2 reductions is heavier than tc's fused layernorm. is_structured_combine keying INERT for all 8 active kernels (18/18 byte-identical seeds, is_structured_combine=False for all). Harness: _lab/harness/{wf_correct_configs,wf_clean_probe,wf_cap_decision,wf_final_seed,wf_oracle,wf_impl_verify,wf_no_regression_8,wf_predicate_check}.py"
+      "status": "WIN (v8 apply-tile cap): G_welford=0.9105 geomean (v7 was 0.894) vs default 0.526. do_bench median, fp32, GPU2/GPU3 (reproduced both). CORRECT at ALL 4 shapes incl the non-pow2 canary (262144,1536) AND prime N (1543/3079) AND non-pow2-with-looped-apply (3072/6144): maxabs<=8.6e-6, allclose rtol/atol=1e-3 PASS. v8 per-shape G: (1024)=0.996, (1536)=0.924, (2048)=0.988, (4096)=0.757 (v7 was 0.706). v8 seed per shape: (1024)->[16,1024,1024]/w4 (=v7), (1536)->[16,512,2048]/w8 (=v7), (2048)->[16,2048,2048]/w8 (=v7), (4096)->[16,4096,2048]/w8 (v7 was [16,2048,4096]: combine 2048->4096 full pow2-div, apply 4096-persist -> 2048-LOOPED). v8 CHANGE: apply tile = min(np2(N), STRUCTURED_APPLY_CAP_BYTES=8KiB) so wide-N apply LOOPS; combine cap COUPLED 8KiB->16KiB when apply looped (the looped apply frees the working set, making a full combine spill-safe). EVIDENCE (matched A/B, wf_apply_sweep+wf_v8_decision+wf_brief_repro): at (262144,4096) apply tile sweep 4096p/2048L/1024L/512L = G 0.704/0.722/0.703/0.688 -> apply-cap alone is +2.5%; full ~7% (0.722->0.757) needs the coupled combine-uncap; combine spill-safe ceiling 16KiB (wf_combine_largeN_safety: combine>16KiB regresses at N>=32768 even with looped apply). OVERSTATEMENT CORRECTED: the prior 'oracle reaches G=0.737/0.757 via a structure the seed doesn't explore' AND any 'seed/oracle=1.04' / '27% apply-tile win' are WRONG. v8 IS that structure (block_sizes ceiling G=0.757). The FRESH quick-autotune oracle reaches G=0.968 -- but a knob-isolation A/B (wf_oracle_knob_isolate.py) PROVES that is ENTIRELY autotuner-only codegen knobs (indexing=[..,tensor_descriptor,tensor_descriptor,..]+load_eviction_policies=['last','first',..]+range_multi_buffers/range_num_stages): the oracle's OWN block_sizes [16,2048,2048] at DEFAULT knobs = G=0.722 (=our bare A/B), adding ONLY those knobs lifts it 0.722->0.968; adding them to the v8 seed lifts 0.757->0.947. So beyond v8's block_sizes ceiling the residual is NOT seedable (same codegen-knob residual as the 8 grid-bound kernels), NOT a config the seed missed. is_structured_combine keying INERT for all 8 active kernels (18/18 byte-identical) AND for welford small-N (N<=2048 apply persistent -> byte-identical to v7; only N=4096 changes). Harness: _lab/harness/{wf_correct_configs,wf_clean_probe,wf_cap_decision,wf_final_seed,wf_oracle,wf_impl_verify,wf_no_regression_8,wf_predicate_check,wf_apply_sweep,wf_brief_repro,wf_v8_decision,wf_combine_cap_generalize,wf_combine_largeN_safety,wf_v8_correct_nonpow2_prime,wf_v8_smallN_byteidentical,wf_v8_seed_vs_oracle,wf_oracle_knob_isolate}.py"
     }
   },
   "product_B_measurements": {
@@ -1165,6 +1165,48 @@
       "O_note": "O_7kernel UNCHANGED (the 7 are byte-identical). O_8kernel=0.9874: cross_entropy at 0.915 mechanically nudges the geomean down (same effect as sum/layer_norm); held sub-1 only by the (8192,131072) Helion-source gap. Honest PER-KERNEL: NO kernel regresses (7 byte-identical), cross_entropy is a clean +52% vs un-seeded default. welford NOT in the active G set (declined, falls back to correct default).",
       "correctness": "cross_entropy maxabs 0-1.9e-6 / rel-err ~1e-7 vs F.cross_entropy fp32 (bit-exact at narrow V). All seed-used PASS (codegen persist below cap / looped above). welford default fallback correct (test_examples passes).",
       "status": "WORKER-PROPOSED champion v6; HELPER_REQUEST queued (results-referee: reproduce G_cross_entropy + T1/T2 27/27 no-regression; adversarial-auditor: audit the multi-load persist cap generalization [num_load A/B, held-out, not a fence] + the welford decline guard [structural not kernel-id] + the welford out-of-scope justification)."
+    },
+    "v8_welford_apply_cap": {
+      "measured": "2026-05-29 GPU2 (sweeps) + GPU3 (re-verify), do_bench median, fp32 (WORKER; awaiting referee + auditor). GPUs 2/3 idle (nvidia-smi checked).",
+      "what": "Adds the welford APPLY-tile byte-cap (looped normalize at wide N) + the coupled combine cap in the is_structured_combine branch. Built on v7 (commit c7684686). Captures the (262144,4096) block_sizes residual the v7 seed left open.",
+      "heuristic_change": "triton.py is_structured_combine branch ONLY: (1) NEW const STRUCTURED_APPLY_CAP_BYTES=8192 -> apply tile = min(np2(N), cap//itemsize) (was np2(N) persistent); (2) NEW const STRUCTURED_COMBINE_CAP_BYTES_LOOPED_APPLY=16384 -> combine cap = 16KiB when the apply is looped else 8KiB (coupled); (3) shrunk the STRUCTURED_COMBINE_CAP_BYTES comment (the spill-of-full-combine claim is now scoped: full combine spills only WITH a full apply). git diff helion/: triton.py only, +67/-13 (mostly evidence-cited comments).",
+      "apply_tile_AB_262144_4096": {
+        "_metric": "G=tc/seed, matched A/B (combine=2048 held, only apply tile swept), wf_apply_sweep.py",
+        "apply_4096_persist": 0.704,
+        "apply_2048_looped": 0.722,
+        "apply_1024_looped": 0.703,
+        "apply_512_looped": 0.688,
+        "verdict": "apply-cap ALONE (combine still 2048) = +2.5% (0.704->0.722); the apply tile is a real but MODEST perf lever, NOT the 27% the brief premised."
+      },
+      "coupled_decision": {
+        "_metric": "wf_v8_decision.py rule geomeans over 4 in-sample, ALL CORRECT",
+        "R0_v7_combine2048_applypersist": 0.8944,
+        "R1_applycap2048_combine2048": 0.8999,
+        "R2_full_combine_applycap2048": 0.9108,
+        "R3_combine4096_applycap2048": 0.9105,
+        "verdict": "the full ~7% recovery at (4096) (0.704->0.757) needs combine=4096 (FULL pow2-div) AND apply LOOPED@2048 TOGETHER. Full combine is spill-safe ONLY with a looped apply (combine=4096+apply=4096 = 30ms G=0.13). R3 chosen (combine cap 4096=16KiB): ties R2 in-sample, SAFER OOS (wf_combine_largeN_safety: combine>16KiB REGRESSES at N>=32768 even with looped apply -> 16KiB is the spill-safe ceiling)."
+      },
+      "per_shape_G_v8": {
+        "(262144,1024)": 0.996,
+        "(262144,1536)": 0.924,
+        "(262144,2048)": 0.988,
+        "(262144,4096)": 0.757
+      },
+      "per_shape_G_v7": {
+        "(262144,1024)": 0.996,
+        "(262144,1536)": 0.925,
+        "(262144,2048)": 0.988,
+        "(262144,4096)": 0.706
+      },
+      "G_welford_v8": 0.9105,
+      "G_welford_v7": 0.894,
+      "seed_4096_v8": "[16,4096,2048] w8 (was v7 [16,2048,4096])",
+      "O_9kernel_v8": 0.9785,
+      "O_9kernel_v7": 0.9765,
+      "no_regression": "8 other kernels: 18/18 byte-identical seeds, is_structured_combine=False (wf_no_regression_8). welford small-N: N<=2048 (apply persistent) byte-identical to v7 seed (wf_v8_smallN_byteidentical: 1024/1536/2048 IDENTICAL; only 4096 changes). test_reductions 24 passed + 11 subtests; test_examples 25 passed (welford + active kernels).",
+      "correctness": "ALL welford shapes CORRECT vs F.layer_norm fp32 (allclose rtol/atol=1e-3): in-sample 4/4 incl non-pow2 canary (262144,1536) maxabs 1.2e-6; PRIME N (262144,1543) maxabs 6.3e-6, (131072,3079) maxabs 8.6e-6 (apply LOOPED, combine=1); non-pow2-with-looped-apply (262144,3072)/(131072,6144) maxabs 1.2e-6. The looped apply does NOT break correctness at non-pow2 or prime N (masked element-wise write). wf_v8_correct_nonpow2_prime: ALL CORRECT.",
+      "seed_vs_oracle_4096": "v8 seed [16,4096,2048]=G0.757; fresh quick-autotune oracle=G0.968 BUT (knob-isolation, wf_oracle_knob_isolate) the oracle's win is ENTIRELY codegen knobs: oracle bs [16,2048,2048]@default-knobs=0.722, +knobs->0.968; v8 seed +same knobs->0.947. So seed/oracle on BLOCK_SIZES (default knobs) ~= 1.0 (v8 is the best block_sizes config); the gap is autotuner-only knobs (NOT seedable). seed_vs_oracle at non-pow2 (262144,1536): both [16,512,2048] w8 -> seed/oracle=1.00 (oracle picks SAME structure).",
+      "status": "WORKER-PROPOSED champion v8; HELPER_REQUEST queued (results-referee: reproduce welford G recovery + correctness non-pow2/prime + no-regression; adversarial-auditor: audit the apply-cap [structural+byte, coupled combine, not a fence; correct at non-pow2])."
     }
   },
   "crossover_sweep_evidence": {
@@ -1504,12 +1546,22 @@
         "test_autotuner_heuristics": "10 passed, 17 skipped + 12 subtests (incl 2 new)"
       },
       "git_diff_scope": "mechanical fixes to triton.py + device_ir.py + 1 additive test file; NO logic change"
+    },
+    {
+      "iter": 10,
+      "step": "v8: welford apply-tile byte-cap (looped normalize at wide N) + coupled combine cap; capture the (262144,4096) block_sizes residual + correct the brief's overstated apply-tile-win claim",
+      "heuristic_version": "v8 triton_reduction_tile",
+      "date": "2026-05-29",
+      "change": "triton.py is_structured_combine branch: apply tile = min(np2(N), STRUCTURED_APPLY_CAP_BYTES=8KiB) [looped at wide N; was np2(N) persistent]; combine cap = STRUCTURED_COMBINE_CAP_BYTES_LOOPED_APPLY=16KiB when apply looped else STRUCTURED_COMBINE_CAP_BYTES=8KiB [coupled -- the looped apply frees the working set, making a full pow2-divisor combine spill-safe AND faster]. Set by matched A/B sweeps (wf_apply_sweep / wf_v8_decision / wf_combine_largeN_safety), NOT guessed.",
+      "result": "G_welford 0.894->0.9105; (262144,4096) 0.706->0.757 (block_sizes ceiling); O_9kernel 0.9765->0.9785. 8 other kernels + welford small-N BYTE-IDENTICAL. Correct at ALL welford shapes incl non-pow2 (1536) + prime (1543/3079) + non-pow2-looped-apply (3072/6144).",
+      "overstatement_corrected": "The brief's '27% seedable apply-tile win (oracle [16,2048,2048] G=0.968)' does NOT reproduce: matched A/B gives [16,2048,2048]=G0.722 (apply-cap alone = +2.5%). The oracle's 0.968 is autotuner-only codegen knobs (tensor_descriptor indexing + eviction + range_*), proven by wf_oracle_knob_isolate (oracle bs @default-knobs=0.722, +knobs->0.968) -- NOT seedable block_sizes. v8 reaches the block_sizes ceiling (0.757). Corrected in champion.O_note, kernels.welford.status, FINAL_REPORT §6.",
+      "status": "WORKER-PROPOSED champion v8; awaiting referee + auditor."
     }
   ],
   "champion": {
-    "heuristic_version": "v7 triton_reduction_tile (ACCEPTED 2026-05-29; commit 53ed8762; both gates PASS; T1+T2, Bands A+B+C; is_structured_combine welford treatment). FORWARD CURRICULUM COMPLETE \u2014 all 9 forward kernels seeded.",
-    "O": 0.9765,
-    "O_note": "O over the 9-kernel SEEDED active set {rms_norm_fwd, sum, long_sum, layer_norm_fwd, cross_entropy, softmax_two_pass, kl_div, jsd, welford}. O_8kernel UNCHANGED 0.9874 (byte-identical); adding welford (G=0.894) mechanically dilutes the geomean ~1%. Per-kernel: NO regression (8 byte-identical), welford a +70% win vs un-seeded default (0.526->0.894) and CORRECT at non-pow2 incl prime N. The heuristic is at its DETERMINISTIC-SEED CEILING: 8-kernel residual is autotuner-only (codegen-knob eviction, not seedable); welford (262144,4096) has ~7% residual via a full-combine+looped-apply structure the seed doesn't explore (auditor correction: seed/oracle~=0.93, NOT the worker's overstated 1.04). cross_entropy 0.915 + welford 0.894 are kernel-SOURCE/structure ceilings, not config misses.",
+    "heuristic_version": "v8 triton_reduction_tile (welford apply-tile cap, built on v7; T1+T2, Bands A+B+C). v8 adds the welford apply-tile byte-cap (looped normalize at wide N) + the coupled combine cap; all 8 other kernels + welford small-N BYTE-IDENTICAL. FORWARD CURRICULUM COMPLETE \u2014 all 9 forward kernels seeded.",
+    "O": 0.9785,
+    "O_note": "O over the 9-kernel SEEDED active set {rms_norm_fwd, sum, long_sum, layer_norm_fwd, cross_entropy, softmax_two_pass, kl_div, jsd, welford}. v8: O 0.9765->0.9785 (welford G 0.894->0.9105, +1.7%). O_8kernel UNCHANGED 0.9874 (8 byte-identical). Per-kernel: NO regression, welford a +73% win vs un-seeded default (0.526->0.9105) and CORRECT at non-pow2 incl prime N. welford (262144,4096) recovered 0.706->0.757 by the v8 apply-tile cap (looped normalize) + coupled full-combine. CORRECTED OVERSTATEMENT (was: 'welford 4096 ~7% residual via a full-combine+looped-apply structure the seed doesn't explore; seed/oracle~=0.93'): v8 NOW IS that structure -> block_sizes residual CLOSED (seed=0.757=block_sizes ceiling). The remaining gap to the fresh quick-autotune oracle G=0.968 is NOT a block_sizes config the seed missed -- a knob-isolation A/B (wf_oracle_knob_isolate.py) proves it is ENTIRELY autotuner-only codegen knobs (tensor_descriptor indexing + load_eviction_policies + range_multi_buffers/range_num_stages): the oracle's OWN block_sizes at DEFAULT knobs = 0.722, +knobs -> 0.968. The '27% seedable apply-tile win' premise was FALSE (apply-cap alone = +2.5%). So welford 0.9105 + cross_entropy 0.915 are kernel-SOURCE / autotuner-only-codegen-knob ceilings, not config misses; the heuristic is at its DETERMINISTIC-SEED (block_sizes/warps/stages) CEILING.",
     "active_kernels": [
       "rms_norm_fwd",
       "sum",
@@ -1531,8 +1583,10 @@
       "softmax_two_pass": 0.967,
       "kl_div": 1.026,
       "jsd": 0.997,
-      "welford": 0.894
+      "welford": 0.9105
     },
+    "v8_change_note": "v8 adds the welford apply-tile byte-cap + coupled combine cap (in the is_structured_combine branch of triton.py). apply tile = min(np2(N), STRUCTURED_APPLY_CAP_BYTES=8KiB) -> LOOPED normalize at wide N (masked element-wise write -> correct at any width incl non-pow2/prime N); combine cap COUPLED 8KiB->STRUCTURED_COMBINE_CAP_BYTES_LOOPED_APPLY=16KiB when the apply is looped (the looped apply frees the working set so a full pow2-divisor combine is spill-safe AND faster). Recovers (262144,4096) G 0.706->0.757 (block_sizes ceiling). 8 other kernels + welford small-N (N<=2048) BYTE-IDENTICAL. See kernels.welford.status + product_A_measurements.v8_welford_apply_cap. git diff: triton.py only (2 new consts + ~25-line branch rewrite, all comments evidence-cited).",
+    "v8_overstatement_correction": "The brief's premise (welford 4096: v7 [16,2048,4096] G=0.708 vs oracle [16,2048,2048] G=0.968, a ~27% SEEDABLE win from the APPLY tile alone) does NOT reproduce. Matched A/B (wf_brief_repro, all levers equal): [16,2048,4096]=G0.704 (reproduces) but [16,2048,2048]=G0.722 (NOT 0.968). Apply-cap ALONE = +2.5% (0.704->0.722). The fresh quick-autotune oracle DOES reach G=0.968 but knob-isolation (wf_oracle_knob_isolate) proves it is autotuner-only codegen knobs (tensor_descriptor indexing+eviction+range_*), NOT block_sizes: oracle's [16,2048,2048]@default-knobs=0.722, +knobs->0.968. The full block_sizes-only recovery is 0.704->0.757 (combine 2048->4096 + apply looped, COUPLED). v8 captures that (the block_sizes ceiling); the rest is the documented autotuner-only-knob residual (FINAL_REPORT §6/§7). Both prior numbers ('seed/oracle=1.04' and 'oracle=0.737/0.757' as the FULL ceiling) were wrong; corrected here + FINAL_REPORT §6.",
     "v7_gate_verdicts": {
       "results_referee": "ACCEPT. welford correct at ALL shapes incl non-pow2 (262144,1536) maxabs 1.2e-6 + extra canaries (65536,1536; 262144,2560; 262144,3072; prime 1021/1537). Proved divisor-chunk fix load-bearing: non-divisor combine (2048/1024 at N=1536) gives maxabs 0.68 (WRONG); divisor (512) correct. G_welford geomean 0.894 reproduced (vs default 0.526). 18/18 byte-identical no-regression on the 8 (is_structured_combine=False for all).",
       "adversarial_auditor": "PASS. is_structured_combine is a PROVEN-GENERALIZABLE structural signal (>1 non-grid tile + apply tile over same extent) -- built a DIFFERENT structured combine (max_normalize) -> gate fires; single-pass -> False; NOT a welford fence. Correct at ALL non-pow2 incl PRIME N (combine=1 stride-1, Tn=true count). Cap (8192 bytes=2048 fp32 elems) evidence-based (full-N combine spills G=0.13). Byte-identical no-regression (8 kernels). HONESTY CORRECTION: (262144,4096) seed/oracle~=0.93 not 1.04 (oracle reaches 0.757 via full-combine+looped-apply; ~7% residual the seed doesn't explore). Non-fatal."
