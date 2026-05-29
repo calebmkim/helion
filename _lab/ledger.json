@@ -807,15 +807,22 @@
     }
   ],
   "champion": {
-    "heuristic_version": "v4 triton_reduction_tile (ACCEPTED 2026-05-29; commit 37b27f67; promoted c2845bdd; WIDENED to layer_norm UNCHANGED)",
-    "O": 0.9997,
-    "O_note": "O over the 4-kernel active set {rms_norm_fwd, sum, long_sum, layer_norm_fwd}. O_3kernel was ~1.003-1.005; adding layer_norm (G=0.989) mechanically dilutes the geomean ~0.4% (same as adding sum) -- per-kernel NO regression, layer_norm a +11.7% win. Heuristic byte-identical across the widening.",
-    "active_kernels": ["rms_norm_fwd", "sum", "long_sum", "layer_norm_fwd"],
+    "heuristic_version": "v5 triton_reduction_tile (ACCEPTED 2026-05-29; commit 6430b37e; T1+T2 support, Bands A+B)",
+    "O": 0.9982,
+    "O_note": "O over the 7-kernel active set {rms_norm_fwd, sum, long_sum, layer_norm_fwd, softmax_two_pass, kl_div, jsd}. ~1.0 = the bare seed AVERAGES at/above torch.compile-default across the curriculum. Per-kernel: NO regression (T1 byte-identical), 3 new T2 wins (softmax +120%, kl_div +163%, jsd +50% vs un-seeded default).",
+    "active_kernels": ["rms_norm_fwd", "sum", "long_sum", "layer_norm_fwd", "softmax_two_pass", "kl_div", "jsd"],
     "per_kernel_G": {
       "rms_norm_fwd": 0.980,
       "sum": 0.937,
       "long_sum": 1.10,
-      "layer_norm_fwd": 0.989
+      "layer_norm_fwd": 0.989,
+      "softmax_two_pass": 0.967,
+      "kl_div": 1.026,
+      "jsd": 0.997
+    },
+    "v5_gate_verdicts": {
+      "results_referee": "ACCEPT. T1 38/38 byte-identical (cross-commit seed dump). softmax 0.968/kl_div 1.026/jsd 0.997 reproduced; O_7kernel=0.9982. Correctness honest (kl_div bit-identical to torch KLDivLoss; softmax maxabs 6e-8). Caught+re-ran 2 GPU-co-tenant shapes via spread-tracking.",
+      "adversarial_auditor": "PASS. Band-B branch is GENERALIZABLE PHYSICS not a fence: num_tiled_accumulators from generic IR; softmax_two_pass=0 is the smoking-gun control (T2 kernel correctly NOT capped). 16KiB cap near-optimal plateau; generalizes held-out (jsd full-N 19-28x worse OOS). T1 byte-identical (only longsum_manual newly seeds = intended T2 admission). softmax win = shared warps ramp. Correctness passes 100x tighter tol. Dynamic-size guard correct."
     },
     "note": "Persistent workhorse up to the 2^20 structural compile cap; num_warps ramp 4/8/16/32 gated on rnumel (w32 for rnumel>16384); looped tail ONLY above the cap. GATES PASSED: referee ACCEPT (in-sample O~1.005 over 3 kernels; v4==persistent/w32); auditor PASS (num_load fence removed, gate rnumel-only, in-sample byte-identical to v3 [0/27], OOS large-rnumel multi-load now gets w32 -> rms_norm +27-38% / layer_norm +23-46%; no new fence). WIDENED to layer_norm_fwd 2026-05-29 with ZERO heuristic change (T1, heuristic fires, G=0.989 vs default 0.886; num_reduction_ops=2 does not want a different config per oracle; no-regression proven byte-identical 27/27). History: v1 (rms_norm only, accepted) -> v2 (REJECTED looped/grid-occ misattribution) -> v3 (REJECTED num_load fence) -> v4 (ACCEPTED) -> v4 widened to 4 kernels (layer_norm, byte-identical).",
     "open_issue": "RESOLVED 2026-05-29 (commit pending). PRODUCT-B SEED DEGRADATION fixed: ReductionLoopSpec._encode_flat_value(None) now returns self._flat_fragment(base).high (= next_power_of_2(size_hint) >= size_hint), the one flat value that decodes back to None for ALL size_hints, instead of .default() (capped at max_reduction_loop=4096, which decoded to a LOOPED chunk for rnumel>4096). Changed ONLY that method; _flat_config/_flat_fragment untouched; autotuner DEFAULT path unaffected (still calls fragment.default() -> looped for large rnumel, the correct default); CuTe/cache/search-diversity unaffected. PROVEN: (a) round-trip unflatten(flatten([None])) == [None] for size_hint in {8192,65536,262144} (was [4096]) AND guard {256,4096} still [None] -- _lab/harness/roundtrip_probe.py before/after; (b) new repo test test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel FAILS pre-fix ([4096]!=[None]), PASSES post-fix; (c) no breakage: test_best_available+test_config_api 87 passed, test_autotuner 107 passed/7 skip/11 subtests, test_reductions 24 passed; (d) Product A byte-identical (bare-seed path does not flatten; seeds + persistent codegen unchanged); (e) gen0 seed now PRESERVED ([None]->[None]) in all 9 seeded Product-B driver logs (was DEGRADED). See product_B_measurements.run_2026_05_29_POSTFIX for the enlarged win.",
