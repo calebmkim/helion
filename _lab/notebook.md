@@ -138,7 +138,81 @@ PowerOfTwoFragment), the ONE flat value that round-trips to `None` for every siz
   ENCODE line now reads `[None]->[None] PRESERVED` (was DEGRADED(persistent->looped) pre-fix). 9/9 seeded
   runs PRESERVED.
 
-## Product B — POST-FIX re-run (2026-05-29) — the ENLARGED win
+## Product B — COMPREHENSIVE across the full 8-kernel curriculum (2026-05-29, post round-trip-fix) — HEADLINE
+The time-first deliverable, run over the WHOLE active set (the 3-shape POSTFIX run below is now subsumed).
+8 active kernels, 1 representative in-sample shape each where the Product-A seed gives signal + latency is
+above the do_bench noise floor (long_sum M lifted 8→256 per the brief). Protocol = identical to POSTFIX:
+quick LFBOTreeSearch (init_pop 30, copies 2, max_gen 5), HELION_FORCE_AUTOTUNE=1, cold cache per run,
+seeds {0,1,2}, NOT SKIP_CACHE; seeded = registered `triton_reduction_tile`, unseeded =
+`HELION_DISABLE_AUTOTUNER_HEURISTICS=1`. GPU2 (Group A: rms_norm×2, layer_norm, long_sum, sum) + GPU3
+(Group B: cross_entropy, softmax_two_pass, kl_div, jsd) in parallel, one autotune run per GPU. 54 runs,
+all OK (no FAILED). Logs: `logs/productB_full/` (54 CSVs + .driver.log + analysis_t95/t98.txt +
+summary.json). Driver extended to all 8 kernels: `productB_driver.py`; runner `productB_full_run.sh`.
+
+- **Seed-injection PROVEN per kernel:** 27/27 seeded runs SEED-FLAT-ENCODE = PRESERVED (0 DEGRADED) — the
+  T1 persistent `reduction_loops=[None]`, T1 looped `[16384]` (cross_entropy), and T2 `block_sizes` levers
+  all round-trip intact post-fix. Independent gen0-CSV cross-check: 27/27 seeded runs have the expected
+  seed config present in gen0 (lever-matched). 27/27 unseeded: n_seeds=0, heuristics=[].
+
+- **gen0 seed-quality advantage (uns gen0 / seed gen0, median of 3) — GEOMEAN = 1.614x:**
+  cross_entropy 1.88x · jsd 1.50x · kl_div 2.80x · layer_norm 1.45x · long_sum 1.11x · rms_norm(2048,16384)
+  1.41x · rms_norm(8192,8192) 1.32x · softmax_two_pass 3.13x · sum 1.01x (wash). The seed lands a markedly
+  better gen0 config on the heavy/wide-row kernels.
+
+- **Slice 1 — same-budget (seeded-advantage = unseeded/seeded), median of 3 · [gen1 / gen2 / gen5-guardrail]:**
+  | shape | gen1 | gen2 | gen5 (guardrail) |
+  |---|---|---|---|
+  | cross_entropy(8192,65536) | 1.126 | 1.000 | 1.000 |
+  | jsd(8192,65536) | 1.149 | 1.093 | 1.014 |
+  | kl_div(4096,65536) | 1.407 | 1.078 | 1.002 |
+  | layer_norm(4096,15872) | 1.005 | 1.002 | 1.004 |
+  | long_sum(256,131072) | 1.010 | 1.000 | 1.009 |
+  | rms_norm(2048,16384) | 1.118 | 1.031 | 0.997 |
+  | rms_norm(8192,8192) | 1.004 | 1.002 | 0.998 |
+  | softmax_two_pass(4096,16384) | **2.011** | 1.505 | **1.454** |
+  | sum(2048,16384) | 1.076 | 1.027 | 1.013 |
+  Slice-1 gen1 GEOMEAN = 1.182x (median 1.118x). **Guardrail PASSES all 9** (gen5 ≥ 1−eps, eps=0.03; worst
+  rms_norm 0.997/0.998 is within fp32 do_bench ~2% noise — both modes converge to the same optimum at full
+  budget). softmax_two_pass uniquely keeps a 1.45x edge even at full budget: the unseeded LFBO rarely finds
+  the persistent config within 5 generations.
+
+- **Slice 2 — time-to-95%-of-unseeded-full-budget (speedup = uns_t / seed_t), median[min,max] of 3 — HEADLINE:**
+  | shape | seeded s | unseeded s | speedup@95% | (@98%) |
+  |---|---|---|---|---|
+  | cross_entropy(8192,65536) | 8.12[7.99,8.35] | 48.71[44.48,62.40] | **5.999x** | 0.771x |
+  | jsd(8192,65536) | 11.51[11.41,11.79] | 32.88[30.82,65.32] | **2.857x** | 2.857x |
+  | kl_div(4096,65536) | 7.83[7.68,7.93] | 12.70[12.45,14.15] | 1.622x | 1.631x |
+  | layer_norm(4096,15872) | 4.96[4.91,5.04] | 8.84[7.67,46.32] | 1.782x | 1.782x |
+  | long_sum(256,131072) | 31.16[7.74,35.61] | 9.56[8.74,10.37] | **0.307x** (artifact) | 0.353x |
+  | rms_norm(2048,16384) | 4.60[4.60,4.63] | 9.18[7.84,30.25] | 1.996x | 5.074x |
+  | rms_norm(8192,8192) | 4.70[4.69,4.79] | 9.13[8.52,11.32] | 1.943x | 1.943x |
+  | softmax_two_pass(4096,16384) | 4.70[4.66,4.80] | 11.36[9.33,21.84] | 2.417x | 2.657x |
+  | sum(2048,16384) | 5.87[5.61,6.12] | 8.03[7.00,9.05] | 1.368x | 1.368x |
+
+- **AGGREGATE CURRICULUM HEADLINE:** median Slice-2 time-to-95% speedup = **1.943x across all 9 shapes**
+  (1.970x median / 2.241x geomean excluding the long_sum noise-floor artifact). **Seeding shifts the
+  convergence curve UP-AND-LEFT across the whole curriculum: the seeded search reaches 95% of the
+  full-budget optimum in ~HALF the wall-clock — equivalently the autotune budget could be ~halved on most
+  shapes.** Largest wins on the heavy/wide-row T2 + cross_entropy kernels (cross_entropy 6.0x,
+  jsd 2.9x, softmax_two_pass 2.4x) where the seed injects a non-obvious persistent/capped-loop config the
+  unseeded LFBO is slow to discover.
+
+- **Honest non-wins / caveats:**
+  - **long_sum(256,131072) Slice-2 = 0.307x (REGRESSED on the metric, NOT a perf loss).** Noise-floor +
+    longer-seeded-search artifact: 95% target = 74.3us sits in the ~70-85us small-M (M=256) noise band;
+    seeded gen0 = 76.4us vs unseeded 84.7us (the perf lever IS +11% better), but seeded explores far more
+    candidates (n_ok 78-107 vs 24-49 → total wall-clock 39-68s vs 13-36s), so 2/3 unseeded runs trip 74us
+    via a random LFBO dip sooner. Lifting M 8→256 did NOT clear the noise floor (was 0.479x at M=8). Honest
+    long_sum claim = the gen0/Slice-1 PERF win, not Slice-2.
+  - **sum(2048,16384):** Product-A wash (full-budget perf ties). Still a modest 1.37x time-to-target from a
+    better gen0 — reported honestly as a small/no-win shape as the brief predicted.
+  - **98% target is fragile:** cross_entropy flips to 0.771x at 98% because the seeded full search runs
+    longer (95s vs 73.5s total) and both converge to ~0.949ms, so the last 1% needs the slower full sweep.
+    The robust, defensible headline is the **95% target**. (The "seeded full search is LONGER" caveat from
+    prior runs persists curriculum-wide — the Product-B value is early-budget perf + time-to-target, NOT a
+    cheaper full search.)
+
+## Product B — POST-FIX re-run (2026-05-29) — the ENLARGED win  [SUBSUMED by the comprehensive run above]
 Same protocol/budget as the pre-fix run (quick effort, force-autotune, cold cache, seeds {0,1,2}, no
 SKIP_CACHE), 3 shapes where the persistent lever matters. Logs: `logs/productB_postfix/` (18 CSVs +
 .driver.log + analysis_t95/t98.txt). Driver/runner: `productB_driver.py` + `productB_postfix_run.sh`.

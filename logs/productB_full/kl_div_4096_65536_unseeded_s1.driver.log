@@ -1,0 +1,178 @@
+[driver] GPU=3 helion=/home/calebkim/helion-new-heuristics/wt-reduction/helion/__init__.py
+[driver] kernel=kl_div shape=(4096, 65536) mode=unseeded rand_seed=1
+[driver] disable_heuristics_env='1' force='1' effort='quick' max_gen=None rand_seed_env='1' log='/home/calebkim/helion-new-heuristics/wt-reduction/logs/productB_full/kl_div_4096_65536_unseeded_s1'
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[verify] config_spec.compiler_seed_configs (n=0): []
+[verify] config_spec.autotuner_heuristics: []
+[verify] recomputed compiler_seed_configs (n=0): []
+[verify] UNSEEDED OK: no compiler seed in initial population
+[verify] EXPECTED_SEED_STR=None
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[0s] Starting autotuning process, this may take a while...
+[0s] Autotune random seed: 1
+[2s] Starting LFBOTreeSearch with initial_population=FROM_BEST_AVAILABLE, copies=2, max_generations=5, similarity_penalty=1.0
+[2s] Starting with default config
+[2s] Initial population: 1 total
+Initial population precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 - configs/s
+Initial population exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 1/1 - configs/s
+[7s] Adaptive compile timeout: 30s (90% percentile=0.0s, bounds=[30.0s, 60s])
+[7s] Initial random population of 1, 1 starting points: 
+ok=1
+min=2.6423
+mid=2.6423
+max=2.6423
+best={'atomic_indexing': [],
+ 'block_sizes': [32, 32],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['', ''],
+ 'num_stages': 1,
+ 'num_warps': 4,
+ 'pid_type': 'flat',
+ 'range_flattens': [None, None],
+ 'range_multi_buffers': [None, None],
+ 'range_num_stages': [0, 0],
+ 'range_unroll_factors': [0, 0],
+ 'range_warp_specializes': []}
+[7s] All labels are identical, skip training surrogate.
+[8s] Generation 1 starting: 12 neighbors, 1 active search path(s)
+Generation 1: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 13/13 5.5 configs/s
+Generation 1: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 13/13 9.3 configs/s
+[11s] Generation 1 complete: 
+ok=14
+min=1.3886
+mid=2.6080
+max=18.7116
+best={'atomic_indexing': [],
+ 'block_sizes': [64, 32],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['', ''],
+ 'num_stages': 1,
+ 'num_warps': 8,
+ 'pid_type': 'flat',
+ 'range_flattens': [None, None],
+ 'range_multi_buffers': [None, False],
+ 'range_num_stages': [0, 0],
+ 'range_unroll_factors': [0, 1],
+ 'range_warp_specializes': []}
+[11s] Fitting surrogate: 14 points, 14 targets
+[11s] Generation 2 starting: 11 neighbors, 1 active search path(s)
+Generation 2: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 11/11 55.0 configs/s
+Generation 2: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 11/11 13.3 configs/s
+[13s] Generation 2 complete: 
+ok=12
+min=1.0179
+mid=1.2347
+max=2.6433
+best={'atomic_indexing': [],
+ 'block_sizes': [128, 8],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['', ''],
+ 'num_stages': 1,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None, None],
+ 'range_multi_buffers': [None, False],
+ 'range_num_stages': [0, 0],
+ 'range_unroll_factors': [0, 1],
+ 'range_warp_specializes': []}
+[13s] Fitting surrogate: 25 points, 25 targets
+[13s] Generation 3 starting: 11 neighbors, 1 active search path(s)
+Generation 3: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12/12 49.6 configs/s
+Generation 3: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 12/12 15.8 configs/s
+[14s] Generation 3 complete: 
+ok=13
+min=0.9633
+mid=1.0179
+max=1.2925
+best={'atomic_indexing': [],
+ 'block_sizes': [512, 16],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['', ''],
+ 'num_stages': 1,
+ 'num_warps': 32,
+ 'pid_type': 'flat',
+ 'range_flattens': [None, None],
+ 'range_multi_buffers': [None, False],
+ 'range_num_stages': [0, 1],
+ 'range_unroll_factors': [0, 1],
+ 'range_warp_specializes': []}
+[14s] Fitting surrogate: 37 points, 37 targets
+[15s] Generation 4 starting: 14 neighbors, 1 active search path(s)
+Generation 4: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 14/14 9.8 configs/s
+Generation 4: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 14/14 16.9 configs/s
+[17s] Generation 4 complete: 
+error=1
+ok=14
+min=0.9485
+mid=0.9755
+max=1.6223
+best={'atomic_indexing': [],
+ 'block_sizes': [256, 16],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['', ''],
+ 'num_stages': 1,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None, None],
+ 'range_multi_buffers': [None, False],
+ 'range_num_stages': [0, 3],
+ 'range_unroll_factors': [0, 1],
+ 'range_warp_specializes': []}
+[17s] Fitting surrogate: 51 points, 51 targets
+[18s] Generation 5 starting: 15 neighbors, 1 active search path(s)
+Generation 5: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 15/15 27.9 configs/s
+Generation 5: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 15/15 13.7 configs/s
+[20s] Generation 5 complete: 
+ok=16
+min=0.9453
+mid=0.9518
+max=1.1502
+best={'atomic_indexing': [],
+ 'block_sizes': [256, 16],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['', ''],
+ 'num_stages': 1,
+ 'num_warps': 32,
+ 'pid_type': 'flat',
+ 'range_flattens': [None, None],
+ 'range_multi_buffers': [None, False],
+ 'range_num_stages': [0, 4],
+ 'range_unroll_factors': [0, 1],
+ 'range_warp_specializes': []}
+[21s] Autotuning complete in 21.4s after searching 66 configs.
+One can hardcode the best config and skip autotuning with:
+    @helion.kernel(config=helion.Config(atomic_indexing=[], block_sizes=[256, 16], indexing=['pointer', 'pointer', 'pointer'], load_eviction_policies=['', ''], num_stages=1, num_warps=32, pid_type='flat', range_flattens=[None, None], range_multi_buffers=[None, False], range_num_stages=[0, 4], range_unroll_factors=[0, 1], range_warp_specializes=[]), static_shapes=True)
+
+[21s] 1 of 66 configs failed due to compile failures.
+[21s] Code of selected kernel: /tmp/productB_full_cache_3/kl_div_4096_65536_unseeded_s1/inductor/lt/clto2u62zgj7snonsuqvxq2cccvnwu5do27n3xewep5mqyj4mbgl.py
+[driver] DONE best_config={'block_sizes': [256, 16], 'range_unroll_factors': [0, 1], 'range_warp_specializes': [], 'range_num_stages': [0, 4], 'range_multi_buffers': [None, False], 'range_flattens': [None, None], 'load_eviction_policies': ['', ''], 'num_warps': 32, 'num_stages': 1, 'indexing': ['pointer', 'pointer', 'pointer'], 'atomic_indexing': [], 'pid_type': 'flat'}

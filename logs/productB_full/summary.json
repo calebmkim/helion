@@ -1,0 +1,82 @@
+{
+  "what": "COMPREHENSIVE Product B across the full 8-kernel active curriculum, post round-trip-fix (commit 664a9524; the persistent/T2 lever now injects correctly into gen0). Time-first deliverable. Seeded vs unseeded quick-autotune convergence, N=3 pinned seeds {0,1,2}, cold cache per run, full max_generations=5.",
+  "env": "H100/sm_90 fp32; GPU2 (Group A) + GPU3 (Group B) in parallel, one autotune run per GPU (never two timing runs on one GPU). Default LFBOTreeSearch quick profile (init_pop 30, copies 2, max_gen 5). HELION_FORCE_AUTOTUNE=1, NOT HELION_SKIP_CACHE. seeded = registered triton_reduction_tile heuristic; unseeded = HELION_DISABLE_AUTOTUNER_HEURISTICS=1.",
+  "shapes": {
+    "rms_norm": ["(2048,16384) T1 persistent w16", "(8192,8192) T1 persistent w16"],
+    "layer_norm": ["(4096,15872) T1 persistent w16"],
+    "cross_entropy": ["(8192,65536) T1 looped[16384] w32"],
+    "softmax_two_pass": ["(4096,16384) T2 block_sizes=[1,16384] persistent w16"],
+    "kl_div": ["(4096,65536) T2 block_sizes=[4096,1] capped-loop w32"],
+    "jsd": ["(8192,65536) T2 block_sizes=[4096,1] capped-loop w32"],
+    "long_sum": ["(256,131072) T1 persistent w32 (M lifted 8->256 per brief; still near noise floor)"],
+    "sum": ["(2048,16384) T1 persistent w16 (Product-A wash; included as 1 honest shape)"]
+  },
+  "seed_injection_verification": {
+    "method": "Each seeded .driver.log prints SEED-FLAT-ENCODE (raw lever -> flat-normalized lever after the autotuner flatten/unflatten round-trip). Plus an independent gen0-CSV cross-check: the expected seed config (lever-matched on block_sizes/reduction_loops/num_warps/num_stages) must appear in gen0 of the seeded CSV.",
+    "result": "PROVEN. 27/27 seeded runs: lever PRESERVED (0 DEGRADED). 27/27 seeded runs: seed config present in gen0 (lever-matched). 27/27 unseeded runs: n_seeds=0, heuristics=[]. T1 persistent reduction_loops=[None] and T1 looped[16384] and T2 block_sizes both round-trip intact post-fix."
+  },
+  "gen0_seed_quality_advantage": {
+    "_metric": "median(unseeded gen0 best) / median(seeded gen0 best) across 3 seeds. The most direct measure of the injected seed's perf quality.",
+    "cross_entropy(8192,65536)": 1.878,
+    "jsd(8192,65536)": 1.501,
+    "kl_div(4096,65536)": 2.799,
+    "layer_norm(4096,15872)": 1.447,
+    "long_sum(256,131072)": 1.109,
+    "rms_norm(2048,16384)": 1.408,
+    "rms_norm(8192,8192)": 1.324,
+    "softmax_two_pass(4096,16384)": 3.132,
+    "sum(2048,16384)": 1.006,
+    "GEOMEAN": 1.614
+  },
+  "slice1_same_budget_seeded_advantage": {
+    "_metric": "unseeded_ms / seeded_ms at budget (>1 => seeded faster), median of 3 seeds.",
+    "cross_entropy(8192,65536)": {"gen1": 1.126, "gen2": 1.000, "gen5_guardrail": 1.000},
+    "jsd(8192,65536)": {"gen1": 1.149, "gen2": 1.093, "gen5_guardrail": 1.014},
+    "kl_div(4096,65536)": {"gen1": 1.407, "gen2": 1.078, "gen5_guardrail": 1.002},
+    "layer_norm(4096,15872)": {"gen1": 1.005, "gen2": 1.002, "gen5_guardrail": 1.004},
+    "long_sum(256,131072)": {"gen1": 1.010, "gen2": 1.000, "gen5_guardrail": 1.009},
+    "rms_norm(2048,16384)": {"gen1": 1.118, "gen2": 1.031, "gen5_guardrail": 0.997},
+    "rms_norm(8192,8192)": {"gen1": 1.004, "gen2": 1.002, "gen5_guardrail": 0.998},
+    "softmax_two_pass(4096,16384)": {"gen1": 2.011, "gen2": 1.505, "gen5_guardrail": 1.454},
+    "sum(2048,16384)": {"gen1": 1.076, "gen2": 1.027, "gen5_guardrail": 1.013},
+    "guardrail": "ALL PASS (gen5 seeded-advantage >= 1-eps with eps=0.03). Worst = rms_norm 0.997/0.998 -- within fp32 do_bench ~2% noise; both modes converge to the same optimum at full budget. softmax_two_pass uniquely keeps a 1.45x edge even at full budget because the unseeded LFBO struggles to discover the persistent config within 5 generations."
+  },
+  "slice2_time_to_target_HEADLINE": {
+    "_metric": "wall-clock (s) to first reach 95% of unseeded-full-budget perf; speedup = unseeded_t / seeded_t (>1 => seeded reaches target sooner). median[min,max] of 3 seeds. target_pct=95 is the robust headline; 98% is reported but tighter targets favor the longer unseeded-vs-seeded full search and flip on shapes that converge to ~identical optima.",
+    "cross_entropy(8192,65536)": {"seeded_s": 8.12, "spread": [7.99, 8.35], "unseeded_s": 48.71, "uns_spread": [44.48, 62.40], "speedup_95": 5.999, "speedup_98": 0.771, "note": "huge 95% win; 98% flips because seeded full search runs longer (95s vs 73.5s total) -- both converge to ~0.949ms, so the last-1% requires the slower full sweep."},
+    "jsd(8192,65536)": {"seeded_s": 11.51, "spread": [11.41, 11.79], "unseeded_s": 32.88, "uns_spread": [30.82, 65.32], "speedup_95": 2.857, "speedup_98": 2.857},
+    "kl_div(4096,65536)": {"seeded_s": 7.83, "spread": [7.68, 7.93], "unseeded_s": 12.70, "uns_spread": [12.45, 14.15], "speedup_95": 1.622, "speedup_98": 1.631},
+    "layer_norm(4096,15872)": {"seeded_s": 4.96, "spread": [4.91, 5.04], "unseeded_s": 8.84, "uns_spread": [7.67, 46.32], "speedup_95": 1.782, "speedup_98": 1.782},
+    "long_sum(256,131072)": {"seeded_s": 31.16, "spread": [7.74, 35.61], "unseeded_s": 9.555, "uns_spread": [8.74, 10.37], "speedup_95": 0.307, "speedup_98": 0.353, "note": "REGRESSED on this metric -- a NOISE-FLOOR + total-wallclock artifact, NOT a real loss. 95% target = 74.3us sits in the ~70-85us small-M (M=256) noise band; seeded gen0=76.4us vs unseeded gen0=84.7us (the perf lever IS better, +11%), but seeded explores far more candidates (n_ok 78-107 vs 24-49 -> seeded total wall-clock 39-68s vs 13-36s), so 2/3 unseeded runs trip 74us via a random LFBO dip sooner. Same artifact as the prior post-fix run (was 0.479x at M=8); lifting M to 256 did not clear the noise floor. Honest long_sum claim = the gen0/Slice-1 perf win, not Slice-2."}
+    ,
+    "rms_norm(2048,16384)": {"seeded_s": 4.60, "spread": [4.60, 4.63], "unseeded_s": 9.18, "uns_spread": [7.84, 30.25], "speedup_95": 1.996, "speedup_98": 5.074},
+    "rms_norm(8192,8192)": {"seeded_s": 4.70, "spread": [4.69, 4.79], "unseeded_s": 9.13, "uns_spread": [8.52, 11.32], "speedup_95": 1.943, "speedup_98": 1.943},
+    "softmax_two_pass(4096,16384)": {"seeded_s": 4.70, "spread": [4.66, 4.80], "unseeded_s": 11.36, "uns_spread": [9.33, 21.84], "speedup_95": 2.417, "speedup_98": 2.657},
+    "sum(2048,16384)": {"seeded_s": 5.865, "spread": [5.61, 6.12], "unseeded_s": 8.025, "uns_spread": [7.00, 9.05], "speedup_95": 1.368, "speedup_98": 1.368, "note": "Product-A WASH kernel; still a modest 1.37x time-to-target because the seed's persistent/w16 config lands a good gen0, even though full-budget perf ties. 2/3 reached target both modes (the seeds that didn't are noise-band non-reaches)."}
+  },
+  "aggregate_curriculum_headline": {
+    "slice2_95_median_speedup_all9": 1.943,
+    "slice2_95_geomean_all9": 1.797,
+    "slice2_95_median_speedup_8_above_noise_floor": 1.970,
+    "slice2_95_geomean_8_above_noise_floor": 2.241,
+    "slice1_gen1_median_advantage_all9": 1.118,
+    "slice1_gen1_geomean_all9": 1.182,
+    "gen0_seed_quality_geomean": 1.614,
+    "interpretation": "Seeding shifts the convergence curve UP-AND-LEFT across the curriculum. HEADLINE: median time-to-95%-of-full-budget-perf is ~1.94x faster seeded (1.97x excluding the long_sum noise-floor artifact). The seeded search reaches a good config in roughly HALF the wall-clock; equivalently the autotune budget could be ~halved on most shapes while still hitting 95% of the full-budget optimum. The win is largest on the heavy/wide-row T2 + cross_entropy kernels (cross_entropy 6.0x, softmax_two_pass 2.4x, jsd 2.9x) where the seed injects a non-obvious persistent/capped-loop config the unseeded LFBO is slow to discover."
+  },
+  "noise_floor_and_no_win_caveats": {
+    "long_sum(256,131072)": "Slice-2 REGRESSES (0.31x) but this is purely a noise-floor + longer-seeded-search artifact; the seed's gen0 perf IS +11% better. Report honestly as a non-win on the time-to-target METRIC, a small win on PERF.",
+    "sum(2048,16384)": "Product-A wash (full-budget perf ties); modest 1.37x time-to-target from a better gen0. Honest small/no-win as predicted by the brief.",
+    "rms_norm + layer_norm": "Full-budget perf ties seeded~unseeded (both converge); the value is the ~1.8-2.0x earlier time-to-target. No regression.",
+    "general": "On EVERY shape the full-budget guardrail passes (seeded >= unseeded - eps). No shape regresses on perf. The two honest non-wins on the time-to-target metric (long_sum, and partly sum) are noise-floor shapes."
+  },
+  "artifacts": {
+    "raw_csvs": "logs/productB_full/<kernel>_<M>_<N>_<mode>_s<seed>.csv (54)",
+    "verification": "logs/productB_full/*.driver.log (SEED-FLAT-ENCODE PRESERVED on all 27 seeded; n_seeds=0 on all 27 unseeded)",
+    "analysis_txt": ["logs/productB_full/analysis_t95.txt", "logs/productB_full/analysis_t98.txt"],
+    "driver": "_lab/harness/productB_driver.py (extended to all 8 active kernels)",
+    "runner": "_lab/harness/productB_full_run.sh (GROUP A on GPU2, GROUP B on GPU3)",
+    "analyzer": "_lab/harness/productB_analyze.py (unchanged; regex handles multi-underscore kernel names)"
+  },
+  "status": "WORKER-COMPLETE. All 54 runs OK (no FAILED). Seed-injection proven per kernel. HELPER_REQUEST queued: results-referee spot-reproduce the Slice-2 95% headline on cross_entropy(8192,65536) + softmax_two_pass(4096,16384), and confirm long_sum non-win is a noise-floor artifact."
+}

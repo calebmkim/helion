@@ -36,8 +36,13 @@ WORKTREE = "/home/calebkim/helion-new-heuristics/wt-reduction"
 assert helion.__file__.startswith(WORKTREE), helion.__file__
 sys.path.insert(0, WORKTREE)
 
+from examples.cross_entropy import cross_entropy  # noqa: E402
+from examples.jsd import jsd_forward  # noqa: E402
+from examples.kl_div import kl_div_forward  # noqa: E402
+from examples.layer_norm import layer_norm_fwd  # noqa: E402
 from examples.long_sum import longsum  # noqa: E402
 from examples.rms_norm import rms_norm_fwd  # noqa: E402
+from examples.softmax import softmax_two_pass  # noqa: E402
 from examples.sum import sum_kernel  # noqa: E402
 
 from helion._compiler.autotuner_heuristics import compiler_seed_configs  # noqa: E402
@@ -55,10 +60,52 @@ def build_reduce(shape):
     return (torch.randn(m, n, device="cuda", dtype=torch.float32),)
 
 
+def build_layer_norm(shape):
+    m, n = shape
+    x = torch.randn(m, n, device="cuda", dtype=torch.float32)
+    w = torch.randn(n, device="cuda", dtype=torch.float32)
+    b = torch.randn(n, device="cuda", dtype=torch.float32)
+    return (x, [n], w, b, 1e-5)
+
+
+def build_cross_entropy(shape):
+    # shape = (N rows, V vocab); int64 labels (matches measure_g_ce.py)
+    n, v = shape
+    logits = torch.randn(n, v, device="cuda", dtype=torch.float32)
+    labels = torch.randint(0, v, (n,), device="cuda", dtype=torch.int64)
+    return (logits, labels)
+
+
+def build_softmax(shape):
+    m, n = shape
+    return (torch.randn(m, n, device="cuda", dtype=torch.float32),)
+
+
+def build_kl_div(shape):
+    # (BT, V); log-prob input, prob target, batchmean, eps (matches measure_g_lossk.py)
+    bt, v = shape
+    yp = torch.randn(bt, v, device="cuda", dtype=torch.float32).log_softmax(-1)
+    yt = torch.randn(bt, v, device="cuda", dtype=torch.float32).softmax(-1)
+    return (yp, yt, False, "batchmean", 1e-10)
+
+
+def build_jsd(shape):
+    # (BT, V); two log-prob inputs, beta=0.5, ignore_index=-100 (matches measure_g_jsd.py)
+    bt, v = shape
+    lq = torch.randn(bt, v, device="cuda", dtype=torch.float32).log_softmax(-1)
+    lp = torch.randn(bt, v, device="cuda", dtype=torch.float32).log_softmax(-1)
+    return (lq, lp, None, 0.5, -100)
+
+
 KERNELS = {
     "rms_norm": {"fn": rms_norm_fwd, "build": build_rms_norm},
     "sum": {"fn": sum_kernel, "build": build_reduce},
     "long_sum": {"fn": longsum, "build": build_reduce},
+    "layer_norm": {"fn": layer_norm_fwd, "build": build_layer_norm},
+    "cross_entropy": {"fn": cross_entropy, "build": build_cross_entropy},
+    "softmax_two_pass": {"fn": softmax_two_pass, "build": build_softmax},
+    "kl_div": {"fn": kl_div_forward, "build": build_kl_div},
+    "jsd": {"fn": jsd_forward, "build": build_jsd},
 }
 
 
@@ -118,12 +165,25 @@ def main():
         from helion.autotuner.config_generation import ConfigGeneration
         cg = ConfigGeneration(bound.env.config_spec)
         flat_norm = cg.unflatten(cg.flatten(recomputed[0]))
-        raw_rl = dict(recomputed[0]).get("reduction_loops")
+        raw = dict(recomputed[0])
+        # T1 kernels carry the persistent lever in reduction_loops=[None];
+        # T2 (user-tiled) kernels carry it in block_sizes (R_BLOCK>=rnumel).
+        # Round-trip BOTH levers through flatten/unflatten so the verification is
+        # meaningful for either track.
+        raw_rl = raw.get("reduction_loops")
         norm_rl = flat_norm.get("reduction_loops")
-        degraded = raw_rl != norm_rl
-        print(f"[verify] SEED-FLAT-ENCODE: raw reduction_loops={raw_rl} "
-              f"num_warps={dict(recomputed[0]).get('num_warps')} -> "
-              f"flat-normalized reduction_loops={norm_rl} "
+        raw_bs = raw.get("block_sizes")
+        norm_bs = flat_norm.get("block_sizes")
+        is_t1 = raw_rl is not None
+        if is_t1:
+            lever_raw, lever_norm, lever_name = raw_rl, norm_rl, "reduction_loops"
+        else:
+            lever_raw, lever_norm, lever_name = raw_bs, norm_bs, "block_sizes"
+        degraded = lever_raw != lever_norm
+        print(f"[verify] SEED-FLAT-ENCODE: track={'T1' if is_t1 else 'T2'} "
+              f"lever={lever_name} raw={lever_raw} "
+              f"num_warps={raw.get('num_warps')} -> "
+              f"flat-normalized {lever_name}={lever_norm} "
               f"num_warps={flat_norm.get('num_warps')}  "
               f"{'DEGRADED(persistent->looped)' if degraded else 'PRESERVED'}")
     else:

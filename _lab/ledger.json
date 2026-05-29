@@ -815,6 +815,73 @@
         "new_test": "test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel"
       },
       "status": "WORKER-PROPOSED; HELPER_REQUEST queued (results-referee: confirm post-fix Slice-2 on rms_norm(2048,16384) + Product-A G unchanged; adversarial-auditor: confirm fix doesn't degrade search/Product-A and gen0 seed is genuinely persistent)."
+    },
+    "run_2026_05_29_FULL": {
+      "what": "COMPREHENSIVE Product B across the full 8-kernel active curriculum (the time-first deliverable), post round-trip-fix (commit 664a9524). Subsumes run_2026_05_29_POSTFIX (3 shapes). Seeded vs unseeded quick-autotune, N=3 pinned seeds {0,1,2}, cold cache per run, full max_generations=5.",
+      "env": "H100/sm_90 fp32; GPU2 (Group A) + GPU3 (Group B) in parallel, one autotune run per GPU. Default LFBOTreeSearch quick (init_pop 30, copies 2, max_gen 5). HELION_FORCE_AUTOTUNE=1, NOT SKIP_CACHE. seeded=triton_reduction_tile heuristic; unseeded=HELION_DISABLE_AUTOTUNER_HEURISTICS=1.",
+      "shapes_one_per_kernel": {
+        "rms_norm": [
+          "(2048,16384)",
+          "(8192,8192)"
+        ],
+        "layer_norm": "(4096,15872)",
+        "cross_entropy": "(8192,65536)",
+        "softmax_two_pass": "(4096,16384)",
+        "kl_div": "(4096,65536)",
+        "jsd": "(8192,65536)",
+        "long_sum": "(256,131072) [M lifted 8->256 per brief; still near noise floor]",
+        "sum": "(2048,16384) [Product-A wash; 1 honest shape]"
+      },
+      "seed_injection_verification": "PROVEN per kernel. 27/27 seeded runs SEED-FLAT-ENCODE=PRESERVED (0 DEGRADED): T1 persistent reduction_loops=[None], T1 looped[16384] (cross_entropy), and T2 block_sizes levers all round-trip intact. Independent gen0-CSV cross-check: 27/27 seeded have the expected seed config in gen0 (lever-matched). 27/27 unseeded: n_seeds=0.",
+      "gen0_seed_quality_advantage_geomean": 1.614,
+      "slice1_gen1_seeded_advantage": {
+        "cross_entropy(8192,65536)": 1.126,
+        "jsd(8192,65536)": 1.149,
+        "kl_div(4096,65536)": 1.407,
+        "layer_norm(4096,15872)": 1.005,
+        "long_sum(256,131072)": 1.01,
+        "rms_norm(2048,16384)": 1.118,
+        "rms_norm(8192,8192)": 1.004,
+        "softmax_two_pass(4096,16384)": 2.011,
+        "sum(2048,16384)": 1.076,
+        "geomean": 1.182,
+        "median": 1.118
+      },
+      "slice1_gen5_guardrail": "ALL 9 PASS (seeded >= unseeded - eps=0.03). Worst rms_norm 0.997/0.998 within fp32 ~2% noise. softmax_two_pass keeps 1.45x even at full budget (unseeded LFBO slow to find persistent).",
+      "slice2_time_to_95pct_speedup_HEADLINE": {
+        "_metric": "unseeded_t / seeded_t to reach 95% of unseeded-full-budget perf; median of 3 seeds.",
+        "cross_entropy(8192,65536)": 5.999,
+        "jsd(8192,65536)": 2.857,
+        "kl_div(4096,65536)": 1.622,
+        "layer_norm(4096,15872)": 1.782,
+        "long_sum(256,131072)": 0.307,
+        "rms_norm(2048,16384)": 1.996,
+        "rms_norm(8192,8192)": 1.943,
+        "softmax_two_pass(4096,16384)": 2.417,
+        "sum(2048,16384)": 1.368,
+        "median_all9": 1.943,
+        "geomean_all9": 1.797,
+        "median_8_above_noisefloor": 1.97,
+        "geomean_8_above_noisefloor": 2.241
+      },
+      "aggregate_curriculum_headline": "Seeding shifts the convergence curve UP-AND-LEFT across the whole curriculum. Median time-to-95%-of-full-budget speedup = 1.94x (1.97x excluding long_sum noise-floor); the seeded search reaches a good config in ~HALF the wall-clock, so the autotune budget could be ~halved on most shapes. Largest wins on heavy/wide-row kernels: cross_entropy 6.0x, jsd 2.9x, softmax_two_pass 2.4x. NO shape regresses on perf (guardrail PASSES all 9).",
+      "honest_noise_floor_no_win_caveats": {
+        "long_sum(256,131072)": "Slice-2 0.307x REGRESSED on the metric but it is a noise-floor + longer-seeded-search artifact, NOT a perf loss (seed gen0 +11% better). M lift 8->256 did not clear the ~70-85us noise band. Honest claim = the gen0/Slice-1 perf win.",
+        "sum(2048,16384)": "Product-A wash; full-budget perf ties; modest 1.37x time-to-target from a better gen0. Small/no-win as predicted.",
+        "98pct_target": "Fragile: cross_entropy flips to 0.771x at 98% (seeded full search runs longer, both converge to same optimum). Robust headline = 95% target."
+      },
+      "artifacts": {
+        "raw_csvs": "logs/productB_full/<kernel>_<M>_<N>_<mode>_s<seed>.csv (54)",
+        "verification": "logs/productB_full/*.driver.log (SEED-FLAT-ENCODE PRESERVED 27/27 seeded; n_seeds=0 27/27 unseeded)",
+        "analysis_txt": [
+          "logs/productB_full/analysis_t95.txt",
+          "logs/productB_full/analysis_t98.txt"
+        ],
+        "summary_json": "logs/productB_full/summary.json",
+        "driver": "_lab/harness/productB_driver.py (extended to all 8 kernels)",
+        "runner": "_lab/harness/productB_full_run.sh"
+      },
+      "status": "WORKER-COMPLETE. HELPER_REQUEST queued: results-referee spot-reproduce Slice-2 95% on cross_entropy(8192,65536) + softmax_two_pass(4096,16384); confirm long_sum non-win is a noise-floor artifact."
     }
   },
   "product_A_measurements": {
@@ -1511,6 +1578,8 @@
     "_lab/harness/roundtrip_probe.py (persistent-seed round-trip before/after proof)",
     "_lab/harness/productB_postfix_run.sh",
     "logs/productB_postfix/ (18 CSVs + .driver.log [SEED-FLAT-ENCODE PRESERVED] + analysis_t95/t98.txt)",
-    "test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel (new repo test)"
+    "test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel (new repo test)",
+    "_lab/harness/productB_full_run.sh (comprehensive 8-kernel Product B runner; GROUP A/B split)",
+    "logs/productB_full/ (54 CSVs + .driver.log [SEED-FLAT-ENCODE PRESERVED 27/27] + analysis_t95/t98.txt + summary.json)"
   ]
 }
