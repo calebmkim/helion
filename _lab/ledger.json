@@ -211,6 +211,39 @@
       "status": "WIN: G_seed=0.989 vs G_default=0.886 (+11.7%). v4 champion handles it UNCHANGED (byte-identical heuristic; same persistent-workhorse + rnumel-warps-ramp mechanism as rms_norm). num_reduction_ops=2 does NOT want a different config (oracle keeps persistent + ties warps/stages).",
       "m_block_autotuner_min": "1 even at 8192 rows.",
       "tensor_op_warning": "benign TensorOperationInWrapper on the host-side `if bias is not None` branch -- unrelated to the reduction seed; bind/seed/codegen all fine."
+    },
+    "softmax_two_pass": {
+      "track": "T2 (user-tiled / manually-looped: BOTH hl.tile axes are ordinary block_sizes entries, reduction=False; 0 reduction_loops; the .amax/.sum over the inner tile is realized by ReductionLowering reusing the existing user tile). reduction_facts populated by register_user_tiled_reductions. Reduction axis = block_id 1 (N), found via ReductionLowering predicate filtered vs grid_block_ids=[0].",
+      "band": "A (scalar/row-accumulator inner: carries only [M_BLOCK] mi/di across the inner loop -> num_tiled_accumulators=0 -> persistent to the structural cap, no Band-B cap).",
+      "added": "2026-05-29 (v5 T2 support)",
+      "in_sample_shapes": [[4096,256],[4096,512],[4096,1024],[4096,2048],[4096,4096],[4096,8192],[4096,12288],[4096,16384],[32768,256],[32768,1024]],
+      "reduction_fact_observed": {"num_load": 2, "num_store": 1, "num_reduction_ops": 2, "num_tiled_accumulators": 0, "dtype": "float32", "itemsize": 4, "note": "num_reduction_ops=2 (amax + sum over N). num_tiled_accumulators=0 (mi/di are [M_BLOCK] row state, NOT [M_BLOCK,R_BLOCK]) -> Band A, stays persistent."},
+      "seed": "block_sizes=[m_floor, next_pow2(N)] (R_BLOCK=next_pow2(N) -> inner `for offset in tl.range(0,N,R_BLOCK)` runs ONCE, persistent); num_warps per rnumel ramp; no reduction_loops.",
+      "default_config_behavior": "looped chunk 4096 once N>4096 -> LOSES 2-3x at wide rows (G_default 0.30-0.72).",
+      "status": "WIN: G_seed=0.967 vs G_default=0.440 (+120%). Correctness PASS (maxabs ~1e-8 vs F.softmax fp32). DECISIVE A/B vs persistent/w32: seed/p32=1.50x (seed FASTER -- the rnumel warps ramp avoids the tiny-N/large-warps catastrophe: seed/p32=3.1x/2.4x/1.7x/3.0x at (4096,256)/(4096,512)/(4096,1024)/(32768,256), ties ~1.0 at wide rows). NO branch needed beyond the shared persistent+ramp.",
+      "harness": "_lab/harness/{t2_classify,t2_seed_probe,t2_codegen_probe,measure_g_softmax}.py"
+    },
+    "kl_div": {
+      "track": "T2 (user-tiled). Reduction axis = block_id 0 (V, size_hint 65536), grid_block_ids=[1]. 2 block_sizes both reduction=False, 0 reduction_loops, 1 reduction_fact, no matmul.",
+      "band": "B (carries a [M_BLOCK,R_BLOCK] 2D accumulator across the inner loop -> num_tiled_accumulators=2 (kl_loss + loss_sum) -> the persistent live-state footprint scales with R_BLOCK -> Band-B R_BLOCK cap).",
+      "added": "2026-05-29 (v5 T2 support)",
+      "in_sample_shapes": [[4096,4096],[4096,8192],[4096,16384],[4096,32768],[4096,65536],[4096,131072]],
+      "reduction_fact_observed": {"num_load": 2, "num_store": 1, "num_reduction_ops": 1, "num_tiled_accumulators": 2, "dtype": "float32", "itemsize": 4},
+      "seed": "block_sizes=[R_BLOCK, 1] with R_BLOCK=min(next_pow2(V), BANDB cap 4096); M_BLOCK pinned at floor (1) for the u0*u1<=2^20 numel constraint; num_warps per rnumel ramp (w32 at V>=65536).",
+      "default_config_behavior": "looped chunk 4096 -> G_default 0.36-0.47 (loses ~2.5-3x).",
+      "status": "WIN: G_seed=1.029 vs G_default=0.392 (+163%; seed BEATS tc on 4/6 shapes). Correctness rel-err<=1.2e-7 vs torch.nn.KLDivLoss(batchmean). Band-B branch VALIDATED: without the R-cap the full-N persistent seed is 1.2x slower at V>=65536 (s/AB 0.787); with R=4096 cap s/AB=0.99-1.41 (seed ties/beats the best simple looped alt). Narrow rows unaffected (persist/cap 0.995-1.000).",
+      "harness": "_lab/harness/{measure_g_lossk,t2_bandb_chunk_sweep,t2_bandb_narrow_check,t2_lossk_correct}.py"
+    },
+    "jsd": {
+      "track": "T2 (user-tiled). Reduction axis = block_id 0 (V), grid_block_ids=[1]. CRITICAL: raw ReductionLowering block_indices={0,1} (the dead beta==0/1 branches do amax(dim=0) over the M/grid tile); the `not in grid_block_ids` filter removes block 1 -> real V reduction = 0. Load-bearing filter.",
+      "band": "B (carries TWO [M_BLOCK,R_BLOCK] 2D accumulators -> num_tiled_accumulators=2 (intermediate_loss + intermediate_dX); the WORST persistent-spill case -> Band-B R_BLOCK cap REQUIRED).",
+      "added": "2026-05-29 (v5 T2 support)",
+      "in_sample_shapes": [[8192,4096],[8192,8192],[8192,16384],[8192,32768],[8192,65536],[8192,131072]],
+      "reduction_fact_observed": {"num_load": 2, "num_store": 2, "num_reduction_ops": 2, "num_tiled_accumulators": 2, "dtype": "float32", "itemsize": 4, "note": "num_store=2 (loss + dX) + num_reduction_ops=2 -- the Band-B signature. The t2_code_map predicted reductions=4; the active beta=0.5 branch has 2 (loss-sum + dX-sum)."},
+      "seed": "block_sizes=[R_BLOCK, 1] with R_BLOCK=min(next_pow2(V), 4096); M_BLOCK floor 1; warps per rnumel ramp.",
+      "default_config_behavior": "looped chunk 4096 -> G_default ~0.64-0.67.",
+      "status": "WIN: G_seed=0.996 vs G_default=0.665 (+50%; essentially ties tc all 6 shapes). Correctness loss rel-err 0.0 vs TorchJSDBaseline; dX matches default ~1e-12. Band-B branch ESSENTIAL: WITHOUT the R-cap the full-N persistent seed SPILLS catastrophically -- (8192,65536) persistent=19.8ms vs loop=2.0ms (G=0.10), (8192,131072) persistent unmeasurably slow. With R=4096 cap: s/AB=0.987-0.999 (ties best looped alt). benign TensorOperationInWrapper on host-side torch.sum(loss).",
+      "harness": "_lab/harness/{measure_g_jsd,t2_bandb_chunk_sweep,t2_bandb_narrow_check,t2_lossk_correct}.py"
     }
   },
   "product_B_measurements": {
@@ -478,6 +511,20 @@
       "O_4kernel_geomean": 0.9997,
       "O_note": "O_3kernel was 1.0034; adding layer_norm (G=0.989, a high-but-sub-1 kernel) mechanically nudges the geomean down ~0.4% even though the heuristic strictly improved layer_norm (+11.7% vs default). Same mechanical effect as adding sum. Honest claim is PER-KERNEL: no kernel regresses, layer_norm is a clean +11.7% win.",
       "correctness": "PASS all 11 shapes (rtol=1e-3, atol=1e-3; maxabs ~2-3e-6 vs F.layer_norm fp32). seed_used PASS (all persistent; codegen has no `for roffset`)."
+    },
+    "v5_T2_support": {
+      "measured": "2026-05-29 GPU2, do_bench median-of-7, fp32 (WORKER; awaiting referee + auditor).",
+      "what": "Adds T2 (user-tiled / manually-looped) reductions: softmax_two_pass (T2 Band A), kl_div + jsd (T2 Band B). Plumbing in device_ir.py (register_user_tiled_reductions, guarded) + config_spec.py (ReductionFact.num_tiled_accumulators) + triton.py (gate broadened to reduction_facts==1; get_seed_config T1-vs-T2 routing; Band-B R_BLOCK cap).",
+      "T1_no_regression": "BYTE-IDENTICAL. layer_norm_no_regression_proof.py 27/27 OK (rms_norm/sum/long_sum) + layer_norm 11/11 OK = 38/38 v4 seeds unchanged. test_reductions.py 24 passed. The gate broadening + guarded T2 populate + new fact field (default 0) are T1-transparent.",
+      "branches_added": "ONE: the Band-B R_BLOCK footprint cap (BANDB_R_BLOCK_BYTES=16384 -> 4096 fp32 elems), gated on fact.num_tiled_accumulators>=1. Validated by matched A/B vs persistent (NOT default): best-or-tied at every in-sample Band-B row (narrow: persist/cap 0.995-1.017 no-regression; wide: recovers a 1.2-9.7x persistent SPILL). softmax (num_tiled=0) + all T1 unaffected. ALSO: a dynamic-size guard in register_user_tiled_reductions (declines a None-size jagged reduction axis -- found by test_jagged_softmax regressing).",
+      "per_kernel_G_seed": {"rms_norm_fwd": 0.980, "sum": 0.937, "long_sum": 1.099, "layer_norm_fwd": 0.989, "softmax_two_pass": 0.9672, "kl_div": 1.0293, "jsd": 0.9960},
+      "per_kernel_G_default_baseline": {"softmax_two_pass": 0.4396, "kl_div": 0.3917, "jsd": 0.6653},
+      "decisive_AB": {"softmax_two_pass": "seed/persistent-w32 = 1.50x (seed faster; rnumel ramp avoids tiny-N/large-warps catastrophe)", "kl_div": "seed (R=4096 cap)/best-simple-AB s/AB=0.99-1.41 (ties/beats; without cap full-N persistent 0.787 slower at V>=65536)", "jsd": "seed/best-looped-AB s/AB=0.987-0.999 (ties; without cap full-N persistent SPILLS 0.10/unmeasurable)"},
+      "O_7kernel_geomean": 0.9985,
+      "O_note": "O_4kernel was 0.9995; adding softmax (0.967)/kl_div (1.029)/jsd (0.996) -- two high-but-sub-1, one >1 -- nets a small geomean nudge. Honest PER-KERNEL: no kernel regresses (4 T1 byte-identical), 3 new clean wins vs un-seeded default (softmax +120%, kl_div +163%, jsd +50%).",
+      "correctness": "softmax maxabs ~1e-8 vs F.softmax; kl_div rel-err<=1.2e-7 vs torch.nn.KLDivLoss(batchmean); jsd loss rel-err 0.0 vs TorchJSDBaseline, dX ~1e-12. All seed-used PASS (T2 codegen: _BLOCK_SIZE_<red>=tl.constexpr(R) with R>=N for persistent rows -> inner loop runs once).",
+      "harness": "_lab/harness/{t2_classify,t2_seed_probe,t2_codegen_probe,measure_g_softmax,measure_g_lossk,measure_g_jsd,t2_bandb_chunk_sweep,t2_bandb_narrow_check,t2_lossk_correct}.py",
+      "status": "WORKER-PROPOSED champion v5; HELPER_REQUEST queued (results-referee: reproduce G_softmax/G_kl_div/G_jsd + confirm T1 38/38 no-regression; adversarial-auditor: audit the gate broadening for T1 non-perturbation + the Band-B num_tiled_accumulators branch generalization + held-out)."
     }
   },
   "crossover_sweep_evidence": {
@@ -746,6 +793,17 @@
       "verification": "Round-trip [None]->[None] for size_hint {8192,65536,262144} (was [4096]) + guard {256,4096} still [None] (roundtrip_probe.py before/after). New test FAILS pre-fix, PASSES post-fix. No breakage: test_best_available+test_config_api 87 passed; test_autotuner 107 passed/7 skip/11 subtests; test_reductions 24 passed. Product A byte-identical (bare-seed path does not flatten). Gen0 seed PRESERVED ([None]->[None]) in all 9 seeded Product-B driver logs.",
       "product_B_postfix": "rms_norm Slice-2 time-to-95% GREW 1.78->1.89x (2048,16384) and 1.70->1.93x (8192,8192); gen0 seed-quality advantage grew on all 3 shapes (rms_norm 1.24->1.41, 1.31->1.33; long_sum 3.83->4.02). long_sum Slice-2 metric 0.479x is a tiny-M noise-floor/total-wallclock artifact (perf lever grew). See product_B_measurements.run_2026_05_29_POSTFIX.",
       "verdict": "WORKER-PROPOSED. LOW-risk core-autotuner fix; resolves champion.open_issue (Product-B seed degradation). Heuristic + Product A unaffected. Awaiting results-referee (post-fix Slice-2 + Product-A unchanged) + adversarial-auditor (search not degraded, gen0 genuinely persistent)."
+    },
+    {
+      "iter": 7,
+      "step": "T2 support: widen Product A to softmax_two_pass (T2 Band A) + kl_div + jsd (T2 Band B)",
+      "heuristic_version": "v5 triton_reduction_tile (T2 plumbing + Band-B branch)",
+      "change": "(1) device_ir.register_user_tiled_reductions() -- new, guarded by `if not reduction_facts`, finds the T2 reduction axis via ReductionLowering predicate filtered vs grid_block_ids (load-bearing for jsd), builds ONE ReductionFact; declines on non-unique / non-block-size / dynamic-None-size axes (jagged_softmax guard). Shared _count_reduction_workload() used by T1+T2. (2) config_spec.ReductionFact.num_tiled_accumulators (count of [M,R] 2D accumulators carried across the inner loop; default 0). (3) triton._triton_reduction_eligible broadened to reduction_facts==1 and not matmul_facts. (4) get_seed_config T1-vs-T2 routing (shared persistent+ramp lever; T2 sets block_sizes[red_idx]=R_BLOCK, others at floor, no reduction_loops). (5) Band-B branch: cap R_BLOCK at BANDB_R_BLOCK_BYTES//itemsize when num_tiled_accumulators>=1.",
+      "T1_no_regression": "BYTE-IDENTICAL 38/38 (rms_norm 13 + sum 9 + long_sum 5 = 27/27 via layer_norm_no_regression_proof.py; layer_norm 11/11 separate). test_reductions 24 passed; test_jagged_softmax passes (was a regression -> fixed by the dynamic-size guard).",
+      "per_kernel_G_seed": {"rms_norm_fwd": 0.980, "sum": 0.937, "long_sum": 1.099, "layer_norm_fwd": 0.989, "softmax_two_pass": 0.9672, "kl_div": 1.0293, "jsd": 0.9960},
+      "O_4kernel": 0.9995,
+      "O_7kernel": 0.9985,
+      "verdict": "WORKER-PROPOSED champion v5. T1 byte-identical (no-regression sacred gate PASSED). 3 new T2 kernels, all correct (loss kernels rel-err<=1.2e-7). ONE new branch (Band-B R_BLOCK cap, gated on num_tiled_accumulators -- a WORKLOAD live-state property, not kernel identity) VALIDATED by matched A/B vs persistent (best-or-tied every Band-B row; recovers a 1.2-9.7x persistent spill on jsd/kl_div wide rows; softmax+T1 unaffected). softmax/kl_div/jsd = +120%/+163%/+50% vs un-seeded default. Awaiting referee + auditor."
     }
   ],
   "champion": {

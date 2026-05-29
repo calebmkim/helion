@@ -85,33 +85,37 @@ class TritonSkinnyGemmHeuristic(AutotunerHeuristic):
 def _triton_reduction_eligible(
     env: CompileEnvironment, device_ir: DeviceIR
 ) -> bool:
-    """Gate for the Triton Band-A reduction seed (T1 rollable, single rdim).
+    """Gate for the Triton reduction seed (single inner reduction, no GEMM).
 
-    Mirrors the CuTe template's structural gate: single non-reduction tile +
-    single reduction dim, no matmul facts (this seeds reductions, not GEMMs),
-    and a populated ReductionFact for the rdim.
+    Keys on exactly the WORKLOAD invariant the seed needs: ONE registered
+    ``ReductionFact`` (one inner reduction axis) and NO ``matmul_facts`` (this
+    seeds reductions, not GEMMs). That single condition admits BOTH tracks:
 
-    Unlike the CuTe template we do NOT additionally require the M-axis floor to
-    be ``<= 1``. Triton's autotuner raises ``autotuner_min`` to 2+ for LARGE-M
-    shapes (``raise_grid_block_minimums``: a tiny block on a 32768-row axis
-    makes an enormous grid) — that floor is an autotuner-search-efficiency knob,
-    NOT a correctness limit on block=1. We accept any floor and seed the M-block
-    AT that floor (see ``_m_block_size``) rather than forcing 1, which is what
-    lets the small-N / large-M shapes (e.g. 32768x256) get a reduction seed
-    instead of being silently skipped.
+    - **T1** (rollable rdim): a ``reduction=True`` block with a
+      ``ReductionLoopSpec``; the fact is built in ``register_rollable_reductions``.
+      Here ``len(reduction_loops)==1`` and ``len(block_sizes)==1``.
+    - **T2** (user-tiled / manually-looped: softmax_two_pass, kl_div, jsd): BOTH
+      ``hl.tile`` axes are ordinary ``block_sizes`` entries (no ``reduction=True``
+      block, ``reduction_loops`` empty); the fact is built in
+      ``register_user_tiled_reductions`` (guarded so it only fires when T1 did
+      not, keeping the fact count at 1). Here ``len(block_sizes)>=2`` and
+      ``len(reduction_loops)==0``.
 
-    NOTE: ``len(reduction_loops)==1`` matches T1 (rollable rdim) ONLY. T2
-    manual-tile reductions (softmax_two_pass, kl_div, jsd) are a ``block_sizes``
-    entry with ``reduction=True`` and are NOT in ``reduction_loops`` — this gate
-    must be BROADENED for those later (Band B / T2).
+    The earlier ``len(block_sizes)==1 and len(reduction_loops)==1`` conditions
+    were a T1-ONLY shape signature; they EXCLUDED T2 (which has 2 block_sizes / 0
+    reduction_loops). Replacing them with ``len(reduction_facts)==1`` generalizes
+    on the workload (a single inner reduction) rather than on the rolling
+    mechanism, while still excluding GEMMs and multi-axis manual reductions
+    (which leave ``reduction_facts`` at 0).
+
+    We do NOT require the M-axis floor to be ``<= 1`` (the CuTe template did).
+    Triton's autotuner raises ``autotuner_min`` to 2+ for LARGE-M shapes
+    (``raise_grid_block_minimums``) — a search-efficiency knob, NOT a correctness
+    limit. We seed the M-block AT that floor (see ``_m_block_size``) so small-N /
+    large-M shapes still get a seed.
     """
     spec = env.config_spec
-    return (
-        len(spec.block_sizes) == 1
-        and len(spec.reduction_loops) == 1
-        and len(spec.reduction_facts) == 1
-        and not spec.matmul_facts
-    )
+    return len(spec.reduction_facts) == 1 and not spec.matmul_facts
 
 
 class TritonReductionHeuristic(AutotunerHeuristic):
@@ -206,6 +210,20 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # tiny-rnumel w32 catastrophe ((32768,256): w16=570us->w32=1174us) is at
     # rnumel=256, already excluded by this guard — an rnumel guard, not num_load.
     STREAM_WARPS32_MIN_ELEMS = 16384
+    # Band-B (T2 with a [M_BLOCK, R_BLOCK] 2D accumulator carried across the inner
+    # loop: kl_div, jsd) R_BLOCK cap in BYTES (per accumulator). A full-N
+    # persistent R_BLOCK over-allocates the live state for these kernels and
+    # spills — at the widest in-sample rows the persistent seed is 1.2–9.7×
+    # SLOWER than a small looped chunk (matched A/B, M_BLOCK at floor: e.g. jsd
+    # (8192,65536) persistent=19.8ms vs loop4096=2.4ms). Capping R_BLOCK at 16 KiB
+    # (= 4096 fp32 elems) is best-or-tied at EVERY in-sample Band-B row (narrow
+    # rows: persist/cap=0.996–1.017, i.e. no regression; wide rows: recovers the
+    # spill). Expressed in BYTES (via itemsize) so it generalizes across dtypes.
+    # Scalar-accumulator reductions (num_tiled_accumulators==0: every T1 kernel +
+    # softmax_two_pass, which carries only a [M_BLOCK] row state) are UNAFFECTED —
+    # they stay persistent to the structural cap. EVIDENCE:
+    # _lab/harness/t2_bandb_chunk_sweep.py + t2_bandb_narrow_check.py.
+    BANDB_R_BLOCK_BYTES = 16384
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
     @classmethod
@@ -305,6 +323,11 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         return max(1, bs_spec.min_size, bs_spec.autotuner_min)
 
     @classmethod
+    def _block_floor(cls, bs_spec: BlockSizeSpec) -> int:
+        """The autotuner floor for a single block_sizes entry."""
+        return max(1, bs_spec.min_size, bs_spec.autotuner_min)
+
+    @classmethod
     def get_seed_config(
         cls, env: CompileEnvironment, device_ir: DeviceIR
     ) -> Config | None:
@@ -312,33 +335,89 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             return None
         spec = env.config_spec
         fact = spec.reduction_facts[0]
-        # Persistent is the workhorse for EVERY row the backend can compile as a
-        # single pass. The ONLY structural limit is the backend's per-tile
-        # element cap (Triton's max_tensor_numel = 2**20 elems); above it the
-        # whole-row `tl.arange` is rejected at codegen, so we MUST loop. There is
-        # no perf-based byte ceiling below the cap: a warps-held-equal sweep
-        # (_lab/harness/v3_crossover_sweep.py) shows persistent wins or ties at
-        # every feasible byte size up to the cap. (The v2 byte fence + grid-
-        # occupancy branch were a confound — see the class docstring.)
+
+        # The persistent-vs-looped lever is identical for BOTH tracks: it keys on
+        # the reduction extent (fact.size_hint = rnumel) and the backend's
+        # per-tile element cap, NOT on the knob mechanism. Persistent is the
+        # workhorse for EVERY row the backend can compile as a single pass; the
+        # ONLY structural limit is Triton's max_tensor_numel (2**20 elems), above
+        # which the whole-row `tl.arange` is rejected at codegen. A
+        # warps-held-equal sweep (_lab/harness/v3_crossover_sweep.py) shows
+        # persistent wins or ties at every feasible byte size up to the cap, so
+        # there is no perf byte fence below it.
         persist_cap = env.backend.max_tensor_numel  # None ⇒ no element cap
         can_persist = persist_cap is None or fact.size_hint <= persist_cap
+        from ..._utils import next_power_of_2 as _np2
+
         if can_persist:
-            # Persistent (single-pass) reduction. normalize() realizes None as
-            # the full power-of-2 extent at codegen (no `for roffset` loop).
-            # num_warps scales with rnumel ALONE (see _num_warps).
-            reduction_loops: list[int | None] = [None]
+            # Persistent (single-pass) reduction. num_warps scales with rnumel
+            # ALONE (see _num_warps). For T1 the persistent extent is encoded as
+            # reduction_loops=None; for T2 it is the full power-of-2 R_BLOCK so
+            # the inner `for tile_n` loop runs exactly once.
+            extent = _np2(fact.size_hint)
             num_warps = cls._num_warps(fact)
+            persistent = True
         else:
             # Row exceeds the backend's persistent element cap — a single pass
             # cannot compile, so loop over a fixed R_BLOCK chunk with the high
             # streaming warp count. NOTE: no in-sample shape reaches this cap;
             # this branch is a synthetic/structural generalization tail (see the
             # notebook "looped tail" disclosure).
-            reduction_loops = [cls.LOOPED_CHUNK]
+            extent = cls.LOOPED_CHUNK
             num_warps = cls.LOOPED_NUM_WARPS
-        seed: dict[str, Any] = {
-            "block_sizes": [cls._m_block_size(env)],
-            "reduction_loops": reduction_loops,
+            persistent = False
+
+        is_t1 = fact.block_id in spec.reduction_loops.valid_block_ids()
+        if is_t1:
+            # T1 (rollable rdim): the persistent-vs-looped choice rides on the
+            # `reduction_loops` knob (None = persistent). The single M-block is
+            # seeded at its autotuner floor.
+            reduction_loops: list[int | None] = (
+                [None] if persistent else [cls.LOOPED_CHUNK]
+            )
+            seed: dict[str, Any] = {
+                "block_sizes": [cls._m_block_size(env)],
+                "reduction_loops": reduction_loops,
+                "num_warps": num_warps,
+                "num_stages": 1,
+            }
+            return Config(**seed)
+
+        # T2 (user-tiled / manually-looped): the reduction axis IS a block_sizes
+        # entry (the inner `hl.tile(n, block_size=R_BLOCK)`); there is no
+        # `reduction_loops` knob. Persistent == R_BLOCK >= next_pow2(N) so the
+        # inner loop runs once. Every OTHER block_size (the grid/row axes) stays
+        # at its floor — for the Band-B loss kernels (kl_div/jsd) this keeps
+        # M_BLOCK at 1, which is required by the u0*u1 <= 2**20 numel constraint
+        # (the inner loop carries [M_BLOCK, R_BLOCK] live accumulators; a full-N
+        # R_BLOCK only survives at M_BLOCK=1).
+        r_block = extent
+        if fact.num_tiled_accumulators >= 1:
+            # BAND B: this T2 reduction carries one-or-more [M_BLOCK, R_BLOCK] 2D
+            # accumulators across the inner loop (kl_div: loss_sum; jsd:
+            # intermediate_loss + intermediate_dX). A full-N persistent R_BLOCK
+            # over-allocates that live state and SPILLS — at the widest in-sample
+            # rows the persistent seed is 1.2–9.7× SLOWER than a small looped
+            # chunk (matched A/B vs persistent, M_BLOCK at floor). Cap R_BLOCK by
+            # the accumulator footprint (BANDB_R_BLOCK_BYTES per element), so the
+            # carried state stays SM-resident. This is best-or-tied at every
+            # in-sample Band-B row (narrow rows unaffected, wide rows recovered)
+            # — gated on the WORKLOAD property num_tiled_accumulators, NOT kernel
+            # identity. Scalar-/row-accumulator T2 (softmax_two_pass,
+            # num_tiled_accumulators==0) stays persistent to the structural cap.
+            bandb_cap = max(1, cls.BANDB_R_BLOCK_BYTES // max(1, fact.itemsize))
+            r_block = min(r_block, _np2(bandb_cap))
+
+        red_idx = spec.block_sizes.block_id_to_index(fact.block_id)
+        block_sizes_list: list[int] = []
+        for i in range(len(spec.block_sizes)):
+            bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])
+            if i == red_idx:
+                block_sizes_list.append(r_block)
+            else:
+                block_sizes_list.append(cls._block_floor(bs_spec))
+        seed = {
+            "block_sizes": block_sizes_list,
             "num_warps": num_warps,
             "num_stages": 1,
         }

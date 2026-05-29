@@ -108,6 +108,16 @@ class ReductionFact(NamedTuple):
       Band A vs Band B).
     - ``num_reduction_ops``: count of reduction lowerings over this rdim
       (number of accumulators, e.g. welford-like multi-accumulator combines).
+    - ``num_tiled_accumulators``: count of ``[M_BLOCK, R_BLOCK]`` 2D buffers
+      (``zeros``/``full``/``empty``) whose last dim is the reduction extent. These
+      are the live accumulators a MANUALLY-LOOPED (T2) reduction carries ACROSS
+      the inner ``hl.tile`` loop, so the persistent live-state footprint scales
+      with R_BLOCK. ``0`` for a scalar-accumulator (Band-A) reduction (T1, or a
+      T2 like softmax_two_pass that carries only ``[M_BLOCK]`` row state) — those
+      stay persistent to the structural cap. ``>=1`` marks the Band-B loss
+      kernels (kl_div, jsd) whose full-N persistent R_BLOCK over-allocates and
+      spills (the seed must cap R_BLOCK by footprint). A WORKLOAD property
+      (live-state footprint), NOT kernel identity.
     """
 
     block_id: int
@@ -119,6 +129,7 @@ class ReductionFact(NamedTuple):
     num_load: int
     num_store: int
     num_reduction_ops: int
+    num_tiled_accumulators: int = 0
 
 
 def shrink_block_sizes_for_numel_constraints(

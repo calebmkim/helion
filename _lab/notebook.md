@@ -5,6 +5,12 @@
 > champion). The hub appends gate verdicts. Keep it current at every clean iteration boundary.
 
 ## Champion (current best heuristic)
+- **v5 `triton_reduction_tile` (WORKER-PROPOSED 2026-05-29) — T2 SUPPORT.** Adds user-tiled/manually-looped
+  reductions (softmax_two_pass T2 Band A; kl_div, jsd T2 Band B) on top of the v4 T1 champion. T1 seeds are
+  BYTE-IDENTICAL (38/38 unchanged). ONE new branch (the Band-B R_BLOCK footprint cap, gated on
+  `num_tiled_accumulators>=1`, validated by matched A/B vs persistent). Per-kernel G: softmax 0.967 (+120% vs
+  default), kl_div 1.029 (+163%), jsd 0.996 (+50%); 4 T1 kernels unchanged. O_7kernel=0.9985. See the "v5 — T2
+  SUPPORT" section below for full evidence. HELPER_REQUEST queued (referee + auditor). Awaiting commit hash.
 - **v1 `triton_reduction_tile`** (ACCEPTED 2026-05-28). Referee-confirmed **G_rms_norm = 0.979** vs
   un-seeded `default_config` baseline 0.908 (+7.8%). Auditor PASS. Code:
   `helion/_compiler/autotuner_heuristics/triton.py` `TritonReductionHeuristic`.
@@ -217,8 +223,77 @@ quick profile. Harness: `_lab/harness/productB_{driver.py,run.sh,analyze.py}`; r
   WORKER-PROPOSED; HELPER_REQUEST queued for results-referee spot-repro of Slice-2 on (2048,16384).
 
 ## Active kernels (curriculum)
-- Active: **rms_norm_fwd, sum, long_sum, layer_norm_fwd** (all T1, Band A). Widen next to: softmax
-  (Band A); kl_div, jsd (Band B); welford (Band C). Forward only for now; defer backward (Band D).
+- Active: **rms_norm_fwd, sum, long_sum, layer_norm_fwd** (T1, Band A) + **softmax_two_pass** (T2 Band A) +
+  **kl_div, jsd** (T2 Band B) as of 2026-05-29 (v5). Widen next to: welford (Band C). Forward only;
+  defer backward (Band D).
+
+## v5 — T2 SUPPORT (user-tiled / manually-looped reductions): softmax_two_pass + kl_div + jsd (2026-05-29)
+**The heuristic now seeds BOTH tracks; T1 is byte-identical (no-regression PROVEN).**
+
+### T2 plumbing (3 files; T1-transparent)
+- **device_ir.py `register_user_tiled_reductions()`** (new; called right AFTER `register_rollable_reductions()`,
+  GUARDED by `if not config_spec.reduction_facts:` so T1/T2 are mutually exclusive and the fact count stays 1).
+  Finds the T2 reduction axis via the ReductionLowering predicate FILTERED against `grid_block_ids`
+  (load-bearing for jsd: its dead beta==0/1 `amax(dim=0)` over the M tile makes raw red_block_ids={0,1};
+  removing the grid axis (1) leaves the real V reduction (0)). Builds ONE ReductionFact. **Declines (no fact)
+  if** the inner reduction axis isn't unique (len!=1), isn't a block_sizes entry, or has a **dynamic/None size**
+  (jagged_softmax: `size=None` AutoSize — guard added after that test REGRESSED; the persistent-vs-looped lever
+  is undefined without a static extent). Counting (loads/stores/reductions/dtype/2D-accumulators) is factored
+  into a SHARED `_count_reduction_workload()` used by BOTH the T1 and T2 fact builders → identical digestion.
+- **triton.py `_triton_reduction_eligible`**: dropped the T1-only shape signature (`len(block_sizes)==1 and
+  len(reduction_loops)==1`); now gates on `len(reduction_facts)==1 and not matmul_facts` ALONE. Generalizes on
+  the WORKLOAD (one inner reduction) not the rolling mechanism; admits T2 (2 block_sizes / 0 reduction_loops)
+  while still excluding GEMM + multi-axis manual reductions (which leave reduction_facts at 0).
+- **triton.py `get_seed_config` T1-vs-T2 routing**: the persistent-vs-looped lever (extent = next_pow2(size_hint)
+  capped at max_tensor_numel; num_warps = the rnumel ramp) is SHARED. `is_t1 = fact.block_id in
+  reduction_loops.valid_block_ids()`. T1 → `reduction_loops=[None|LOOPED_CHUNK]`, `block_sizes=[m_floor]` (as
+  before). T2 → `block_sizes[red_idx]=R_BLOCK`, every other block_size at its floor (keeps M_BLOCK=1 — the
+  Band-B u0*u1<=2^20 numel constraint), NO reduction_loops. Persistent T2 == R_BLOCK>=next_pow2(N) so the user
+  `for offset in tl.range(0, N, R_BLOCK)` runs ONCE (verified in codegen: `_BLOCK_SIZE_<red> = tl.constexpr(R)`
+  with R>=N → single masked pass).
+
+### T1 NO-REGRESSION (the sacred gate) — BYTE-IDENTICAL
+`layer_norm_no_regression_proof.py` = **27/27 OK** (rms_norm 13 + sum 9 + long_sum 5) AND a separate
+layer_norm check = **11/11 OK** → 38/38 v4 champion seeds UNCHANGED. The gate broadening + guarded T2 populate +
+the new `num_tiled_accumulators` fact field (default 0) are all T1-transparent. `test_reductions.py` 24 passed.
+
+### softmax_two_pass (T2 Band A) — clean WIN, NO branch needed
+- num_tiled_accumulators=0 (carries only `[M_BLOCK]` row state mi/di) → stays PERSISTENT to the structural cap
+  exactly like the T1 kernels. Seed = block_sizes=[m_floor, next_pow2(N)] + rnumel warps ramp.
+- **G_softmax = 0.967** vs un-seeded default **0.440** (+120%; default goes looped chunk-4096 and loses 2-3x at
+  wide rows). do_bench median-of-7, fp32, GPU2. Correctness PASS all shapes (maxabs ~1e-8 vs F.softmax fp32).
+- **DECISIVE A/B vs persistent/w32: seed/p32 = 1.50x geomean (seed FASTER).** The seed's rnumel warps ramp (w4
+  at N<=1024) AVOIDS the tiny-N/large-warps catastrophe that sinks a fixed-w32 baseline (seed/p32 = 3.1x/2.4x/
+  1.7x/3.0x at (4096,256)/(4096,512)/(4096,1024)/(32768,256); ties ~1.0 at wide rows). Same coupling catastrophe
+  documented for T1 (32768,256). So the rnumel ramp is the right lever — NOT a fixed high warp count.
+
+### kl_div + jsd (T2 Band B) — the Band-B lever ADDED (validated by matched A/B vs persistent)
+- num_tiled_accumulators=2 for BOTH (kl_div: kl_loss+loss_sum; jsd: intermediate_loss+intermediate_dX) — each a
+  `[M_BLOCK, R_BLOCK]` buffer CARRIED across the inner loop, so the persistent live-state footprint SCALES with
+  R_BLOCK. A full-N persistent R_BLOCK over-allocates and SPILLS: matched A/B (M_BLOCK floor, persistent full-N
+  vs small looped chunk) shows the persistent seed is **1.2-9.7x SLOWER** at the widest rows
+  (jsd (8192,65536) persistent=19.8ms vs loop4096=2.0ms; (8192,131072) persistent unmeasurably slow).
+- **Band-B branch (the ONLY new branch):** when `fact.num_tiled_accumulators >= 1`, cap R_BLOCK at
+  `BANDB_R_BLOCK_BYTES // itemsize` (16 KiB → 4096 fp32 elems; byte-based so it generalizes across dtypes).
+  Gated on the WORKLOAD property (live-state footprint), NOT kernel identity. Scalar-/row-accumulator T2
+  (softmax, num_tiled=0) and ALL T1 are UNAFFECTED (stay persistent to the structural cap).
+- **VALIDATION (the methodology lesson — A/B vs the best SIMPLE alternative, not the default strawman):**
+  the R=4096 cap is best-or-tied at EVERY in-sample Band-B row. NARROW rows (`t2_bandb_narrow_check.py`):
+  persist(full-N)/cap = 0.996-1.017 → NO regression. WIDE rows (`t2_bandb_chunk_sweep.py`): R=4096 recovers the
+  spill (R>=32768 catastrophic on jsd). The chunk R=4096 is optimal for BOTH kl_div and jsd.
+- **G_kl_div = 1.029** vs default 0.392 (the seed BEATS tc on 4/6 shapes; +163% vs default). seed s/AB = 0.99-1.41
+  (ties/beats the best simple looped alt). **G_jsd = 0.996** vs default 0.665 (+50%; essentially ties tc all 6
+  shapes; was a 0.10/unmeasurable disaster WITHOUT the branch). Correctness PASS: kl_div rel-err <=1.2e-7 vs
+  torch.nn.KLDivLoss(batchmean); jsd loss rel-err 0.0 vs TorchJSDBaseline, dX matches default ~1e-12. The benign
+  TensorOperationInWrapper warning on jsd's host-side `torch.sum(loss)` is documented/unrelated.
+
+### O over the 7-kernel active set
+Per-kernel G (v5): rms_norm 0.980, sum 0.937, long_sum 1.099, layer_norm 0.989 (all UNCHANGED, byte-identical) +
+softmax_two_pass 0.967, kl_div 1.029, jsd 0.996 (new). **O_7kernel = 0.9985** (O_4kernel was 0.9995 — adding
+high-but-sub-1 kernels mechanically nudges the geomean down, same effect as adding sum/layer_norm). Honest claim
+= PER-KERNEL: no kernel regresses (T1 byte-identical), 3 new clean wins (softmax +120%, kl_div +163%, jsd +50%
+all vs un-seeded default). Harness: `_lab/harness/{t2_classify,t2_seed_probe,t2_codegen_probe,measure_g_softmax,
+measure_g_lossk,measure_g_jsd,t2_bandb_chunk_sweep,t2_bandb_narrow_check,t2_lossk_correct}.py`.
 
 ## layer_norm_fwd — WIDENED 2026-05-29 (v4 SUFFICES UNCHANGED; byte-identical heuristic)
 The cleanest possible outcome: **adding layer_norm_fwd to the active set required ZERO heuristic change**
