@@ -1799,11 +1799,19 @@ class ReductionLoopSpec(_PowerOfTwoBlockIdItem):
     def _encode_flat_value(self, base: ConfigSpec, value: object) -> object:
         # None means "persistent reduction" in the normalized Config. In the
         # flat search space that same choice is represented by an integer
-        # sentinel, typically the fragment default such as 1024 for a 1024-wide
-        # reduction. This is the one non-identity Config <-> FlatConfig
+        # sentinel. This is the one non-identity Config <-> FlatConfig
         # mapping today.
+        #
+        # The sentinel MUST be the fragment max (`.high` ==
+        # next_power_of_2(size_hint)): _flat_config() decodes a flat int back to
+        # None only when `value >= self.size_hint`, and `.high` is the one flat
+        # value that satisfies that for EVERY size_hint (and is a power of two,
+        # so it stays within the fragment's invariants). The fragment default is
+        # capped at 4096 (max_reduction_loop), which is < size_hint for
+        # rnumel>4096 and therefore decodes back to a LOOPED chunk instead of
+        # persistent -- silently degrading an injected persistent seed.
         if value is None:
-            return self._flat_fragment(base).default()
+            return self._flat_fragment(base).high
         return value
 
     def _normalize(self, name: str, value: object) -> int | None:

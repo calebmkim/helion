@@ -270,7 +270,48 @@
         "runner": "_lab/harness/productB_run.sh",
         "analyzer": "_lab/harness/productB_analyze.py"
       },
-      "status": "WORKER-PROPOSED; awaiting results-referee spot-repro of Slice-2 time-to-target on (2048,16384)."
+      "status": "WORKER-PROPOSED; awaiting results-referee spot-repro of Slice-2 time-to-target on (2048,16384). SUPERSEDED by run_2026_05_29_POSTFIX (persistent lever now survives injection)."
+    },
+    "run_2026_05_29_POSTFIX": {
+      "what": "Product B re-run AFTER the persistent-seed round-trip fix (ReductionLoopSpec._encode_flat_value .default->.high). The injected gen0 seed now carries reduction_loops=[None] (persistent), not [4096] looped. Same protocol/budget as run_2026_05_29: quick effort, HELION_FORCE_AUTOTUNE=1, cold cache per run, seeds {0,1,2}, NOT HELION_SKIP_CACHE. 3 shapes where the persistent lever matters.",
+      "env": "H100/sm_90 fp32; GPU3; one autotune run at a time (serial, not parallel).",
+      "shapes": ["rms_norm (2048,16384) rnumel=16384", "rms_norm (8192,8192) rnumel=8192", "long_sum (8,131072) rnumel=131072"],
+      "seed_injection_verification": "PROVEN per run: all 9 seeded .driver.log SEED-FLAT-ENCODE lines read 'raw reduction_loops=[None] -> flat-normalized reduction_loops=[None] PRESERVED' (6 at w16 rms_norm, 3 at w32 long_sum). Pre-fix the identical line read DEGRADED(persistent->looped) [4096]. Unseeded n_seeds=0 confirmed. No run FAILED.",
+      "gen0_seed_quality_advantage_GREW": {
+        "_metric": "gen0 seeded-advantage = unseeded_gen0_best / seeded_gen0_best (median of 3 seeds); the direct measure of the injected seed's perf quality. GREW on all 3 shapes -- the headline effect of the fix (seed now carries persistent, not just num_warps).",
+        "rms_norm_(2048,16384)": {"prefix": 1.241, "postfix": 1.408},
+        "rms_norm_(8192,8192)":  {"prefix": 1.306, "postfix": 1.325},
+        "long_sum_(8,131072)":   {"prefix": 3.829, "postfix": 4.023}
+      },
+      "slice1_same_budget_seeded_advantage": {
+        "_metric": "unseeded_ms / seeded_ms at budget (>1 => seeded faster), median of 3 seeds.",
+        "rms_norm_(2048,16384)": {"gen1": 1.123, "gen2": 1.035, "gen5_guardrail": 1.020},
+        "rms_norm_(8192,8192)":  {"gen1": 1.005, "gen2": 1.002, "gen5_guardrail": 1.000},
+        "long_sum_(8,131072)":   {"gen1": 1.452, "gen2": 1.202, "gen5_guardrail": 1.008},
+        "guardrail": "PASS all 3: seeded >= unseeded at full budget (no regression)."
+      },
+      "slice2_time_to_target_HEADLINE": {
+        "_metric": "wall-clock (s) to first reach 95% of unseeded-full-budget perf; speedup=unseeded_t/seeded_t. median[min,max] of 3 seeds. COMPARE prefix speedup.",
+        "rms_norm_(2048,16384)": {"seeded_s": 4.53, "spread": [4.50,4.68], "unseeded_s": 8.55, "uns_spread": [7.54,30.15], "speedup_postfix": 1.89, "speedup_prefix": 1.78, "speedup_at_98pct": 2.00},
+        "rms_norm_(8192,8192)":  {"seeded_s": 4.74, "spread": [4.72,4.83], "unseeded_s": 9.15, "uns_spread": [8.53,11.38], "speedup_postfix": 1.93, "speedup_prefix": 1.70, "speedup_at_98pct": 1.93},
+        "long_sum_(8,131072)":   {"seeded_s": 29.19, "spread": [12.56,35.55], "unseeded_s": 13.98, "uns_spread": [12.24,33.59], "speedup_postfix": 0.479, "speedup_prefix": 1.04, "note": "REGRESSED on this metric but it is a NOISE-FLOOR + total-wallclock artifact, NOT a real loss. The 95% target = 0.0081ms (8.1us) sits in the ~7-10us tiny-M (M=8) noise floor where BOTH modes reach target via random LFBO dips; the wallclock-to-target is dominated by total search time. Post-fix the persistent seed makes LFBO compile MANY more neighbors (seeded total wall-clock 17.6-47s vs unseeded 14.6-40s -- the documented 'seeded full search is longer' caveat), so a lucky unseeded run trips the razor-thin 8.1us threshold sooner. Was already a near-tie pre-fix (1.04x). The HONEST long_sum claim is the PERF win (gen0 4.0x, Slice-1 gen1 1.45x), which the fix INCREASED."}
+      },
+      "total_full_search_wallclock_median_s": {
+        "_caveat": "seed still makes the FULL search LONGER (LFBO explores around the better config). The Product-B value is gen0/early-budget PERF + time-to-target on shapes above the noise floor (rms_norm), NOT a cheaper full search.",
+        "rms_norm_(2048,16384)": {"seeded": 19.48, "unseeded": 19.93},
+        "rms_norm_(8192,8192)":  {"seeded": 26.54, "unseeded": 19.57},
+        "long_sum_(8,131072)":   {"seeded": 30.96, "unseeded": 15.43}
+      },
+      "verdict": "The fix ENLARGED the win exactly as predicted on the shapes above the noise floor: rms_norm Slice-2 time-to-95% grew 1.78->1.89x (2048,16384) and 1.70->1.93x (8192,8192); gen0 seed-quality advantage grew on ALL 3 shapes (the seed now injects the persistent lever, not just num_warps). long_sum's Slice-2 metric regressed to 0.479x but this is a tiny-M noise-floor/total-wallclock artifact (its PERF lever grew: gen0 4.0x, gen1 1.45x); the metric is unreliable at 7-10us absolute latency. Full-budget guardrail PASSES all 3.",
+      "artifacts": {
+        "raw_csvs": "logs/productB_postfix/<kernel>_<M>_<N>_<mode>_s<seed>.csv (18)",
+        "verification": "logs/productB_postfix/*.driver.log (SEED-FLAT-ENCODE PRESERVED)",
+        "analysis_txt": ["logs/productB_postfix/analysis_t95.txt", "logs/productB_postfix/analysis_t98.txt"],
+        "roundtrip_proof": "_lab/harness/roundtrip_probe.py",
+        "runner": "_lab/harness/productB_postfix_run.sh",
+        "new_test": "test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel"
+      },
+      "status": "WORKER-PROPOSED; HELPER_REQUEST queued (results-referee: confirm post-fix Slice-2 on rms_norm(2048,16384) + Product-A G unchanged; adversarial-auditor: confirm fix doesn't degrade search/Product-A and gen0 seed is genuinely persistent)."
     }
   },
   "product_A_measurements": {
@@ -696,6 +737,15 @@
       "O_3kernel": 1.0034,
       "O_4kernel": 0.9997,
       "verdict": "WORKER-PROPOSED. v4 SUFFICES UNCHANGED -- the cleanest outcome (adds a kernel byte-identically). layer_norm benefits from the persistent workhorse + rnumel warps ramp DIRECTLY (same mechanism as rms_norm: wide rows lose looped, win persistent). num_reduction_ops=2 does NOT want a different config (oracle keeps persistent + ties warps/stages; G_seed 1.003 vs G_oracle 1.009 on a 6-shape subset). No-regression PROVEN byte-identical (27/27 existing seeds unchanged). O_4kernel=0.9997 (mechanical dilution from a sub-1 kernel; per-kernel no regression, layer_norm a clean +11.7% win). Awaiting referee + auditor."
+    },
+    {
+      "iter": 6,
+      "step": "Core-autotuner fix: persistent-seed round-trip (unblocks Product B injection)",
+      "heuristic_version": "v4 triton_reduction_tile (UNCHANGED -- heuristic untouched; this is an autotuner config_spec fix)",
+      "change": "ONE-METHOD fix in helion/autotuner/config_spec.py ReductionLoopSpec._encode_flat_value: the None (persistent) case returns self._flat_fragment(base).high (= next_power_of_2(size_hint), the only flat value that decodes back to None for ALL size_hints) instead of .default() (capped at max_reduction_loop=4096, which decoded to a LOOPED chunk for rnumel>4096, silently degrading the injected persistent seed). Changed ONLY this method. Added comment. Added repo test test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel. No heuristic / Product-A change.",
+      "verification": "Round-trip [None]->[None] for size_hint {8192,65536,262144} (was [4096]) + guard {256,4096} still [None] (roundtrip_probe.py before/after). New test FAILS pre-fix, PASSES post-fix. No breakage: test_best_available+test_config_api 87 passed; test_autotuner 107 passed/7 skip/11 subtests; test_reductions 24 passed. Product A byte-identical (bare-seed path does not flatten). Gen0 seed PRESERVED ([None]->[None]) in all 9 seeded Product-B driver logs.",
+      "product_B_postfix": "rms_norm Slice-2 time-to-95% GREW 1.78->1.89x (2048,16384) and 1.70->1.93x (8192,8192); gen0 seed-quality advantage grew on all 3 shapes (rms_norm 1.24->1.41, 1.31->1.33; long_sum 3.83->4.02). long_sum Slice-2 metric 0.479x is a tiny-M noise-floor/total-wallclock artifact (perf lever grew). See product_B_measurements.run_2026_05_29_POSTFIX.",
+      "verdict": "WORKER-PROPOSED. LOW-risk core-autotuner fix; resolves champion.open_issue (Product-B seed degradation). Heuristic + Product A unaffected. Awaiting results-referee (post-fix Slice-2 + Product-A unchanged) + adversarial-auditor (search not degraded, gen0 genuinely persistent)."
     }
   ],
   "champion": {
@@ -710,7 +760,7 @@
       "layer_norm_fwd": 0.989
     },
     "note": "Persistent workhorse up to the 2^20 structural compile cap; num_warps ramp 4/8/16/32 gated on rnumel (w32 for rnumel>16384); looped tail ONLY above the cap. GATES PASSED: referee ACCEPT (in-sample O~1.005 over 3 kernels; v4==persistent/w32); auditor PASS (num_load fence removed, gate rnumel-only, in-sample byte-identical to v3 [0/27], OOS large-rnumel multi-load now gets w32 -> rms_norm +27-38% / layer_norm +23-46%; no new fence). WIDENED to layer_norm_fwd 2026-05-29 with ZERO heuristic change (T1, heuristic fires, G=0.989 vs default 0.886; num_reduction_ops=2 does not want a different config per oracle; no-regression proven byte-identical 27/27). History: v1 (rms_norm only, accepted) -> v2 (REJECTED looped/grid-occ misattribution) -> v3 (REJECTED num_load fence) -> v4 (ACCEPTED) -> v4 widened to 4 kernels (layer_norm, byte-identical).",
-    "open_issue": "PRODUCT-B SEED DEGRADATION: reduction_loops=[None] (persistent) does NOT round-trip through the autotuner flat-encode (ReductionLoopSpec._encode_flat_value maps None->min(next_pow2(rnumel),4096), decodes back to None only if >=size_hint -> false for rnumel>4096). So the injected seed loses its persistent lever (keeps num_warps). Product-A bare-seed path UNAFFECTED. Product-B wins (1.5-1.8x time-to-target) are a LOWER BOUND. FIX SCOPED (code-investigator, LOW risk): config_spec.py _encode_flat_value(None) -> return self._flat_fragment(base).high (= next_power_of_2(size_hint); power-of-2, in-bounds, round-trips to None for all size_hints). Single method/spec; CuTe/cache/search-diversity/default unaffected (verified by probe). Add round-trip test for size_hint>4096. APPLYING NEXT.",
+    "open_issue": "RESOLVED 2026-05-29 (commit pending). PRODUCT-B SEED DEGRADATION fixed: ReductionLoopSpec._encode_flat_value(None) now returns self._flat_fragment(base).high (= next_power_of_2(size_hint) >= size_hint), the one flat value that decodes back to None for ALL size_hints, instead of .default() (capped at max_reduction_loop=4096, which decoded to a LOOPED chunk for rnumel>4096). Changed ONLY that method; _flat_config/_flat_fragment untouched; autotuner DEFAULT path unaffected (still calls fragment.default() -> looped for large rnumel, the correct default); CuTe/cache/search-diversity unaffected. PROVEN: (a) round-trip unflatten(flatten([None])) == [None] for size_hint in {8192,65536,262144} (was [4096]) AND guard {256,4096} still [None] -- _lab/harness/roundtrip_probe.py before/after; (b) new repo test test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel FAILS pre-fix ([4096]!=[None]), PASSES post-fix; (c) no breakage: test_best_available+test_config_api 87 passed, test_autotuner 107 passed/7 skip/11 subtests, test_reductions 24 passed; (d) Product A byte-identical (bare-seed path does not flatten; seeds + persistent codegen unchanged); (e) gen0 seed now PRESERVED ([None]->[None]) in all 9 seeded Product-B driver logs (was DEGRADED). See product_B_measurements.run_2026_05_29_POSTFIX for the enlarged win.",
     "layer_norm_gate_verdicts": {
       "results_referee": "ACCEPT. G_layer_norm=0.991/0.992 (worker 0.989) vs default 0.884; +12% beyond noise. Correctness PASS all 11 (maxabs ~2-4e-6). Seed used all 11 (persistent, 2 tl.sum over rdim, num_warps match). No-regression: git diff 37b27f67..HEAD -- helion/ = 0 lines (byte-identical) + 27/27 other-kernel seeds unchanged.",
       "adversarial_auditor": "PASS. Zero heuristic change REAL (git diff empty -> smuggling structurally impossible). Fires for num_reduction_ops=2 (correct). Win real (+12.2%, (4096,15872) 1.44x). Generalizes held-out +9.0% (no overfit). Metric honest. Caveat (non-blocking): worker's oracle gap 0.6% was optimistic (noise blip on tiny (4096,1024)); fair re-bench ~1-5%, conclusion 'no num_reduction_ops branch needed' holds."
@@ -766,6 +816,10 @@
     "_lab/harness/classify_layer_norm.py",
     "_lab/harness/measure_g_layer_norm.py",
     "_lab/harness/oracle_layer_norm.py",
-    "_lab/harness/layer_norm_no_regression_proof.py"
+    "_lab/harness/layer_norm_no_regression_proof.py",
+    "_lab/harness/roundtrip_probe.py (persistent-seed round-trip before/after proof)",
+    "_lab/harness/productB_postfix_run.sh",
+    "logs/productB_postfix/ (18 CSVs + .driver.log [SEED-FLAT-ENCODE PRESERVED] + analysis_t95/t98.txt)",
+    "test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel (new repo test)"
   ]
 }

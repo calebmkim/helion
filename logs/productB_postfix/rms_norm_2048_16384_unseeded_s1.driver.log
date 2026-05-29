@@ -1,0 +1,160 @@
+[driver] GPU=3 helion=/home/calebkim/helion-new-heuristics/wt-reduction/helion/__init__.py
+[driver] kernel=rms_norm shape=(2048, 16384) mode=unseeded rand_seed=1
+[driver] disable_heuristics_env='1' force='1' effort='quick' max_gen=None rand_seed_env='1' log='/home/calebkim/helion-new-heuristics/wt-reduction/logs/productB_postfix/rms_norm_2048_16384_unseeded_s1'
+[verify] config_spec.compiler_seed_configs (n=0): []
+[verify] config_spec.autotuner_heuristics: []
+[verify] recomputed compiler_seed_configs (n=0): []
+[verify] UNSEEDED OK: no compiler seed in initial population
+[verify] EXPECTED_SEED_STR=None
+[0s] Starting autotuning process, this may take a while...
+[0s] Autotune random seed: 1
+[0s] Starting LFBOTreeSearch with initial_population=FROM_BEST_AVAILABLE, copies=2, max_generations=5, similarity_penalty=1.0
+[0s] Starting with default config
+[0s] Initial population: 1 total
+Initial population precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 - configs/s
+Initial population exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 1/1 - configs/s
+[4s] Adaptive compile timeout: 30s (90% percentile=0.2s, bounds=[30.0s, 60s])
+[4s] Initial random population of 1, 1 starting points: 
+ok=1
+min=0.1826
+mid=0.1826
+max=0.1826
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['pointer', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer',
+              'pointer'],
+ 'load_eviction_policies': ['', '', '', '', ''],
+ 'num_stages': 1,
+ 'num_warps': 4,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[4s] All labels are identical, skip training surrogate.
+[4s] Generation 1 starting: 8 neighbors, 1 active search path(s)
+Generation 1: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9/9 5.2 configs/s
+Generation 1: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━━━ 9/9 2.4 configs/s
+[9s] Generation 1 complete: 
+ok=10
+min=0.1330
+mid=0.1883
+max=0.9408
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer',
+              'pointer'],
+ 'load_eviction_policies': ['', '', '', 'last', ''],
+ 'num_stages': 1,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [8192]}
+[9s] Fitting surrogate: 10 points, 10 targets
+[10s] Generation 2 starting: 7 neighbors, 1 active search path(s)
+Generation 2: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7/7 119.6 configs/s
+Generation 2: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━━━ 7/7 6.9 configs/s
+[11s] Generation 2 complete: 
+ok=8
+min=0.1295
+mid=0.1330
+max=0.1899
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer',
+              'pointer'],
+ 'load_eviction_policies': ['', '', '', 'last', ''],
+ 'num_stages': 1,
+ 'num_warps': 32,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [None]}
+[11s] Fitting surrogate: 17 points, 17 targets
+[11s] Generation 3 starting: 10 neighbors, 1 active search path(s)
+Generation 3: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 10/10 70.6 configs/s
+Generation 3: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 10/10 7.6 configs/s
+[13s] Generation 3 complete: 
+error=1
+ok=10
+min=0.1280
+mid=0.1298
+max=0.1304
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer',
+              'pointer'],
+ 'load_eviction_policies': ['last', '', '', 'last', ''],
+ 'num_stages': 1,
+ 'num_warps': 32,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [None]}
+[13s] Fitting surrogate: 27 points, 27 targets
+[14s] Generation 4 starting: 13 neighbors, 1 active search path(s)
+Generation 4: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 14/14 45.1 configs/s
+Generation 4: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 14/14 9.3 configs/s
+[16s] Generation 4 complete: 
+error=1
+ok=14
+min=0.1276
+mid=0.1281
+max=0.1471
+best={'atomic_indexing': [],
+ 'block_sizes': [2],
+ 'indexing': ['tensor_descriptor', 'pointer', 'tensor_descriptor', 'pointer', 'pointer', 'pointer',
+              'pointer', 'pointer'],
+ 'load_eviction_policies': ['last', '', '', 'last', ''],
+ 'num_stages': 1,
+ 'num_warps': 32,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [None]}
+[16s] Fitting surrogate: 41 points, 41 targets
+[16s] Generation 5 starting: 16 neighbors, 1 active search path(s)
+Generation 5: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 17/17 15.1 configs/s
+Generation 5: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 17/17 7.2 configs/s
+[19s] Generation 5 complete: 
+error=4
+ok=14
+min=0.1276
+mid=0.1292
+max=0.1636
+best={'atomic_indexing': [],
+ 'block_sizes': [2],
+ 'indexing': ['tensor_descriptor', 'pointer', 'tensor_descriptor', 'pointer', 'pointer', 'pointer',
+              'pointer', 'pointer'],
+ 'load_eviction_policies': ['last', '', '', 'last', ''],
+ 'num_stages': 1,
+ 'num_warps': 32,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [None]}
+[21s] Autotuning complete in 21.1s after searching 58 configs.
+One can hardcode the best config and skip autotuning with:
+    @helion.kernel(config=helion.Config(atomic_indexing=[], block_sizes=[2], indexing=['tensor_descriptor', 'pointer', 'tensor_descriptor', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer'], load_eviction_policies=['last', '', '', 'last', ''], num_stages=1, num_warps=32, pid_type='flat', range_flattens=[None], range_multi_buffers=[None], range_num_stages=[0], range_unroll_factors=[0], range_warp_specializes=[], reduction_loops=[None]), static_shapes=True)
+
+[21s] 6 of 58 configs failed due to compile failures.
+[21s] Code of selected kernel: /tmp/productB_postfix_cache_3/rms_norm_2048_16384_unseeded_s1/inductor/la/claafnlbdtsp5ffoolv26ev7qwa3b3j6rm47hotvhjfbconfx772.py
+[driver] DONE best_config={'block_sizes': [2], 'reduction_loops': [None], 'range_unroll_factors': [0], 'range_warp_specializes': [], 'range_num_stages': [0], 'range_multi_buffers': [None], 'range_flattens': [None], 'load_eviction_policies': ['last', '', '', 'last', ''], 'num_warps': 32, 'num_stages': 1, 'indexing': ['tensor_descriptor', 'pointer', 'tensor_descriptor', 'pointer', 'pointer', 'pointer', 'pointer', 'pointer'], 'atomic_indexing': [], 'pid_type': 'flat'}

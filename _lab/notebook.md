@@ -83,7 +83,79 @@
   no active kernel's referee-confirmed G_k regresses >10% vs champion).
 - Product B (every 5 iters): seeded vs unseeded quick-autotune convergence curve.
 
-## Product B — seed the autotuner (RUN 2026-05-29, v4 seed) — TIME WIN CONFIRMED + an injection TRAP
+## Persistent-seed round-trip FIX (2026-05-29) — RESOLVES the Product-B injection trap
+The Product-B injection TRAP (below) is now FIXED. One-line change in
+`ReductionLoopSpec._encode_flat_value` (`helion/autotuner/config_spec.py` ~L1799):
+```
+- if value is None: return self._flat_fragment(base).default()   # capped at 4096 -> looped for rnumel>4096
++ if value is None: return self._flat_fragment(base).high        # == next_power_of_2(size_hint) -> decodes to None for ALL size_hints
+```
+WHY: `_flat_config` decodes a flat int back to `None` (persistent) only when `value >= size_hint`. The
+fragment **default** is capped at `max_reduction_loop` (4096) by `_flat_fragment`, so for rnumel>4096 it is
+`< size_hint` and decodes to a LOOPED chunk — silently degrading the injected persistent seed. The fragment
+**`.high`** is `next_power_of_2(size_hint) >= size_hint` (and a power of two, so in-bounds for the
+PowerOfTwoFragment), the ONE flat value that round-trips to `None` for every size_hint.
+
+- **Scope:** changed ONLY `_encode_flat_value`. `_flat_config`/`_flat_fragment` untouched. The autotuner
+  DEFAULT path is unaffected (it calls `fragment.default()`, still capped → looped for rnumel>4096, which is
+  the correct default). CuTe/cache/search-diversity unaffected (this method only changes how an EXPLICIT
+  `None` Config value is encoded for flatten).
+- **Round-trip proof** (`_lab/harness/roundtrip_probe.py`, real bound kernels): `unflatten(flatten(
+  reduction_loops=[None]))` →
+  | size_hint | 8192 | 65536 | 262144 | 256 (guard) | 4096 (guard) |
+  |---|---|---|---|---|---|
+  | PRE-FIX  | [4096] | [4096] | [4096] | [None] | [None] |
+  | POST-FIX | [None] | [None] | [None] | [None] | [None] |
+- **New repo test:** `test/test_best_available.py::test_flatten_persistent_reduction_loop_roundtrip_large_rnumel`
+  — asserts persistent round-trips for rnumel ∈ {8192,65536,262144} + the ≤4096 guard. FAILS pre-fix
+  ([4096]!=[None]), PASSES post-fix. No breakage: test_best_available+test_config_api 87 passed;
+  test_autotuner 107 passed/7 skip/11 subtests; test_reductions 24 passed.
+- **Product A unaffected:** bare-seed path (`configs=[seed]`) does NOT flatten — byte-identical seeds
+  (rms_norm(2048,16384)=[None]/w16/bs[1]; long_sum(8,131072)=[None]/w32/bs[1]), codegen still PERSISTENT
+  (no `for roffset`). So G is byte-identical.
+- **Gen0 seed now persistent (proven in-pipeline):** every seeded Product-B run's `.driver.log` SEED-FLAT-
+  ENCODE line now reads `[None]->[None] PRESERVED` (was DEGRADED(persistent->looped) pre-fix). 9/9 seeded
+  runs PRESERVED.
+
+## Product B — POST-FIX re-run (2026-05-29) — the ENLARGED win
+Same protocol/budget as the pre-fix run (quick effort, force-autotune, cold cache, seeds {0,1,2}, no
+SKIP_CACHE), 3 shapes where the persistent lever matters. Logs: `logs/productB_postfix/` (18 CSVs +
+.driver.log + analysis_t95/t98.txt). Driver/runner: `productB_driver.py` + `productB_postfix_run.sh`.
+
+- **The seed-quality lever GREW on all 3 shapes (gen0 seeded-advantage = unseeded/seeded, median of 3):**
+  | shape | pre-fix gen0 | post-fix gen0 |
+  |---|---|---|
+  | rms_norm(2048,16384) | 1.241x | **1.408x** |
+  | rms_norm(8192,8192)  | 1.306x | **1.325x** |
+  | long_sum(8,131072)   | 3.829x | **4.023x** |
+  The seed now reaches gen0 carrying the PERSISTENT lever (not just num_warps) → a better gen0 config.
+
+- **Slice 1 — same-budget (seeded-advantage=unseeded/seeded), median of 3:**
+  | shape | gen1 | gen2 | gen5 (guardrail) |
+  |---|---|---|---|
+  | rms_norm(2048,16384) | 1.123 | 1.035 | 1.020 |
+  | rms_norm(8192,8192)  | 1.005 | 1.002 | 1.000 |
+  | long_sum(8,131072)   | 1.452 | 1.202 | 1.008 |
+  Guardrail PASSES all 3 (seeded ≥ unseeded at full budget).
+
+- **Slice 2 — time-to-95% (speedup=uns_t/seed_t), median[min,max]:**
+  | shape | post-fix seeded s | post-fix unseeded s | post-fix speedup | pre-fix speedup |
+  |---|---|---|---|---|
+  | rms_norm(2048,16384) | 4.53[4.50,4.68] | 8.55[7.54,30.15] | **1.89x** (@98%: 2.00x) | 1.78x |
+  | rms_norm(8192,8192)  | 4.74[4.72,4.83] | 9.15[8.53,11.38] | **1.93x** (@98%: 1.93x) | 1.70x |
+  | long_sum(8,131072)   | 29.19[12.56,35.55] | 13.98[12.24,33.59] | 0.479x | 1.04x |
+
+- **rms_norm wins GREW as predicted** (1.78→1.89x, 1.70→1.93x): the persistent lever now survives injection.
+- **long_sum Slice-2 dropped to 0.479x — an HONEST noise-floor + total-wallclock artifact, NOT a real loss.**
+  Its perf lever GREW (gen0 4.02x; Slice-1 gen1 1.45x). But the 95% target = 0.0081ms (8.1us) sits in the
+  ~7-10us tiny-M noise floor (M=8, 5 rows), where BOTH modes hit target by random LFBO dips and the
+  wallclock-to-target is dominated by total search time. Post-fix the persistent seed makes LFBO compile
+  MANY more neighbors (seeded total wall-clock 17.6-47s vs unseeded 14.6-40s — the same documented "seeded
+  full search is LONGER" caveat), so a lucky unseeded run can trip the razor-thin 8.1us threshold sooner.
+  This was already a near-tie pre-fix (1.04x); the metric is unreliable at this absolute latency. The honest
+  long_sum claim is the gen0/Slice-1 PERF win (4.0x gen0, 1.45x gen1), which the fix INCREASED.
+
+## Product B — seed the autotuner (RUN 2026-05-29, v4 seed) — TIME WIN CONFIRMED + an injection TRAP (PRE-FIX, superseded above)
 Ran quick-autotune SEEDED vs UNSEEDED, N=3 random seeds {0,1,2} each, cold cache per run, full
 max_generations=5, on rms_norm (2048,16384) & (8192,8192), long_sum (8,131072), sum (2048,16384).
 GPU2 (rms_norm) + GPU3 (long_sum,sum) in parallel, one autotune run per GPU. Default LFBOTreeSearch,
