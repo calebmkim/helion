@@ -9,9 +9,10 @@
   },
   "kernels": {
     "rms_norm_fwd": {
-      "track": "T1 (rollable rdim; reduction_loops has 1 entry)",
+      "track": "T1 (rollable rdim; reduction_loops has 1 entry; reduction_facts has 1 entry)",
       "band": "A (scalar-accumulator inner)",
       "in_sample_shapes": [[2048,1024],[2048,2048],[2048,4096],[2048,8192],[2048,16384],[4096,1536],[4096,3584],[4096,5120],[4096,7168],[8192,4096],[8192,8192],[32768,256],[32768,1024]],
+      "reduction_fact_observed": {"num_load": 2, "num_store": 2, "num_reduction_ops": 1, "dtype": "float32", "itemsize": 4, "note": "same across all in-sample shapes; only size_hint (rnumel) and m-block-floor vary"},
       "reference_observations": {
         "note": "x vs eager speedup from step1 sanity (fp32, GPU2). G = tc_default_lat/seed_lat.",
         "(4096,8192)": {"helion_default_x": 2.89, "helion_quick_x": 3.76, "helion_max_x": 3.74, "tc_default_x": 3.75, "tc_max_x": 3.77, "G_default": 0.77, "G_oracle_ceiling": 1.0},
@@ -20,8 +21,42 @@
       "default_config_behavior": "persistent (reduction_loops=[None]) for size_hint<=4096; looped chunk 4096 for size_hint>4096"
     }
   },
-  "oracle_cache": {},
-  "iteration_history": [],
-  "champion": {"heuristic_version": null, "O": null, "per_kernel_G": {}, "note": "no Triton reduction heuristic registered yet; pre-Step-2 baseline = default_config (no seed)"},
-  "logs_index": ["_lab/harness/step1_harness_integrity.md", "_lab/harness/crosscheck_artifacts (gitignored)"]
+  "product_A_measurements": {
+    "v1_triton_reduction_tile": {
+      "measured": "2026-05-28 GPU2, kernel-only triton.testing.do_bench median-of-7, fp32",
+      "harness": "_lab/harness/measure_g_rms_norm.py",
+      "tc_baseline": "torch.compile(rms_norm_pytorch) default mode (fp32 reference)",
+      "G_rms_norm_seed": 0.983,
+      "G_rms_norm_default_baseline": 0.908,
+      "two_runs": [0.9804, 0.9826],
+      "per_shape_G_seed": {
+        "(2048,1024)": 1.031, "(2048,2048)": 0.871, "(2048,4096)": 1.005, "(2048,8192)": 0.993, "(2048,16384)": 0.990,
+        "(4096,1536)": 0.984, "(4096,3584)": 1.019, "(4096,5120)": 0.978, "(4096,7168)": 0.990,
+        "(8192,4096)": 0.994, "(8192,8192)": 0.993, "(32768,256)": 0.944, "(32768,1024)": 0.992
+      },
+      "per_shape_G_default_baseline": {
+        "(2048,1024)": 0.995, "(2048,2048)": 0.884, "(2048,4096)": 1.003, "(2048,8192)": 0.805, "(2048,16384)": 0.699,
+        "(4096,1536)": 1.033, "(4096,3584)": 1.003, "(4096,5120)": 0.909, "(4096,7168)": 0.833,
+        "(8192,4096)": 0.996, "(8192,8192)": 0.754, "(32768,256)": 0.985, "(32768,1024)": 0.993
+      },
+      "anomaly": "(2048,2048): full-sweep reads ~19.8us for BOTH seed and default (G~0.87 both) but isolated probe of the SAME seed config reads 13.5us (G=1.32). In-process measurement-context artifact, not a config property and not a regression vs default (they tie). FLAGGED for results-referee: re-measure each shape in a fresh subprocess.",
+      "all_shapes_codegen": "persistent (every in-sample rnumel <= 16384 elems = PERSIST_MAX); looped branch UNTESTED on rms_norm"
+    }
+  },
+  "oracle_cache": {
+    "_note": "field-diff via _lab/harness/oracle_field_diff.py (Helion effort=full winner vs seed). Run in flight at commit time; append results when complete."
+  },
+  "iteration_history": [
+    {
+      "iter": 1,
+      "step": "Step 2",
+      "heuristic_version": "v1 triton_reduction_tile",
+      "change": "Defined ReductionFact + populate in register_rollable_reductions; cloned CuteReductionTileHeuristic -> TritonReductionHeuristic (backend=triton); registered in HEURISTICS_BY_BACKEND['triton']. Persistent-vs-looped by rnumel-bytes; num_warps by rnumel; M-block at autotuner floor.",
+      "G_rms_norm_seed": 0.983,
+      "G_rms_norm_baseline": 0.908,
+      "verdict": "PROPOSED CHAMPION (beats no-seed baseline ~8% aggregate; no per-shape regression vs default). Pending results-referee + adversarial-auditor."
+    }
+  ],
+  "champion": {"heuristic_version": "v1 triton_reduction_tile (PROPOSED, pending gates)", "O": 0.983, "per_kernel_G": {"rms_norm_fwd": 0.983}, "note": "first registered Triton reduction heuristic; vs pre-Step-2 baseline (no seed / default_config) G=0.908"},
+  "logs_index": ["_lab/harness/step1_harness_integrity.md", "_lab/harness/crosscheck_artifacts (gitignored)", "_lab/harness/verify_step2.py", "_lab/harness/measure_g_rms_norm.py", "_lab/harness/oracle_field_diff.py"]
 }

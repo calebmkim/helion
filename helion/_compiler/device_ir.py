@@ -31,6 +31,7 @@ from torch.utils import _pytree as pytree
 from .. import Config
 from .. import exc
 from .. import language as hl
+from ..autotuner.config_spec import ReductionFact
 from ..autotuner.config_spec import ReductionLoopSpec
 from ..language import _tracing_ops
 from ..language._decorators import args_to_proxies
@@ -77,6 +78,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from collections.abc import Sequence
 
+    from .compile_environment import BlockSizeInfo
     from .cute.layout import CuTeGridExecutionPlan
 
     class _TLS(Protocol):
@@ -831,6 +833,13 @@ class DeviceIR:
                         size_hint=rdim.size_hint(),
                     )
                 )
+                # Record pre-digested workload facts for the autotuner-seed
+                # heuristic (analogous to MatmulFact). Read from the ORIGINAL
+                # graphs that actually use this rdim (used_graphs) so the counts
+                # reflect the real workload, not roller-internal bookkeeping.
+                env.config_spec.reduction_facts.append(
+                    self._build_reduction_fact(rdim, used_graphs)
+                )
                 if env.backend_name == "cute":
                     from ..autotuner.config_spec import CuteVectorWidthSpec
 
@@ -878,6 +887,91 @@ class DeviceIR:
                             if block_id is not None:
                                 indexed_blocks.add(block_id)
             env.config_spec.cute_indexed_reduction_block_ids = indexed_blocks
+
+    def _build_reduction_fact(
+        self, rdim: BlockSizeInfo, used_graphs: set[int]
+    ) -> ReductionFact:
+        """Digest workload facts for a single rollable reduction dim.
+
+        Walks the ORIGINAL graphs that use ``rdim`` and counts device loads,
+        stores, and reductions over this rdim, and reads the dtype of the
+        reduction-source tensor. These feed the seed heuristic's
+        workload-property branching (NOT kernel identity).
+        """
+        from ..language import _MEMORY_OPS
+        from ..language.memory_ops import load as _load_op
+        from ..language.memory_ops import store as _store_op
+        from .inductor_lowering import ReductionLowering
+
+        env = CompileEnvironment.current()
+        m_block_ids = tuple(
+            bs.block_id for bs in env.block_sizes if not bs.reduction
+        )
+        size_hint = rdim.size_hint()
+        # static_rnumel: the reduction extent only if it is a compile-time
+        # constant (not a symbolic/dynamic size).
+        static_rnumel = rdim.size if isinstance(rdim.size, int) else None
+
+        num_load = 0
+        num_store = 0
+        num_reduction_ops = 0
+        dtype: torch.dtype | None = None
+        itemsize = 0
+
+        for graph_id in sorted(used_graphs):
+            graph = self.graphs[graph_id].graph
+            for node in graph.nodes:
+                if node.op != "call_function":
+                    continue
+                target = node.target
+                if target is _load_op:
+                    num_load += 1
+                elif target is _store_op or target in _MEMORY_OPS[2:]:
+                    # store + the atomic ops are output-producing memory ops.
+                    num_store += 1
+                lowering = node.meta.get("lowering")
+                if (
+                    isinstance(lowering, ReductionLowering)
+                    and getattr(lowering, "block_index", None) == rdim.block_id
+                ):
+                    num_reduction_ops += 1
+                # Capture the dtype of a tensor whose last dim matches the
+                # reduction extent (the reduction-source tensor).
+                if dtype is None:
+                    val = node.meta.get("val")
+                    if isinstance(val, torch.Tensor) and val.ndim >= 1:
+                        last = val.shape[-1]
+                        if isinstance(last, int) and last == size_hint:
+                            dtype = val.dtype
+                            itemsize = val.element_size()
+
+        if dtype is None:
+            # Fallback: any device tensor's dtype (keeps the fact populated even
+            # if no last-dim match was found, e.g. transposed/reshaped loads).
+            for graph_id in sorted(used_graphs):
+                for node in self.graphs[graph_id].graph.nodes:
+                    val = node.meta.get("val")
+                    if isinstance(val, torch.Tensor):
+                        dtype = val.dtype
+                        itemsize = val.element_size()
+                        break
+                if dtype is not None:
+                    break
+        if dtype is None:
+            dtype = torch.float32
+            itemsize = 4
+
+        return ReductionFact(
+            block_id=rdim.block_id,
+            size_hint=size_hint,
+            m_block_ids=m_block_ids,
+            static_rnumel=static_rnumel,
+            dtype=dtype,
+            itemsize=itemsize,
+            num_load=num_load,
+            num_store=num_store,
+            num_reduction_ops=num_reduction_ops,
+        )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:
         """Build and return graph copies with reduction rolling and epilogue subtiling applied.

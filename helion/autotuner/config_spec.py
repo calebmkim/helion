@@ -85,6 +85,42 @@ class MatmulFact(NamedTuple):
     rhs_dtype: torch.dtype
 
 
+class ReductionFact(NamedTuple):
+    """Pre-digested workload facts for a single rollable reduction dimension.
+
+    Analogous to ``MatmulFact``: recorded once at compile time (in
+    ``device_ir.register_rollable_reductions``) so the autotuner-seed heuristic
+    can branch on *workload* properties (NEVER on kernel identity).  One
+    ``ReductionFact`` per registered ``ReductionLoopSpec`` (i.e. per T1 rollable
+    rdim).
+
+    Fields (grown by co-design as heuristics need them):
+
+    - ``block_id`` / ``size_hint``: the reduction axis and its extent (rnumel).
+      ``size_hint`` drives persistent-vs-looped (the first lever).
+    - ``m_block_ids``: the non-reduction (kept) tile block_ids (the "rows").
+    - ``static_rnumel``: the reduction extent if statically known, else None.
+    - ``dtype`` / ``itemsize``: dtype of the reduction-source tensor.  Read as a
+      fact so the heuristic generalizes to bf16/fp16 (precision is fixed fp32
+      for now but the heuristic must NOT hardcode it).
+    - ``num_load`` / ``num_store``: count of device memory loads / stores in the
+      rolling-candidate graphs (arithmetic-intensity / live-state proxy →
+      Band A vs Band B).
+    - ``num_reduction_ops``: count of reduction lowerings over this rdim
+      (number of accumulators, e.g. welford-like multi-accumulator combines).
+    """
+
+    block_id: int
+    size_hint: int
+    m_block_ids: tuple[int, ...]
+    static_rnumel: int | None
+    dtype: torch.dtype
+    itemsize: int
+    num_load: int
+    num_store: int
+    num_reduction_ops: int
+
+
 def shrink_block_sizes_for_numel_constraints(
     constraints: list[TensorNumelConstraint],
     block_sizes: list[int],
@@ -325,6 +361,7 @@ class ConfigSpec:
         self.compiler_seed_configs: list[helion.Config] = []
         self.autotuner_heuristics: list[str] = []
         self.matmul_facts: list[MatmulFact] = []
+        self.reduction_facts: list[ReductionFact] = []
         self.store_indices: list[int] = []
         self.backend_tunable_fragments = self.backend.tunable_fragments()
         unknown_tunables = set(self.backend_tunable_fragments) - BACKEND_TUNABLE_KEYS
