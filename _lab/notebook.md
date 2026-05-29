@@ -119,6 +119,77 @@
     the geomean — same effect as adding sum; the honest claim is per-kernel: no kernel regresses, layer_norm
     is a clean +11.7% win). No per-kernel referee-confirmed G regresses >10% (none regress at all).
 
+## GENERALITY STRESS-TEST — does FROZEN v7 seed BRAND-NEW (never-curriculum) kernels well? (2026-05-29) — PURE VALIDATION
+Goal: the ultimate "general heuristic" test. Take forward reduction kernels that were NEVER in the 9-kernel
+curriculum, bind them as-is, and check the FROZEN v7 seed (commit 53ed8762; `git diff helion/` EMPTY
+throughout) fires + is used + is correct + seeds them WELL out-of-the-box. **Heuristic NOT touched.**
+Harness: `_lab/harness/{gen_classify_new,gen_measure_softmax_t1,gen_jagged_decline_check}.py`. fp32, GPU2.
+
+**NEW kernels available + tested (bindable/runnable as-is):**
+- **`softmax` (examples/softmax.py, SIMPLE whole-row T1)** — the brief's flagged perfect test: a DIFFERENT
+  code path from the T2 `softmax_two_pass` we tuned. Wraps `F.softmax` over a `hl.tile(n)` whole row.
+- **`softmax_decomposed` (T1)** — explicit amax/exp/sum row softmax (distinct inner codegen from the wrapper).
+- **`jagged_mean` + `jagged_softmax`** — jagged reductions (DECLINED by design; see below).
+- (Considered + SKIPPED: `grpo_loss` is a complex 3D (B,L,V) fused multi-output loss with gather — bindable
+  but no clean library reference for a fair tc baseline; deprioritized. `segment_reduction` uses
+  `hl.associative_scan`, not a `ReductionLowering` — out-of-scope. generic mean/max/min, logsumexp,
+  log_softmax would need NEW kernels written → SKIP per brief.)
+
+**Classification (gen_classify_new.py):**
+- `softmax` + `softmax_decomposed`: **T1 Band A**, IDENTICAL signature to a row reduction —
+  1 block_size, 1 reduction_loop, 1 reduction_fact, no matmul. ReductionFact: num_load=1, num_store=1,
+  num_reduction_ops=2 (amax+sum), num_tiled_accumulators=0, is_structured_combine=False. v7 FIRES
+  (heuristics_used=['triton_reduction_tile'], 1 seed): persistent + rnumel-warps ramp (w4 ≤1024, w8 @4096,
+  w16 @16384, w32 >16384), M-block at floor (2 at 32768 rows). This is the SAME T1 machinery as rms_norm/
+  sum/layer_norm — applied to a softmax it never saw.
+- `jagged_mean` / `jagged_softmax`: **DECLINED (out-of-scope BY DESIGN)** — 0 reduction_facts, 0 seeds,
+  heuristics_used=[]. The reduction axis is a data-dependent `hl.jagged_tile` (extent unknown at compile
+  time); the v5 dynamic-size guard correctly declines it → falls back to the un-seeded default. NOT a gap:
+  the heuristic refuses to fire on a kernel whose rdim it cannot statically reason about. Default-config
+  fallback is CORRECT (gen_jagged_decline_check.py: maxabs 1.2e-7 / 2.4e-7 vs PyTorch reference).
+
+**Seed-used (codegen) — airtight:** for `softmax` the seed's `reduction_loops=[None]` produces Triton with
+NO `for roffset` loop (persistent), and the seed's num_warps is reflected in the launcher (w4 at (4096,256),
+w32 at (4096,32768)). The harness asserts codegen-persistent == seed-wants-persistent per shape.
+
+**Per-shape G (do_bench median-of-7, fp32, GPU2; G = tc_default_lat/seed_lat; p32 = same seed but w32 forced):**
+
+`softmax` (T1):
+| shape | cg | w | G_seed | G_default | seed/p32 |
+|---|---|---|---|---|---|
+| (4096,256) | persist | 4 | 1.014 | 0.947 | **2.98** |
+| (4096,1024) | persist | 4 | 0.970 | 0.947 | 1.71 |
+| (4096,4096) | persist | 8 | 0.994 | 1.020 | 1.00 |
+| (4096,16384) | persist | 16 | 0.997 | 0.549 | 1.00 |
+| (4096,32768) | persist | 32 | 1.009 | 0.514 | 1.00 |
+| (8192,8192) | persist | 16 | 0.993 | 0.626 | 1.00 |
+| (2048,65536) | persist | 32 | 0.949 | 0.730 | 1.00 |
+| (1,131072) | persist | 32 | **0.367** | 0.196 | 1.01 |
+| (32768,256) | persist | 4 | 0.936 | 0.967 | **2.80** |
+| **GEOMEAN** | | | **0.881** | **0.656** | |
+
+`softmax_decomposed` (T1): GEOMEAN **G_seed=0.865 vs G_default=0.648**; same shape-by-shape pattern
+(small-N seed/p32 2.88x/2.81x; wide-N ties ~1.0; sole drag (1,131072) G=0.349). maxabs ≤ 4.5e-8.
+
+**VERDICT — v7 GENERALIZES CLEANLY to both NEW softmax T1 kernels.**
+- Seed fires + used + correct on every shape (maxabs ≤ 4.5e-8 vs F.softmax).
+- **Beats the un-seeded default by +34% geomean** (0.881/0.865 vs 0.656/0.648). The default loses 2x at
+  wide rows (it loops at chunk 4096; the seed stays persistent to the 2^20 cap) — exactly the rms_norm/
+  layer_norm pattern, reproduced on a never-seen kernel.
+- **The rnumel-warps ramp earns its place out-of-the-box:** seed/p32 = 2.8–3.0x at the two tiny-N shapes
+  (the seed's w4 avoids the w32-at-tiny-N catastrophe), ties ~1.0 at wide rows. This is the SAME mechanism
+  that made the in-curriculum softmax_two_pass win (seed/p32=1.50x there), now confirmed on the T1 path.
+- The ONLY sub-0.9 shape is (1,131072) M=1 — the ALREADY-DISCLOSED tiny-M / grid-starved noise-floor regime
+  (cf. rms_norm (1,131072) TEST G=0.561, layer_norm 0.634 in FINAL_REPORT §2). tc wins at ~16us absolute;
+  the seed still beats default 1.9x there. NOT a new gap — same physics, same kernel-agnostic regime.
+  Excluding the M=1 noise-floor shape, G_seed ≈ 0.98 (at the oracle ceiling).
+
+**Generality conclusion:** the frozen v7 heuristic seeds brand-new forward reduction kernels (the T1
+softmax family) WELL out-of-the-box — same persistent + rnumel-warps machinery, same wins vs default, same
+(and ONLY the) disclosed tiny-M ceiling. The decline path also generalizes correctly (jagged → 0 seeds →
+correct default). **STRONG evidence FOR general heuristics. No new gap found; NO HELPER_REQUEST.**
+(`git diff helion/` empty at start AND end — heuristic byte-identical.)
+
 ## VALIDATION (out-of-sample) generalization checkpoint — v6 champion (2026-05-29) — READ-ONLY
 The adversarial health check BEFORE the terminal TEST read. Bare-seed Product-A G (do_bench
 median-of-7, fp32; GPU1+GPU3, GPU2 co-tenant avoided) on the `list_of_kernels.md` "Out-of-sample"
