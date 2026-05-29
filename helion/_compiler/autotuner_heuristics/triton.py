@@ -123,9 +123,10 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     left those to the spec default).
 
     The seed targets canonical scalar-accumulator inner reductions (sum,
-    rms_norm, layer_norm, softmax-row, long_sum): one row per program
-    (``block_sizes=[1]``) so all threads cooperate on the contiguous last-dim
-    reduction, with the two-pass loads fused so x isn't reloaded.
+    rms_norm, layer_norm, softmax-row, long_sum): the M-axis tile is the
+    autotuner's floor (``_m_block_size``, typically 1 row per program) so the
+    threads cooperate on the contiguous last-dim reduction, with the two-pass
+    loads fused so x isn't reloaded.
 
     Persistent-vs-looped (the first lever, branched on the WORKLOAD's reduction
     extent ``size_hint`` = rnumel, NOT kernel identity):
@@ -138,9 +139,10 @@ class TritonReductionHeuristic(AutotunerHeuristic):
       {8192, 16384} because tc/Helion-max keep the reduction **persistent**
       (whole contiguous row in registers/SMEM, single pass, no roffset loop).
     - So we seed **persistent** (``reduction_loops=[None]``) whenever the row
-      plausibly fits a persistent reduction, i.e. ``rnumel <= PERSIST_MAX``;
-      above that we fall back to a looped chunk. ``PERSIST_MAX`` is set per the
-      register/SMEM budget for an fp32 contiguous row — see the constant.
+      plausibly fits a persistent reduction, i.e.
+      ``rnumel * itemsize <= PERSIST_MAX_BYTES``; above that we fall back to a
+      looped chunk. The threshold is in BYTES (via ``itemsize``) so it
+      generalizes across dtypes — see the constant.
 
     ``num_warps`` scales with the reduction extent: more independent lane work
     ⇒ more warps amortize the cross-lane reduction tree and keep the SMs fed.
