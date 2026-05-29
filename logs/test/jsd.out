@@ -1,0 +1,97 @@
+DISJOINTNESS CHECK PASS: all TEST shapes disjoint from in-sample + validation across 9 kernels.
+
+GPU=3 helion=/home/calebkim/helion-new-heuristics/wt-reduction/helion/__init__.py kernel=jsd kind=T2 (TEST read-once fp32)
+
+           shape              codegen   w    seed_us    dflt_us      tc_us  G_seed  G_dflt  used  corr       err
+----------------------------------------------------------------------------------------------------------------
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+   (8192, 24576)               looped  32      725.9     1097.8      746.1   1.028   0.680  True  True   7.4e-08
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+   (8192, 49152)               looped  32     1435.4     2180.5     1454.1   1.013   0.667  True  True   0.0e+00
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+   (4096, 16384)               looped  16      258.8      664.6      260.0   1.005   0.391  True  True   0.0e+00
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+   (2048, 98304)               looped  32      781.2     3623.4      901.6   1.154   0.249  True  True   0.0e+00
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+  (8192, 262144)               looped  32     7417.4    11076.6     7450.1   1.004   0.673  True  True   0.0e+00
+----------------------------------------------------------------------------------------------------------------
+GEOMEAN  G_seed=1.0393  G_default=0.4949  (n=5)  all_used=True all_correct=True
+
+===JSON_BEGIN===
+{"kernel": "jsd", "kind": "T2", "gpu": "3", "rows": [{"shape": [8192, 24576], "seed_warps": 32, "seed_block_sizes": [4096, 1], "seed_reduction_loops": null, "codegen": "looped", "seed_used": true, "seed_correct": true, "seed_err": 7.401570583634808e-08, "default_correct": true, "seed_lat_us": 725.8880138397217, "default_lat_us": 1097.7599620819092, "tc_lat_us": 746.1439967155457, "g_seed": 1.0279051072474337, "g_default": 0.6796968576814174}, {"shape": [8192, 49152], "seed_warps": 32, "seed_block_sizes": [4096, 1], "seed_reduction_loops": null, "codegen": "looped", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "seed_lat_us": 1435.424029827118, "default_lat_us": 2180.543899536133, "tc_lat_us": 1454.0799856185913, "g_seed": 1.0129968256095867, "g_default": 0.6668427936387421}, {"shape": [4096, 16384], "seed_warps": 16, "seed_block_sizes": [4096, 1], "seed_reduction_loops": null, "codegen": "looped", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "seed_lat_us": 258.7519884109497, "default_lat_us": 664.57599401474, "tc_lat_us": 259.98400151729584, "g_seed": 1.0047613667199706, "g_default": 0.39120281782481825}, {"shape": [2048, 98304], "seed_warps": 32, "seed_block_sizes": [4096, 1], "seed_reduction_loops": null, "codegen": "looped", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "seed_lat_us": 781.1840176582336, "default_lat_us": 3623.4240531921387, "tc_lat_us": 901.5839993953705, "g_seed": 1.15412499361938, "g_default": 0.24882100084341477}, {"shape": [8192, 262144], "seed_warps": 32, "seed_block_sizes": [4096, 1], "seed_reduction_loops": null, "codegen": "looped", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "seed_lat_us": 7417.439937591553, "default_lat_us": 11076.623916625977, "tc_lat_us": 7450.143814086914, "g_seed": 1.004409051744338, "g_default": 0.6726005929391782}], "summary": {"geomean_g_seed": 1.039339660734732, "geomean_g_default": 0.49485389783414263, "n_shapes": 5, "all_seed_used": true, "all_seed_correct": true}}
+===JSON_END===

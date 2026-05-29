@@ -1,0 +1,114 @@
+DISJOINTNESS CHECK PASS: all TEST shapes disjoint from in-sample + validation across 9 kernels.
+
+GPU=2 helion=/home/calebkim/helion-new-heuristics/wt-reduction/helion/__init__.py kernel=cross_entropy kind=T1 (TEST read-once fp32)
+
+           shape              codegen   w    seed_us    dflt_us      tc_us  G_seed  G_dflt  used  corr       err
+----------------------------------------------------------------------------------------------------------------
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+    (4096, 8192)           persistent  16       83.5       89.0       76.4   0.915   0.859  True  True   9.5e-07
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+   (8192, 16384)           persistent  16      255.4      369.2      266.4   1.043   0.722  True  True   0.0e+00
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+   (2048, 49152)               looped  32      203.3      388.6      214.4   1.054   0.552  True  True   9.5e-07
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+   (4096, 98304)               looped  32     1049.1     1555.5      827.0   0.788   0.532  True  True   0.0e+00
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+   (8192, 49152)               looped  32      729.7     1422.2      760.8   1.043   0.535  True  True   9.5e-07
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/calebkim/helion-new-heuristics/wt-reduction/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+  (16384, 16384)           persistent  16      482.1      728.8      509.7   1.057   0.699  True  True   0.0e+00
+----------------------------------------------------------------------------------------------------------------
+GEOMEAN  G_seed=0.9779  G_default=0.6389  (n=6)  all_used=True all_correct=True
+
+===JSON_BEGIN===
+{"kernel": "cross_entropy", "kind": "T1", "gpu": "2", "rows": [{"shape": [4096, 8192], "seed_warps": 16, "seed_block_sizes": [1], "seed_reduction_loops": [null], "codegen": "persistent", "seed_used": true, "seed_correct": true, "seed_err": 9.5367431640625e-07, "default_correct": true, "seed_lat_us": 83.48800241947174, "default_lat_us": 88.95999938249588, "tc_lat_us": 76.38400048017502, "g_seed": 0.9149099064126145, "g_default": 0.8586331048829192}, {"shape": [8192, 16384], "seed_warps": 16, "seed_block_sizes": [1], "seed_reduction_loops": [null], "codegen": "persistent", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "seed_lat_us": 255.36000728607178, "default_lat_us": 369.1839873790741, "tc_lat_us": 266.3840055465698, "g_seed": 1.0431704180214414, "g_default": 0.7215481024453253}, {"shape": [2048, 49152], "seed_warps": 32, "seed_block_sizes": [1], "seed_reduction_loops": [16384], "codegen": "looped", "seed_used": true, "seed_correct": true, "seed_err": 9.5367431640625e-07, "default_correct": true, "seed_lat_us": 203.34400236606598, "default_lat_us": 388.5760009288788, "tc_lat_us": 214.39999341964722, "g_seed": 1.0543708736177912, "g_default": 0.551758196355747}, {"shape": [4096, 98304], "seed_warps": 32, "seed_block_sizes": [1], "seed_reduction_loops": [16384], "codegen": "looped", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "seed_lat_us": 1049.056053161621, "default_lat_us": 1555.4879903793335, "tc_lat_us": 827.0400166511536, "g_seed": 0.7883658972832188, "g_default": 0.531691676031176}, {"shape": [8192, 49152], "seed_warps": 32, "seed_block_sizes": [1], "seed_reduction_loops": [16384], "codegen": "looped", "seed_used": true, "seed_correct": true, "seed_err": 9.5367431640625e-07, "default_correct": true, "seed_lat_us": 729.7279834747314, "default_lat_us": 1422.2079515457153, "tc_lat_us": 760.7519924640656, "g_seed": 1.0425144844269336, "g_default": 0.5349091120164589}, {"shape": [16384, 16384], "seed_warps": 16, "seed_block_sizes": [1], "seed_reduction_loops": [null], "codegen": "persistent", "seed_used": true, "seed_correct": true, "seed_err": 0.0, "default_correct": true, "seed_lat_us": 482.11199045181274, "default_lat_us": 728.7999987602234, "tc_lat_us": 509.68000292778015, "g_seed": 1.0571817607152478, "g_default": 0.6993413883024249}], "summary": {"geomean_g_seed": 0.9778699423411106, "geomean_g_default": 0.6388640739765259, "n_shapes": 6, "all_seed_used": true, "all_seed_correct": true}}
+===JSON_END===
