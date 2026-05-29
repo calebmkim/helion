@@ -100,3 +100,17 @@
 - Next: code-investigator (read-only) scopes the round-trip fix blast radius BEFORE touching core autotuner
   code. Then worker fixes _encode_flat_value + re-runs Product B. Then widen Product A (layer_norm-fwd next:
   num_load>=2, benefits from v4 w32 fix; then softmax = T2).
+
+## 2026-05-29 (cont.)
+- **layer_norm-fwd ACCEPTED** (referee+auditor PASS). 4-kernel active set {rms_norm,sum,long_sum,layer_norm};
+  v4 heuristic byte-identical (0 lines changed); G_layer_norm=0.99 (+12% vs default); O_4kernel=0.9997.
+- **Round-trip fix ACCEPTED** (auditor PASS). config_spec `_encode_flat_value(None)` .default()->.high so a
+  persistent seed round-trips into the autotuner. Tests green (87/107/24); Product A byte-identical; gen0 seed
+  now persistent; autotuner not degraded. Product B GREW: Slice-2 time-to-95% rms_norm (2048,16384) 1.78->1.89x,
+  (8192,8192) 1.70->1.93x; long_sum dip at M=8 is noise-floor (flips to 2.17x at M=256). Commit 664a9524.
+- **T2 support fully mapped** -> `_lab/t2_code_map.md`. KEY: T2 reduction axis is NOT a reduction=True
+  block_size; found via ReductionLowering.block_index filtered against grid_block_ids (load-bearing for jsd).
+  Plan: new register_user_tiled_reductions() populate (guarded if not reduction_facts), gate on
+  reduction_facts==1, knob=block_sizes[red_idx], reuse rnumel/warps logic, Band-B watch for jsd (num_store=2).
+- Next: WORKER widens to T2 (softmax_two_pass, kl_div, jsd) per t2_code_map. Then gate (auditor esp. on the
+  gate-broadening no-regression + Band B). Then Band C (welford). All gates green so far; loop healthy.
