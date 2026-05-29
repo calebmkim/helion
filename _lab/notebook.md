@@ -5,6 +5,27 @@
 > champion). The hub appends gate verdicts. Keep it current at every clean iteration boundary.
 
 ## Champion (current best heuristic)
+- **v7 PR-READINESS FINALIZE (WORKER 2026-05-29) — mechanical code-review fixes ONLY, heuristic logic BYTE-IDENTICAL.**
+  Applied exactly the review-flagged, behavior-preserving fixes; the frozen v7 logic is UNTOUCHED.
+  (1) `device_ir.py::_count_reduction_workload` return annotation `tuple[...,int]` (5) -> `tuple[...,int,int]` (6)
+  to match the actual 6-tuple return + both 6-value unpack call sites (pyrefly `bad-return` + `bad-unpacking`
+  errors GONE). (2) `ruff format` on triton.py + device_ir.py (pure whitespace reflow of pre-existing
+  multi-line exprs). (3) PIE804: `Config(**{...})` -> `Config(block_sizes=..., num_warps=..., num_stages=1)`
+  in the structured-combine branch (identical call — Config.__init__ takes those as explicit kwargs).
+  (4) Removed dead diagnostic-only `_m_extent` (grep-confirmed: only its own def in helion/; the two other refs
+  are `_lab/` trace scripts that don't ship). (5) Simplified `_last_dim_is_reduction`:
+  `free_symbols == {sym} or (sym in free_symbols)` -> `sym in sympify(last).free_symbols` (first disjunct is
+  subsumed by the second; logically identical). (6) Added `test/test_autotuner_heuristics.py::
+  TestTritonReductionHeuristic` (2 tests, purely additive) locking: rms_norm wide (rnumel=16384) ->
+  persistent `reduction_loops=[None]` + 16 warps (ramp); kl_div wide (rnumel=131072) -> Band-B R_BLOCK cap
+  (block_sizes=[4096,1], 32 warps, no reduction_loops). **PROOF logic unchanged: byte-identical seed dump for
+  ALL 9 active kernels (rms_norm/sum/long_sum/layer_norm/cross_entropy/softmax_two_pass/kl_div/jsd/welford),
+  20 shape entries, sha256 e4564732…0af42ffb identical BEFORE vs AFTER** (`_lab/harness/PR_seed_dump_9.py`;
+  welford exercises the structured-combine branch with the PIE804 fix). `ruff check`/`ruff format --check`
+  clean on all 3 changed files; `pyrefly check` = only `[missing-import]` env noise, the 2 flagged type errors
+  resolved. Tests: test_reductions 24p+11 subtests, test_autotuner 107p/7s+11 subtests, test_best_available
+  46p, test_autotuner_heuristics 10p/17s+12 subtests (incl 2 new). git diff = mechanical fixes + 1 additive
+  test only; no logic change.
 - **v7 `triton_reduction_tile` (WORKER-PROPOSED 2026-05-29) — welford Band-C STRUCTURED-COMBINE seeded (was out-of-scope).**
   welford flips from DECLINED to SEEDED via a new `is_structured_combine` ReductionFact field + branch.
   ONE new general branch (the **structured-combine treatment**): when the SAME inner extent is tiled by a

@@ -10,6 +10,7 @@ import helion
 from helion._compiler.autotuner_heuristics import compiler_seed_configs
 from helion._compiler.autotuner_heuristics.cute import CuteTcgen05ClusterM2Heuristic
 from helion._compiler.autotuner_heuristics.registry import AutotunerHeuristic
+from helion._compiler.autotuner_heuristics.triton import TritonReductionHeuristic
 from helion._compiler.autotuner_heuristics.triton import TritonSkinnyGemmHeuristic
 from helion._compiler.backend import TritonBackend
 from helion._compiler.cute.strategies import TCGEN05_LAYOUT_OVERRIDES_D_STORE_BOX_N_KEY
@@ -2503,3 +2504,96 @@ class TestCuteTcgen05ClusterM2Heuristic(TestCase):
             len(seeded[0]["indexing"]),
             bound.config_spec.indexing.length,
         )
+
+
+class TestTritonReductionHeuristic(TestCase):
+    """Lock the shipped reduction seed heuristic's branch decisions.
+
+    Two representative kernels exercise the two load-bearing branches:
+
+    - rms_norm on a wide row (rnumel=16384): the T1 path must seed a
+      *persistent* reduction (``reduction_loops=[None]``) with the rnumel-ramp
+      warp count, NOT the looped default.
+    - kl_div on a wide row (rnumel=131072): the Band-B T2 path
+      (``num_tiled_accumulators >= 1``) must *cap* R_BLOCK by the accumulator
+      footprint (``BANDB_R_BLOCK_BYTES``) instead of going full-N persistent,
+      with the grid (M) axis pinned at its floor of 1.
+    """
+
+    @onlyBackends(["triton"])
+    @skipIfRefEager("Compiler reduction facts are not collected in ref eager mode")
+    def test_rms_norm_wide_seeds_persistent_with_warps(self) -> None:
+        from examples.rms_norm import rms_norm_fwd
+
+        m, n = 2048, 16384
+        args = (
+            torch.randn([m, n], device=DEVICE, dtype=torch.float32),
+            torch.randn([n], device=DEVICE, dtype=torch.float32),
+            1e-5,
+        )
+        bound = rms_norm_fwd.bind(args)
+        heuristic = TritonReductionHeuristic
+
+        # The reduction heuristic registered a single workload fact and fired.
+        self.assertEqual(len(bound.config_spec.reduction_facts), 1)
+        fact = bound.config_spec.reduction_facts[0]
+        self.assertEqual(fact.size_hint, n)
+        self.assertFalse(fact.is_structured_combine)
+        self.assertIn(
+            TritonReductionHeuristic.name,
+            bound.config_spec.autotuner_heuristics,
+        )
+        self.assertTrue(heuristic.is_eligible(bound.env, bound.host_function.device_ir))
+
+        # Exactly one compiler seed, and it is the *persistent* T1 config.
+        seeds = compiler_seed_configs(bound.env, bound.host_function.device_ir)
+        self.assertEqual(len(seeds), 1)
+        seed = seeds[0].config
+        # rnumel ramp: 16384 falls in the (4096, 16384] band -> 16 warps.
+        self.assertEqual(seed["block_sizes"], [1])
+        self.assertEqual(seed["reduction_loops"], [None])
+        self.assertEqual(seed["num_warps"], 16)
+        self.assertEqual(seed["num_stages"], 1)
+
+    @onlyBackends(["triton"])
+    @skipIfRefEager("Compiler reduction facts are not collected in ref eager mode")
+    def test_kl_div_wide_seeds_band_b_r_block_cap(self) -> None:
+        from examples.kl_div import kl_div_forward
+
+        m, n = 4096, 131072
+        log_q = torch.log_softmax(torch.randn([m, n], device=DEVICE), dim=-1)
+        p = torch.softmax(torch.randn([m, n], device=DEVICE), dim=-1)
+        args = (log_q, p)
+        bound = kl_div_forward.bind(args)
+        heuristic = TritonReductionHeuristic
+
+        # Single workload fact carrying a 2D [M, R] accumulator -> Band B.
+        self.assertEqual(len(bound.config_spec.reduction_facts), 1)
+        fact = bound.config_spec.reduction_facts[0]
+        self.assertEqual(fact.size_hint, n)
+        self.assertGreaterEqual(fact.num_tiled_accumulators, 1)
+        self.assertFalse(fact.is_structured_combine)
+        self.assertIn(
+            TritonReductionHeuristic.name,
+            bound.config_spec.autotuner_heuristics,
+        )
+        self.assertTrue(heuristic.is_eligible(bound.env, bound.host_function.device_ir))
+
+        # Exactly one seed; R_BLOCK is capped, NOT full-N persistent, and the
+        # grid (M) axis sits at its floor of 1.
+        seeds = compiler_seed_configs(bound.env, bound.host_function.device_ir)
+        self.assertEqual(len(seeds), 1)
+        seed = seeds[0].config
+        expected_cap = max(
+            1,
+            TritonReductionHeuristic.BANDB_R_BLOCK_BYTES // max(1, fact.itemsize),
+        )
+        # block_sizes is [R_BLOCK, M_BLOCK]; the reduction axis is capped well
+        # below next_pow2(131072) and M stays at 1.
+        self.assertEqual(seed["block_sizes"], [expected_cap, 1])
+        self.assertLess(expected_cap, n)
+        # rnumel 131072 > STREAM_WARPS32_MIN_ELEMS -> 32 warps.
+        self.assertEqual(seed["num_warps"], 32)
+        self.assertEqual(seed["num_stages"], 1)
+        # Band B must NOT use the T1 reduction_loops knob.
+        self.assertNotIn("reduction_loops", seed)

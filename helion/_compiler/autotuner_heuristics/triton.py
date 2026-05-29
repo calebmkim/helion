@@ -82,9 +82,7 @@ class TritonSkinnyGemmHeuristic(AutotunerHeuristic):
         return Config(block_sizes=block_sizes)
 
 
-def _triton_reduction_eligible(
-    env: CompileEnvironment, device_ir: DeviceIR
-) -> bool:
+def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> bool:
     """Gate for the Triton reduction seed (single inner reduction, no GEMM).
 
     Keys on exactly the WORKLOAD invariant the seed needs: ONE registered
@@ -348,27 +346,6 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         return 16
 
     @classmethod
-    def _m_extent(cls, env: CompileEnvironment, fact: ReductionFact) -> int:
-        """Total non-reduction (row) extent = the M-axis grid size.
-
-        Product of the kept (non-reduction) tile size_hints. With the M-block at
-        its floor (~1 row/program) this is the number of programs launched along
-        the row axis = how much of the GPU the kernel fills.
-
-        DIAGNOSTIC ONLY in v3: no branch keys on it anymore. The v2
-        grid-occupancy branch that used it was DELETED — its premise ("looped
-        wins at small M") was a confound (it compared persistent/w16 vs
-        looped/w32; at equal warps persistent wins). Kept for trace/audit
-        scripts that report grid size.
-        """
-        spec = env.config_spec
-        extent = 1
-        for mid in fact.m_block_ids:
-            bs = spec.block_sizes.block_id_lookup(mid)
-            extent *= bs.size_hint
-        return extent
-
-    @classmethod
     def _m_block_size(cls, env: CompileEnvironment) -> int:
         """M-axis (non-reduction) block size = the autotuner's floor.
 
@@ -485,9 +462,7 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             # in-scope structured combines — a dynamic apply tile was declined in
             # register_user_tiled_reductions).
             n_static = (
-                fact.static_rnumel
-                if fact.static_rnumel is not None
-                else fact.size_hint
+                fact.static_rnumel if fact.static_rnumel is not None else fact.size_hint
             )
             largest_pow2_div = n_static & (-n_static)
             cap_elems = max(
@@ -507,11 +482,9 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 else:
                     sc_block_sizes.append(cls._block_floor(bs_spec))
             return Config(
-                **{
-                    "block_sizes": sc_block_sizes,
-                    "num_warps": num_warps,
-                    "num_stages": 1,
-                }
+                block_sizes=sc_block_sizes,
+                num_warps=num_warps,
+                num_stages=1,
             )
 
         # T2 (user-tiled / manually-looped): the reduction axis IS a block_sizes

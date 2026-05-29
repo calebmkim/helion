@@ -966,9 +966,7 @@ class DeviceIR:
             b for b in spec.block_sizes.valid_block_ids() if b not in grid_ids
         ]
         # apply tiles = non-grid tiles that are NOT the inner reduction axis.
-        apply_tiles = tuple(
-            b for b in non_grid_tiles if b not in red_block_ids
-        )
+        apply_tiles = tuple(b for b in non_grid_tiles if b not in red_block_ids)
         is_structured_combine = len(non_grid_tiles) > 1 and len(apply_tiles) >= 1
         if len(non_grid_tiles) != 1 and not is_structured_combine:
             return
@@ -1008,9 +1006,7 @@ class DeviceIR:
         # The kept (non-reduction) axes are the grid block_ids — the "rows".
         m_block_ids = tuple(sorted(grid_ids))
         size_hint = block_info.size_hint()
-        static_rnumel = (
-            block_info.size if isinstance(block_info.size, int) else None
-        )
+        static_rnumel = block_info.size if isinstance(block_info.size, int) else None
         # Count loads / stores / reductions over ALL device graphs (the manual
         # inner loop body is in the main device graph, not a roller subgraph).
         all_graph_ids = set(range(len(self.graphs)))
@@ -1041,7 +1037,7 @@ class DeviceIR:
 
     def _count_reduction_workload(
         self, graph_ids: set[int], red_block_id: int, size_hint: int
-    ) -> tuple[int, int, int, torch.dtype, int]:
+    ) -> tuple[int, int, int, torch.dtype, int, int]:
         """Count device loads / stores / reductions over ``red_block_id``.
 
         Shared by the T1 (``_build_reduction_fact``) and T2
@@ -1083,9 +1079,7 @@ class DeviceIR:
                 return last == size_hint
             if red_symbol is not None:
                 try:
-                    return sympy.sympify(last).free_symbols == {red_symbol} or (
-                        red_symbol in sympy.sympify(last).free_symbols
-                    )
+                    return red_symbol in sympy.sympify(last).free_symbols
                 except (TypeError, ValueError, AttributeError):
                     return False
             return False
@@ -1158,9 +1152,7 @@ class DeviceIR:
         workload-property branching (NOT kernel identity).
         """
         env = CompileEnvironment.current()
-        m_block_ids = tuple(
-            bs.block_id for bs in env.block_sizes if not bs.reduction
-        )
+        m_block_ids = tuple(bs.block_id for bs in env.block_sizes if not bs.reduction)
         size_hint = rdim.size_hint()
         # static_rnumel: the reduction extent only if it is a compile-time
         # constant (not a symbolic/dynamic size).
