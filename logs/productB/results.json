@@ -1,0 +1,59 @@
+{
+  "experiment": "Product B - seed the autotuner (time-first convergence)",
+  "date": "2026-05-29",
+  "env": "H100/sm_90 fp32, GPU2+GPU3, cold Triton+inductor cache per run",
+  "heuristic": "live registered TritonReductionHeuristic v4 (commit 37b27f67)",
+  "autotuner": "LFBOTreeSearch, quick profile (init_pop=30, copies=2, max_gen=5, from_best_available, pad_random=False)",
+  "knobs": "HELION_FORCE_AUTOTUNE=1, HELION_AUTOTUNE_RANDOM_SEED in {0,1,2}, HELION_AUTOTUNE_EFFORT=quick",
+  "method": {
+    "seeded": "default; compiler_seed_configs n=1, autotuner_heuristics=['triton_reduction_tile']; seed in gen0",
+    "unseeded": "HELION_DISABLE_AUTOTUNER_HEURISTICS=1; compiler_seed_configs n=0; gen0=default only",
+    "verified_per_run": true
+  },
+  "TRAP_seed_degraded_on_injection": {
+    "finding": "On all 4 shapes (rnumel>4096) the seed reduction_loops=[None] (PERSISTENT) is flat-encoded to a looped chunk of 4096. num_warps + block_sizes survive; the persistent lever does NOT.",
+    "root_cause": "ReductionLoopSpec._encode_flat_value maps None->_flat_fragment.default()=min(next_pow2(rnumel),4096); unflatten restores None only if flat_int>=size_hint, which fails for rnumel>4096.",
+    "codegen_proof": "[None] => no for-roffset loop (1 tl.arange); [4096] => has loop (2 tl.arange); genuinely different kernels.",
+    "scope": "autotuner-injection path ONLY; the Product-A bare-seed path (configs=[seed]) preserves [None].",
+    "implication": "Product-B wins below are a LOWER BOUND; faithful injection would widen the early-budget gap."
+  },
+  "best_perf_vs_gen_median_ms": {
+    "rms_norm_2048_16384": {"seeded": [0.1470,0.1293,0.1288,0.1286,0.1277,0.1276], "unseeded": [0.1825,0.1443,0.1332,0.1322,0.1288,0.1288]},
+    "rms_norm_8192_8192":  {"seeded": [0.2566,0.2516,0.2516,0.2494,0.2488,0.2487], "unseeded": [0.3352,0.2526,0.2518,0.2514,0.2496,0.2488]},
+    "long_sum_8_131072":   {"seeded": [0.0101,0.0100,0.0081,0.0078,0.0077,0.0077], "unseeded": [0.0387,0.0141,0.0106,0.0093,0.0089,0.0089]},
+    "sum_2048_16384":      {"seeded": [0.0756,0.0698,0.0692,0.0691,0.0691,0.0678], "unseeded": [0.0762,0.0757,0.0707,0.0695,0.0695,0.0694]}
+  },
+  "slice1_same_budget_seeded_advantage_ratio": {
+    "_note": "unseeded_ms / seeded_ms (>1 => seeded faster), median of 3 seeds",
+    "rms_norm_2048_16384": {"gen1": 1.116, "gen2": 1.034, "gen5": 1.009},
+    "rms_norm_8192_8192":  {"gen1": 1.004, "gen2": 1.001, "gen5": 1.000},
+    "long_sum_8_131072":   {"gen1": 1.409, "gen2": 1.306, "gen5": 1.145},
+    "sum_2048_16384":      {"gen1": 1.085, "gen2": 1.020, "gen5": 1.024}
+  },
+  "slice2_time_to_target_95pct": {
+    "_note": "wall-clock seconds to first reach 95% of unseeded-full-budget perf; speedup = unseeded_t/seeded_t (median of 3 seeds; [min,max])",
+    "rms_norm_2048_16384": {"seeded_s": 8.86, "seeded_spread": [6.54,13.59], "unseeded_s": 15.76, "unseeded_spread": [11.51,41.90], "speedup": 1.78, "reached": "seeded 3/3, unseeded 3/3"},
+    "rms_norm_8192_8192":  {"seeded_s": 5.25, "seeded_spread": [4.71,9.47],  "unseeded_s": 8.94,  "unseeded_spread": [7.80,12.85], "speedup": 1.70, "reached": "seeded 3/3, unseeded 3/3"},
+    "long_sum_8_131072":   {"seeded_s": 19.38, "seeded_spread": [13.39,32.72], "unseeded_s": 20.18, "unseeded_spread": [16.29,24.06], "speedup": 1.04, "reached": "seeded 3/3, unseeded 2/3"},
+    "sum_2048_16384":      {"seeded_s": 9.30, "seeded_spread": [6.01,9.62],  "unseeded_s": 14.17, "unseeded_spread": [6.98,26.59], "speedup": 1.52, "reached": "seeded 3/3, unseeded 3/3"}
+  },
+  "slice2_time_to_target_98pct_speedup": {
+    "rms_norm_2048_16384": 2.59, "rms_norm_8192_8192": 1.17, "long_sum_8_131072": 1.17, "sum_2048_16384": 1.52
+  },
+  "total_full_search_wallclock_median_s": {
+    "_caveat": "seed makes the FULL search LONGER (LFBO explores around the extra good config). Product-B value is time-to-target + early-budget perf, NOT a cheaper full search. The lever is: with a seed you can shrink the budget.",
+    "rms_norm_2048_16384": {"seeded": 62.3, "unseeded": 35.9},
+    "rms_norm_8192_8192":  {"seeded": 55.7, "unseeded": 23.7},
+    "long_sum_8_131072":   {"seeded": 43.1, "unseeded": 34.1},
+    "sum_2048_16384":      {"seeded": 23.8, "unseeded": 21.5}
+  },
+  "verdict": "Seeding shifts the convergence curve UP-and-LEFT on all 4 shapes. Headline time-to-95% win 1.5-1.8x on 3/4 shapes (rms_norm x2, sum); long_sum ~tie on time-to-target but big gen0 win (latencies in ~10us noise floor). Full-budget no-regression holds (seeded>=unseeded everywhere). Achieved with the persistent lever DEGRADED on injection -- fixing the round-trip should widen the early-budget gap.",
+  "artifacts": {
+    "raw_csvs": "logs/productB/<kernel>_<M>_<N>_<mode>_s<seed>.csv (24 files)",
+    "per_run_verification": "logs/productB/<...>.driver.log",
+    "analysis_dumps": ["logs/productB/analysis_t95.txt", "logs/productB/analysis_t98.txt"],
+    "driver": "_lab/harness/productB_driver.py",
+    "runner": "_lab/harness/productB_run.sh",
+    "analyzer": "_lab/harness/productB_analyze.py"
+  }
+}

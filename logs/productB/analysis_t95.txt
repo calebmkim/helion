@@ -1,0 +1,74 @@
+# Product B analysis  target=95.0% of unseeded full-budget
+# dir=/home/calebkim/helion-new-heuristics/wt-reduction/logs/productB  full_gen=5
+
+================ long_sum (8,131072)  rnumel=131072 ================
+  [verify] seeded n_seeds=1 heuristics=['triton_reduction_tile']
+  [verify] raw reduction_loops=[None] num_warps=32 -> flat-normalized reduction_loops=[4096] num_warps=32  DEGRADED(persistent->looped)
+  [verify] unseeded n_seeds=0 heuristics=[]
+
+  -- Slice 1: best perf_ms at budget (median[min,max] across seeds); ratio = unseeded/seeded (>1 => seeded faster) --
+     gen<= 1: seeded 0.0100[0.0088,0.0101]  unseeded 0.0141[0.0089,0.0143]  seeded-advantage=1.409x
+     gen<= 2: seeded 0.0081[0.0078,0.0100]  unseeded 0.0106[0.0077,0.0108]  seeded-advantage=1.306x
+     gen<= 5: seeded 0.0077[0.0076,0.0078]  unseeded 0.0089[0.0076,0.0096]  seeded-advantage=1.145x
+
+  -- Slice 2 (HEADLINE): time-to-target. unseeded full-budget median=0.0089ms; target(reach 95.0% of it) = perf<= 0.0093ms --
+     seeded   reached 3/3: wall-clock median=19.380s [13.390,32.720]
+     unseeded reached 2/3: wall-clock median=20.175s [16.290,24.060]
+     time-to-target speedup (unseeded_t/seeded_t) = 1.041x  (>1 => seeded reaches target sooner)
+     [context] total full-search wall-clock: seeded median=43.070s, unseeded median=34.060s
+
+================ rms_norm (2048,16384)  rnumel=16384 ================
+  [verify] seeded n_seeds=1 heuristics=['triton_reduction_tile']
+  [verify] raw reduction_loops=[None] num_warps=16 -> flat-normalized reduction_loops=[4096] num_warps=16  DEGRADED(persistent->looped)
+  [verify] unseeded n_seeds=0 heuristics=[]
+
+  -- Slice 1: best perf_ms at budget (median[min,max] across seeds); ratio = unseeded/seeded (>1 => seeded faster) --
+     gen<= 1: seeded 0.1293[0.1293,0.1295]  unseeded 0.1443[0.1327,0.1488]  seeded-advantage=1.116x
+     gen<= 2: seeded 0.1288[0.1287,0.1290]  unseeded 0.1332[0.1292,0.1335]  seeded-advantage=1.034x
+     gen<= 5: seeded 0.1276[0.1276,0.1283]  unseeded 0.1288[0.1276,0.1308]  seeded-advantage=1.009x
+
+  -- Slice 2 (HEADLINE): time-to-target. unseeded full-budget median=0.1288ms; target(reach 95.0% of it) = perf<= 0.1355ms --
+     seeded   reached 3/3: wall-clock median=8.860s [6.540,13.590]
+     unseeded reached 3/3: wall-clock median=15.760s [11.510,41.900]
+     time-to-target speedup (unseeded_t/seeded_t) = 1.779x  (>1 => seeded reaches target sooner)
+     [context] total full-search wall-clock: seeded median=62.310s, unseeded median=35.900s
+
+================ rms_norm (8192,8192)  rnumel=8192 ================
+  [verify] seeded n_seeds=1 heuristics=['triton_reduction_tile']
+  [verify] raw reduction_loops=[None] num_warps=16 -> flat-normalized reduction_loops=[4096] num_warps=16  DEGRADED(persistent->looped)
+  [verify] unseeded n_seeds=0 heuristics=[]
+
+  -- Slice 1: best perf_ms at budget (median[min,max] across seeds); ratio = unseeded/seeded (>1 => seeded faster) --
+     gen<= 1: seeded 0.2516[0.2501,0.2526]  unseeded 0.2526[0.2522,0.2615]  seeded-advantage=1.004x
+     gen<= 2: seeded 0.2516[0.2488,0.2518]  unseeded 0.2518[0.2514,0.2520]  seeded-advantage=1.001x
+     gen<= 5: seeded 0.2487[0.2483,0.2487]  unseeded 0.2488[0.2485,0.2515]  seeded-advantage=1.000x
+
+  -- Slice 2 (HEADLINE): time-to-target. unseeded full-budget median=0.2488ms; target(reach 95.0% of it) = perf<= 0.2619ms --
+     seeded   reached 3/3: wall-clock median=5.250s [4.710,9.470]
+     unseeded reached 3/3: wall-clock median=8.940s [7.800,12.850]
+     time-to-target speedup (unseeded_t/seeded_t) = 1.703x  (>1 => seeded reaches target sooner)
+     [context] total full-search wall-clock: seeded median=55.740s, unseeded median=23.730s
+
+================ sum (2048,16384)  rnumel=16384 ================
+  [verify] seeded n_seeds=1 heuristics=['triton_reduction_tile']
+  [verify] raw reduction_loops=[None] num_warps=16 -> flat-normalized reduction_loops=[4096] num_warps=16  DEGRADED(persistent->looped)
+  [verify] unseeded n_seeds=0 heuristics=[]
+
+  -- Slice 1: best perf_ms at budget (median[min,max] across seeds); ratio = unseeded/seeded (>1 => seeded faster) --
+     gen<= 1: seeded 0.0698[0.0698,0.0755]  unseeded 0.0757[0.0757,0.0760]  seeded-advantage=1.085x
+     gen<= 2: seeded 0.0692[0.0678,0.0755]  unseeded 0.0707[0.0690,0.0760]  seeded-advantage=1.020x
+     gen<= 5: seeded 0.0678[0.0678,0.0691]  unseeded 0.0694[0.0690,0.0695]  seeded-advantage=1.024x
+
+  -- Slice 2 (HEADLINE): time-to-target. unseeded full-budget median=0.0694ms; target(reach 95.0% of it) = perf<= 0.0731ms --
+     seeded   reached 3/3: wall-clock median=9.300s [6.010,9.620]
+     unseeded reached 3/3: wall-clock median=14.170s [6.980,26.590]
+     time-to-target speedup (unseeded_t/seeded_t) = 1.524x  (>1 => seeded reaches target sooner)
+     [context] total full-search wall-clock: seeded median=23.820s, unseeded median=21.480s
+
+
+================ ROLL-UP ================
+shape                    S1 gen1   S1 gen2   S1 full            S2 t-to-tgt
+long_sum(8,131072)        1.409x    1.306x    1.145x   seeded 19.380s vs uns 20.175s (1.041x)
+rms_norm(2048,16384)      1.116x    1.034x    1.009x   seeded 8.860s vs uns 15.760s (1.779x)
+rms_norm(8192,8192)       1.004x    1.001x    1.000x   seeded 5.250s vs uns 8.940s (1.703x)
+sum(2048,16384)           1.085x    1.020x    1.024x   seeded 9.300s vs uns 14.170s (1.524x)

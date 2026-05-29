@@ -77,6 +77,67 @@
   no active kernel's referee-confirmed G_k regresses >10% vs champion).
 - Product B (every 5 iters): seeded vs unseeded quick-autotune convergence curve.
 
+## Product B — seed the autotuner (RUN 2026-05-29, v4 seed) — TIME WIN CONFIRMED + an injection TRAP
+Ran quick-autotune SEEDED vs UNSEEDED, N=3 random seeds {0,1,2} each, cold cache per run, full
+max_generations=5, on rms_norm (2048,16384) & (8192,8192), long_sum (8,131072), sum (2048,16384).
+GPU2 (rms_norm) + GPU3 (long_sum,sum) in parallel, one autotune run per GPU. Default LFBOTreeSearch,
+quick profile. Harness: `_lab/harness/productB_{driver.py,run.sh,analyze.py}`; raw + summary in
+`logs/productB/` (results.json, analysis_t95/t98.txt, 24 CSVs, per-run .driver.log).
+
+- **Method + seed-injection VERIFICATION (per run):** SEEDED = default (compiler_seed_configs n=1,
+  autotuner_heuristics=['triton_reduction_tile']; seed enters gen0). UNSEEDED =
+  `HELION_DISABLE_AUTOTUNER_HEURISTICS=1` (n=0, heuristics=[]; gen0=default only). Both proven in each
+  `.driver.log` and cross-checked against gen0 of the CSV (seeded gen0 = {default w4, seed w16/w32};
+  unseeded gen0 = {default w4}). Only difference = the one compiler seed config in gen0.
+
+- **TRAP (headline finding): the persistent seed is DEGRADED on injection.** On ALL 4 shapes (rnumel>4096)
+  the seed's `reduction_loops=[None]` (PERSISTENT — the dominant Product-A lever) is silently flat-encoded
+  to a LOOPED chunk of 4096 when the autotuner injects the compiler seed. `num_warps`+`block_sizes`
+  survive; the persistent choice does NOT. Root cause: `ReductionLoopSpec._encode_flat_value`
+  (config_spec.py ~1799) maps `None -> _flat_fragment.default() = min(next_pow2(rnumel), 4096)`; unflatten
+  restores `None` only if the flat int `>= size_hint` (false for rnumel>4096). Proof: `[None]` codegen has
+  no `for roffset` loop (1 tl.arange), `[4096]` has it (2 tl.arange) — different kernels. The Product-A
+  bare-seed path (`configs=[seed]`) is UNAFFECTED (keeps `[None]`); ONLY the autotuner-injection path
+  degrades. So the Product-B wins below are a LOWER BOUND — the seed reaches gen0 carrying only its
+  num_warps advantage. OPEN LEVER: make `ReductionLoopSpec` round-trip `None` (a sentinel that decodes back
+  to persistent) before re-running Product B — should widen the early-budget gap.
+
+- **Convergence curve (best-perf-so-far vs gen, median ms) — shifts UP-and-LEFT:**
+  | shape | mode | g0 | g1 | g2 | g5 |
+  |---|---|---|---|---|---|
+  | rms_norm(2048,16384) | seeded/unseeded | 0.147/0.183 | 0.129/0.144 | 0.129/0.133 | 0.128/0.129 |
+  | rms_norm(8192,8192)  | seeded/unseeded | 0.257/0.335 | 0.252/0.253 | 0.252/0.252 | 0.249/0.249 |
+  | long_sum(8,131072)   | seeded/unseeded | 0.0101/0.0387 | 0.0100/0.0141 | 0.0081/0.0106 | 0.0077/0.0089 |
+  | sum(2048,16384)      | seeded/unseeded | 0.0756/0.0762 | 0.0698/0.0757 | 0.0692/0.0707 | 0.0678/0.0694 |
+
+- **Slice 1 — same-budget perf (seeded-advantage = unseeded/seeded, >1=seeded faster):**
+  | shape | gen1 | gen2 | gen5 (guardrail) |
+  |---|---|---|---|
+  | rms_norm(2048,16384) | 1.116 | 1.034 | 1.009 |
+  | rms_norm(8192,8192)  | 1.004 | 1.001 | 1.000 |
+  | long_sum(8,131072)   | 1.409 | 1.306 | 1.145 |
+  | sum(2048,16384)      | 1.085 | 1.020 | 1.024 |
+  Sharpest at small budget. Full-budget guardrail PASSES all 4 (seeded >= unseeded; no regression).
+
+- **Slice 2 — time-to-target (HEADLINE; wall-clock to 95% of unseeded-full-budget, speedup=uns_t/seed_t):**
+  | shape | seeded s | unseeded s | speedup | @98% |
+  |---|---|---|---|---|
+  | rms_norm(2048,16384) | 8.86 | 15.76 | **1.78x** | 2.59x |
+  | rms_norm(8192,8192)  | 5.25 | 8.94  | **1.70x** | 1.17x |
+  | long_sum(8,131072)   | 19.38| 20.18 | 1.04x (uns 2/3 reached) | 1.17x |
+  | sum(2048,16384)      | 9.30 | 14.17 | **1.52x** | 1.52x |
+
+- **HONEST caveat:** the seed makes the FULL 5-gen search take LONGER (seeded total wall-clock 24-62s vs
+  unseeded 22-36s — LFBO explores around the extra good config, compiling more neighbors). Product-B value
+  is NOT a cheaper full search; it is reaching a good config SOONER (Slice 2) and better early-budget perf
+  (Slice 1). The practical lever = with a seed you can SHRINK the budget (stop at gen1-2) and still land
+  near the full-budget optimum.
+
+- **Verdict:** seeding shifts the curve up-and-left on all 4 shapes; headline time-to-95% win 1.5-1.8x on
+  3/4 shapes; long_sum a time-to-target ~tie but a 3.8x gen0 win (its ~10us latencies are in the noise
+  floor). No full-budget regression. All achieved with the persistent lever degraded on injection.
+  WORKER-PROPOSED; HELPER_REQUEST queued for results-referee spot-repro of Slice-2 on (2048,16384).
+
 ## Active kernels (curriculum)
 - Active: **rms_norm_fwd, sum, long_sum** (all T1, Band A). Widen next to: layer_norm-fwd, softmax
   (Band A); kl_div, jsd (Band B); welford (Band C). Forward only for now; defer backward (Band D).
