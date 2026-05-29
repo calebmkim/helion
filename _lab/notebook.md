@@ -70,6 +70,12 @@
     ever "protected against," and the rnumel breakpoint already covers it.
   - Evidence: `_lab/harness/AUDITOR_gate_inert_proof.py`, `AUDITOR_rmsnorm_largeN_warps.py`,
     `AUDITOR_numload_warps_ab.py`, `AUDITOR_v4_oos_recovery.py` (live-seed + layer_norm A/B).
+  - **v4 ACCEPTED champion (commit c2845bdd).** WIDENED to **layer_norm_fwd 2026-05-29 with NO heuristic
+    change** (byte-identical source; 27/27 existing-kernel seeds unchanged). Active set now 4 kernels.
+    Per-kernel G (v4): rms_norm 0.980, sum 0.937, long_sum 1.10, layer_norm **0.989** (+11.7% vs default
+    0.886). O_4kernel = **0.9997** (O_3kernel was 1.003; adding a high-but-sub-1 kernel mechanically nudges
+    the geomean — same effect as adding sum; the honest claim is per-kernel: no kernel regresses, layer_norm
+    is a clean +11.7% win). No per-kernel referee-confirmed G regresses >10% (none regress at all).
 
 ## Objective
 - Product A: maximize `O = geomean_k G_k`, `G_k = geomean over kernel k's in-sample shapes of
@@ -139,8 +145,48 @@ quick profile. Harness: `_lab/harness/productB_{driver.py,run.sh,analyze.py}`; r
   WORKER-PROPOSED; HELPER_REQUEST queued for results-referee spot-repro of Slice-2 on (2048,16384).
 
 ## Active kernels (curriculum)
-- Active: **rms_norm_fwd, sum, long_sum** (all T1, Band A). Widen next to: layer_norm-fwd, softmax
+- Active: **rms_norm_fwd, sum, long_sum, layer_norm_fwd** (all T1, Band A). Widen next to: softmax
   (Band A); kl_div, jsd (Band B); welford (Band C). Forward only for now; defer backward (Band D).
+
+## layer_norm_fwd — WIDENED 2026-05-29 (v4 SUFFICES UNCHANGED; byte-identical heuristic)
+The cleanest possible outcome: **adding layer_norm_fwd to the active set required ZERO heuristic change**
+(git shows 0 lines changed under `helion/`; the 3 existing kernels emit byte-identical v4 champion seeds —
+`layer_norm_no_regression_proof.py` = 27/27 OK). layer_norm benefits from the persistent workhorse + the
+rnumel warps ramp DIRECTLY, exactly like rms_norm.
+- **G_layer_norm (v4 seed, do_bench median-of-7, fp32, GPU2; two runs agree 0.9888/0.9891) = 0.989** vs
+  un-seeded default baseline **0.886** (+11.7%). With bias (tritonbench default). Reference =
+  `torch.nn.functional.layer_norm` fp32; correctness PASS all shapes (maxabs ~2-3e-6 « tol).
+- Same mechanism as rms_norm: at wide rows (rnumel>=8192) the un-seeded default goes looped chunk-4096 and
+  LOSES big (G_default 0.68 @15872, 0.79 @12288, 0.80 @8192-7168); the persistent seed recovers to ~0.99.
+- **num_reduction_ops=2 does NOT want a different config.** The oracle field-diff (quick-autotune, fair
+  re-bench of the FULL verbatim winner, 6 shapes) is G_seed=1.003 vs G_oracle=1.009 (~0.6%, noise): the
+  oracle KEEPS persistent (`reduction_loops=[None]`) at the widest rows and ties the seed on warps/stages.
+  Where the oracle picks w32 or a looped chunk it is perf-NEUTRAL vs the seed. So the extra live
+  accumulator (mean+var) does NOT shift the warps/stages optimum — no num_reduction_ops-keyed branch is
+  warranted. The only real headroom is (4096,1024) small-N (oracle w2 + looped-256, ~4%) — the same
+  tiny-N/large-warp regime already noted for rms_norm (32768,256)/sum, an unseeded indexing lever.
+- harness: `_lab/harness/{classify_layer_norm.py, measure_g_layer_norm.py, oracle_layer_norm.py,
+  layer_norm_no_regression_proof.py}`.
+
+## Per-shape G_layer_norm (v4 seed, do_bench median-of-7, fp32, GPU2; with bias) — two runs agree
+| shape | codegen | warps | G_seed | G_default(baseline) |
+|---|---|---|---|---|
+| (4096,1024) | persist | 4 | 0.99 | 0.99 |
+| (4096,2048) | persist | 8 | 0.99 | 0.99 |
+| (4096,4096) | persist | 8 | 0.98 | 0.98 |
+| (4096,8192) | persist | 16 | 0.99 | 0.80 |
+| (4096,12288) | persist | 16 | 0.99 | 0.79 |
+| (4096,15872) | persist | 16 | 0.99 | 0.68 |
+| (2048,3584) | persist | 8 | 0.99 | 1.00 |
+| (2048,8192) | persist | 16 | 0.99 | 0.85 |
+| (8192,4096) | persist | 8 | 1.00 | 0.99 |
+| (8192,5120) | persist | 16 | 0.99 | 0.92 |
+| (8192,7168) | persist | 16 | 0.99 | 0.81 |
+| **GEOMEAN** | | | **0.989** | **0.886** |
+NOTE: all in-sample rnumel <= 15872 < the w32 breakpoint (16384), so every shape gets the ramp's w4/w8/w16
+(no shape crosses w32) AND every shape is well under the 2^20 structural cap (persistent). The w32 step is
+inert IN-SAMPLE for layer_norm (would only fire for held-out rnumel>16384, where v4's matched-pair physics
+says w32 is correct for num_load>=2 too — see v4 OOS recovery: layer_norm (1,131072) w32/w16=0.760).
 
 ## Track classification (T1 rolled / T2 manual / out-of-scope) — per kernel
 - **rms_norm_fwd: T1** (rollable rdim; `reduction_loops` has 1 entry; `reduction_facts` has 1 entry).
@@ -156,6 +202,14 @@ quick profile. Harness: `_lab/harness/productB_{driver.py,run.sh,analyze.py}`; r
 - **long_sum (`longsum_manual`): OUT-OF-SCOPE.** Uses an explicit `hl.tile(n)` inner reduction loop →
   2 block_sizes entries, 0 reduction_loops, 0 reduction_facts (manual T2, not rollable). Heuristic
   correctly emits 0 seeds. Not a target.
+- **layer_norm_fwd: T1** confirmed (classify_layer_norm.py). 1 block_size, 1 reduction_loop, 1 RF, no
+  matmul → eligibility gate (`len(reduction_loops)==1`) PASSES. The TWO reductions over N (mean=`sum(x)`,
+  var=`sum(centered^2)`) reduce over the SAME N rdim → ONE rollable rdim → 1 reduction_loop (the gate's
+  single-rdim assumption holds with 2 reductions). RF: **num_reduction_ops=2** (two ReductionLowerings
+  over the rdim), **num_load=3** with bias (x + weight + bias) / **num_load=2** without bias, num_store=3
+  (out, mean, rstd), dtype=fp32. Heuristic FIRES 1 seed (`triton_reduction_tile`), seed used + correct.
+  M-block autotuner_min=1 even at 8192 rows. (A benign `TensorOperationInWrapper` warning fires on the
+  `if bias is not None` host-side branch — unrelated to the reduction seed; bind/seed/codegen all fine.)
 
 ## ReductionFact design (config_spec.py, after MatmulFact)
 NamedTuple, one per registered ReductionLoopSpec (T1 rollable rdim). Populated in
