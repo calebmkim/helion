@@ -938,25 +938,39 @@ class DeviceIR:
         # The reduction axis must be a user tile in the block_sizes spec.
         if red_block_id not in spec.block_sizes.valid_block_ids():
             return
-        # SINGLE non-grid tile only. The seed controls exactly ONE inner tile (the
-        # reduction axis); a kernel with a SECOND independent user tile over a
-        # non-grid axis is a multi-pass pattern this single-axis seed cannot serve
-        # — it would floor that second tile to width 1 (catastrophic) while only
-        # widening the reduction tile. welford is the canonical case: a Welford
-        # reduction pass (tile #1 over N) AND a separate normalize pass (tile #2
-        # over the SAME N). Seeding it persistent leaves the normalize tile at
-        # width 1 -> ~10-20x slower than the un-seeded default AND numerically
-        # wrong for non-power-of-2 N (the masked Welford count breaks). The
-        # working T2 kernels (softmax_two_pass, kl_div, jsd) have exactly ONE
-        # non-grid tile (the reduction axis). Decline so the gate
-        # (reduction_facts==1) does NOT fire — welford falls back to the correct
-        # un-seeded default. This keys on the WORKLOAD structure (number of
-        # non-grid user tiles), NOT kernel identity. See the notebook "welford
-        # out-of-scope" section + _lab/harness/welford_probe.py / welford_ceiling.py.
+        # NON-GRID TILE COUNT. The single-axis T2 seed (softmax/kl_div/jsd)
+        # controls exactly ONE inner tile (the reduction axis). A kernel with a
+        # SECOND independent non-grid user tile is a MULTI-PASS pattern.
+        #
+        # There are two multi-pass cases, distinguished STRUCTURALLY:
+        #
+        #  (1) STRUCTURED COMBINE (Band C, welford): the SAME inner extent is
+        #      tiled by a combine pass (the inner reduction, carrying per-row
+        #      scalar statistics as a recurrence) AND one-or-more separate
+        #      apply/normalize passes (no reduction) over that axis. This DOES get
+        #      a seed — but a structured one: the apply tile(s) are widened to
+        #      persistent (else they floor to width 1 -> ~10-20x slower) and the
+        #      combine tile is sized as a power-of-2 DIVISOR of N so its masked
+        #      per-chunk count (``Tn=chunk.size(-1)``) equals the TRUE count (a
+        #      masked next_pow2 combine tile is numerically WRONG at non-power-of-2
+        #      N). See get_seed_config's is_structured_combine branch.
+        #  (2) anything else with >1 non-grid tile: out of scope for this seed —
+        #      decline so the gate (reduction_facts==1) does not fire.
+        #
+        # The working single-axis T2 kernels (softmax_two_pass, kl_div, jsd) have
+        # exactly ONE non-grid tile and skip both branches. This keys on the
+        # WORKLOAD STRUCTURE (number of non-grid tiles + which carries the
+        # reduction), NOT kernel identity — case (1) fires for ANY welford-like
+        # reduce-then-apply structured combine.
         non_grid_tiles = [
             b for b in spec.block_sizes.valid_block_ids() if b not in grid_ids
         ]
-        if len(non_grid_tiles) != 1:
+        # apply tiles = non-grid tiles that are NOT the inner reduction axis.
+        apply_tiles = tuple(
+            b for b in non_grid_tiles if b not in red_block_ids
+        )
+        is_structured_combine = len(non_grid_tiles) > 1 and len(apply_tiles) >= 1
+        if len(non_grid_tiles) != 1 and not is_structured_combine:
             return
         try:
             block_info = env.block_sizes[red_block_id]
@@ -969,6 +983,27 @@ class DeviceIR:
         # fact so the seed gate (reduction_facts==1) does NOT fire there.
         if not isinstance(block_info.size, (int, torch.SymInt)):
             return
+
+        # For a structured combine, every apply tile must span the SAME extent as
+        # the combine (reduction) axis with a resolvable static size — the seed
+        # widens them to next_pow2(reduction extent). If any apply tile has a
+        # different or dynamic extent the structured seed is undefined; decline.
+        if is_structured_combine:
+            ok = True
+            for ab in apply_tiles:
+                try:
+                    ai = env.block_sizes[ab]
+                except (IndexError, KeyError):
+                    ok = False
+                    break
+                if not isinstance(ai.size, (int, torch.SymInt)):
+                    ok = False
+                    break
+                if ai.size_hint() != block_info.size_hint():
+                    ok = False
+                    break
+            if not ok:
+                return
 
         # The kept (non-reduction) axes are the grid block_ids — the "rows".
         m_block_ids = tuple(sorted(grid_ids))
@@ -999,6 +1034,8 @@ class DeviceIR:
                 num_store=num_store,
                 num_reduction_ops=num_reduction_ops,
                 num_tiled_accumulators=num_tiled_accumulators,
+                is_structured_combine=is_structured_combine,
+                apply_block_ids=apply_tiles if is_structured_combine else (),
             )
         )
 

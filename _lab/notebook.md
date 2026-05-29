@@ -5,6 +5,23 @@
 > champion). The hub appends gate verdicts. Keep it current at every clean iteration boundary.
 
 ## Champion (current best heuristic)
+- **v7 `triton_reduction_tile` (WORKER-PROPOSED 2026-05-29) — welford Band-C STRUCTURED-COMBINE seeded (was out-of-scope).**
+  welford flips from DECLINED to SEEDED via a new `is_structured_combine` ReductionFact field + branch.
+  ONE new general branch (the **structured-combine treatment**): when the SAME inner extent is tiled by a
+  combine pass (the reduction, carrying scalar statistics) AND >=1 separate apply/normalize pass over that
+  axis, the seed (a) widens EVERY apply tile to persistent next_pow2(N), and (b) sizes the combine tile as a
+  power-of-2 DIVISOR of N capped by STRUCTURED_COMBINE_CAP_BYTES (8 KiB). The divisor is the CORRECTNESS fix:
+  welford's `Tn=chunk.size(-1)` lowers to the tile constexpr, so a MASKED next_pow2 combine tile counts the
+  padding -> WRONG mean/variance at non-pow2 N (err 0.69 at 1536); a pow2 divisor makes every chunk FULL
+  (no mask) -> Tn == true count. **G_welford = 0.894** (do_bench median, fp32, GPU3; +70% vs default 0.526),
+  **CORRECT at ALL 4 in-sample shapes incl the non-pow2 canary (262144,1536)** (maxabs<=1.7e-6, maxrel<=8.8e-3
+  vs F.layer_norm fp32). Per-shape G: (1024)=0.996, (1536)=0.925, (2048)=0.988, (4096)=0.706. The 4096 floor
+  is a welford-STRUCTURE ceiling (quick-autotune oracle only reaches 0.737; seed/oracle=1.04), NOT config
+  headroom. **No-regression BYTE-IDENTICAL: 18/18 active-kernel seeds unchanged, is_structured_combine=False
+  for all 8** (the gate fires only for >1 non-grid tile + an apply tile — only welford). test_reductions 24
+  passed; test_examples 21 passed (welford + active kernels + jagged decline intact). **O_8kernel UNCHANGED
+  0.9874; O_9kernel = 0.9765** (welford mechanically dilutes the geomean; per-kernel no regression). See the
+  "v7 — welford Band-C" section below. HELPER_REQUEST queued (referee + auditor). Awaiting commit hash.
 - **v6 STANDS UNCHANGED after the codegen-knob Stage-1 investigation (2026-05-29).** The proposed
   `pid_type=persistent_interleaved + num_sm_multiplier` grid-bound branch was **REJECTED as a negative
   result** — it does NOT generalize in matched-lever isolation (see "Codegen-knob Stage 1 — pid_type
@@ -362,9 +379,10 @@ quick profile. Harness: `_lab/harness/productB_{driver.py,run.sh,analyze.py}`; r
 
 ## Active kernels (curriculum)
 - Active (SEEDED): **rms_norm_fwd, sum, long_sum, layer_norm_fwd** (T1, Band A) + **cross_entropy** (T1, Band A,
-  num_load=3, wide-V) + **softmax_two_pass** (T2 Band A) + **kl_div, jsd** (T2 Band B) as of 2026-05-29 (v6) =
-  **8 seeded kernels**. **welford: classified T2 but OUT-OF-SCOPE** (multi-tiled-pass; heuristic DECLINES → not
-  seeded, falls back to default). Forward curriculum COMPLETE. Defer backward (Band D).
+  num_load=3, wide-V) + **softmax_two_pass** (T2 Band A) + **kl_div, jsd** (T2 Band B) + **welford** (T2 Band C,
+  structured combine) as of 2026-05-29 (v7) = **9 seeded kernels**. welford was OUT-OF-SCOPE in v6; v7 seeds it
+  via the is_structured_combine branch (see "v7 — welford Band-C" below). Forward curriculum COMPLETE (all 9
+  forward kernels now seeded). Defer backward (Band D).
 
 ## Codegen-knob Stage 1 — pid_type=persistent_interleaved + num_sm_multiplier REJECTED (negative result, 2026-05-29)
 **HONEST NEGATIVE RESULT: the lever does NOT generalize. NO branch added. v6 stays champion unchanged.**
@@ -592,6 +610,69 @@ so it is not in the active G set — falls back to its correct default. Harness:
 `_lab/harness/{classify_ce_welford,ce_seed_used,measure_g_ce,ce_persist_vs_loop,persist_crossover_by_numload,
 ce_crossover_tight,wide_rnumel_persist_vs_loop,ce_inert_proof_7,welford_probe,welford_ceiling}.py`.
 
+## v7 — welford Band-C STRUCTURED-COMBINE (was OUT-OF-SCOPE; now SEEDED, correct + near-oracle) 2026-05-29
+
+### The treatment (one new general branch, keyed on a STRUCTURAL property)
+welford is the curriculum's only STRUCTURED COMBINE: the SAME inner extent N is tiled by TWO non-grid user
+tiles — a Welford-combine pass (block 1, the inner reduction; carries acc_cnt/acc_mean/acc_m2 as a scalar
+recurrence) AND a separate LayerNorm normalize/apply pass (block 2, NO reduction). The v6 single-axis T2
+seed declined it (`len(non_grid_tiles)!=1`). v7 ADDS:
+- **`ReductionFact.is_structured_combine` + `apply_block_ids`** (config_spec.py): populated in
+  `register_user_tiled_reductions` (device_ir.py). The gate: `>1 non-grid tile` AND `>=1 apply tile`
+  (a non-grid tile that is NOT the inner reduction axis) with the SAME static extent as the reduction axis.
+  This is a WORKLOAD-STRUCTURE signal (a reduce-then-apply two-pass over one axis), NOT a shape window or
+  kernel name — it fires for ANY welford-like structured combine and is False for every single-axis T2.
+- **The seed (`get_seed_config` is_structured_combine branch, triton.py):** combine tile (block 1) =
+  `min(largest_pow2_div(N), STRUCTURED_COMBINE_CAP_BYTES//itemsize = 2048 fp32)`; apply tile(s) (block 2) =
+  next_pow2(N) PERSISTENT; M_BLOCK at floor; num_warps via the existing rnumel ramp; num_stages=1.
+
+### The non-pow2 CORRECTNESS fix (the crux; verified by codegen)
+welford computes the per-chunk count as `Tn = chunk.size(-1)`, which lowers to the tile **constexpr**
+`_BLOCK_SIZE_1`, NOT the masked valid count. So a MASKED combine tile (next_pow2(N) > N) makes Tn count the
+PADDING → `sum_x/Tn` divides by the wrong width → WRONG mean/variance (err=0.69 at N=1536, FAILS allclose).
+THE FIX: size the combine tile as a **power-of-2 DIVISOR of N** so every chunk is FULL (no mask) → Tn ==
+true count. For pow2 N this is N itself (persistent); for N=1536 it is 512 (looped divisor, 3 full chunks).
+Helion ALSO rejects a non-pow2 exact-N tile (`PowerOfTwoFragment: must be a power of two, got 1536`), so a
+pow2 divisor is the ONLY correct option. Codegen at (262144,1536) confirms: combine `for offset_1 in
+tl.range(0,1536,512)` (3 full chunks, Tn=512 correct) + normalize `tl.range(0,1536,2048)` (1 masked pass,
+output write drops invalid lanes → correct). The apply tile CAN be masked (it only WRITES valid lanes).
+
+### G_welford (do_bench median, fp32, GPU3) — CORRECT at ALL shapes incl the non-pow2 canary
+| shape | seed block_sizes | warps | G_seed | G_default | maxabs | maxrel | oracle G (seed/oracle) |
+|---|---|---|---|---|---|---|---|
+| (262144,1024) | [16,1024,1024] | 4 | **0.996** | 0.537 | 1.6e-6 | 8.3e-3 | — |
+| (262144,1536) | [16,512,2048] | 8 | **0.925** | 0.523 | 1.2e-6 | 5.4e-3 | 0.989 (1.07) |
+| (262144,2048) | [16,2048,2048] | 8 | **0.988** | 0.533 | 1.7e-6 | 8.8e-3 | — |
+| (262144,4096) | [16,2048,4096] | 8 | **0.706** | 0.512 | 1.3e-6 | 7.8e-3 | 0.737 (1.04) |
+| **GEOMEAN** | | | **0.894** | **0.526** | | | |
+Reference = `torch.nn.functional.layer_norm` fp32; allclose rtol/atol=1e-3 PASS all 4. The (262144,1536) row
+is the NON-POW2 CORRECTNESS CANARY: the divisor-combine seed is CORRECT (maxabs 1.2e-6) where the prior
+masked-persistent seed was err=0.69. The (4096) floor (0.706) is a welford-STRUCTURE ceiling, NOT config
+headroom: the quick-autotune ORACLE only reaches 0.737 ([16,128,2048]/w8); my capped seed is within 4%
+(seed/oracle=1.04). tc beats Helion welford at wide N because the 3-scalar combine + chunk*chunk + two
+reductions per step is heavier than tc's fused layernorm — a kernel-structure limit, analogous to the
+cross_entropy (8192,131072) and long_sum looped-tail source ceilings. The combine-tile CAP is a footprint
+lever (the welford combine SPILLS at full-N: (262144,4096) combine=4096 persistent = ~27-30ms, G~0.13);
+8 KiB is best-or-near-oracle at every in-sample shape (cap1024 geomean 0.889, cap2048 0.893 — tie within
+noise; chose 2048/8 KiB).
+
+### No-regression INERT-PROOF (the sacred gate) — BYTE-IDENTICAL
+`wf_no_regression_8.py`: 18/18 seeds across ALL 8 active kernels emit with `is_structured_combine=False`
+and the EXACT v6 seed (T1 rl=[None]; ce rl=[16384] at 512KiB; softmax persistent R_BLOCK; kl/jsd Band-B
+[4096,1]). The structural gate requires >1 non-grid tile + an apply tile — every T1 has 0/1 non-grid tile,
+every single-axis T2 (softmax/kl/jsd) has exactly 1 → the new branch is INERT for all 8. test_reductions 24
+passed; test_examples 21 passed (welford correctness + jagged_softmax/jagged_layer_norm decline intact).
+git diff: 3 files (config_spec.py +19 / device_ir.py +69-16 / triton.py +65). Harness:
+`_lab/harness/{wf_correct_configs,wf_clean_probe,wf_cap_decision,wf_final_seed,wf_oracle,wf_impl_verify,
+wf_no_regression_8,wf_predicate_check,wf_codegen_inspect}.py`.
+
+### O over the active set (v7: 9 seeded kernels)
+Per-kernel G (v7): rms_norm 0.980, sum 0.937, long_sum 1.099, layer_norm 0.989, softmax_two_pass 0.967,
+kl_div 1.026, jsd 0.997, cross_entropy 0.915 (all 8 BYTE-IDENTICAL, UNCHANGED) + **welford 0.894** (new).
+**O_8kernel UNCHANGED 0.9874; O_9kernel = 0.9765** (welford at 0.894 mechanically nudges the geomean down —
+same effect as adding cross_entropy/sum; the (4096) welford-structure ceiling holds it sub-1). Honest
+PER-KERNEL: NO kernel regresses (8 byte-identical; welford +70% vs un-seeded default, correct at non-pow2).
+
 ## layer_norm_fwd — WIDENED 2026-05-29 (v4 SUFFICES UNCHANGED; byte-identical heuristic)
 The cleanest possible outcome: **adding layer_norm_fwd to the active set required ZERO heuristic change**
 (git shows 0 lines changed under `helion/`; the 3 existing kernels emit byte-identical v4 champion seeds —
@@ -651,13 +732,13 @@ says w32 is correct for num_load>=2 too — see v4 OOS recovery: layer_norm (1,1
   (block_id=0). RF: **num_load=3, num_store=1, num_reduction_ops=2** (amax + exp-sum), num_tiled_accumulators=0,
   static_rnumel=V. Plus a label gather (`hl.load`, not counted as a row reduction). Heuristic FIRES 1 seed,
   seed used + correct vs F.cross_entropy. Needed the v6 multi-load persist cap (num_load>=2, >128 KiB → looped).
-- **welford: T2 (user-tiled) but OUT-OF-SCOPE** (classify_ce_welford.py). 3 block_sizes (M grid + TWO `tile_n`
-  loops over the SAME N: the Welford-combine pass = the detected reduction axis block 1, and the normalize pass
-  = block 2, NOT a reduction), 0 reduction_loops, 1 RF (block 1). RF: num_load=4, num_store=1,
-  num_reduction_ops=2, num_tiled_accumulators=0. The single-axis seed FIRES but is BROKEN: it floors the second
-  tile (normalize, block 2) to width 1 → G=0.05 (10-20x worse than default) AND is numerically wrong for
-  non-pow2 N (masked Welford count). The heuristic now DECLINES it (general guard: >1 non-grid tile → no fact),
-  so welford falls back to its correct un-seeded default. See "v6 — welford OUT-OF-SCOPE" + welford_probe.py.
+- **welford: T2 (user-tiled), BAND-C STRUCTURED COMBINE — now SEEDED (v7).** 3 block_sizes (M grid + TWO
+  `tile_n` loops over the SAME N: Welford-combine pass = inner reduction axis block 1; normalize/apply pass =
+  block 2, NOT a reduction), 0 reduction_loops, 1 RF (block 1). RF: num_load=4, num_store=1,
+  num_reduction_ops=2, num_tiled_accumulators=0, **is_structured_combine=True, apply_block_ids=(2,)**. The v6
+  single-axis seed was BROKEN (floored block 2 → G=0.05; masked combine numerically wrong at non-pow2). v7's
+  is_structured_combine branch widens block 2 to persistent + sizes block 1 as a pow2 DIVISOR of N (correct
+  count, no spill) → G_welford=0.894, correct at ALL shapes incl non-pow2 1536. See "v7 — welford Band-C".
 - **layer_norm_fwd: T1** confirmed (classify_layer_norm.py). 1 block_size, 1 reduction_loop, 1 RF, no
   matmul → eligibility gate (`len(reduction_loops)==1`) PASSES. The TWO reductions over N (mean=`sum(x)`,
   var=`sum(centered^2)`) reduce over the SAME N rdim → ONE rollable rdim → 1 reduction_loop (the gate's

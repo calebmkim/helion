@@ -118,6 +118,23 @@ class ReductionFact(NamedTuple):
       kernels (kl_div, jsd) whose full-N persistent R_BLOCK over-allocates and
       spills (the seed must cap R_BLOCK by footprint). A WORKLOAD property
       (live-state footprint), NOT kernel identity.
+    - ``is_structured_combine``: True for a Band-C STRUCTURED-COMBINE reduction —
+      a two-pass *reduce-then-apply* kernel that tiles the SAME inner extent with
+      MORE THAN ONE non-grid user tile: a combine pass (the inner reduction,
+      computing per-row statistics carried as a scalar recurrence) PLUS one-or-more
+      separate apply/normalize passes (no reduction) over the same axis. welford
+      (Welford-combine pass + LayerNorm normalize pass over N) is the canonical
+      case. A single-axis T2 seed would floor the apply tile(s) to width 1
+      (~10-20x slower) AND a masked persistent combine tile breaks the per-chunk
+      count (numerically WRONG at non-power-of-2 N, where ``Tn=chunk.size(-1)``
+      counts the padding). When True the seed (a) widens EVERY apply tile to
+      persistent and (b) sizes the combine tile as a power-of-2 DIVISOR of N (no
+      mask -> correct count). A WORKLOAD-STRUCTURE property (number of non-grid
+      tiles + which carries the reduction), NOT kernel identity — it fires for any
+      welford-like multi-pass structured combine. ``apply_block_ids`` lists the
+      non-reduction apply tile block_ids the seed must widen.
+    - ``apply_block_ids``: for a structured combine, the non-grid non-reduction
+      apply/normalize tile block_ids (empty otherwise).
     """
 
     block_id: int
@@ -130,6 +147,8 @@ class ReductionFact(NamedTuple):
     num_store: int
     num_reduction_ops: int
     num_tiled_accumulators: int = 0
+    is_structured_combine: bool = False
+    apply_block_ids: tuple[int, ...] = ()
 
 
 def shrink_block_sizes_for_numel_constraints(

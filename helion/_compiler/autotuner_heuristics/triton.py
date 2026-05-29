@@ -267,6 +267,21 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # num_load=1 (sum/long_sum) and the Band-B kernels (kl_div/jsd, whose tighter
     # 16 KiB R_BLOCK cap already dominates) are unaffected.
     MULTILOAD_PERSIST_MAX_BYTES = 131072
+    # Band-C STRUCTURED-COMBINE (welford) combine-tile cap, in BYTES (per element,
+    # via itemsize so it generalizes across dtypes). A structured combine (welford)
+    # loads a [M_BLOCK, R_BLOCK] chunk, materializes chunk*chunk, and runs two
+    # reductions per inner step while carrying scalar (count/mean/M2) state. A
+    # full-N persistent combine tile over-allocates this and SPILLS catastrophically
+    # at wide N — (262144,4096) persistent combine=4096 is ~27-30ms (G~0.13) vs a
+    # capped chunk's ~5.5ms (G~0.71, within 4% of the quick-autotune oracle 0.74).
+    # Cap the combine tile at 8 KiB (= 2048 fp32 elems) AND at the largest power-of-2
+    # that DIVIDES N (so the masked per-chunk count Tn=chunk.size(-1) equals the
+    # TRUE valid count — a masked next_pow2 combine is numerically WRONG at
+    # non-power-of-2 N). The apply/normalize tile(s) carry NO accumulator and are
+    # widened to persistent next_pow2(N) (masked output writes drop only invalid
+    # lanes -> correct). EVIDENCE: _lab/harness/wf_{correct_configs,clean_probe,
+    # cap_decision,final_seed,oracle}.py.
+    STRUCTURED_COMBINE_CAP_BYTES = 8192
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
     @classmethod
@@ -448,6 +463,56 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 "num_stages": 1,
             }
             return Config(**seed)
+
+        if fact.is_structured_combine:
+            # BAND C: a two-pass STRUCTURED COMBINE (welford). The SAME inner
+            # extent is tiled by a combine pass (the reduction axis,
+            # fact.block_id) AND one-or-more apply/normalize passes
+            # (fact.apply_block_ids). A single-axis seed would floor the apply
+            # tile(s) to width 1 (~10-20x slower); a masked next_pow2 combine
+            # tile is numerically WRONG at non-power-of-2 N (the masked per-chunk
+            # count Tn=chunk.size(-1) counts the padding). So:
+            #   - apply tile(s)  -> persistent next_pow2(N) (no accumulator; a
+            #     masked output write drops only invalid lanes -> correct);
+            #   - combine tile   -> the largest power-of-2 that DIVIDES N, capped
+            #     at STRUCTURED_COMBINE_CAP_BYTES (the chunk + chunk*chunk + two
+            #     reductions spill if the combine tile is full-N at wide N). A
+            #     power-of-2 divisor keeps Tn == the true count (correct at
+            #     non-pow2 N) AND avoids the spill.
+            np2_n = _np2(fact.size_hint)
+            # largest power-of-2 dividing the (static) extent. Use static_rnumel
+            # when known; fall back to size_hint (it is the static extent for the
+            # in-scope structured combines — a dynamic apply tile was declined in
+            # register_user_tiled_reductions).
+            n_static = (
+                fact.static_rnumel
+                if fact.static_rnumel is not None
+                else fact.size_hint
+            )
+            largest_pow2_div = n_static & (-n_static)
+            cap_elems = max(
+                1, cls.STRUCTURED_COMBINE_CAP_BYTES // max(1, fact.itemsize)
+            )
+            combine_block = min(largest_pow2_div, _np2(cap_elems))
+            apply_ids = set(fact.apply_block_ids)
+            red_idx_sc = spec.block_sizes.block_id_to_index(fact.block_id)
+            sc_block_sizes: list[int] = []
+            for i in range(len(spec.block_sizes)):
+                bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])
+                bid = bs_spec.block_id
+                if i == red_idx_sc:
+                    sc_block_sizes.append(combine_block)
+                elif bid in apply_ids:
+                    sc_block_sizes.append(np2_n)  # persistent apply pass
+                else:
+                    sc_block_sizes.append(cls._block_floor(bs_spec))
+            return Config(
+                **{
+                    "block_sizes": sc_block_sizes,
+                    "num_warps": num_warps,
+                    "num_stages": 1,
+                }
+            )
 
         # T2 (user-tiled / manually-looped): the reduction axis IS a block_sizes
         # entry (the inner `hl.tile(n, block_size=R_BLOCK)`); there is no
