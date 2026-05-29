@@ -218,6 +218,75 @@ softmax family) WELL out-of-the-box — same persistent + rnumel-warps machinery
 correct default). **STRONG evidence FOR general heuristics. No new gap found; NO HELPER_REQUEST.**
 (`git diff helion/` empty at start AND end — heuristic byte-identical.)
 
+## GENERALITY (NEW REDUCTION OP) — does FROZEN v8 seed a NEW accumulator (max/min) well? (2026-05-29) — PURE VALIDATION
+The strongest generality dimension left untested: a genuinely DIFFERENT reduction OP. All 9 curriculum
+kernels use sum/mean accumulators (+ amax INSIDE softmax/CE). A pure row-wise `max`/`min` is a different
+accumulator (carries the running extremum, not a running sum). Does frozen v8 (commit daca67c4;
+`git diff helion/` EMPTY throughout) seed it out-of-the-box? **Heuristic NOT touched.**
+Fixtures (scratch, NOT curriculum): `_lab/harness/fixture_maxmin.py` — `max_kernel`/`min_kernel`, each a
+single `@helion.kernel` doing `torch.amax/amin(x[tile_m,:], dim=-1)`, modeled EXACTLY on `examples/sum.py`
+`sum_kernel` (T1 rollable, compiler-managed). Harness: `_lab/harness/{newop_classify,newop_measure_g,
+newop_spotcheck_16384}.py`. fp32, GPU2 (idle, no co-tenants).
+
+**Classification (newop_classify.py) — IDENTICAL workload class to sum_kernel:**
+- Both ops, all shapes: **T1 Band A** — 1 block_size, 1 reduction_loop, 1 reduction_fact, no matmul.
+  ReductionFact: **num_load=1, num_store=1, num_reduction_ops=1, num_tiled_accumulators=0,
+  is_structured_combine=False**. The reduction OP is NOT a ReductionFact field — the heuristic never sees
+  it. v8 FIRES (heuristics_used=['triton_reduction_tile'], exactly 1 seed): persistent
+  (`reduction_loops=[None]`) + rnumel-warps ramp (w4 @256/1024, w16 @8192/16384, w32 @131072), M-block at
+  floor (2 at 32768 rows). This is the SAME T1 machinery as sum/rms_norm — the warps ramp keys on
+  size_hint/rnumel ALONE, exactly as `_num_warps` documents; the new accumulator changes nothing.
+- The only op-specific heuristic branch (`is_structured_combine`, welford) does NOT trigger (max/min are a
+  single non-grid tile, reduce-only, no apply pass) — so max/min ride the plain persistent/looped path.
+
+**Seed-USED (codegen) — airtight:** seed `reduction_loops=[None]` → Triton with NO `for roffset` loop
+(persistent), and the seed num_warps is what's emitted. Harness asserts codegen-persistent ==
+seed-wants-persistent per shape; passes 6/6 both ops.
+
+**Correctness — EXACT (tol justified == 0):** max/min SELECT an existing element, so the result is
+bitwise-identical to `torch.amax/amin`. `torch.equal` True, maxabs = 0.0e+00 on all 12 (op×shape) cases.
+
+**Per-shape G (do_bench median-of-7, FRESH process per op, fp32, GPU2; G = tc_default_lat/seed_lat;
+p32 = same seed but w32 forced):**
+
+`max` (T1):
+| shape | cg | w | G_seed | G_default | G_p32 | seed/p32 |
+|---|---|---|---|---|---|---|
+| (2048,1024) | persist | 4 | 1.063 | 1.020 | 0.795 | 1.34 |
+| (2048,16384) | persist | 16 | 0.917 | 0.912 | 0.919 | 1.00 |
+| (8192,256) | persist | 4 | 1.009 | 1.012 | 0.328 | **3.08** |
+| (8192,8192) | persist | 16 | 0.982 | 0.980 | 0.981 | 1.00 |
+| (32768,256) | persist | 4 | 1.010 | 0.989 | 0.338 | **2.99** |
+| (256,131072) | persist | 32 | 1.074 | 0.920 | 1.074 | 1.00 |
+| **GEOMEAN** | | | **1.008** | **0.971** | **0.663** | |
+
+`min` (T1): GEOMEAN **G_seed=1.001, G_default=0.968, G_p32=0.652**; same shape-by-shape pattern
+(small-N seed/p32 2.98–3.15x; wide/medium ties ~1.0; the only sub-1.0 is (2048,16384) G=0.917). maxabs=0.
+
+**Spot-check of the one sub-1.0 regime (2048,16384), newop_spotcheck_16384.py — AT-CEILING, not a gap:**
+swept every reachable lever the heuristic could pick (persist w∈{4,8,16,32}, looped chunk∈{2048,4096,8192}
+w32) and ran `sum_kernel` (IN-SAMPLE control) at the same shape. The IN-SAMPLE sum sits at the SAME ceiling
+here (G_sum=0.935; best sum alternative 0.938). For max/min the seed (0.908–0.915) is within ~1% of the
+BEST reachable Helion config (loop8192/w32 = 0.917) — torch.compile simply has a small edge on this single
+bandwidth-bound mid-wide shape REGARDLESS OF OP. Identical to sum's own behavior; not new-op-specific.
+
+**VERDICT — v8 GENERALIZES CLEANLY to a NEW reduction OP (max/min). OP-AGNOSTIC LEVERS CONFIRMED.**
+- Seed fires (1) + used (codegen) + correct (EXACT, maxabs=0) on every shape, both ops.
+- **At the torch.compile ceiling: G_seed geomean 1.008 (max) / 1.001 (min)** — meets/beats tc.
+- **Beats the un-seeded default** (1.008/1.001 vs 0.971/0.968): the default loses ~8% at the huge-N
+  (256,131072) row (w-ramp matters) and elsewhere ties.
+- **The rnumel-warps ramp earns its place OP-agnostically:** seed/p32 = 3.0–3.2x at the two tiny-N shapes
+  (the seed's w4 avoids the w32-at-tiny-N catastrophe), G_p32 geomean 0.66/0.65 — same mechanism that won
+  for sum/softmax, now confirmed on a new accumulator. The levers key on size_hint/num_load/bytes, NOT the
+  op — exactly as predicted.
+- The sole sub-1.0 shape is at-ceiling (sum control matches; no Helion lever recovers it). NOT a new gap.
+
+**Generality conclusion:** frozen v8 seeds a NEW reduction accumulator (max/min) WELL out-of-the-box —
+same persistent + rnumel-warps machinery, correct (exact), at the ceiling, beating default, with the warps
+ramp doing real work. This is the strongest generality dimension (a different accumulator op) and v8 passes
+it cleanly. **STRONG final evidence that the heuristic's levers are OP-agnostic. No gap found; NO
+HELPER_REQUEST.** (`git diff helion/` empty at start AND end — heuristic byte-identical.)
+
 ## VALIDATION (out-of-sample) generalization checkpoint — v6 champion (2026-05-29) — READ-ONLY
 The adversarial health check BEFORE the terminal TEST read. Bare-seed Product-A G (do_bench
 median-of-7, fp32; GPU1+GPU3, GPU2 co-tenant avoided) on the `list_of_kernels.md` "Out-of-sample"
