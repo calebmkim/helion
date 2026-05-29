@@ -1,5 +1,15 @@
 # Step 1 — Harness Integrity Report
 
+> **RE-CERTIFIED 2026-05-29** (end-of-run periodic re-cert; see
+> `_lab/harness/recert_2026_05_29.md`). Harness STILL unbiased: hand-rolled vs
+> TritonBench do_bench reconcile to +0.67%/−0.20% on rms_norm (4096,8192) and
+> +0.008% on cross_entropy (8192,65536); headline G's match the ledger
+> (rms_norm G_seed 0.998 / G_default 0.771; CE G_seed 0.999). CE multi-kernel
+> split (host-side `losses.mean()` + zero-init = 3 kernels/call) profiler-captured
+> and timed inside the wrapper on both sides. GPU 1 verified idle throughout (GPU
+> 0 and GPU 2 had co-tenants — avoided). Measurement path byte-identical to the
+> certified commit. The whole body of results remains trustworthy.
+
 **Agent:** harness-integrity (Step 1). **Date:** 2026-05-28. **GPU:** H100 #2 (sm_90),
 verified idle (4 MiB, 0%) before and re-checked between every trusted measurement.
 **Interpreter:** `/home/calebkim/.conda/envs/helion/bin/python` (torch 2.12 dev cu128, triton 3.7).
