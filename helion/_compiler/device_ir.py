@@ -31,6 +31,7 @@ from torch.utils import _pytree as pytree
 from .. import Config
 from .. import exc
 from .. import language as hl
+from ..autotuner.config_spec import ReductionFact
 from ..autotuner.config_spec import ReductionLoopSpec
 from ..language import _tracing_ops
 from ..language._decorators import args_to_proxies
@@ -77,6 +78,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from collections.abc import Sequence
 
+    from .compile_environment import BlockSizeInfo
     from .cute.layout import CuTeGridExecutionPlan
 
     class _TLS(Protocol):
@@ -831,6 +833,13 @@ class DeviceIR:
                         size_hint=rdim.size_hint(),
                     )
                 )
+                # Record pre-digested workload facts for the autotuner-seed
+                # heuristic (analogous to MatmulFact). Read from the ORIGINAL
+                # graphs that actually use this rdim (used_graphs) so the counts
+                # reflect the real workload, not roller-internal bookkeeping.
+                env.config_spec.reduction_facts.append(
+                    self._build_reduction_fact(rdim, used_graphs)
+                )
                 if env.backend_name == "cute":
                     from ..autotuner.config_spec import CuteVectorWidthSpec
 
@@ -878,6 +887,298 @@ class DeviceIR:
                             if block_id is not None:
                                 indexed_blocks.add(block_id)
             env.config_spec.cute_indexed_reduction_block_ids = indexed_blocks
+
+    def register_user_tiled_reductions(self) -> None:
+        """Register a ReductionFact for a user-tiled (T2) inner reduction.
+
+        T2 = a reduction the user writes by hand as a nested ``hl.tile`` over the
+        reduction axis (softmax_two_pass, kl_div, jsd) with a scalar/row
+        accumulator carried across the inner loop. Unlike T1 (rollable rdim) there
+        is NO ``reduction=True`` block and NO ``ReductionLoopSpec`` — both
+        ``hl.tile`` axes are ordinary ``block_sizes`` entries. The ``.sum/.amax``
+        over the inner tile is realized by ``ReductionLowering`` reusing the
+        EXISTING user tile (``allocate_reduction_dimension`` is never called).
+
+        GUARDED by the caller (``if not env.config_spec.reduction_facts``) so T1
+        and T2 are mutually exclusive — a kernel is one or the other, and the
+        ``reduction_facts`` count stays exactly 1 (the seed gate keys on that).
+
+        Finding the reduction axis (env + device_ir only):
+        - Collect every ``ReductionLowering.block_index`` across all device graphs.
+        - FILTER OUT the grid (non-reduction kept) axes (``grid_block_ids``).
+          This filter is LOAD-BEARING for jsd: its dead ``beta==0/1`` branches do
+          ``amax(dim=0)`` over the M/grid tile, so the raw set is {0,1}; removing
+          the grid axis (1) leaves the real V reduction (0). Without the filter
+          jsd would mis-resolve and (worse) look like a 2-reduction-axis kernel.
+        - If exactly one reduction axis survives AND it is a ``block_sizes`` entry,
+          register a single ReductionFact for it. Anything else (0, or >1 distinct
+          inner reduction axes) is left unregistered — the seed gate
+          (``len(reduction_facts)==1``) then declines, which is correct: a
+          multi-axis manual reduction is out of scope for this single-axis seed.
+        """
+        from .inductor_lowering import ReductionLowering
+
+        env = CompileEnvironment.current()
+        spec = env.config_spec
+        grid_ids = {b for bids in self.grid_block_ids for b in bids}
+
+        red_block_ids: set[int] = set()
+        for graph_info in self.graphs:
+            for node in graph_info.graph.nodes:
+                lowering = node.meta.get("lowering")
+                if isinstance(lowering, ReductionLowering):
+                    bid = getattr(lowering, "block_index", None)
+                    if bid is not None:
+                        red_block_ids.add(bid)
+        # Drop the grid axis (jsd's dead amax(dim=0) over the M tile, etc.).
+        inner_red = [b for b in red_block_ids if b not in grid_ids]
+        if len(inner_red) != 1:
+            return
+        red_block_id = inner_red[0]
+        # The reduction axis must be a user tile in the block_sizes spec.
+        if red_block_id not in spec.block_sizes.valid_block_ids():
+            return
+        # NON-GRID TILE COUNT. The single-axis T2 seed (softmax/kl_div/jsd)
+        # controls exactly ONE inner tile (the reduction axis). A kernel with a
+        # SECOND independent non-grid user tile is a MULTI-PASS pattern.
+        #
+        # There are two multi-pass cases, distinguished STRUCTURALLY:
+        #
+        #  (1) STRUCTURED COMBINE (Band C, welford): the SAME inner extent is
+        #      tiled by a combine pass (the inner reduction, carrying per-row
+        #      scalar statistics as a recurrence) AND one-or-more separate
+        #      apply/normalize passes (no reduction) over that axis. This DOES get
+        #      a seed — but a structured one: the apply tile(s) are widened to
+        #      persistent (else they floor to width 1 -> ~10-20x slower) and the
+        #      combine tile is sized as a power-of-2 DIVISOR of N so its masked
+        #      per-chunk count (``Tn=chunk.size(-1)``) equals the TRUE count (a
+        #      masked next_pow2 combine tile is numerically WRONG at non-power-of-2
+        #      N). See get_seed_config's is_structured_combine branch.
+        #  (2) anything else with >1 non-grid tile: out of scope for this seed —
+        #      decline so the gate (reduction_facts==1) does not fire.
+        #
+        # The working single-axis T2 kernels (softmax_two_pass, kl_div, jsd) have
+        # exactly ONE non-grid tile and skip both branches. This keys on the
+        # WORKLOAD STRUCTURE (number of non-grid tiles + which carries the
+        # reduction), NOT kernel identity — case (1) fires for ANY welford-like
+        # reduce-then-apply structured combine.
+        non_grid_tiles = [
+            b for b in spec.block_sizes.valid_block_ids() if b not in grid_ids
+        ]
+        # apply tiles = non-grid tiles that are NOT the inner reduction axis.
+        apply_tiles = tuple(b for b in non_grid_tiles if b not in red_block_ids)
+        is_structured_combine = len(non_grid_tiles) > 1 and len(apply_tiles) >= 1
+        if len(non_grid_tiles) != 1 and not is_structured_combine:
+            return
+        try:
+            block_info = env.block_sizes[red_block_id]
+        except (IndexError, KeyError):
+            return
+        # The reduction axis must have a resolvable extent. A dynamic/jagged
+        # reduction dim (e.g. jagged_softmax) has ``size=None`` (an unresolved
+        # AutoSize), for which ``size_hint()`` (and the persistent-vs-looped
+        # lever, which keys on the extent) is undefined — decline to register a
+        # fact so the seed gate (reduction_facts==1) does NOT fire there.
+        if not isinstance(block_info.size, (int, torch.SymInt)):
+            return
+
+        # For a structured combine, every apply tile must span the SAME extent as
+        # the combine (reduction) axis with a resolvable static size — the seed
+        # widens them to next_pow2(reduction extent). If any apply tile has a
+        # different or dynamic extent the structured seed is undefined; decline.
+        if is_structured_combine:
+            ok = True
+            for ab in apply_tiles:
+                try:
+                    ai = env.block_sizes[ab]
+                except (IndexError, KeyError):
+                    ok = False
+                    break
+                if not isinstance(ai.size, (int, torch.SymInt)):
+                    ok = False
+                    break
+                if ai.size_hint() != block_info.size_hint():
+                    ok = False
+                    break
+            if not ok:
+                return
+
+        # The kept (non-reduction) axes are the grid block_ids — the "rows".
+        m_block_ids = tuple(sorted(grid_ids))
+        size_hint = block_info.size_hint()
+        static_rnumel = block_info.size if isinstance(block_info.size, int) else None
+        # Count loads / stores / reductions over ALL device graphs (the manual
+        # inner loop body is in the main device graph, not a roller subgraph).
+        all_graph_ids = set(range(len(self.graphs)))
+        (
+            num_load,
+            num_store,
+            num_reduction_ops,
+            dtype,
+            itemsize,
+            num_tiled_accumulators,
+        ) = self._count_reduction_workload(all_graph_ids, red_block_id, size_hint)
+        spec.reduction_facts.append(
+            ReductionFact(
+                block_id=red_block_id,
+                size_hint=size_hint,
+                m_block_ids=m_block_ids,
+                static_rnumel=static_rnumel,
+                dtype=dtype,
+                itemsize=itemsize,
+                num_load=num_load,
+                num_store=num_store,
+                num_reduction_ops=num_reduction_ops,
+                num_tiled_accumulators=num_tiled_accumulators,
+                is_structured_combine=is_structured_combine,
+                apply_block_ids=apply_tiles if is_structured_combine else (),
+            )
+        )
+
+    def _count_reduction_workload(
+        self, graph_ids: set[int], red_block_id: int, size_hint: int
+    ) -> tuple[int, int, int, torch.dtype, int, int]:
+        """Count device loads / stores / reductions over ``red_block_id``.
+
+        Shared by the T1 (``_build_reduction_fact``) and T2
+        (``register_user_tiled_reductions``) fact builders so both digest the
+        SAME workload properties (num_load / num_store / num_reduction_ops /
+        dtype / itemsize / num_tiled_accumulators) the same way — only the set of
+        graphs and the axis differ. Returns ``(num_load, num_store,
+        num_reduction_ops, dtype, itemsize, num_tiled_accumulators)``; dtype falls
+        back to fp32/4 if no tensor is found.
+        """
+        import sympy
+
+        from ..language import _MEMORY_OPS
+        from ..language.creation_ops import full as _full_op
+        from ..language.creation_ops import zeros as _zeros_op
+        from ..language.memory_ops import load as _load_op
+        from ..language.memory_ops import store as _store_op
+        from .inductor_lowering import ReductionLowering
+
+        env = CompileEnvironment.current()
+        # Sympy symbol of the reduction axis, for matching 2D accumulator buffers
+        # whose last dim is the reduction extent (the live state carried across a
+        # manually-looped reduction). None if the axis has no resolvable symbol.
+        try:
+            red_symbol: sympy.Symbol | None = env.block_sizes[red_block_id].symbol()
+        except (IndexError, KeyError, AttributeError):
+            red_symbol = None
+
+        # In-tile buffer-creating ops (``hl.zeros``/``hl.full``; ``hl.zeros``
+        # lowers to ``full``). A 2D output whose last dim is the reduction extent
+        # is an accumulator carried across the manual inner loop.
+        _accum_create_targets = (_full_op, _zeros_op)
+
+        def _last_dim_is_reduction(val: object) -> bool:
+            if not (isinstance(val, torch.Tensor) and val.ndim >= 2):
+                return False
+            last = val.shape[-1]
+            if isinstance(last, int):
+                return last == size_hint
+            if red_symbol is not None:
+                try:
+                    return red_symbol in sympy.sympify(last).free_symbols
+                except (TypeError, ValueError, AttributeError):
+                    return False
+            return False
+
+        num_load = 0
+        num_store = 0
+        num_reduction_ops = 0
+        num_tiled_accumulators = 0
+        dtype: torch.dtype | None = None
+        itemsize = 0
+        for graph_id in sorted(graph_ids):
+            graph = self.graphs[graph_id].graph
+            for node in graph.nodes:
+                if node.op != "call_function":
+                    continue
+                target = node.target
+                if target is _load_op:
+                    num_load += 1
+                elif target is _store_op or target in _MEMORY_OPS[2:]:
+                    num_store += 1
+                lowering = node.meta.get("lowering")
+                if (
+                    isinstance(lowering, ReductionLowering)
+                    and getattr(lowering, "block_index", None) == red_block_id
+                ):
+                    num_reduction_ops += 1
+                # Count 2D [M, R] accumulator buffers (live state scaling with
+                # R_BLOCK) — the Band-B vs Band-A T2 distinction.
+                if target in _accum_create_targets and _last_dim_is_reduction(
+                    node.meta.get("val")
+                ):
+                    num_tiled_accumulators += 1
+                if dtype is None:
+                    val = node.meta.get("val")
+                    if isinstance(val, torch.Tensor) and val.ndim >= 1:
+                        last = val.shape[-1]
+                        if isinstance(last, int) and last == size_hint:
+                            dtype = val.dtype
+                            itemsize = val.element_size()
+        if dtype is None:
+            for graph_id in sorted(graph_ids):
+                for node in self.graphs[graph_id].graph.nodes:
+                    val = node.meta.get("val")
+                    if isinstance(val, torch.Tensor):
+                        dtype = val.dtype
+                        itemsize = val.element_size()
+                        break
+                if dtype is not None:
+                    break
+        if dtype is None:
+            dtype = torch.float32
+            itemsize = 4
+        return (
+            num_load,
+            num_store,
+            num_reduction_ops,
+            dtype,
+            itemsize,
+            num_tiled_accumulators,
+        )
+
+    def _build_reduction_fact(
+        self, rdim: BlockSizeInfo, used_graphs: set[int]
+    ) -> ReductionFact:
+        """Digest workload facts for a single rollable reduction dim.
+
+        Walks the ORIGINAL graphs that use ``rdim`` and counts device loads,
+        stores, and reductions over this rdim, and reads the dtype of the
+        reduction-source tensor. These feed the seed heuristic's
+        workload-property branching (NOT kernel identity).
+        """
+        env = CompileEnvironment.current()
+        m_block_ids = tuple(bs.block_id for bs in env.block_sizes if not bs.reduction)
+        size_hint = rdim.size_hint()
+        # static_rnumel: the reduction extent only if it is a compile-time
+        # constant (not a symbolic/dynamic size).
+        static_rnumel = rdim.size if isinstance(rdim.size, int) else None
+
+        (
+            num_load,
+            num_store,
+            num_reduction_ops,
+            dtype,
+            itemsize,
+            num_tiled_accumulators,
+        ) = self._count_reduction_workload(used_graphs, rdim.block_id, size_hint)
+
+        return ReductionFact(
+            block_id=rdim.block_id,
+            size_hint=size_hint,
+            m_block_ids=m_block_ids,
+            static_rnumel=static_rnumel,
+            dtype=dtype,
+            itemsize=itemsize,
+            num_load=num_load,
+            num_store=num_store,
+            num_reduction_ops=num_reduction_ops,
+            num_tiled_accumulators=num_tiled_accumulators,
+        )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:
         """Build and return graph copies with reduction rolling and epilogue subtiling applied.
@@ -2306,6 +2607,13 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
 
         device_ir.register_rollable_reductions()
         config_spec = CompileEnvironment.current().config_spec
+        # T2 (user-tiled / manually-looped) reductions: only when NO T1 rollable
+        # rdim was registered (mutually exclusive — a kernel is T1 or T2). This
+        # keeps reduction_facts at exactly 1, which the seed gate keys on, and is
+        # T1-transparent (the guard is False whenever register_rollable_reductions
+        # populated a fact).
+        if not config_spec.reduction_facts:
+            device_ir.register_user_tiled_reductions()
         config_spec.raise_grid_block_minimums()
         if len(device_ir.root_ids) > 1:
             # xyz is not supported with shared program IDs. Non-tcgen05

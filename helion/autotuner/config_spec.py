@@ -85,6 +85,72 @@ class MatmulFact(NamedTuple):
     rhs_dtype: torch.dtype
 
 
+class ReductionFact(NamedTuple):
+    """Pre-digested workload facts for a single rollable reduction dimension.
+
+    Analogous to ``MatmulFact``: recorded once at compile time (in
+    ``device_ir.register_rollable_reductions``) so the autotuner-seed heuristic
+    can branch on *workload* properties (NEVER on kernel identity).  One
+    ``ReductionFact`` per registered ``ReductionLoopSpec`` (i.e. per T1 rollable
+    rdim).
+
+    Fields (grown by co-design as heuristics need them):
+
+    - ``block_id`` / ``size_hint``: the reduction axis and its extent (rnumel).
+      ``size_hint`` drives persistent-vs-looped (the first lever).
+    - ``m_block_ids``: the non-reduction (kept) tile block_ids (the "rows").
+    - ``static_rnumel``: the reduction extent if statically known, else None.
+    - ``dtype`` / ``itemsize``: dtype of the reduction-source tensor.  Read as a
+      fact so the heuristic generalizes to bf16/fp16 (precision is fixed fp32
+      for now but the heuristic must NOT hardcode it).
+    - ``num_load`` / ``num_store``: count of device memory loads / stores in the
+      rolling-candidate graphs (arithmetic-intensity / live-state proxy →
+      Band A vs Band B).
+    - ``num_reduction_ops``: count of reduction lowerings over this rdim
+      (number of accumulators, e.g. welford-like multi-accumulator combines).
+    - ``num_tiled_accumulators``: count of ``[M_BLOCK, R_BLOCK]`` 2D buffers
+      (``zeros``/``full``/``empty``) whose last dim is the reduction extent. These
+      are the live accumulators a MANUALLY-LOOPED (T2) reduction carries ACROSS
+      the inner ``hl.tile`` loop, so the persistent live-state footprint scales
+      with R_BLOCK. ``0`` for a scalar-accumulator (Band-A) reduction (T1, or a
+      T2 like softmax_two_pass that carries only ``[M_BLOCK]`` row state) — those
+      stay persistent to the structural cap. ``>=1`` marks the Band-B loss
+      kernels (kl_div, jsd) whose full-N persistent R_BLOCK over-allocates and
+      spills (the seed must cap R_BLOCK by footprint). A WORKLOAD property
+      (live-state footprint), NOT kernel identity.
+    - ``is_structured_combine``: True for a Band-C STRUCTURED-COMBINE reduction —
+      a two-pass *reduce-then-apply* kernel that tiles the SAME inner extent with
+      MORE THAN ONE non-grid user tile: a combine pass (the inner reduction,
+      computing per-row statistics carried as a scalar recurrence) PLUS one-or-more
+      separate apply/normalize passes (no reduction) over the same axis. welford
+      (Welford-combine pass + LayerNorm normalize pass over N) is the canonical
+      case. A single-axis T2 seed would floor the apply tile(s) to width 1
+      (~10-20x slower) AND a masked persistent combine tile breaks the per-chunk
+      count (numerically WRONG at non-power-of-2 N, where ``Tn=chunk.size(-1)``
+      counts the padding). When True the seed (a) widens EVERY apply tile to
+      persistent and (b) sizes the combine tile as a power-of-2 DIVISOR of N (no
+      mask -> correct count). A WORKLOAD-STRUCTURE property (number of non-grid
+      tiles + which carries the reduction), NOT kernel identity — it fires for any
+      welford-like multi-pass structured combine. ``apply_block_ids`` lists the
+      non-reduction apply tile block_ids the seed must widen.
+    - ``apply_block_ids``: for a structured combine, the non-grid non-reduction
+      apply/normalize tile block_ids (empty otherwise).
+    """
+
+    block_id: int
+    size_hint: int
+    m_block_ids: tuple[int, ...]
+    static_rnumel: int | None
+    dtype: torch.dtype
+    itemsize: int
+    num_load: int
+    num_store: int
+    num_reduction_ops: int
+    num_tiled_accumulators: int = 0
+    is_structured_combine: bool = False
+    apply_block_ids: tuple[int, ...] = ()
+
+
 def shrink_block_sizes_for_numel_constraints(
     constraints: list[TensorNumelConstraint],
     block_sizes: list[int],
@@ -325,6 +391,7 @@ class ConfigSpec:
         self.compiler_seed_configs: list[helion.Config] = []
         self.autotuner_heuristics: list[str] = []
         self.matmul_facts: list[MatmulFact] = []
+        self.reduction_facts: list[ReductionFact] = []
         self.store_indices: list[int] = []
         self.backend_tunable_fragments = self.backend.tunable_fragments()
         unknown_tunables = set(self.backend_tunable_fragments) - BACKEND_TUNABLE_KEYS
@@ -1762,11 +1829,19 @@ class ReductionLoopSpec(_PowerOfTwoBlockIdItem):
     def _encode_flat_value(self, base: ConfigSpec, value: object) -> object:
         # None means "persistent reduction" in the normalized Config. In the
         # flat search space that same choice is represented by an integer
-        # sentinel, typically the fragment default such as 1024 for a 1024-wide
-        # reduction. This is the one non-identity Config <-> FlatConfig
+        # sentinel. This is the one non-identity Config <-> FlatConfig
         # mapping today.
+        #
+        # The sentinel MUST be the fragment max (`.high` ==
+        # next_power_of_2(size_hint)): _flat_config() decodes a flat int back to
+        # None only when `value >= self.size_hint`, and `.high` is the one flat
+        # value that satisfies that for EVERY size_hint (and is a power of two,
+        # so it stays within the fragment's invariants). The fragment default is
+        # capped at 4096 (max_reduction_loop), which is < size_hint for
+        # rnumel>4096 and therefore decodes back to a LOOPED chunk instead of
+        # persistent -- silently degrading an injected persistent seed.
         if value is None:
-            return self._flat_fragment(base).default()
+            return self._flat_fragment(base).high
         return value
 
     def _normalize(self, name: str, value: object) -> int | None:
