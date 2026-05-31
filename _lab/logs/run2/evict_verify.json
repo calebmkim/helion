@@ -1,0 +1,1586 @@
+{
+  "gpu": "1",
+  "helion": "/home/calebkim/helion-new-heuristics/wt-reduction-2/",
+  "method": {
+    "matched_lever": "vary ONLY load_eviction_policies; block_sizes/warps = live heuristic seed",
+    "G": "tc_default_latency / seed_latency (median-of-7); higher beats torch.compile default",
+    "correctness": "allclose rtol=1e-3 atol=1e-4 (gated, not loosened)",
+    "regression_threshold_pct": -2.0,
+    "fp32": true,
+    "harness_A_B": "_lab/harness/run2_evict_probe.py",
+    "harness_C": "_lab/harness/run2_evict_probe2.py (adds xonly_first = ['first']+['']*(len-1))"
+  },
+  "RULE_A": {
+    "description": "num_load==1 pure streaming -> 'first'. proposed=rule (==all_first on the single emitted load).",
+    "kernels": {
+      "sum": {
+        "geomean_default_G": 0.9776281627750358,
+        "geomean_proposed_G": 1.2622360663144845,
+        "geomean_uplift_pct": 29.11,
+        "worst_regression_pct": 2.94,
+        "regressions_gt_2pct": [],
+        "n_shapes": 13,
+        "per_shape": [
+          {
+            "shape": [
+              2048,
+              1024
+            ],
+            "default_G": 0.9969324920600556,
+            "rule_G": 1.6250000454747362,
+            "all_first_G": 1.6250000454747362,
+            "all_last_G": 1.633165818121829,
+            "pct_vs_default": 63.0,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              2048,
+              4096
+            ],
+            "default_G": 0.8846641406952178,
+            "rule_G": 1.2245614895034733,
+            "all_first_G": 1.2508960902498307,
+            "all_last_G": 0.9124183190540684,
+            "pct_vs_default": 38.42,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              2048,
+              16384
+            ],
+            "default_G": 0.9339822177694608,
+            "rule_G": 1.0776367416761055,
+            "all_first_G": 1.0771108046599764,
+            "all_last_G": 0.9269214908945225,
+            "pct_vs_default": 15.38,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              1536
+            ],
+            "default_G": 0.9292603818553439,
+            "rule_G": 1.334872901289555,
+            "all_first_G": 1.3018017368431678,
+            "all_last_G": 0.935275058045189,
+            "pct_vs_default": 43.65,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              5120
+            ],
+            "default_G": 0.8423806590675658,
+            "rule_G": 0.993827203189205,
+            "all_first_G": 0.9839572744192929,
+            "all_last_G": 0.7735735959140949,
+            "pct_vs_default": 17.98,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              8192,
+              256
+            ],
+            "default_G": 0.9971264149124013,
+            "rule_G": 1.2218309260162206,
+            "all_first_G": 1.1802720970587015,
+            "all_last_G": 1.1802720970587015,
+            "pct_vs_default": 22.54,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              8192,
+              4096
+            ],
+            "default_G": 0.8855447407910991,
+            "rule_G": 1.023517949064274,
+            "all_first_G": 1.0300788937651675,
+            "all_last_G": 0.8836717470167097,
+            "pct_vs_default": 15.58,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              32768,
+              256
+            ],
+            "default_G": 0.9872611975043817,
+            "rule_G": 1.2916666424134757,
+            "all_first_G": 1.2916666424134757,
+            "all_last_G": 1.005188107004556,
+            "pct_vs_default": 30.83,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              32768,
+              1024
+            ],
+            "default_G": 1.0,
+            "rule_G": 1.1120559445772242,
+            "all_first_G": 1.1128910367199263,
+            "all_last_G": 0.9352124474380156,
+            "pct_vs_default": 11.21,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              256,
+              4096
+            ],
+            "default_G": 1.0526316285596962,
+            "rule_G": 1.6049383093099472,
+            "all_first_G": 1.6049383093099472,
+            "all_last_G": 1.5950919872960891,
+            "pct_vs_default": 52.47,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              512,
+              8192
+            ],
+            "default_G": 0.9527105048682115,
+            "rule_G": 1.3675496723843485,
+            "all_first_G": 1.424137954566712,
+            "all_last_G": 1.0925926054249695,
+            "pct_vs_default": 43.54,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              32,
+              65536
+            ],
+            "default_G": 1.224999940233207,
+            "rule_G": 1.6570047575622857,
+            "all_first_G": 1.5733944531570514,
+            "all_last_G": 1.5806451742695844,
+            "pct_vs_default": 35.27,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              256,
+              262144
+            ],
+            "default_G": 1.0791040574885868,
+            "rule_G": 1.1108657610580848,
+            "all_first_G": 1.1135971950863173,
+            "all_last_G": 1.0732226994208256,
+            "pct_vs_default": 2.94,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          }
+        ]
+      },
+      "long_sum": {
+        "geomean_default_G": 0.9198689747333954,
+        "geomean_proposed_G": 1.0673684383514381,
+        "geomean_uplift_pct": 16.03,
+        "worst_regression_pct": 7.73,
+        "regressions_gt_2pct": [],
+        "n_shapes": 7,
+        "per_shape": [
+          {
+            "shape": [
+              1,
+              32768
+            ],
+            "default_G": 1.3124999793296661,
+            "rule_G": 1.4171778659125858,
+            "all_first_G": 1.4085365972688184,
+            "all_last_G": 1.4171778659125858,
+            "pct_vs_default": 7.98,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              2,
+              65536
+            ],
+            "default_G": 1.189743616149432,
+            "rule_G": 1.281768017542696,
+            "all_first_G": 1.3567251247996879,
+            "all_last_G": 1.3567251247996879,
+            "pct_vs_default": 7.73,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4,
+              130000
+            ],
+            "default_G": 0.9704860895316658,
+            "rule_G": 1.1454918404308512,
+            "all_first_G": 1.1454918404308512,
+            "all_last_G": 1.1549587185607217,
+            "pct_vs_default": 18.03,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              8,
+              131072
+            ],
+            "default_G": 1.052816892026637,
+            "rule_G": 1.1959999697320178,
+            "all_first_G": 1.2510460482873949,
+            "all_last_G": 1.1959999697320178,
+            "pct_vs_default": 13.6,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              16,
+              262144
+            ],
+            "default_G": 0.8634752182942141,
+            "rule_G": 1.1325582058015848,
+            "all_first_G": 1.1325582058015848,
+            "all_last_G": 0.9276191036884699,
+            "pct_vs_default": 31.16,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4,
+              524288
+            ],
+            "default_G": 0.6399999534338735,
+            "rule_G": 0.7843137198954573,
+            "all_first_G": 0.7619047487057458,
+            "all_last_G": 0.7804877702512434,
+            "pct_vs_default": 22.55,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              8,
+              393216
+            ],
+            "default_G": 0.6320582886650492,
+            "rule_G": 0.7139917502019453,
+            "all_first_G": 0.7003027268322051,
+            "all_last_G": 0.7110655747481803,
+            "pct_vs_default": 12.96,
+            "slot_tensors": [
+              "x"
+            ],
+            "applied_evict": [
+              "first"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "RULE_B": {
+    "description": "re-read tensor -> [last on non-final reads, first on final] = `rule`. welford slots [x,x,weight,bias] -> [last,first,first,first]; softmax [x,x] -> [last,first].",
+    "kernels": {
+      "welford": {
+        "geomean_default_G": 0.8986799025716249,
+        "geomean_proposed_G": 0.9587365109038022,
+        "geomean_uplift_pct": 6.68,
+        "worst_regression_pct": -2.24,
+        "regressions_gt_2pct": [
+          {
+            "shape": [
+              262144,
+              1536
+            ],
+            "pct_vs_default": -2.24
+          }
+        ],
+        "n_shapes": 8,
+        "per_shape": [
+          {
+            "shape": [
+              262144,
+              1024
+            ],
+            "default_G": 0.9944123368805099,
+            "rule_G": 0.9938311974195834,
+            "all_first_G": 0.9623365398297924,
+            "all_last_G": 1.0048585185838321,
+            "pct_vs_default": -0.06,
+            "slot_tensors": [
+              "x",
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "last",
+              "first",
+              "first",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              262144,
+              1536
+            ],
+            "default_G": 0.9846701430869903,
+            "rule_G": 0.9626235836752911,
+            "all_first_G": 0.9375258112803857,
+            "all_last_G": 0.9983719987722786,
+            "pct_vs_default": -2.24,
+            "slot_tensors": [
+              "x",
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "last",
+              "first",
+              "first",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              262144,
+              2048
+            ],
+            "default_G": 0.9890033691505136,
+            "rule_G": 0.9907896472598023,
+            "all_first_G": 0.9433309077408748,
+            "all_last_G": 0.999126464368754,
+            "pct_vs_default": 0.18,
+            "slot_tensors": [
+              "x",
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "last",
+              "first",
+              "first",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              262144,
+              4096
+            ],
+            "default_G": 0.7587475631620201,
+            "rule_G": 0.9502326693770371,
+            "all_first_G": 0.6696759832164205,
+            "all_last_G": 0.8431319184756391,
+            "pct_vs_default": 25.24,
+            "slot_tensors": [
+              "x",
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "last",
+              "first",
+              "first",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              262144,
+              2560
+            ],
+            "default_G": 0.9714289174039907,
+            "rule_G": 0.9796106637062759,
+            "all_first_G": 0.9352382587851222,
+            "all_last_G": 0.984714959997697,
+            "pct_vs_default": 0.84,
+            "slot_tensors": [
+              "x",
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "last",
+              "first",
+              "first",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              262144,
+              5120
+            ],
+            "default_G": 0.695964284249299,
+            "rule_G": 0.804445000316553,
+            "all_first_G": 0.6407839372128946,
+            "all_last_G": 0.7255379306184375,
+            "pct_vs_default": 15.59,
+            "slot_tensors": [
+              "x",
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "last",
+              "first",
+              "first",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              8192,
+              4096
+            ],
+            "default_G": 0.9607143732237654,
+            "rule_G": 1.0102654175969594,
+            "all_first_G": 0.7376599763542826,
+            "all_last_G": 0.9827082705798242,
+            "pct_vs_default": 5.16,
+            "slot_tensors": [
+              "x",
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "last",
+              "first",
+              "first",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              16384,
+              4096
+            ],
+            "default_G": 0.8914471778126961,
+            "rule_G": 0.9954701562642047,
+            "all_first_G": 0.7019524631654559,
+            "all_last_G": 0.9352634239432465,
+            "pct_vs_default": 11.67,
+            "slot_tensors": [
+              "x",
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "last",
+              "first",
+              "first",
+              "first"
+            ]
+          }
+        ]
+      },
+      "softmax": {
+        "geomean_default_G": 0.9748527204027659,
+        "geomean_proposed_G": 1.0357035350427448,
+        "geomean_uplift_pct": 6.24,
+        "worst_regression_pct": -10.03,
+        "regressions_gt_2pct": [
+          {
+            "shape": [
+              4096,
+              1024
+            ],
+            "pct_vs_default": -6.19
+          },
+          {
+            "shape": [
+              4096,
+              2048
+            ],
+            "pct_vs_default": -10.03
+          }
+        ],
+        "n_shapes": 12,
+        "per_shape": [
+          {
+            "shape": [
+              4096,
+              256
+            ],
+            "default_G": 0.8899676457703987,
+            "rule_G": 1.2008733691052034,
+            "all_first_G": 1.2499999834637328,
+            "all_last_G": 1.1930585534026403,
+            "pct_vs_default": 34.93,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              512
+            ],
+            "default_G": 1.017910497812782,
+            "rule_G": 1.391836743906252,
+            "all_first_G": 1.286792429621724,
+            "all_last_G": 1.3320312779776202,
+            "pct_vs_default": 36.73,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              1024
+            ],
+            "default_G": 0.8912621036609453,
+            "rule_G": 0.8360655946278462,
+            "all_first_G": 1.045558102416977,
+            "all_last_G": 0.8360655946278462,
+            "pct_vs_default": -6.19,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              2048
+            ],
+            "default_G": 1.1196318609453495,
+            "rule_G": 1.007359654476758,
+            "all_first_G": 0.997267738705487,
+            "all_last_G": 0.9927469983739852,
+            "pct_vs_default": -10.03,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              4096
+            ],
+            "default_G": 0.9894281909909423,
+            "rule_G": 1.0162882613366455,
+            "all_first_G": 0.8170634919901641,
+            "all_last_G": 1.0108002790767425,
+            "pct_vs_default": 2.71,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              8192
+            ],
+            "default_G": 0.9700555397498856,
+            "rule_G": 1.0085363445552291,
+            "all_first_G": 0.7411439511155294,
+            "all_last_G": 1.0034974036154998,
+            "pct_vs_default": 3.97,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              12288
+            ],
+            "default_G": 1.010754510747076,
+            "rule_G": 1.0355992884752343,
+            "all_first_G": 0.7665955445876067,
+            "all_last_G": 1.0327979842495485,
+            "pct_vs_default": 2.46,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              4096,
+              16384
+            ],
+            "default_G": 0.9450404070745044,
+            "rule_G": 1.0033270204397606,
+            "all_first_G": 0.7172521111937098,
+            "all_last_G": 1.0032628167232673,
+            "pct_vs_default": 6.17,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              32768,
+              256
+            ],
+            "default_G": 0.9215167745852422,
+            "rule_G": 0.9414415175021005,
+            "all_first_G": 0.9830668813176945,
+            "all_last_G": 0.9313725480023827,
+            "pct_vs_default": 2.16,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              32768,
+              1024
+            ],
+            "default_G": 0.9592182283924842,
+            "rule_G": 0.9967402543038346,
+            "all_first_G": 0.7417428974489426,
+            "all_last_G": 0.9853743800177053,
+            "pct_vs_default": 3.91,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              8192,
+              3072
+            ],
+            "default_G": 1.0266324190581053,
+            "rule_G": 1.0740180627803309,
+            "all_first_G": 0.7925439918444098,
+            "all_last_G": 1.0587359222015886,
+            "pct_vs_default": 4.62,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          },
+          {
+            "shape": [
+              8192,
+              32768
+            ],
+            "default_G": 0.9794696990088383,
+            "rule_G": 1.0082899581763862,
+            "all_first_G": 0.7398182467840443,
+            "all_last_G": 1.0082238704071083,
+            "pct_vs_default": 2.94,
+            "slot_tensors": [
+              "x",
+              "x"
+            ],
+            "applied_evict": [
+              "last",
+              "first"
+            ]
+          }
+        ]
+      }
+    },
+    "recheck_regressors": [
+      {
+        "kernel": "softmax",
+        "shape": [
+          4096,
+          1024
+        ],
+        "default_G": 0.9227128956686431,
+        "rule_G": 1.039076365352235,
+        "pct_vs_default": 12.61
+      },
+      {
+        "kernel": "softmax",
+        "shape": [
+          4096,
+          2048
+        ],
+        "default_G": 1.135080619371768,
+        "rule_G": 1.0320805828747412,
+        "pct_vs_default": -9.07
+      },
+      {
+        "kernel": "welford",
+        "shape": [
+          262144,
+          1536
+        ],
+        "default_G": 0.9615433006974461,
+        "rule_G": 0.9613803777645211,
+        "pct_vs_default": -0.02
+      },
+      {
+        "kernel": "softmax",
+        "shape": [
+          4096,
+          1024
+        ],
+        "default_G": 0.9311475879126542,
+        "rule_G": 0.9826990309330427,
+        "pct_vs_default": 5.54
+      },
+      {
+        "kernel": "softmax",
+        "shape": [
+          4096,
+          2048
+        ],
+        "default_G": 1.166496383990289,
+        "rule_G": 1.04770635656474,
+        "pct_vs_default": -10.18
+      },
+      {
+        "kernel": "welford",
+        "shape": [
+          262144,
+          1536
+        ],
+        "default_G": 0.9602428414358644,
+        "rule_G": 0.960832437101566,
+        "pct_vs_default": 0.06
+      }
+    ]
+  },
+  "RULE_C": {
+    "description": "rms_norm/layer_norm reduction-INPUT-ONLY 'first': xonly_first = ['first']+['']*(len-1) (only slot0=x set, operand slots default).",
+    "kernels": {
+      "rms_norm": {
+        "geomean_default_G": 1.0321354521463917,
+        "geomean_proposed_G": 1.058534505387104,
+        "geomean_uplift_pct": 2.56,
+        "worst_regression_pct": -8.92,
+        "regressions_gt_2pct": [
+          {
+            "shape": [
+              2048,
+              4096
+            ],
+            "pct_vs_default": -8.92
+          },
+          {
+            "shape": [
+              4096,
+              1536
+            ],
+            "pct_vs_default": -2.3
+          },
+          {
+            "shape": [
+              256,
+              5120
+            ],
+            "pct_vs_default": -5.7
+          }
+        ],
+        "n_shapes": 13,
+        "per_shape": [
+          {
+            "shape": [
+              2048,
+              1024
+            ],
+            "default_G": 1.002617820991633,
+            "xonly_first_G": 1.5258964965711976,
+            "all_first_G": 1.4730769420202445,
+            "all_last_G": 1.456273817695594,
+            "pct_vs_default": 52.19,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.40550456481551
+          },
+          {
+            "shape": [
+              2048,
+              4096
+            ],
+            "default_G": 1.1463157982451433,
+            "xonly_first_G": 1.044103547352238,
+            "all_first_G": 1.1273291951664264,
+            "all_last_G": 0.9940666971085749,
+            "pct_vs_default": -8.92,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.0988900603515366
+          },
+          {
+            "shape": [
+              2048,
+              16384
+            ],
+            "default_G": 0.9893800701332615,
+            "xonly_first_G": 0.9833087739094336,
+            "all_first_G": 0.9815018435064323,
+            "all_last_G": 0.9942912864363471,
+            "pct_vs_default": -0.61,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.9821033779450308
+          },
+          {
+            "shape": [
+              4096,
+              1536
+            ],
+            "default_G": 1.256259188173712,
+            "xonly_first_G": 1.2273381033464883,
+            "all_first_G": 1.2255746731108792,
+            "all_last_G": 1.0094674591266826,
+            "pct_vs_default": -2.3,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.2273381033464883
+          },
+          {
+            "shape": [
+              4096,
+              5120
+            ],
+            "default_G": 0.9867823939243741,
+            "xonly_first_G": 0.9850334555350327,
+            "all_first_G": 0.9916732121432346,
+            "all_last_G": 0.9996003166943482,
+            "pct_vs_default": -0.18,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.9867823939243741
+          },
+          {
+            "shape": [
+              8192,
+              4096
+            ],
+            "default_G": 0.9967637874340313,
+            "xonly_first_G": 0.9910891563854265,
+            "all_first_G": 0.9879102699514267,
+            "all_last_G": 1.0025037746078198,
+            "pct_vs_default": -0.57,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.9882760015769154
+          },
+          {
+            "shape": [
+              8192,
+              8192
+            ],
+            "default_G": 0.9905098905439711,
+            "xonly_first_G": 0.9766687144530221,
+            "all_first_G": 0.9717584556935888,
+            "all_last_G": 1.0023047551053859,
+            "pct_vs_default": -1.4,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.9714568944912584
+          },
+          {
+            "shape": [
+              32768,
+              256
+            ],
+            "default_G": 0.9187553843345823,
+            "xonly_first_G": 0.9824398995127018,
+            "all_first_G": 1.1038421045569164,
+            "all_last_G": 0.9567956634400446,
+            "pct_vs_default": 6.93,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.0452310752689773
+          },
+          {
+            "shape": [
+              32768,
+              1024
+            ],
+            "default_G": 0.9930399671178091,
+            "xonly_first_G": 0.990086666081176,
+            "all_first_G": 0.9861762620559262,
+            "all_last_G": 0.9985003634741847,
+            "pct_vs_default": -0.3,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.9869070727367976
+          },
+          {
+            "shape": [
+              256,
+              4096
+            ],
+            "default_G": 0.9512194966130595,
+            "xonly_first_G": 0.9512194966130595,
+            "all_first_G": 1.0103626978165114,
+            "all_last_G": 0.9558823728724333,
+            "pct_vs_default": 0.0,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.9512194966130595
+          },
+          {
+            "shape": [
+              512,
+              8192
+            ],
+            "default_G": 1.096491258862547,
+            "xonly_first_G": 1.1415525963707256,
+            "all_first_G": 1.1389522289457155,
+            "all_last_G": 0.8605852384570502,
+            "pct_vs_default": 4.11,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.1415525963707256
+          },
+          {
+            "shape": [
+              256,
+              5120
+            ],
+            "default_G": 1.0325581854965862,
+            "xonly_first_G": 0.9736842021283962,
+            "all_first_G": 0.9736842021283962,
+            "all_last_G": 1.0373831902803,
+            "pct_vs_default": -5.7,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.0373831902803
+          },
+          {
+            "shape": [
+              1024,
+              2560
+            ],
+            "default_G": 1.1032029129517853,
+            "xonly_first_G": 1.111111122701645,
+            "all_first_G": 1.0402684701405442,
+            "all_last_G": 1.0580205242603282,
+            "pct_vs_default": 0.72,
+            "slot_tensors": [
+              "x",
+              "weight"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.0437710843538783
+          }
+        ]
+      },
+      "layer_norm": {
+        "geomean_default_G": 1.0057003277171692,
+        "geomean_proposed_G": 1.0226661004349575,
+        "geomean_uplift_pct": 1.69,
+        "worst_regression_pct": -4.48,
+        "regressions_gt_2pct": [
+          {
+            "shape": [
+              4096,
+              15872
+            ],
+            "pct_vs_default": -3.21
+          },
+          {
+            "shape": [
+              512,
+              4096
+            ],
+            "pct_vs_default": -4.48
+          }
+        ],
+        "n_shapes": 9,
+        "per_shape": [
+          {
+            "shape": [
+              4096,
+              1024
+            ],
+            "default_G": 0.9668615734472312,
+            "xonly_first_G": 1.17257684288658,
+            "all_first_G": 1.127272703219975,
+            "all_last_G": 0.8596186641796427,
+            "pct_vs_default": 21.28,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.1615925125589506
+          },
+          {
+            "shape": [
+              4096,
+              4096
+            ],
+            "default_G": 0.9970731484597458,
+            "xonly_first_G": 0.9803356937632768,
+            "all_first_G": 0.988872789868814,
+            "all_last_G": 0.9917515144723273,
+            "pct_vs_default": -1.68,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.9742612260054305
+          },
+          {
+            "shape": [
+              4096,
+              8192
+            ],
+            "default_G": 0.9894244731448248,
+            "xonly_first_G": 0.9856670676385143,
+            "all_first_G": 0.9577431640468023,
+            "all_last_G": 1.0,
+            "pct_vs_default": -0.38,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.955128249775765
+          },
+          {
+            "shape": [
+              4096,
+              15872
+            ],
+            "default_G": 0.9854413207468594,
+            "xonly_first_G": 0.9537648759988269,
+            "all_first_G": 0.837540773336774,
+            "all_last_G": 0.9955351551951533,
+            "pct_vs_default": -3.21,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.8366626152782739
+          },
+          {
+            "shape": [
+              8192,
+              4096
+            ],
+            "default_G": 0.9894270728854375,
+            "xonly_first_G": 0.989913879581709,
+            "all_first_G": 0.9833821962848832,
+            "all_last_G": 0.9980158578920003,
+            "pct_vs_default": 0.05,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 0.9826617084071246
+          },
+          {
+            "shape": [
+              512,
+              4096
+            ],
+            "default_G": 1.0195312850830476,
+            "xonly_first_G": 0.9738806156546027,
+            "all_first_G": 0.9702602141998556,
+            "all_last_G": 0.9666667349349136,
+            "pct_vs_default": -4.48,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.0195312850830476
+          },
+          {
+            "shape": [
+              512,
+              8192
+            ],
+            "default_G": 1.0622406543796978,
+            "xonly_first_G": 1.1058315212584622,
+            "all_first_G": 1.0778947159453942,
+            "all_last_G": 0.8407225205351664,
+            "pct_vs_default": 4.1,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.1058315212584622
+          },
+          {
+            "shape": [
+              256,
+              5120
+            ],
+            "default_G": 1.0259740349733553,
+            "xonly_first_G": 1.0394736648953113,
+            "all_first_G": 0.9834024841145619,
+            "all_last_G": 0.9834024841145619,
+            "pct_vs_default": 1.32,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.0440528789682577
+          },
+          {
+            "shape": [
+              1024,
+              2560
+            ],
+            "default_G": 1.0185185700856632,
+            "xonly_first_G": 1.0216719025030647,
+            "all_first_G": 1.0091743821487955,
+            "all_last_G": 0.9649122702510103,
+            "pct_vs_default": 0.31,
+            "slot_tensors": [
+              "x",
+              "weight",
+              "bias"
+            ],
+            "applied_evict": [
+              "first",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "rule_G": 1.050955430542968
+          }
+        ]
+      }
+    },
+    "recheck_regressors": [
+      {
+        "kernel": "rms_norm",
+        "shape": [
+          2048,
+          4096
+        ],
+        "default_G": 1.1611876263725018,
+        "xonly_first_G": 1.0589941985986928,
+        "pct_vs_default": -8.8
+      },
+      {
+        "kernel": "rms_norm",
+        "shape": [
+          256,
+          5120
+        ],
+        "default_G": 1.030303041438564,
+        "xonly_first_G": 1.030303041438564,
+        "pct_vs_default": 0.0
+      },
+      {
+        "kernel": "layer_norm",
+        "shape": [
+          512,
+          4096
+        ],
+        "default_G": 0.9919999394640355,
+        "xonly_first_G": 0.9538461383470725,
+        "pct_vs_default": -3.85
+      },
+      {
+        "kernel": "layer_norm",
+        "shape": [
+          4096,
+          15872
+        ],
+        "default_G": 0.987887469107788,
+        "xonly_first_G": 0.9543281072403651,
+        "pct_vs_default": -3.4
+      },
+      {
+        "kernel": "rms_norm",
+        "shape": [
+          2048,
+          4096
+        ],
+        "default_G": 1.163829734665331,
+        "xonly_first_G": 1.0694036747412774,
+        "pct_vs_default": -8.11
+      },
+      {
+        "kernel": "rms_norm",
+        "shape": [
+          256,
+          5120
+        ],
+        "default_G": 1.030303041438564,
+        "xonly_first_G": 0.959999969868976,
+        "pct_vs_default": -6.82
+      },
+      {
+        "kernel": "layer_norm",
+        "shape": [
+          512,
+          4096
+        ],
+        "default_G": 0.9919999394640355,
+        "xonly_first_G": 0.9538461383470725,
+        "pct_vs_default": -3.85
+      },
+      {
+        "kernel": "layer_norm",
+        "shape": [
+          4096,
+          15872
+        ],
+        "default_G": 0.992305186419076,
+        "xonly_first_G": 0.9584907682566142,
+        "pct_vs_default": -3.41
+      }
+    ]
+  }
+}

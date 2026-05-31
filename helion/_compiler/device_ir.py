@@ -1072,10 +1072,23 @@ class DeviceIR:
         # is an accumulator carried across the manual inner loop.
         _accum_create_targets = (_full_op, _zeros_op)
 
-        def _last_dim_is_reduction(val: object) -> bool:
-            if not (isinstance(val, torch.Tensor) and val.ndim >= 2):
-                return False
-            last = val.shape[-1]
+        def _is_reduction_extent(last: object) -> bool:
+            """True if a tensor's last dim IS the reduction extent.
+
+            CAVEAT (general rule, not airtight): for a STATIC dim we test
+            ``last == size_hint`` — an INT-EQUALITY heuristic. A non-reduction
+            last dim that merely HAPPENS to equal the reduction extent is
+            mis-classified. This is NOT a correctness bug (the kernel still
+            computes the right answer); at worst the seed gets a wrong fact and is
+            suboptimal. The higher-severity consequence is at the
+            ``_last_dim_is_reduction`` (accumulator) site: a "lucky" match would
+            over-count ``num_tiled_accumulators`` and MIS-ROUTE the seed between
+            Band A and Band B. A principled ``block_id`` match is NOT cheaply
+            available here — fake tensors carry no block_id provenance (only the
+            ``ReductionLowering`` node does), so we accept the int-equality
+            approximation. For a DYNAMIC/symbolic dim we fall back to a sound test:
+            the reduction-axis symbol appears in the extent's free symbols.
+            """
             if isinstance(last, int):
                 return last == size_hint
             if red_symbol is not None:
@@ -1084,6 +1097,13 @@ class DeviceIR:
                 except (TypeError, ValueError, AttributeError):
                     return False
             return False
+
+        def _last_dim_is_reduction(val: object) -> bool:
+            return (
+                isinstance(val, torch.Tensor)
+                and val.ndim >= 2
+                and _is_reduction_extent(val.shape[-1])
+            )
 
         num_load = 0
         num_store = 0
@@ -1115,11 +1135,19 @@ class DeviceIR:
                     num_tiled_accumulators += 1
                 if dtype is None:
                     val = node.meta.get("val")
-                    if isinstance(val, torch.Tensor) and val.ndim >= 1:
-                        last = val.shape[-1]
-                        if isinstance(last, int) and last == size_hint:
-                            dtype = val.dtype
-                            itemsize = val.element_size()
+                    # Read the dtype/itemsize off a tensor whose last dim is the
+                    # reduction extent. Uses the SAME _is_reduction_extent test as
+                    # the accumulator site (symmetry): static int-equality OR the
+                    # symbolic-symbol fallback (so a dynamic reduction dim resolves
+                    # its dtype here rather than only via the any-tensor fallback
+                    # below). Same int-equality caveat as documented above.
+                    if (
+                        isinstance(val, torch.Tensor)
+                        and val.ndim >= 1
+                        and _is_reduction_extent(val.shape[-1])
+                    ):
+                        dtype = val.dtype
+                        itemsize = val.element_size()
         if dtype is None:
             for graph_id in sorted(graph_ids):
                 for node in self.graphs[graph_id].graph.nodes:
