@@ -2383,6 +2383,40 @@
         "verdict": "CLOSE codegen-knob workstream as NULL (eviction+pid were the wins). long_sum few-row -> split-K/block-size workstream (deferred). Strong shapes (rms 8192x8192, sum 2048x16384, softmax 4096x4096) un-regressed.",
         "median_of": 15
       }
+    },
+    "goal5_generality": {
+      "structured_combine": {
+        "date": "2026-05-31",
+        "probe": "examples/standardize.py (plain two-moment LayerNorm: sum_x+sum_xsq combine, NOT welford online recurrence)",
+        "structurally_distinct": "different combine MATH/CODE PATH (plain moments vs welford count/mean/M2 recurrence); fact fingerprint matches welford (num_load=4,num_reduction_ops=3) because the masked count is a 3rd reduction \u2014 heuristic gates on is_structured_combine/num_load/num_tiled_accumulators/size_hint, NOT num_reduction_ops, so the probe validly tests the SAME Band-C recipe on a different combine.",
+        "fact": {
+          "num_load": 4,
+          "num_store": 1,
+          "num_reduction_ops": 3,
+          "num_tiled_accumulators": 0,
+          "is_structured_combine": true,
+          "apply_block_ids": [
+            2
+          ]
+        },
+        "correctness": "all N incl PRIME 1543 correct (max_abs ~1.7e-6) \u2014 masked-count fix holds for this kernel too",
+        "band_C_generalizes": true,
+        "failing_shapes": [],
+        "seed_vs_best_gap_pct": {
+          "262144x1024": 1.2,
+          "262144x2048": 0.0,
+          "262144x4096": 1.1,
+          "8192x4096": 0.4
+        },
+        "G_seed": {
+          "262144x1024": 0.987,
+          "262144x2048": 0.992,
+          "262144x4096": 0.992,
+          "8192x4096": 1.284
+        },
+        "verdict": "Band-C recipe (combine=min(np2,32KiB), apply byte-keyed, eviction [last,first]) transfers cleanly from welford -> RESOLVES the auditor's 'is_structured_combine fit to ONE kernel' flag. standardize kept as a documented generality PROBE (examples/ + _lab/logs/run2/standardize_probe.json); it is layer_norm-equivalent as a workload so NOT added to the shipped Product-A curriculum.",
+        "raw": "_lab/logs/run2/standardize_probe.json"
+      }
     }
   }
 }
