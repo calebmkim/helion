@@ -245,3 +245,14 @@
   1.099→1.138 (all eviction / Goal-1). rms/ln/softmax/kl/jsd/ce ~unchanged (byte-identical; ±noise).
   Residuals: CE (8192,131072) 0.539 = SOURCE ceiling (Goal-5 online-logsumexp); rms_norm (2048,2048) 0.871
   + small-N (codegen-knob explorer running). CHAMPION advanced (O improves, both gates passed, no >10% regr).
+- **GOAL 2 COMPLETE (2026-05-31).** WINS: load_eviction_policies (sum/long_sum 'first', welford re-read [last,first]
+  → in-sample O 0.9786→0.9980) + pid_type='flat' explicit (principled constant, behavior-neutral). NULL (honest,
+  matched-lever A/B recorded w/ raw numbers in ledger.run2.codegen_knobs_other + _lab/logs/run2/knob_explore.json):
+  num_stages (noisy, regresses ln 256,5120 -5%), tensor_descriptor (doesn't engage/OOMs), range_* (no win).
+  KEY: rms/ln in-sample-v2 "weak" shapes (256-1024 rows) are NOISE-FLOOR (fresh default G ~1.0-1.13, not 0.75-0.88)
+  — seed is at tc-default parity on reliably-measurable shapes. Genuine residuals are kernel-source (CE wide-vocab
+  → Goal-5) / out-of-scope (long_sum split-K) / irreducible (welford wide-N codegen-OOM). pid lock covers new
+  forward kernels (Goal 5) too.
+- Next: GOAL 5 (new-kernel generality probes — structured-combine worker running on GPU2; also validates the
+  is_structured_combine + eviction generality flags) → then Phase II GOAL 3 (Product B) once Phase I settles.
+  Remaining Goal-6: consolidated TEST re-read (welford + rms_norm G).

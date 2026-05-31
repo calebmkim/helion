@@ -2361,6 +2361,21 @@
       },
       "drivers": "sum 0.937->1.019 (eviction first), welford 0.911->0.975 (Goal1 + eviction reread), long_sum 1.099->1.138 (eviction). rms/ln/softmax/kl/jsd/ce ~unchanged (no eviction).",
       "note": "in-sample ORIGINAL shapes (apples-to-apples vs v8). ACCEPT: O 0.9785->0.9980. Residual targets: CE (8192,131072) 0.539 SOURCE ceiling (Goal5 online-logsumexp); rms_norm (2048,2048) 0.871 + small-N (codegen-knob explorer running). welford TEST re-read pending."
+    },
+    "codegen_knobs_other": {
+      "date": "2026-05-31",
+      "verdict": "NULL (honest matched-lever A/B null result; no clean workload-keyed seedable win)",
+      "num_stages": "INCONSISTENT \u2014 helps only noise-floor shapes (rms 256,4096 +5.8%, 1024,2560 +4.4%, ln 512,8192 +3% \u2014 all sub-25us) but REGRESSES layer_norm (256,5120) -5% and long_sum -2%; no-change on welford/rms-5120/32768x256. No robust cross-target rule -> left num_stages=1.",
+      "tensor_descriptor": "mostly does NOT engage (td_engages_per_slot all-False on the targets; silent pointer fallback); +2.8% only on rms (512,8192) which is already G=1.12. OOMs on welford wide combine (Goal-1 finding). -> left pointer.",
+      "range_star": "not a clean win where num_stages/TD failed; per-loop micro-knobs -> left default.",
+      "KEY_FINDING": "the rms/layer_norm in-sample-v2 'weak' shapes (256-1024 rows) are NOISE-FLOOR (sub-25us): fresh default G is ~1.0-1.13 (vs the 0.75-0.88 in the noisy baseline). NOT a real Product-A gap. The seed is at tc-default parity on reliably-measurable (grid-occupied) shapes.",
+      "genuine_residuals": {
+        "welford wide-N (5120/8192) 0.73-0.81": "combine perf-flat + codegen knobs OOM = irreducible deterministic-seed ceiling (eviction already applied)",
+        "long_sum few-row (4,524288)/(8,393216) 0.68/0.83": "grid-starved (4-8 programs) -> split-K, wip-DEFERRED out-of-scope (attribute, don't chase)",
+        "rms_norm (32768,256) 0.92": "small-N grid-bound; codegen knobs marginal/autotuner-only",
+        "cross_entropy (8192,131072) 0.54": "kernel-SOURCE ceiling -> Goal-5 online-logsumexp"
+      },
+      "raw_numbers": "_lab/logs/run2/knob_explore.json"
     }
   }
 }

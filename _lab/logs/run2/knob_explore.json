@@ -1,0 +1,1299 @@
+{
+  "gpu": "3",
+  "probes": [
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        256,
+        4096
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 8,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 8,
+      "store_slots": [
+        2,
+        3,
+        7
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 6.34,
+      "results": {
+        "default": {
+          "G": 0.995,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.37,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 1.0532,
+          "rel_to_seed": 1.0585,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.02,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 1.0532,
+          "rel_to_seed": 1.0585,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.02,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 0.99,
+          "rel_to_seed": 0.995,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.4,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 0.99,
+          "rel_to_seed": 0.995,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 6.4,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 0.99,
+          "rel_to_seed": 0.995,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 6.4,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 0.99,
+          "rel_to_seed": 0.995,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 6.4,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 0.99,
+          "rel_to_seed": 0.995,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 6.4,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 1.0532,
+          "rel_to_seed": 1.0585,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.02,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        512,
+        8192
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 16,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 8,
+      "store_slots": [
+        2,
+        3,
+        7
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 15.9,
+      "results": {
+        "default": {
+          "G": 1.1219,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 14.18,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 1.1505,
+          "rel_to_seed": 1.0255,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 13.82,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 1.1219,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 14.18,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 1.1219,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 14.18,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 1.1531,
+          "rel_to_seed": 1.0278,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 13.79,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 1.1531,
+          "rel_to_seed": 1.0278,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 13.79,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 1.1219,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 14.18,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 1.1219,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 14.18,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 1.1219,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 14.18,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        256,
+        5120
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 16,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 8,
+      "store_slots": [
+        2,
+        3,
+        7
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 6.78,
+      "results": {
+        "default": {
+          "G": 1.0707,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.34,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 1.0707,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.34,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 1.0707,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.34,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 1.0707,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.34,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 1.0707,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 6.34,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 1.0707,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 6.34,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 1.0047,
+          "rel_to_seed": 0.9384,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 6.75,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 1.0707,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 6.34,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 1.0707,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6.34,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        1024,
+        2560
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 8,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 8,
+      "store_slots": [
+        2,
+        3,
+        7
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 10.21,
+      "results": {
+        "default": {
+          "G": 1.1312,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 9.02,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 1.1272,
+          "rel_to_seed": 0.9965,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 9.06,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 1.1815,
+          "rel_to_seed": 1.0444,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 8.64,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 1.1312,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 9.02,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 1.1815,
+          "rel_to_seed": 1.0444,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 8.64,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 1.1771,
+          "rel_to_seed": 1.0406,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 8.67,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 1.1771,
+          "rel_to_seed": 1.0406,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 8.67,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 1.1312,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 9.02,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 1.1815,
+          "rel_to_seed": 1.0444,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 8.64,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        32768,
+        256
+      ],
+      "seed_block_sizes": [
+        2
+      ],
+      "seed_num_warps": 4,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 8,
+      "store_slots": [
+        2,
+        3,
+        7
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 34.05,
+      "results": {
+        "default": {
+          "G": 0.9212,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 36.96,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 0.9212,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 36.96,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 0.9309,
+          "rel_to_seed": 1.0105,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 36.58,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 0.9212,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 36.96,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 0.9276,
+          "rel_to_seed": 1.007,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 36.7,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 0.9276,
+          "rel_to_seed": 1.007,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 36.7,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 0.918,
+          "rel_to_seed": 0.9965,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 37.09,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 0.918,
+          "rel_to_seed": 0.9965,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 37.09,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 0.9276,
+          "rel_to_seed": 1.007,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 36.7,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        4,
+        524288
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 32,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 3,
+      "store_slots": [
+        1
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 13.22,
+      "results": {
+        "default": {
+          "G": 0.6826,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 19.36,
+          "maxerr": 0.000732
+        },
+        "num_stages=2": {
+          "G": 0.6705,
+          "rel_to_seed": 0.9821,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 19.71,
+          "maxerr": 0.000732
+        },
+        "num_stages=3": {
+          "G": 0.6705,
+          "rel_to_seed": 0.9821,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 19.71,
+          "maxerr": 0.000732
+        },
+        "num_stages=4": {
+          "G": 0.6826,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 19.36,
+          "maxerr": 0.000732
+        },
+        "TD_all": {
+          "G": 0.6694,
+          "rel_to_seed": 0.9806,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 19.74,
+          "maxerr": 0.000732
+        },
+        "range_num_stages=1": {
+          "G": 0.6826,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 19.36,
+          "maxerr": 0.000732
+        },
+        "range_num_stages=2": {
+          "G": 0.6826,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 19.36,
+          "maxerr": 0.000732
+        },
+        "range_num_stages=3": {
+          "G": 0.6826,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 19.36,
+          "maxerr": 0.000732
+        },
+        "default_recheck": {
+          "G": 0.6826,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 19.36,
+          "maxerr": 0.000732
+        }
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        8,
+        393216
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 32,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 3,
+      "store_slots": [
+        1
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 15.3,
+      "results": {
+        "default": {
+          "G": 0.8313,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 18.4,
+          "maxerr": 0.000366
+        },
+        "num_stages=2": {
+          "G": 0.8313,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 18.4,
+          "maxerr": 0.000366
+        },
+        "num_stages=3": {
+          "G": 0.8313,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 18.4,
+          "maxerr": 0.000366
+        },
+        "num_stages=4": {
+          "G": 0.8313,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 18.4,
+          "maxerr": 0.000366
+        },
+        "TD_all": {
+          "G": 0.8313,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 18.4,
+          "maxerr": 0.000366
+        },
+        "range_num_stages=1": {
+          "G": 0.8313,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 18.4,
+          "maxerr": 0.000366
+        },
+        "range_num_stages=2": {
+          "G": 0.8313,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 18.4,
+          "maxerr": 0.000366
+        },
+        "range_num_stages=3": {
+          "G": 0.8313,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 18.4,
+          "maxerr": 0.000366
+        },
+        "default_recheck": {
+          "G": 0.849,
+          "rel_to_seed": 1.0213,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 18.02,
+          "maxerr": 0.000366
+        }
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        262144,
+        5120
+      ],
+      "seed_block_sizes": [
+        16,
+        8192,
+        2048
+      ],
+      "seed_num_warps": 16,
+      "seed_reduction_loops": null,
+      "indexing_len": 5,
+      "store_slots": [
+        4
+      ],
+      "x_load_slots": [
+        0,
+        1
+      ],
+      "td_engages_per_slot": {
+        "0": true,
+        "1": true,
+        "2": false,
+        "3": false,
+        "4": true
+      },
+      "n_range_loops": 3,
+      "tc_us": 4827.5,
+      "results": {
+        "default": {
+          "G": 0.8055,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 5993.28,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 0.8054,
+          "rel_to_seed": 0.9999,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 5993.82,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 0.8054,
+          "rel_to_seed": 0.9999,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 5993.87,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 0.8053,
+          "rel_to_seed": 0.9998,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 5994.4,
+          "maxerr": 2e-06
+        },
+        "TD_x_load": {
+          "G": null,
+          "rel_to_seed": null,
+          "status": "OutOfResources: out of resource: shared memory, Required: 524296, Hardware limit: 232448. Reducing block sizes or `num_s",
+          "inert": false,
+          "lat_us": null,
+          "maxerr": null
+        },
+        "TD_all": {
+          "G": null,
+          "rel_to_seed": null,
+          "status": "OutOfResources: out of resource: shared memory, Required: 524296, Hardware limit: 232448. Reducing block sizes or `num_s",
+          "inert": false,
+          "lat_us": null,
+          "maxerr": null
+        },
+        "range_num_stages=1": {
+          "G": 0.8053,
+          "rel_to_seed": 0.9997,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 5994.85,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 0.7298,
+          "rel_to_seed": 0.906,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 6615.23,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": null,
+          "rel_to_seed": null,
+          "status": "OutOfResources: out of resource: shared memory, Required: 294912, Hardware limit: 232448. Reducing block sizes or `num_s",
+          "inert": false,
+          "lat_us": null,
+          "maxerr": null
+        },
+        "default_recheck": {
+          "G": 0.8053,
+          "rel_to_seed": 0.9998,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 5994.51,
+          "maxerr": 2e-06
+        },
+        "TD_x+num_stages=2": {
+          "G": null,
+          "rel_to_seed": null,
+          "status": "OutOfResources: out of resource: shared memory, Required: 524296, Hardware limit: 232448. Reducing block sizes or `num_s",
+          "inert": false,
+          "lat_us": null,
+          "maxerr": null
+        }
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        262144,
+        8192
+      ],
+      "seed_block_sizes": [
+        16,
+        8192,
+        2048
+      ],
+      "seed_num_warps": 16,
+      "seed_reduction_loops": null,
+      "indexing_len": 5,
+      "store_slots": [
+        4
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false
+      },
+      "n_range_loops": 3,
+      "tc_us": 7725.02,
+      "results": {
+        "default": {
+          "G": 0.7299,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10583.95,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 0.7295,
+          "rel_to_seed": 0.9995,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10588.91,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 0.7294,
+          "rel_to_seed": 0.9994,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10590.3,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 0.7295,
+          "rel_to_seed": 0.9995,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10589.01,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 0.7295,
+          "rel_to_seed": 0.9995,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 10589.33,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 0.7294,
+          "rel_to_seed": 0.9994,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10590.32,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 0.69,
+          "rel_to_seed": 0.9453,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 11196.0,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": null,
+          "rel_to_seed": null,
+          "status": "OutOfResources: out of resource: shared memory, Required: 294912, Hardware limit: 232448. Reducing block sizes or `num_s",
+          "inert": false,
+          "lat_us": null,
+          "maxerr": null
+        },
+        "default_recheck": {
+          "G": 0.7295,
+          "rel_to_seed": 0.9994,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10589.82,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        512,
+        8192
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 16,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 12,
+      "store_slots": [
+        3,
+        4,
+        5,
+        11
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false,
+        "8": false,
+        "9": false,
+        "10": false,
+        "11": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 16.06,
+      "results": {
+        "default": {
+          "G": 1.0658,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 15.07,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 1.0681,
+          "rel_to_seed": 1.0021,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 15.04,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 1.0985,
+          "rel_to_seed": 1.0306,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 14.62,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 1.0681,
+          "rel_to_seed": 1.0021,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 15.04,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 1.0985,
+          "rel_to_seed": 1.0306,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 14.62,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 1.0681,
+          "rel_to_seed": 1.0021,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 15.04,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 1.0658,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 15.07,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 1.0985,
+          "rel_to_seed": 1.0306,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 14.62,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 1.0985,
+          "rel_to_seed": 1.0306,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 14.62,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        256,
+        5120
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 16,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 12,
+      "store_slots": [
+        3,
+        4,
+        5,
+        11
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false,
+        "8": false,
+        "9": false,
+        "10": false,
+        "11": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 7.2,
+      "results": {
+        "default": {
+          "G": 0.9783,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 7.36,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 0.9783,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 7.36,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 0.9259,
+          "rel_to_seed": 0.9465,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 7.78,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 0.9259,
+          "rel_to_seed": 0.9465,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 7.78,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 0.9783,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 7.36,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 0.9259,
+          "rel_to_seed": 0.9465,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 7.78,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 0.9259,
+          "rel_to_seed": 0.9465,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 7.78,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 0.9783,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 7.36,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 0.9259,
+          "rel_to_seed": 0.9465,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 7.78,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        1024,
+        2560
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 8,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 12,
+      "store_slots": [
+        3,
+        4,
+        5,
+        11
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false,
+        "8": false,
+        "9": false,
+        "10": false,
+        "11": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 10.91,
+      "results": {
+        "default": {
+          "G": 1.1071,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 9.86,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 1.0557,
+          "rel_to_seed": 0.9536,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10.34,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 1.0525,
+          "rel_to_seed": 0.9506,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10.37,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 1.1071,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 9.86,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 1.0557,
+          "rel_to_seed": 0.9536,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 10.34,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 1.0557,
+          "rel_to_seed": 0.9536,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 10.34,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 1.0525,
+          "rel_to_seed": 0.9506,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 10.37,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 1.0557,
+          "rel_to_seed": 0.9536,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 10.34,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 1.0525,
+          "rel_to_seed": 0.9506,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 10.37,
+          "maxerr": 2e-06
+        }
+      }
+    }
+  ]
+}
