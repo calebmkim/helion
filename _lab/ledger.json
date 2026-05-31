@@ -2038,6 +2038,11 @@
         "iter": "G1-welford",
         "results_referee": "ACCEPT (independent re-run GPU2: correctness all N incl prime; G reproduces 1536+6.7%/2560+12.2%; worst -0.20%; 20/20 non-wf byte-identical)",
         "adversarial_auditor": "PASS (fix real: same cfg err0.65 OLD vs 1.4e-6 NEW; OOB zero-fill in Triton; gate structural not kernel-identity, softmax doesn't fire; 2 synthetic structured-combine kernels DO fire -> gate generalizes; no masked regression). FLAG for Goal5: byte-cap VALUES welford-curriculum-fit (12KiB apply = 2-point sep) -> validate w/ real 2nd structured-combine kernel."
+      },
+      {
+        "iter": "G2-eviction",
+        "results_referee": "PASS (full-curriculum matched-lever A/B w/ noise-rechecks: RULE A sum+29%/long_sum+16% zero regressions 20/20; RULE B welford +6.68% no robust regression; softmax re-read REJECTED (-10% at 4096,2048, left default); rms/ln x-only REJECTED (noisy), left default)",
+        "adversarial_auditor": "PASS (no kernel-identity smuggling - num_load==1 fires sum+long_sum, is_structured_combine structural; 8 non-evict byte-identical; small-N welford neutral 0.9995; correctness intact; eviction in generated Triton = really used; reproducible). FLAG: is_structured_combine eviction welford-only -> Goal 5 generality."
       }
     ],
     "in_sample_v2": {
@@ -2287,6 +2292,49 @@
         "cross_entropy wide-vocab": "kernel-SOURCE ceiling (re-reads wide row) -> online-logsumexp rewrite (Goal5 scope-note)",
         "long_sum few-row huge-N": "grid-starved (4-8 programs) -> split-K, wip-DEFERRED out-of-scope (attribute, don't chase)"
       }
+    },
+    "eviction": {
+      "decision_date": "2026-05-31",
+      "commit": "136d187a",
+      "separating_property": "per-load cache RESIDENCY (NOT a global rule) \u2014 overturns run-1 'eviction autotuner-only'",
+      "ACCEPTED": {
+        "num_load==1 stream (sum,long_sum)": {
+          "policy": "['first']*len",
+          "verdict": "CLEAN no-regression win",
+          "geomean_uplift": {
+            "sum": "+29.1% (13 shapes)",
+            "long_sum": "+16.0% (7 shapes)"
+          },
+          "biggest": "sum 2048x1024 +63%, 256x4096 +52%; long_sum 16x262144 +31%",
+          "regressions_gt2pct": "none (20/20)"
+        },
+        "is_structured_combine reread (welford)": {
+          "policy": "['last']+['first']*(len-1) (slot0=combine-x reread)",
+          "verdict": "CLEAN no-regression win",
+          "geomean_uplift": "welford +6.68% (8 shapes)",
+          "biggest": "262144x4096 0.760->0.951 (+25%), 16384x4096 +12%, 5120 0.694->0.806",
+          "small_N": "neutral (1024/1536/2048 ~tie in-process; cross-process 1536 dip was noise, rechecked)"
+        }
+      },
+      "REJECTED": {
+        "softmax re-read [last,first]": {
+          "verdict": "REJECTED \u2014 robust ~-10% regression at (4096,2048) (default eviction ~1.15, any explicit ~1.0). +6.2% geomean elsewhere but the mid-N hole kills a clean rule -> softmax LEFT DEFAULT (not implemented)."
+        },
+        "rms_norm x-only 'first'": {
+          "verdict": "REJECTED \u2014 noisy; robust regressions (2048,4096) ~-8.8%, (256,5120) ~-6%, (4096,1536) -2.3%; uplift only on small-M -> LEFT DEFAULT"
+        },
+        "layer_norm x-only 'first'": {
+          "verdict": "REJECTED \u2014 noisy; (512,4096) ~-3.85%, (4096,15872) ~-3.3% -> LEFT DEFAULT"
+        },
+        "global all_last / all_first": {
+          "verdict": "REJECTED \u2014 contradictory across shapes/kernels (run-1's finding); only the PER-LOAD reuse rule is clean"
+        },
+        "tensor_descriptor on welford wide combine": {
+          "verdict": "REJECTED \u2014 OOMs (needs 262KB shared > limit at combine>=4096); oracle only fits TD at combine=1024. eviction-only already reaches 0.95 at our block_sizes"
+        }
+      },
+      "raw_numbers": "_lab/logs/run2/evict_verify.json (40KB, all variants x all shapes, median-of-7, rechecks)",
+      "validation": "matched-lever in-process A/B (run2_evict_probe/run2_wf_knobs); independent full-curriculum referee agent w/ noise-rechecks; 8 non-evict kernels byte-identical; ruff/pyrefly clean; 56 unit tests pass"
     }
   }
 }
