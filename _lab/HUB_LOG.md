@@ -197,3 +197,23 @@
 - **FORWARD TASK EXHAUSTIVELY COMPLETE + AT CEILING + GENERALITY-PROVEN (3 dims).** No in-scope seedable Product-A
   angle remains; all generality dimensions validated. The only further work is wip-DEFERRED (backward Band D) =
   a human scope decision. Durable state ready to resume losslessly. Holding at the converged forward milestone.
+
+## 2026-05-30 (RUN 2 begins — new goals, same orchestration)
+> Run 2 works in a SEPARATE worktree `wt-reduction-2` (branch `reduction-heuristics-run2`) off the v8 tip
+> `25561778`. `_lab/run2_notebook.md` is the live run-2 reasoning trace; run-1's notebook.md/FINAL_REPORT/
+> HANDOFF are historical reference. `wt-reduction` is read-only reference — do NOT edit it.
+- **Setup DONE.** Worktree `wt-reduction-2` off v8 tip `25561778`; `_lab/` (165 tracked files) inherited.
+  GPUs 0(1GB co-tenant)/1/2/3 — 1/2/3 idle; pin per-job, never 2 timing runs on one GPU.
+- **Step 0 wiring RE-PROVEN on wt-reduction-2.** (1) helion+examples resolve to wt-reduction-2 — note
+  `wt-reduction-2`.startswith(`wt-reduction`)=True, so run-1 scripts that hardcode the old path +
+  `sys.path.insert(0, OLD)` would SILENTLY run old code; run-2 scripts pin `wt-reduction-2` exactly and rely on
+  PYTHONPATH (no sys.path.insert). (2) codegen flows. (b) heuristic edits flow: sentinel in `_num_warps`
+  changed live seed w8→w16, reverted. (c) tritonbench rms_norm operator resolves to ORIGINAL checkout w/
+  `torch_compile_rms_norm_default` present. (3) bare-seed rms_norm(2048,4096) v8 persistent/w8, no-autotune,
+  used, correct(1.9e-6), 35.46us/1.2% spread.
+- **Step 1 sanity GREEN.** rms_norm(8192,8192) fp32 GPU1: default 336.3 / seed(v8) 252.6 / tc-default 250.3 /
+  tc-max 248.4 us → G_seed=0.991, G_default=0.744, seed/tc_max=1.017. Reproduces run-1 exactly; no HALT.
+- **Ledger seeded to v8 floor** (champion O=0.9785; `run2` marker added). >10% per-kernel referee-confirmed
+  regression backstop in force across ALL kernels+shapes (incl in-sample-v2 + new kernels).
+- Next: GOAL 1 (welford source fix + re-derive Band-C), then interleave Goal 4 (in-sample-v2) → Goal 2
+  (codegen knobs) → Goal 5 (new-kernel generality). Phase II (Goal 3) after Phase I settles.
