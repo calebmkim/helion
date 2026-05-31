@@ -53,11 +53,13 @@ layer_norm 0.985, welford **0.975** (0.911), softmax 0.960, kl_div 1.028, jsd 0.
 
 ## 2. Product B (Goal 3)
 
-- **3a — budget reduction (the seeded WIN).** seeded-QUICK reaches the unseeded-FULL optimum within
-  0.1–0.9% (welford, softmax) → the autotune budget can drop full→quick. Convergence advantage scales with
-  config-discovery difficulty: welford at-optimum gen-0 vs unseeded gen-6.5/380s; cross_entropy(8192,131072)
-  1.2–1.36× (gen 1.5 vs 3 to 95%); softmax 1.35×. Validated on 3 kernels; corroborates run-1's 1.94× quick
-  time-to-target (the floor).
+- **3a — budget reduction (the seeded WIN), validated on 5 kernels across ALL BANDS.** seeded-QUICK reaches
+  the unseeded-FULL optimum within **0.1–0.9%** (welford Band-C, kl_div Band-B, rms_norm T1-persistent,
+  cross_entropy T1-looped-multiload, softmax T2-persistent) → the autotune budget can drop full→quick. The
+  convergence/time-to-target advantage is DRAMATIC where the optimal config is hard for the blind search
+  (welford at-optimum gen-0 vs unseeded gen-6.5/380s; kl_div gen-0 vs gen-2/271s; rms_norm gen-0 vs
+  gen-1/116s) and modest where easy (cross_entropy 1.2–1.36×, softmax 1.35×). Exceeds run-1's quick-only
+  1.94× with a full-effort, all-bands characterization (the floor corroborated and surpassed).
 - **3b — beat max-effort: HONEST NULL.** Pre-registered pilot (welford 262144,4096 hard eviction coupling +
   sum 2048,16384 Band-A control), N=5/arm, full budget. Both seeded-portfolio AND unseeded reach the optimum
   reliably (5/5); the seed is within ~1.3% of it (at ceiling). At max effort the LFBO search is thorough
