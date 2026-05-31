@@ -630,3 +630,56 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             "pid_type": "flat",  # principled constant — see the T1 branch.
         }
         return Config(**seed)
+
+    @classmethod
+    def get_seed_configs(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> list[Config] | None:
+        """Run-2 Goal 3b — opt-in MULTI-seed PORTFOLIO for BEAT-MAX-EFFORT autotune.
+
+        Returns None (single-seed: Product-A + Goal-3a unchanged) UNLESS the env
+        flag ``HELION_REDUCTION_SEED_PORTFOLIO`` is set. When set, returns the best
+        deterministic seed PLUS a few structurally-distinct variants, each a
+        PRE-REGISTERED falsifiable hypothesis about a coupling the bounded
+        ``LFBOTreeSearch`` under-samples run-to-run (see ``_lab/run2_notebook.md``
+        "Goal 3b portfolio"). The autotuner injects ALL into gen-0 and explores
+        around them, so the seeded best-of-N reaches a hard coupling the unseeded
+        search reaches only by luck. Variants are derived from PRINCIPLE (the
+        levers + Goal-2 findings), NOT fit to observed unseeded winners (p-hacking,
+        banned). ``dedupe_configs`` removes exact duplicates.
+        """
+        import os
+
+        if not os.environ.get("HELION_REDUCTION_SEED_PORTFOLIO"):
+            return None
+        base = cls.get_seed_config(env, device_ir)
+        if base is None:
+            return None
+        from .common import dedupe_configs
+
+        bd: dict[str, Any] = dict(base)
+        variants: list[dict[str, Any]] = []
+        # H1/H2 — WARP portfolio. The rnumel ramp picks one num_warps; the optimum
+        # can sit one step away (register-heavy combines want fewer warps; streamed
+        # wide rows want more) and the bounded search may not reliably land it.
+        # Inject the full ramp {4,8,16,32}.
+        for w in (4, 8, 16, 32):
+            if w != bd.get("num_warps"):
+                variants.append({**bd, "num_warps": w})
+        # H3 — EVICTION coupling (Goal 2). The per-load eviction space is large and
+        # the search under-samples it at bounded budget; seed BOTH the default
+        # (no eviction) and all-'last' variants alongside the rule already in base.
+        nev = env.config_spec.load_eviction_policies.length
+        if nev > 0:
+            variants.extend(
+                [
+                    {**bd, "load_eviction_policies": [""] * nev},
+                    {**bd, "load_eviction_policies": ["last"] * nev},
+                ]
+            )
+        # H4 — num_stages pipelining (usually inert for memory-bound reductions; a
+        # cheap extra probe in case an inner op overlaps).
+        if bd.get("num_stages") != 2:
+            variants.append({**bd, "num_stages": 2})
+        configs: list[Config] = [base, *(Config(**v) for v in variants)]
+        return dedupe_configs(configs)

@@ -176,3 +176,22 @@ unseeded-FULL on 1-2 shapes. 3b beat-max-effort (depends on Goal-2 eviction bund
 multi-seed portfolio (base class), pre-register N + shapes, probabilistic beat def, fresh-process median-of-7
 re-bench, exclude noise-floor, expanded anti-lucky-run auditor. Driver: adapt run-1 productB_driver (wt-2 path,
 NO sys.path.insert, +welford +cross_entropy_online, eviction-aware). UNSEEDED=HELION_DISABLE_AUTOTUNER_HEURISTICS=1.
+
+## Goal 3b — beat-max-effort. PRE-REGISTERED portfolio + hypotheses (2026-05-31, BEFORE the seeded 3b runs).
+Plumbing: get_seed_configs() (opt-in HELION_REDUCTION_SEED_PORTFOLIO) returns base + structural variants.
+3a showed unseeded-FULL usually REACHES the optimum (welford/softmax tie at full) -> 3b beats are only where
+the blind search UNDER-SAMPLES a hard coupling run-to-run. Characterizing unseeded-full variance (welford
+262144,4096 N=5) to find such shapes BEFORE finalizing the comparison (this measures unseeded variance, NOT
+which config wins -> not p-hacking; portfolio derived from principle below).
+PORTFOLIO (each = one falsifiable hypothesis; seed = base perturbed on ONE lever):
+- H0 base = best deterministic seed. Prove/disprove: seeded best-of-N >= unseeded best-of-N at stated conf.
+- H1/H2 warps {4,8,16,32}: HYP the rnumel ramp's warp is 1 step off the optimum on register-heavy combines/
+  streamed wide rows and the bounded search doesn't reliably land the other step. Disproof: unseeded best-of-N
+  matches seeded (search finds the warp anyway).
+- H3 eviction {rule, none, all-last}: HYP the per-load eviction coupling is a large space the bounded search
+  under-samples; seeding the coupling -> seeded reliably hits it. Disproof: unseeded best-of-N finds eviction.
+- H4 num_stages=2: HYP marginal (memory-bound). Likely disproved (inert).
+PROTOCOL (brief): pilot N in {3,5,10,20} on 1 at-ceiling Band-A + 1 harder (welford/Band-B); COMMIT one N for
+all; pre-register shapes; beat = P(seeded best-of-N >= X) > P(unseeded best-of-N >= X) at stated conf, X=99% of
+unseeded-full oracle; report best/median/spread both arms; fresh-process median-of-7 re-bench winners; exclude
+noise-floor; matched knob sets. Banned: re-tuning the portfolio to the observed unseeded winners.
