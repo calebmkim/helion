@@ -2604,7 +2604,27 @@
         "CORRECTION": "a PRELIMINARY read (unseeded n=4, mid-run) showed an apparent beat (one 6.117ms 'miss'); that was an INCOMPLETE-DATA ARTIFACT (a CSV snapshot before the autotune converged), NOT a real miss \u2014 corrected by complete-N=5 analysis. The anti-lucky-run discipline (complete runs + fair re-bench) caught it."
       },
       "headline": "3b (beat MAX effort): HONEST NULL on the pilot shapes (welford hardest-coupling + sum Band-A control). At full budget the LFBO autotuner reliably reaches the optimum; the deterministic seed is at/within ~1.3% of it but does NOT beat max-effort there. The seeded strategy's MEASURABLE VICTORY is 3a (BUDGET REDUCTION: seeded-quick matches unseeded-full -> halve the budget; faster convergence), corroborating run-1's 1.94x. Per the brief ('not necessarily on every kernel' + 'don't rabbit-hole'), we report the honest null rather than expand chasing a beat the pilot shows isn't there at full budget.",
-      "raw": "_lab/logs/run2/pb/wf4096_*, sum16384_* (control pending)"
+      "raw": "_lab/logs/run2/pb/wf4096_*, sum16384_* (control pending)",
+      "sum(2048,16384)_control": {
+        "role": "at-ceiling Band-A control (calibration)",
+        "unseeded_N5_ms": [
+          0.0664,
+          0.0676,
+          0.0689,
+          0.066,
+          0.0673
+        ],
+        "seededPF_N5_ms": [
+          0.0661,
+          0.0665,
+          0.0676,
+          0.068,
+          0.0678
+        ],
+        "both_P_reach": "5/5",
+        "verdict": "NO BEAT (expected) \u2014 both arms reach ~0.066ms reliably. Confirms the 3b null is well-calibrated: no beat on EITHER the hardest coupling (welford) or at-ceiling Band-A (sum). autotune found sum eviction ['first','last'] ~= my seed's ['first','first'] (both at ceiling)."
+      },
+      "final_verdict": "3b BEAT-MAX-EFFORT = HONEST NULL on the pre-registered pilot (welford 262144,4096 hard-coupling + sum 2048,16384 Band-A control), N=5/arm, full budget. At max effort the LFBO autotuner reliably reaches the optimum (both arms 5/5); the deterministic seed is at/within ~1.3% of it but does not beat it. Anti-lucky-run discipline applied (complete-N runs, fair median-of-7 re-bench, control) and CAUGHT a preliminary incomplete-data false-positive. The seeded strategy's measurable victory is 3a BUDGET REDUCTION (quick matches full). NOT claiming a beat (per brief: report the honest null, don't rabbit-hole)."
     }
   }
 }
