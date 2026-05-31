@@ -503,6 +503,17 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 "reduction_loops": reduction_loops,
                 "num_warps": num_warps,
                 "num_stages": 1,
+                # pid_type: a PRINCIPLED CONSTANT (a valid degenerate heuristic),
+                # not an un-owned default. Run 1 rejected persistent/interleaved
+                # with a gold-standard matched-lever A/B — flat dominates 1.5-4x on
+                # every forward reduction (these are grid-saturated at the M-grid;
+                # persistent pid only amortizes launch/tail for grid-BOUND backward/
+                # Band-D kernels, out of scope) and the oracle's pid pick was a
+                # confounded passenger (ledger.gate_verdicts pid_breakpoint_sweep /
+                # pid_within_oracle_bundle). num_sm_multiplier/maxnreg require a
+                # persistent pid_type, so they are inapplicable here. The seed OWNS
+                # this knob and sets it to 'flat'.
+                "pid_type": "flat",
             }
             # Eviction: a single streamed reduction input (num_load==1: sum,
             # long_sum) wants 'first' (read once, never reused -> evict_first frees
@@ -568,6 +579,7 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 "block_sizes": sc_block_sizes,
                 "num_warps": num_warps,
                 "num_stages": 1,
+                "pid_type": "flat",  # principled constant — see the T1 branch.
             }
             # Eviction: the structured combine RE-READS the reduction input (x in
             # the combine pass, re-read in the apply pass) -> 'last' on the combine
@@ -615,5 +627,6 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             "block_sizes": block_sizes_list,
             "num_warps": num_warps,
             "num_stages": 1,
+            "pid_type": "flat",  # principled constant — see the T1 branch.
         }
         return Config(**seed)

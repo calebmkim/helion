@@ -140,3 +140,28 @@ LIVE-seed G uplift (run2_measure_g): welford 4096 0.760->0.951(+19%), 5120 0.694
 sum 2048,16384 0.931->1.011, 512,8192 ->0.970, 32768,256 ->1.132. 8 non-evict kernels byte-identical (evict=None).
 ruff/pyrefly clean; 56 unit tests pass. PENDING: verification agent RULE A/B/C (full curriculum no-regression +
 rms_norm x-only-first test) -> then add rms/ln eviction if clean, then referee+auditor gate, commit.
+
+## Product-A O milestone (2026-05-31): in-sample O 0.9786 -> 0.9980 (+2.0%). Champion = v8+G1+evict.
+Per-kernel G: rms 0.979, sum 1.019, long_sum 1.138, ln 0.985, welford 0.975, softmax 0.960, kl 1.028,
+jsd 0.997, CE 0.916. Residuals: CE (8192,131072) 0.539 SOURCE ceiling (Goal5); rms (2048,2048) 0.871 +
+small-N (codegen-knob explorer). welford TEST re-read pending (consolidated pass).
+
+## Goal 5 — new-kernel generality probes (CANDIDATES, design — propose profiles to auditor before impl).
+Each must be STRUCTURALLY DISTINCT (different (num_load,num_tiled_accumulators,num_reduction_ops,
+is_structured_combine) profile or path), NOT a cosmetic wrapper. Validate each band generalizes; if a band's
+seed is >10% off on the new kernel's in-sample shapes -> REWORK heuristic (find the distinguishing workload
+property), NO kernel-identity fence.
+- STRUCTURED-COMBINE band (welford's is_structured_combine — auditor flag: byte-cap VALUES welford-fit):
+  candidate **two-pass standardize / plain mean-var layernorm** (combine = 2 plain reductions sum_x, sum_x2;
+  apply = normalize) -> is_structured_combine=True but num_reduction_ops=2 (vs welford 3-stat recurrence) +
+  num_load differs -> tests whether the combine/apply byte caps + re-read eviction generalize beyond welford.
+- MULTI-LOAD band (cross_entropy's MULTILOAD_PERSIST_MAX_BYTES + re-read): candidate **standalone logsumexp**
+  (row max-pass + exp-sum-pass over x = 2 reads, re-read; scalar output, no apply) -> num_load=2, re-read,
+  not structured-combine -> tests multi-load persist cap on a different identity; also tests whether re-read
+  eviction should extend to multi-pass multi-load reductions (it regressed softmax mid-N -> watch).
+- BAND-B accumulator (kl_div/jsd's num_tiled_accumulators): candidate **2nd heavy-epilogue loss** carrying
+  [M,R] accumulator(s) with a different num_store/num_reduction_ops (e.g. a generalized-KL or a cosine/dot
+  loss). -> tests BANDB_R_BLOCK_BYTES generalizes.
+Impl site: examples/ + benchmarks/run.py KERNEL_MAPPINGS + tritonbench operator w/ torch_compile default
+baseline (operator edits in ORIGINAL checkout) + _lab/harness measure + in-sample-v2 shapes. Correctness-gate
+vs eager FIRST. Propose each ReductionFact profile + "why it tests the band differently" to auditor pre-impl.
