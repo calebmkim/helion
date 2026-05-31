@@ -1609,6 +1609,12 @@
     "layer_norm_gate_verdicts": {
       "results_referee": "ACCEPT. G_layer_norm=0.991/0.992 (worker 0.989) vs default 0.884; +12% beyond noise. Correctness PASS all 11 (maxabs ~2-4e-6). Seed used all 11 (persistent, 2 tl.sum over rdim, num_warps match). No-regression: git diff 37b27f67..HEAD -- helion/ = 0 lines (byte-identical) + 27/27 other-kernel seeds unchanged.",
       "adversarial_auditor": "PASS. Zero heuristic change REAL (git diff empty -> smuggling structurally impossible). Fires for num_reduction_ops=2 (correct). Win real (+12.2%, (4096,15872) 1.44x). Generalizes held-out +9.0% (no overfit). Metric honest. Caveat (non-blocking): worker's oracle gap 0.6% was optimistic (noise blip on tiny (4096,1024)); fair re-bench ~1-5%, conclusion 'no num_reduction_ops branch needed' holds."
+    },
+    "run2_welford_update": {
+      "heuristic": "v8+G1 (welford Band-C re-derived on corrected source)",
+      "welford_in_sample_G_orig4": 0.9263,
+      "v8_was": 0.911,
+      "note": "source fix ships with deliverable (fixes un-seeded default too). 8 non-welford byte-identical. welford TEST re-read PENDING (consolidated pass w/ rms_norm TEST G, Goal6)."
     }
   },
   "proposed_champion": {
@@ -1995,7 +2001,44 @@
       "G5 new-kernel generality probes",
       "G6 device_ir+rms_norm TEST regen"
     ],
-    "run2_iteration_history": [],
-    "run2_gate_verdicts": []
+    "run2_iteration_history": [
+      {
+        "iter": "G1-welford",
+        "date": "2026-05-31",
+        "commits": [
+          "ddf8fc34 (source fix)",
+          "43492809 (band-C re-derive)"
+        ],
+        "change": "welford source Tn fix + Band-C re-derivation (independent byte caps combine32KiB/apply 12KiB-persist-thresh/8KiB-loop; deleted divisor+coupling)",
+        "welford_in_sample_G_orig4": 0.9263,
+        "v8_was": 0.911,
+        "per_shape_new": {
+          "1024": 0.994,
+          "1536": 0.984,
+          "2048": 0.989,
+          "4096": 0.761,
+          "2560(v2)": 0.973,
+          "5120(v2)": 0.695,
+          "prime1543": 0.958
+        },
+        "v8_per_shape": {
+          "1536": 0.922,
+          "2560": 0.867,
+          "5120": 0.696,
+          "prime1543": "0.082(WRONG)"
+        },
+        "correctness": "all N incl odd/prime correct (seed+default); prime 1543 0.082-wrong -> 0.958-correct+fast",
+        "non_welford": "8 kernels byte-identical (referee+auditor confirmed 20/20)",
+        "oracle_confound_confirmed": "corrected welford oracle picks non-divisor combine=4096 at N=2560 (buggy kernel accuracy-gate would reject) -> v8 oracle WAS artificially divisor-constrained at non-pow2",
+        "codegen_residual": "welford N=4096 seedable 0.76 vs corrected-oracle 0.961 (TD indexing + eviction last/first) = Goal-2 target; N=2560 oracle 0.987 (eviction); N=8192 oracle 0.737"
+      }
+    ],
+    "run2_gate_verdicts": [
+      {
+        "iter": "G1-welford",
+        "results_referee": "ACCEPT (independent re-run GPU2: correctness all N incl prime; G reproduces 1536+6.7%/2560+12.2%; worst -0.20%; 20/20 non-wf byte-identical)",
+        "adversarial_auditor": "PASS (fix real: same cfg err0.65 OLD vs 1.4e-6 NEW; OOB zero-fill in Triton; gate structural not kernel-identity, softmax doesn't fire; 2 synthetic structured-combine kernels DO fire -> gate generalizes; no masked regression). FLAG for Goal5: byte-cap VALUES welford-curriculum-fit (12KiB apply = 2-point sep) -> validate w/ real 2nd structured-combine kernel."
+      }
+    ]
   }
 }

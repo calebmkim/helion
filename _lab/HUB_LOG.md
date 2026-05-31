@@ -217,3 +217,11 @@
   regression backstop in force across ALL kernels+shapes (incl in-sample-v2 + new kernels).
 - Next: GOAL 1 (welford source fix + re-derive Band-C), then interleave Goal 4 (in-sample-v2) → Goal 2
   (codegen knobs) → Goal 5 (new-kernel generality). Phase II (Goal 3) after Phase I settles.
+- **GOAL 1 DONE + BOTH GATES PASS (2026-05-31).** welford source bug fixed + Band-C re-derived. Commits
+  ddf8fc34 (source `Tn=(tile_n.index<n).sum()`), 43492809 (band-C: independent byte caps, deleted
+  divisor+coupling). welford in-sample G(orig4) 0.911→0.926; prime-N 1543 0.082(WRONG)→0.958(CORRECT+FAST);
+  1536 +6.7%, 2560 +12.2%; 8 non-welford kernels BYTE-IDENTICAL. Referee ACCEPT, auditor PASS (fix real,
+  gate structural+generalizes to 2 synthetic kernels; FLAG: byte-cap values curriculum-fit→Goal 5).
+  Source fix ships w/ deliverable (also fixes un-seeded default at prime N). Confirmed v8 welford oracle was
+  divisor-confounded. Big Goal-2 welford codegen residual: N=4096 seed 0.76 vs oracle 0.961 (TD+eviction).
+- Next: GOAL 4 (in-sample-v2 shapes) → GOAL 2 (codegen knobs, big welford+small-N headroom) → GOAL 5.

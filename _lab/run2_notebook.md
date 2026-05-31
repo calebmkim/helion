@@ -56,3 +56,36 @@ Plan: (1) fix+verify OOB zero-fill + correctness on well-factored/odd/PRIME(1543
 oracle under corrected kernel (re-run fresh quick-autotune oracle on (262144,2048), compare to v8 cache; if
 >3% beyond noise → oracle was confounded, re-run all welford oracles); (3) re-derive Band-C; (4) re-measure
 welford in-sample G + pre-authorized welford TEST re-read; (5) commit (source fix ships w/ deliverable).
+
+## FIREWALL MAP (from TEST_readonce.py — guard Goal 4 + TEST re-reads)
+- Authorized TEST re-reads (ONLY these two): **welford TEST** (invalid under corrected kernel) +
+  **rms_norm TEST G ~0.828** (no raw log). No other kernel's TEST column is re-read.
+- welford: in-sample {1024,1536,2048,4096}@262144; VALIDATION {2560,3072}@262144,(65536,16384);
+  TEST {(262144,5120),(262144,7168),(262144,1280),(262144,1543),(131072,2048),(262144,768)}.
+  → Goal-4 promotes 2560(val)+5120(TEST) to **in-sample-v2** (+M-var (512,4096),(8192,4096)). I have swept
+  5120,2560,1024,2048,4096,(8192,4096) — OK as in-sample/in-sample-v2. KEEP CLEAN for welford TEST re-read
+  (do NOT tune on): **7168, 1280, 1543(canary), 768, (131072,2048)** (+ can add 3072).
+- rms_norm TEST: {(256,4096),(2048,2560),(2048,1025),(4096,10240),(8192,2048),(1,131072),(65536,512)} —
+  re-read authorized (regen the ~0.828). Goal-4 tiny-M (256,4096) may go in-sample-v2 (rms TEST regenerated).
+- DISCIPLINE for the 7 NON-re-read kernels (layer_norm/sum/softmax/cross_entropy/kl_div/jsd): in-sample-v2
+  shapes MUST be disjoint from their sealed TEST. Brief collisions to AVOID/substitute: softmax (4096,3072)
+  IS softmax TEST → use a different non-pow2 (e.g. (8192,3072)); layer_norm (256,4096) IS layer_norm TEST →
+  use rms_norm for the tiny-M (256,4096) only, pick a distinct tiny-M for layer_norm. Loss-kernel real-vocab
+  in-sample-v2: pick BT not already in VALIDATION/TEST (validation already has 2048/4096 × {32000,128256,...}).
+
+## Goal 1 — DONE + GATED (2026-05-31). Commits ddf8fc34 (source), 43492809 (band-C).
+RESULT: welford source bug fixed (`Tn=(tile_n.index<n).sum()`), Band-C re-derived to two INDEPENDENT
+byte caps (combine=min(np2(N),32KiB/it) [persistent — looping it regresses via serial recurrence];
+apply=persistent np2(N) if per-row-valid-bytes<=12KiB else looped 8KiB chunk). Deleted largest_pow2_div +
+apply<->combine coupling (bug-artifacts). welford in-sample G(orig 1024/1536/2048/4096) 0.911->0.926;
+1536 +6.7% (combine 512->2048), 2560(v2) +12.2% (->0.973), 5120(v2) ~tie 0.696; prime-1543 0.082(WRONG)
+->0.958(CORRECT+FAST). 8 non-welford kernels BYTE-IDENTICAL (20/20). Both gates PASS (referee ACCEPT,
+auditor PASS). Auditor proved the is_structured_combine GATE generalizes (2 synthetic structured-combine
+kernels fire); FLAG: byte-cap VALUES are welford-curriculum-fit -> validate w/ real 2nd kernel in Goal 5.
+ORACLE CONFOUND CONFIRMED: corrected welford oracle picks non-divisor combine=4096 at N=2560 (buggy
+kernel's accuracy gate would reject) -> v8 welford oracle was artificially divisor-constrained.
+GOAL-2 SEED FOR WELFORD: big codegen-knob residual — N=4096 seedable 0.76 vs corrected-oracle 0.961
+(tensor_descriptor indexing + load_eviction last/first); N=2560 oracle 0.987 (eviction); N=8192 0.737.
+DEFERRED: welford TEST re-read (clean shapes 7168,1280,768,(131072,2048); 1543 canary already 0.958) ->
+consolidated TEST pass w/ rms_norm TEST G (Goal 6). warps residual: N=5120 ramp gives w16 (0.696) vs w8
+optimum (0.721) — left simple (no regression); possible later refinement.
