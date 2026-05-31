@@ -1615,6 +1615,12 @@
       "welford_in_sample_G_orig4": 0.9263,
       "v8_was": 0.911,
       "note": "source fix ships with deliverable (fixes un-seeded default too). 8 non-welford byte-identical. welford TEST re-read PENDING (consolidated pass w/ rms_norm TEST G, Goal6)."
+    },
+    "run2_champion": {
+      "version": "v8+G1+evict",
+      "O_in_sample": 0.998,
+      "prev_v8_O": 0.9785,
+      "accepted": "O improves 0.9785->0.9980; both gates passed for G1 + eviction; no >10% per-kernel regression."
     }
   },
   "proposed_champion": {
@@ -2335,6 +2341,26 @@
       },
       "raw_numbers": "_lab/logs/run2/evict_verify.json (40KB, all variants x all shapes, median-of-7, rechecks)",
       "validation": "matched-lever in-process A/B (run2_evict_probe/run2_wf_knobs); independent full-curriculum referee agent w/ noise-rechecks; 8 non-evict kernels byte-identical; ruff/pyrefly clean; 56 unit tests pass"
+    },
+    "product_A_O": {
+      "after": "Goal1(welford fix+Band-C) + Goal2(eviction)",
+      "date": "2026-05-31",
+      "O_in_sample": 0.998,
+      "v8_O": 0.9785,
+      "uplift_pct": 2.0,
+      "per_kernel_G": {
+        "rms_norm": 0.9786,
+        "sum": 1.0192,
+        "long_sum": 1.1377,
+        "layer_norm": 0.985,
+        "welford": 0.9748,
+        "softmax": 0.9596,
+        "kl_div": 1.0282,
+        "jsd": 0.9973,
+        "cross_entropy": 0.9161
+      },
+      "drivers": "sum 0.937->1.019 (eviction first), welford 0.911->0.975 (Goal1 + eviction reread), long_sum 1.099->1.138 (eviction). rms/ln/softmax/kl/jsd/ce ~unchanged (no eviction).",
+      "note": "in-sample ORIGINAL shapes (apples-to-apples vs v8). ACCEPT: O 0.9785->0.9980. Residual targets: CE (8192,131072) 0.539 SOURCE ceiling (Goal5 online-logsumexp); rms_norm (2048,2048) 0.871 + small-N (codegen-knob explorer running). welford TEST re-read pending."
     }
   }
 }

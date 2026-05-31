@@ -240,3 +240,8 @@
 - IN FLIGHT: in-sample O re-measurement (Goals 1+2 lift, GPU1/2); codegen-knob explorer (num_stages/TD/
   range_* on rms/ln weak shapes, GPU3). Then: finish Goal 2 remaining knobs + pid_type-explicit, Goal 5
   (new kernels), then Phase II Goal 3.
+- **PRODUCT-A MILESTONE: in-sample O 0.9786 → 0.9980 (+2.0%)** after Goal1+Goal2-eviction. Seed now ≈
+  torch.compile-default parity on the geomean. Drivers: sum 0.937→1.019, welford 0.911→0.975, long_sum
+  1.099→1.138 (all eviction / Goal-1). rms/ln/softmax/kl/jsd/ce ~unchanged (byte-identical; ±noise).
+  Residuals: CE (8192,131072) 0.539 = SOURCE ceiling (Goal-5 online-logsumexp); rms_norm (2048,2048) 0.871
+  + small-N (codegen-knob explorer running). CHAMPION advanced (O improves, both gates passed, no >10% regr).
