@@ -80,6 +80,83 @@ def cross_entropy(
 
 
 # %%
+# Online (single-pass) Cross Entropy Kernel
+# -----------------------------------------
+
+
+# %%
+@helion.kernel()
+def cross_entropy_online(
+    logits: torch.Tensor,  # [N, V] input logits
+    labels: torch.Tensor,  # [N] target labels
+) -> torch.Tensor:
+    """
+    Computes the cross entropy loss with a SINGLE online (flash) pass over V.
+
+    Unlike :func:`cross_entropy` (which reduces the row twice: an ``amax`` pass and
+    a separate ``exp``-``sum`` pass), this variant streams each row of logits
+    exactly ONCE, maintaining a running max ``mi`` and a running normaliser
+    ``di = sum(exp(x - mi))`` with the flash/online rescale update. The
+    log-sum-exp is then ``mi + log(di)`` and the per-row loss is
+    ``logsumexp - logits[row, label]``. The wide row is therefore read only once
+    (no second exp-sum pass re-reading the logits), which closes the wide-vocab
+    gap where the two-pass kernel re-streams the row.
+
+    Result is identical to ``torch.nn.functional.cross_entropy(logits, labels)``
+    with the default mean reduction.
+
+    Args:
+        logits: Input logits tensor of shape [N, V].
+        labels: Target labels tensor of shape [N] containing class indices.
+
+    Returns:
+        A scalar tensor containing the mean cross entropy loss.
+    """
+    n, v = logits.shape
+    losses = torch.zeros([n], dtype=torch.float32, device=logits.device)
+
+    # Flatten logits once so the label logit can be gathered by flat index.
+    logits_flat = logits.view(-1)
+
+    block_size_n = hl.register_block_size(n)
+    block_size_v = hl.register_block_size(v)
+    neg_inf = float("-inf")
+
+    for tile_n in hl.tile(n, block_size=block_size_n):
+        # Gather the logit at each row's target label (single scalar load per row).
+        labels_tile = labels[tile_n]
+        flat_indices = tile_n.index * v + labels_tile
+        logits_at_target = hl.load(logits_flat, [flat_indices]).to(torch.float32)
+
+        # Running online state per row. Init max = -inf so the very first chunk's
+        # max always wins (handles the -inf/empty-tile start correctly) and the
+        # rescale exp(mi - mi_next) of the initial state is exp(-inf - finite) = 0.
+        mi = hl.full([tile_n], neg_inf, dtype=torch.float32)
+        di = hl.zeros([tile_n], dtype=torch.float32)
+
+        for tile_v in hl.tile(v, block_size=block_size_v):
+            values = logits[tile_n, tile_v].to(torch.float32)
+            # Mask out-of-bounds vocab lanes to -inf so they neither inflate the
+            # running max nor contribute to the exp-sum (exp(-inf - m) == 0). This
+            # is the masked-index idiom (welford), required at non-pow2 / non-divisor
+            # V where the last tile is padded.
+            col_mask = tile_v.index[None, :] < v
+            values = torch.where(col_mask, values, neg_inf)
+
+            local_amax = torch.amax(values, dim=1)
+            mi_next = torch.maximum(mi, local_amax)
+            di = di * torch.exp(mi - mi_next) + torch.exp(
+                values - mi_next[:, None]
+            ).sum(dim=1)
+            mi = mi_next
+
+        log_sum_exp = mi + torch.log(di)
+        losses[tile_n] = log_sum_exp - logits_at_target
+
+    return losses.mean()
+
+
+# %%
 # Main Function
 # -------------
 
