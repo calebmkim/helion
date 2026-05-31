@@ -1294,6 +1294,312 @@
           "maxerr": 2e-06
         }
       }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        8192,
+        8192
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 16,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 8,
+      "store_slots": [
+        2,
+        3,
+        7
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false,
+        "3": false,
+        "4": false,
+        "5": false,
+        "6": false,
+        "7": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 250.75,
+      "results": {
+        "default": {
+          "G": 0.9913,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 252.96,
+          "maxerr": 2e-06
+        },
+        "num_stages=2": {
+          "G": 0.9935,
+          "rel_to_seed": 1.0023,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 252.38,
+          "maxerr": 2e-06
+        },
+        "num_stages=3": {
+          "G": 0.9916,
+          "rel_to_seed": 1.0004,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 252.86,
+          "maxerr": 2e-06
+        },
+        "num_stages=4": {
+          "G": 0.9933,
+          "rel_to_seed": 1.002,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 252.45,
+          "maxerr": 2e-06
+        },
+        "TD_all": {
+          "G": 0.9919,
+          "rel_to_seed": 1.0006,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 252.8,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=1": {
+          "G": 0.9935,
+          "rel_to_seed": 1.0023,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 252.38,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=2": {
+          "G": 0.9916,
+          "rel_to_seed": 1.0004,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 252.86,
+          "maxerr": 2e-06
+        },
+        "range_num_stages=3": {
+          "G": 0.9921,
+          "rel_to_seed": 1.0009,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 252.74,
+          "maxerr": 2e-06
+        },
+        "default_recheck": {
+          "G": 0.9918,
+          "rel_to_seed": 1.0005,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 252.83,
+          "maxerr": 2e-06
+        }
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        2048,
+        16384
+      ],
+      "seed_block_sizes": [
+        1
+      ],
+      "seed_num_warps": 16,
+      "seed_reduction_loops": [
+        null
+      ],
+      "indexing_len": 3,
+      "store_slots": [
+        1
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false
+      },
+      "n_range_loops": 1,
+      "tc_us": 71.1,
+      "results": {
+        "default": {
+          "G": 1.0174,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 69.89,
+          "maxerr": 7.9e-05
+        },
+        "num_stages=2": {
+          "G": 1.0105,
+          "rel_to_seed": 0.9932,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 70.37,
+          "maxerr": 7.9e-05
+        },
+        "num_stages=3": {
+          "G": 1.0109,
+          "rel_to_seed": 0.9936,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 70.34,
+          "maxerr": 7.9e-05
+        },
+        "num_stages=4": {
+          "G": 1.0109,
+          "rel_to_seed": 0.9936,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 70.34,
+          "maxerr": 7.9e-05
+        },
+        "TD_all": {
+          "G": 1.0179,
+          "rel_to_seed": 1.0005,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 69.86,
+          "maxerr": 7.9e-05
+        },
+        "range_num_stages=1": {
+          "G": 1.0174,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 69.89,
+          "maxerr": 7.9e-05
+        },
+        "range_num_stages=2": {
+          "G": 1.0179,
+          "rel_to_seed": 1.0005,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 69.86,
+          "maxerr": 7.9e-05
+        },
+        "range_num_stages=3": {
+          "G": 1.0105,
+          "rel_to_seed": 0.9932,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 70.37,
+          "maxerr": 7.9e-05
+        },
+        "default_recheck": {
+          "G": 1.0174,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 69.89,
+          "maxerr": 7.9e-05
+        }
+      }
+    },
+    {
+      "kernel": "softmax",
+      "shape": [
+        4096,
+        4096
+      ],
+      "seed_block_sizes": [
+        1,
+        4096
+      ],
+      "seed_num_warps": 8,
+      "seed_reduction_loops": null,
+      "indexing_len": 3,
+      "store_slots": [
+        2
+      ],
+      "x_load_slots": [],
+      "td_engages_per_slot": {
+        "0": false,
+        "1": false,
+        "2": false
+      },
+      "n_range_loops": 2,
+      "tc_us": 65.15,
+      "results": {
+        "default": {
+          "G": 0.9774,
+          "rel_to_seed": 1.0,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 66.66,
+          "maxerr": 0.0
+        },
+        "num_stages=2": {
+          "G": 0.9686,
+          "rel_to_seed": 0.991,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 67.26,
+          "maxerr": 0.0
+        },
+        "num_stages=3": {
+          "G": 0.9622,
+          "rel_to_seed": 0.9844,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 67.71,
+          "maxerr": 0.0
+        },
+        "num_stages=4": {
+          "G": 0.9686,
+          "rel_to_seed": 0.991,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 67.26,
+          "maxerr": 0.0
+        },
+        "TD_all": {
+          "G": 0.9622,
+          "rel_to_seed": 0.9844,
+          "status": "ok",
+          "inert": true,
+          "lat_us": 67.71,
+          "maxerr": 0.0
+        },
+        "range_num_stages=1": {
+          "G": 0.9622,
+          "rel_to_seed": 0.9844,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 67.71,
+          "maxerr": 0.0
+        },
+        "range_num_stages=2": {
+          "G": 0.9686,
+          "rel_to_seed": 0.991,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 67.26,
+          "maxerr": 0.0
+        },
+        "range_num_stages=3": {
+          "G": 0.9686,
+          "rel_to_seed": 0.991,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 67.26,
+          "maxerr": 0.0
+        },
+        "default_recheck": {
+          "G": 0.9622,
+          "rel_to_seed": 0.9844,
+          "status": "ok",
+          "inert": false,
+          "lat_us": 67.71,
+          "maxerr": 0.0
+        }
+      }
     }
   ]
 }

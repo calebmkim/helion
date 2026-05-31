@@ -2375,7 +2375,14 @@
         "rms_norm (32768,256) 0.92": "small-N grid-bound; codegen knobs marginal/autotuner-only",
         "cross_entropy (8192,131072) 0.54": "kernel-SOURCE ceiling -> Goal-5 online-logsumexp"
       },
-      "raw_numbers": "_lab/logs/run2/knob_explore.json"
+      "raw_numbers": "_lab/logs/run2/knob_explore.json",
+      "explorer_confirmation": {
+        "noise_floor": "default_recheck per shape: tiny kernels (6-16us) swing \u00b125% on the SAME config (rms_norm(256,4096) G in {0.69,0.91,0.91,1.04,0.75}). The brief's 0.71-0.88 'losses' were single-sample noise; seed at/above parity on these.",
+        "TD_mechanism": "tensor_descriptor (TMA) is INERT unless the leading tiled dim has >=2 rows; the seed tiles rows at block_size=1 ([1] or [1,N]) so the load is not a 2D tile TMA targets -> stays pointer, codegen byte-identical. Only engages on welford (block [16,...]) where it OOMs (smem 524296 > 232448 limit). FUTURE: TD could be revisited ONLY via a coupled block-size co-design (wide multi-row tile + combine small enough for 232KB smem) \u2014 out of matched-lever knob scope.",
+        "num_stages_mechanism": "memory-bound reductions, no inner GEMM to overlap -> software pipelining yields nothing (within \u00b10.2% on low-noise shapes welford/rms 8192x8192/32768x256).",
+        "verdict": "CLOSE codegen-knob workstream as NULL (eviction+pid were the wins). long_sum few-row -> split-K/block-size workstream (deferred). Strong shapes (rms 8192x8192, sum 2048x16384, softmax 4096x4096) un-regressed.",
+        "median_of": 15
+      }
     }
   }
 }
