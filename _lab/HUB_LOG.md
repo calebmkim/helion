@@ -225,3 +225,18 @@
   Source fix ships w/ deliverable (also fixes un-seeded default at prime N). Confirmed v8 welford oracle was
   divisor-confounded. Big Goal-2 welford codegen residual: N=4096 seed 0.76 vs oracle 0.961 (TD+eviction).
 - Next: GOAL 4 (in-sample-v2 shapes) → GOAL 2 (codegen knobs, big welford+small-N headroom) → GOAL 5.
+- **GOAL 4 DONE.** in-sample-v2 split added to list_of_kernels.md (firewall-validated; snapshot _lab/
+  list_of_kernels_run2.md) + baselined (overall G_seed 0.890). Commit 5db6d42b.
+- **GOAL 2 (eviction) DONE + BOTH GATES PASS (2026-05-31).** Commit 136d187a + 5b4133dc. Found the
+  separating workload property run-1 missed: per-load cache RESIDENCY. num_load==1 stream (sum/long_sum) →
+  'first' (sum +29%, long_sum +16% geomean, 0 regressions); is_structured_combine re-read (welford) →
+  ['last']+['first']*(n-1) (welford 4096 0.760→0.951, +6.68% geomean, small-N neutral). REJECTED (recorded):
+  softmax re-read (−10% at 4096,2048), rms/ln x-only (noisy), TD-on-welford (OOM). Referee PASS (full-curric
+  matched A/B + noise rechecks), auditor PASS (workload-keyed, 8 byte-identical, really-used). FLAG:
+  is_structured_combine eviction welford-only → Goal 5.
+- **GOAL 6 (device_ir) partial DONE.** Commit c07d9751: _count_reduction_workload int-equality caveat
+  comment + symbolic-fallback symmetry at dtype site (behavior-neutral). REMAINING Goal-6: rms_norm TEST G
+  regen + welford TEST re-read (consolidated TEST pass at Phase-I end).
+- IN FLIGHT: in-sample O re-measurement (Goals 1+2 lift, GPU1/2); codegen-knob explorer (num_stages/TD/
+  range_* on rms/ln weak shapes, GPU3). Then: finish Goal 2 remaining knobs + pid_type-explicit, Goal 5
+  (new kernels), then Phase II Goal 3.
