@@ -948,12 +948,13 @@ class DeviceIR:
         #      tiled by a combine pass (the inner reduction, carrying per-row
         #      scalar statistics as a recurrence) AND one-or-more separate
         #      apply/normalize passes (no reduction) over that axis. This DOES get
-        #      a seed — but a structured one: the apply tile(s) are widened to
-        #      persistent (else they floor to width 1 -> ~10-20x slower) and the
-        #      combine tile is sized as a power-of-2 DIVISOR of N so its masked
-        #      per-chunk count (``Tn=chunk.size(-1)``) equals the TRUE count (a
-        #      masked next_pow2 combine tile is numerically WRONG at non-power-of-2
-        #      N). See get_seed_config's is_structured_combine branch.
+        #      a seed — but a structured one: the apply tile(s) are widened (else
+        #      they floor to width 1 -> ~10-20x slower) and the combine tile is a
+        #      byte-capped next_pow2(N) reduction. (The welford source counts each
+        #      chunk's VALID columns via the masked ``(tile.index<n).sum()``, so a
+        #      non-divisor combine tile is correct at any N; the old pow2-divisor
+        #      constraint — a workaround for the now-fixed ``Tn=chunk.size(-1)``
+        #      bug — is gone.) See get_seed_config's is_structured_combine branch.
         #  (2) anything else with >1 non-grid tile: out of scope for this seed —
         #      decline so the gate (reduction_facts==1) does not fire.
         #

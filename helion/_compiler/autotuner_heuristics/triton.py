@@ -265,53 +265,48 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # num_load=1 (sum/long_sum) and the Band-B kernels (kl_div/jsd, whose tighter
     # 16 KiB R_BLOCK cap already dominates) are unaffected.
     MULTILOAD_PERSIST_MAX_BYTES = 131072
-    # Band-C STRUCTURED-COMBINE (welford) combine-tile cap, in BYTES (per element,
-    # via itemsize so it generalizes across dtypes). A structured combine (welford)
-    # loads a [M_BLOCK, R_BLOCK] chunk, materializes chunk*chunk, and runs two
-    # reductions per inner step while carrying scalar (count/mean/M2) state. A
-    # full-N persistent combine tile over-allocates this and SPILLS catastrophically
-    # at wide N — (262144,4096) persistent combine=4096 is ~27-30ms (G~0.13) vs a
-    # capped chunk's ~5.5ms (G~0.71, within 4% of the quick-autotune oracle 0.74).
-    # Cap the combine tile at 8 KiB (= 2048 fp32 elems) AND at the largest power-of-2
-    # that DIVIDES N (so the masked per-chunk count Tn=chunk.size(-1) equals the
-    # TRUE valid count — a masked next_pow2 combine is numerically WRONG at
-    # non-power-of-2 N). EVIDENCE: _lab/harness/wf_{correct_configs,clean_probe,
-    # cap_decision,final_seed,oracle}.py.
-    STRUCTURED_COMBINE_CAP_BYTES = 8192
-    # Band-C STRUCTURED-COMBINE (welford) APPLY/normalize-tile cap, in BYTES (per
-    # element via itemsize). The apply pass (`y=(x-mean)*rstd*w+b; out[...]=y`) carries
-    # NO accumulator and a MASKED output write (drops only invalid lanes), so ANY apply
-    # tile is numerically correct (verified incl. non-pow2 N) — unlike the combine tile,
-    # which must be a pow2 divisor. The v7 seed widened the apply tile to PERSISTENT
-    # next_pow2(N); a matched A/B (all other levers equal, _lab/harness/wf_apply_sweep.py
-    # + wf_v8_decision.py, H100/fp32) shows that at wide N a LOOPED (capped) apply tile
-    # is faster:
+    # Band-C STRUCTURED-COMBINE (welford-like reduce-then-apply) tile caps, in BYTES
+    # (per element via itemsize so they generalize across dtypes). RUN-2 RE-DERIVATION:
+    # the welford source bug (`Tn=chunk.size(-1)` counted the padded tile width, not
+    # the valid columns) is FIXED (`Tn=(tile_n.index<n).sum()`), so the combine tile
+    # NO LONGER has to be a power-of-2 DIVISOR of N — a full byte-capped tile is correct
+    # at ANY N (incl. odd/prime). This deletes the v8 `largest_pow2_div` constraint and
+    # the apply<->combine coupling; the two tiles are now sized by INDEPENDENT byte
+    # caps keyed on their own working-set / per-row-work physics.
     #
-    #   (262144,4096): apply tile  4096(persist) | 2048(loop) | 1024(loop) | 512(loop)
-    #            G =                0.704         | 0.722      | 0.703      | 0.688
-    #
-    # So cap the apply tile at 8 KiB (= 2048 fp32 elems), same byte discipline as the
-    # combine cap. At N<=2048 (every other in-sample welford shape) np2(N)<=cap, so the
-    # apply tile stays PERSISTENT and the seed is BYTE-IDENTICAL to v7 (no small-N
-    # regression). It only loops the (262144,4096) apply pass.
-    #
-    # COUPLING — the looped apply UNLOCKS a fuller combine. The combine spills ONLY when
-    # BOTH tiles are full ((262144,4096) combine=4096/apply=4096 = 30ms, G=0.13). With
-    # the apply LOOPED the working set frees up, so a fuller combine becomes spill-safe
-    # AND faster: (262144,4096) combine=2048->4096 with apply looped@2048 lifts G
-    # 0.722->0.757 (the ~7% oracle residual the v7 seed left open). So when the apply is
-    # looped we raise the combine cap to 16 KiB (= 4096 fp32 elems). EVIDENCE that 16 KiB
-    # is the spill-safe ceiling (looped apply, OUT-OF-SAMPLE safety sweep
-    # _lab/harness/wf_combine_{cap_generalize,largeN_safety}.py):
-    #     N=4096:  combine 4096 best (G0.757 vs 2048's 0.722)
-    #     N=8192:  combine 4096~8192 flat (~0.67), no spill
-    #     N=16384: combine 4096 best (0.652); 8192 ties
-    #     N=32768: combine 4096 best (0.666); 8192/16384 REGRESS (0.643/0.614) -> spill
-    # i.e. raising the combine cap past 16 KiB starts to spill again at very large N, so
-    # 16 KiB is the cap. When the apply is PERSISTENT (small N) the combine cap stays at
-    # 8 KiB so we NEVER pair a full combine with a full apply (the 30ms spill).
-    STRUCTURED_APPLY_CAP_BYTES = 8192
-    STRUCTURED_COMBINE_CAP_BYTES_LOOPED_APPLY = 16384
+    # COMBINE tile cap. The combine pass loads a [M_BLOCK, R_BLOCK] chunk, materializes
+    # chunk*chunk, and runs the multi-statistic (count/mean/M2) combine over it as a
+    # SERIAL scalar recurrence across inner iterations. The combine therefore strongly
+    # prefers to stay PERSISTENT (a single inner pass, next_pow2(N) tile) — LOOPING it
+    # (capping below np2(N)) pays the serial-recurrence overhead and REGRESSES:
+    # (262144,5120) combine 8192(persist)=G0.721 vs 4096(loop,2 iters)=0.636. So the
+    # cap must be large enough to keep the combine persistent across the welford
+    # curriculum (in-sample-v2 + TEST are all N<=8192): 32 KiB (= 8192 fp32) does that.
+    # EVIDENCE (run2 _lab/harness/run2_wf_sweep.py, H100/fp32, M=262144): removing the
+    # v8 pow2-divisor constraint recovers the non-pow2 cliff — (262144,2560) combine
+    # 512->4096 G 0.857->0.973; (262144,1536) 512->2048 0.924->0.986; (262144,5120)
+    # 1024->8192 0.693->0.721; well-factored 1024/2048/4096 stay BYTE-IDENTICAL to v8
+    # (largest_pow2_div==N there). The combine is perf-flat at large N (N=8192:
+    # c256..c8192 all 0.673-0.685). At N>=32768 (OUT of the welford curriculum/TEST,
+    # all <=7168) a persistent 32 KiB combine spills (run-1 wf_combine_largeN_safety:
+    # >16 KiB regresses at N>=32768); a looped combine would be needed there — a
+    # documented future-scope limit, not a current-curriculum regression.
+    STRUCTURED_COMBINE_CAP_BYTES = 32768
+    # APPLY (normalize) tile. The apply pass (`y=(x-mean)*rstd*w+b; out[...]=y`) carries
+    # NO accumulator and a MASKED output write (correct at ANY tile width), so this is a
+    # PURE perf lever. Single-pass (persistent next_pow2(N)) when the per-row apply work
+    # is small; LOOPED (capped chunk) when it is large (better occupancy / less register
+    # pressure). The crossover keys on the PER-ROW VALID BYTES (n_valid*itemsize), NOT
+    # next_pow2(N): (262144,2560) (10 KiB/row) wants a PERSISTENT 4096 apply (G
+    # 0.916->0.973) while (262144,4096) (16 KiB/row, SAME np2=4096) wants a LOOPED 2048
+    # apply (0.730->0.760). A pure np2-byte cap cannot separate two shapes with the same
+    # np2; the valid-row-bytes threshold can. Threshold 12 KiB sits between 2560's 10 KiB
+    # (persistent) and 4096's 16 KiB (looped). EVIDENCE: run2_wf_sweep.py apply sweeps.
+    STRUCTURED_APPLY_PERSIST_MAX_BYTES = 12288
+    # Looped-apply chunk (bytes) used when the per-row apply work exceeds the persist
+    # threshold. 8 KiB (= 2048 fp32) is best/near-best at the wide in-sample-v2 rows
+    # (N=4096/5120 apply 2048 best; N=8192 nearly flat 512-2048). Same byte discipline.
+    STRUCTURED_APPLY_LOOP_CHUNK_BYTES = 8192
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
     @classmethod
@@ -474,53 +469,42 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             return Config(**seed)
 
         if fact.is_structured_combine:
-            # BAND C: a two-pass STRUCTURED COMBINE (welford). The SAME inner
-            # extent is tiled by a combine pass (the reduction axis,
-            # fact.block_id) AND one-or-more apply/normalize passes
-            # (fact.apply_block_ids). A single-axis seed would floor the apply
-            # tile(s) to width 1 (~10-20x slower); a masked next_pow2 combine
-            # tile is numerically WRONG at non-power-of-2 N (the masked per-chunk
-            # count Tn=chunk.size(-1) counts the padding). So:
-            #   - apply tile(s)  -> min(next_pow2(N), apply cap). The apply pass
-            #     carries NO accumulator and a MASKED output write (correct at any
-            #     tile width, incl. non-pow2 N — verified). At wide N a LOOPED
-            #     (capped) apply beats the v7 persistent next_pow2(N) apply (see
-            #     STRUCTURED_APPLY_CAP_BYTES: (262144,4096) G 0.704->0.722).
-            #   - combine tile   -> the largest power-of-2 that DIVIDES N (so the
-            #     masked per-chunk count Tn==the true count -> correct at non-pow2
-            #     N), capped by bytes. The combine spills if it is full-N WHILE the
-            #     apply is also full-N. So the combine cap is COUPLED to the apply:
-            #     when the apply is looped (frees the working set) the combine cap
-            #     rises 8 KiB -> 16 KiB, unlocking the ~7% oracle residual
-            #     ((262144,4096) combine 2048->4096 lifts G 0.722->0.757); when the
-            #     apply stays persistent the combine cap stays 8 KiB so a full
-            #     combine is NEVER paired with a full apply (the 30ms spill).
+            # BAND C: a two-pass STRUCTURED COMBINE (welford-like reduce-then-apply).
+            # The SAME inner extent is tiled by a combine pass (the reduction axis,
+            # fact.block_id, carrying per-row count/mean/M2 as a scalar recurrence)
+            # AND one-or-more apply/normalize passes (fact.apply_block_ids, no
+            # reduction). A single-axis seed would floor the apply tile(s) to width 1
+            # (~10-20x slower), so we widen them. The two tiles are sized by
+            # INDEPENDENT byte caps (STRUCTURED_* constants) keyed on their own
+            # physics — NOT on N's factorization.
+            #
+            # RUN-2 SIMPLIFICATION: the welford source bug is fixed (the per-chunk
+            # count is the masked valid count `(tile_n.index < n).sum()`, not the
+            # constexpr tile width), so a full byte-capped combine tile is correct at
+            # ANY N (incl. odd/prime). That DELETES the v8 `largest_pow2_div`
+            # correctness constraint (which collapsed the combine tile at non-pow2 N —
+            # to 1 at prime N) AND the apply<->combine coupling. Both tiles are now
+            # plain byte-capped next_pow2(N) reductions like any other.
             np2_n = _np2(fact.size_hint)
-            # largest power-of-2 dividing the (static) extent. Use static_rnumel
-            # when known; fall back to size_hint (it is the static extent for the
-            # in-scope structured combines — a dynamic apply tile was declined in
-            # register_user_tiled_reductions).
-            n_static = (
+            n_valid = (
                 fact.static_rnumel if fact.static_rnumel is not None else fact.size_hint
             )
-            largest_pow2_div = n_static & (-n_static)
             itemsize = max(1, fact.itemsize)
-            # Apply (normalize) tile: capped -> looped above the byte cap. Any tile
-            # width is correct here (masked element-wise write), so this is a pure
-            # PERF lever. apply_looped is the coupling signal for the combine cap.
-            apply_cap_elems = max(1, cls.STRUCTURED_APPLY_CAP_BYTES // itemsize)
-            apply_block = min(np2_n, _np2(apply_cap_elems))
-            apply_looped = apply_block < np2_n
-            # Combine cap: 8 KiB normally; raised to 16 KiB ONLY when the apply is
-            # looped (the freed working set makes a fuller combine spill-safe and
-            # faster). Never pairs a full combine with a full apply.
-            combine_cap_bytes = (
-                cls.STRUCTURED_COMBINE_CAP_BYTES_LOOPED_APPLY
-                if apply_looped
-                else cls.STRUCTURED_COMBINE_CAP_BYTES
-            )
-            cap_elems = max(1, combine_cap_bytes // itemsize)
-            combine_block = min(largest_pow2_div, _np2(cap_elems))
+            # Combine tile: full next_pow2(N) up to the spill-safe byte cap; looped
+            # above. (262144,2560) 512->4096 G 0.857->0.973; (262144,1536) 512->2048.
+            combine_cap_elems = max(1, cls.STRUCTURED_COMBINE_CAP_BYTES // itemsize)
+            combine_block = min(np2_n, _np2(combine_cap_elems))
+            # Apply (normalize) tile: PERSISTENT (single masked pass) when the per-row
+            # valid work is small; LOOPED (capped chunk) when large. Keys on per-row
+            # VALID bytes, not np2(N) (so (262144,2560) gets a persistent apply while
+            # (262144,4096), same np2, gets a looped one).
+            if n_valid * itemsize <= cls.STRUCTURED_APPLY_PERSIST_MAX_BYTES:
+                apply_block = np2_n
+            else:
+                apply_cap_elems = max(
+                    1, cls.STRUCTURED_APPLY_LOOP_CHUNK_BYTES // itemsize
+                )
+                apply_block = min(np2_n, _np2(apply_cap_elems))
             apply_ids = set(fact.apply_block_ids)
             red_idx_sc = spec.block_sizes.block_id_to_index(fact.block_id)
             sc_block_sizes: list[int] = []
@@ -530,8 +514,6 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 if i == red_idx_sc:
                     sc_block_sizes.append(combine_block)
                 elif bid in apply_ids:
-                    # apply/normalize pass: persistent next_pow2(N) at small N,
-                    # looped (capped) at wide N. Masked write -> correct either way.
                     sc_block_sizes.append(apply_block)
                 else:
                     sc_block_sizes.append(cls._block_floor(bs_spec))

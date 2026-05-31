@@ -125,14 +125,18 @@ class ReductionFact(NamedTuple):
       separate apply/normalize passes (no reduction) over the same axis. welford
       (Welford-combine pass + LayerNorm normalize pass over N) is the canonical
       case. A single-axis T2 seed would floor the apply tile(s) to width 1
-      (~10-20x slower) AND a masked persistent combine tile breaks the per-chunk
-      count (numerically WRONG at non-power-of-2 N, where ``Tn=chunk.size(-1)``
-      counts the padding). When True the seed (a) widens EVERY apply tile to
-      persistent and (b) sizes the combine tile as a power-of-2 DIVISOR of N (no
-      mask -> correct count). A WORKLOAD-STRUCTURE property (number of non-grid
-      tiles + which carries the reduction), NOT kernel identity — it fires for any
-      welford-like multi-pass structured combine. ``apply_block_ids`` lists the
-      non-reduction apply tile block_ids the seed must widen.
+      (~10-20x slower), so when True the seed widens the apply tile(s) and sizes
+      the combine tile by INDEPENDENT byte caps (see the heuristic's
+      STRUCTURED_* constants). NOTE: the welford source previously divided each
+      chunk by the constexpr tile width (``Tn=chunk.size(-1)``), which made a
+      masked non-divisor combine tile numerically WRONG at non-pow2 N and forced
+      the combine to be a power-of-2 DIVISOR of N; that source bug is now FIXED
+      (the per-chunk count is the masked valid count ``(tile.index<n).sum()``), so
+      the combine tile is a plain byte-capped next_pow2(N) reduction correct at
+      ANY N. A WORKLOAD-STRUCTURE property (number of non-grid tiles + which
+      carries the reduction), NOT kernel identity — it fires for any welford-like
+      multi-pass structured combine. ``apply_block_ids`` lists the non-reduction
+      apply tile block_ids the seed must widen.
     - ``apply_block_ids``: for a structured combine, the non-grid non-reduction
       apply/normalize tile block_ids (empty otherwise).
     """
