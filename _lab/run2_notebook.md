@@ -165,3 +165,14 @@ property), NO kernel-identity fence.
 Impl site: examples/ + benchmarks/run.py KERNEL_MAPPINGS + tritonbench operator w/ torch_compile default
 baseline (operator edits in ORIGINAL checkout) + _lab/harness measure + in-sample-v2 shapes. Correctness-gate
 vs eager FIRST. Propose each ReductionFact profile + "why it tests the band differently" to auditor pre-impl.
+
+## PHASE I COMPLETE (2026-05-31). in-sample O 0.998, TEST O 0.946, prime-N 0.905. Heuristic FROZEN.
+Phase-II prereq: seed (incl eviction+pid) round-trips through autotuner flatten/unflatten PRESERVED (welford/
+sum/long_sum verified) -> seeded Product-B arm carries eviction. Capstone auditor running (Phase-II gate).
+PHASE II PLAN (Goal 3, on the FROZEN seed): 3a budget-reduction — (a) seeded-QUICK vs unseeded-FULL (does
+quick-seeded match full-unseeded optimum? budget gap=savings); (b) convergence curves seeded vs unseeded at
+full effort (best-perf vs generation AND vs wall-clock SEPARATELY; gens/time to 95-99%). Pilot seeded-FULL vs
+unseeded-FULL on 1-2 shapes. 3b beat-max-effort (depends on Goal-2 eviction bundles): add get_seed_configs()
+multi-seed portfolio (base class), pre-register N + shapes, probabilistic beat def, fresh-process median-of-7
+re-bench, exclude noise-floor, expanded anti-lucky-run auditor. Driver: adapt run-1 productB_driver (wt-2 path,
+NO sys.path.insert, +welford +cross_entropy_online, eviction-aware). UNSEEDED=HELION_DISABLE_AUTOTUNER_HEURISTICS=1.

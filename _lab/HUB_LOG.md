@@ -256,3 +256,16 @@
 - Next: GOAL 5 (new-kernel generality probes — structured-combine worker running on GPU2; also validates the
   is_structured_combine + eviction generality flags) → then Phase II GOAL 3 (Product B) once Phase I settles.
   Remaining Goal-6: consolidated TEST re-read (welford + rms_norm G).
+- **GOAL 5 + GOAL 6 DONE → PHASE I COMPLETE (2026-05-31).** Goal 5: structured-combine generality VALIDATED
+  (standardize within 1.2% of best everywhere — resolves the welford-only flag); multi-load + Band-B shown
+  already-multi-kernel; cross_entropy_online (single-pass, verified) closes the wide-vocab SOURCE ceiling
+  ((8192,131072) 0.539→0.956, CE in-sample 0.917→0.975, regime-best 0.995). Goal 6: device_ir robustness +
+  consolidated TEST re-read DONE & RE-LOCKED — **welford TEST 0.396→0.892 (PRIME 0.082-wrong→0.905-correct+
+  fast); rms_norm TEST 0.828→0.841 (0.992 excl noise-floor); TEST O 0.863→0.946.**
+- **PHASE-I HEADLINE: in-sample O 0.9786→0.998 (regime-best ~1.005); TEST O 0.863→0.946; in-sample↔TEST gap
+  0.115→~0.05.** Heuristic (triton.py) FROZEN for Phase I.
+- **PHASE-II PREREQ VERIFIED:** the run-2 seed (load_eviction_policies + pid + reduction_loops/block_sizes)
+  survives the autotuner flat-encode round-trip PRESERVED (welford/sum/long_sum) — Product-B seeded arm carries
+  the eviction win (no round-trip bug; run-1's persistent fix in place).
+- IN FLIGHT: capstone adversarial auditor (whole run-2 deliverable; gates Phase II). NEXT: Phase II Goal 3a
+  (budget reduction) + 3b (beat max-effort, multi-seed portfolio) once capstone PASSES.
