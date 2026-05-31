@@ -2646,6 +2646,14 @@
       },
       "final_verdict": "3b BEAT-MAX-EFFORT = HONEST NULL on the pre-registered pilot (welford 262144,4096 hard-coupling + sum 2048,16384 Band-A control), N=5/arm, full budget. At max effort the LFBO autotuner reliably reaches the optimum (both arms 5/5); the deterministic seed is at/within ~1.3% of it but does not beat it. Anti-lucky-run discipline applied (complete-N runs, fair median-of-7 re-bench, control) and CAUGHT a preliminary incomplete-data false-positive. The seeded strategy's measurable victory is 3a BUDGET REDUCTION (quick matches full). NOT claiming a beat (per brief: report the honest null, don't rabbit-hole)."
     },
-    "STATUS": "RUN 2 COMPLETE (all 6 goals delivered + gated). Phase I: in-sample O 0.9786->0.998, TEST O 0.863->0.946, prime-N welford 0.082(wrong)->0.905(correct+fast); capstone PASS. Phase II: 3a budget reduction validated (seeded-quick matches unseeded-full; the seeded WIN), 3b honest null (autotuner thorough at max effort; seed at ceiling). All changes referee+auditor gated; 8 non-touched kernels byte-identical; ruff/pyrefly clean; tests pass. Never pushed."
+    "STATUS": "RUN 2 COMPLETE (all 6 goals delivered + gated). Phase I: in-sample O 0.9786->0.998, TEST O 0.863->0.946, prime-N welford 0.082(wrong)->0.905(correct+fast); capstone PASS. Phase II: 3a budget reduction validated (seeded-quick matches unseeded-full; the seeded WIN), 3b honest null (autotuner thorough at max effort; seed at ceiling). All changes referee+auditor gated; 8 non-touched kernels byte-identical; ruff/pyrefly clean; tests pass. Never pushed.",
+    "pr_readiness": {
+      "date": "2026-05-31",
+      "tests": "187 passed, 24 skipped, 34 subtests (test_reductions+test_autotuner+test_best_available+test_autotuner_heuristics)",
+      "lint": "ruff check + format clean on all changed helion/ + examples/",
+      "types": "pyrefly 0 errors (triton.py); device_ir pre-existing missing-import noise only",
+      "diff": "git diff 25561778 -- helion/ examples/ test/ = 8 files +527/-123 (shippable)",
+      "status": "PR-READY / MERGEABLE (never pushed)"
+    }
   }
 }

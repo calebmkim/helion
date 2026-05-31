@@ -281,3 +281,8 @@
   (standardize + cross_entropy_online closing the wide-vocab source ceiling); device_ir robustness; TEST
   re-locked; multi-seed plumbing. Product B: 3a budget reduction (the win) + 3b honest null. FINAL_REPORT_run2.md.
   ruff/pyrefly clean, tests pass, 8 non-touched kernels byte-identical, capstone+Product-B auditors PASS. NEVER pushed.
+- **PR-READY (2026-05-31).** Full suite 187 passed/24 skipped/34 subtests; ruff+format clean; pyrefly clean
+  (heuristic); diff vs v8 = 8 files +527/-123 (shippable). SOFT-CONVERGENCE FLAG (strong, non-blocking): run 2
+  is COMPLETE + at ceiling + exhaustively gated. Remaining is wip-DEFERRED (bf16 expansion; backward Band-D =
+  human scope decisions) or diminishing-returns (more 3a kernels — in progress as never-stop continuation).
+  Durable state (ledger/run2_notebook/HUB_LOG/FINAL_REPORT_run2/harness/logs) ready to resume losslessly.
