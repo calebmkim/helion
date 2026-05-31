@@ -2470,6 +2470,52 @@
         "verdict": "online CLOSES the wide-vocab SOURCE ceiling (V>=131072: 0.54->0.96, +77%); TIES at V<=32768; REGRESSES ~7% at V=65536 (online flash-rescale is register-heavy, seed w32 over-subscribes; w16 better but no clean fact to key it -> not fixed, within >10% backstop). Ship BOTH; recommend online for V>=~131072. Honest per-regime split.",
         "raw": "_lab/logs/run2/ce_online_probe.json (worker, contended) + hub controlled re-measure"
       }
+    },
+    "TEST_reread": {
+      "date": "2026-05-31",
+      "status": "DONE ONCE on frozen Phase-I heuristic; TEST RE-LOCKED. Authorized re-reads ONLY: welford + rms_norm G.",
+      "welford_TEST": {
+        "per_shape": {
+          "(262144,7168)": 0.69,
+          "(262144,1280)": 0.939,
+          "(262144,768)": 0.986,
+          "(131072,2048)": 0.992
+        },
+        "geomean": 0.892,
+        "v7_was": 0.396,
+        "note": "the run-1 DOMINANT TEST gap (welford -0.498) RESOLVED."
+      },
+      "welford_PRIME_canary": {
+        "(262144,1543)": 0.905,
+        "v7_was": "0.082 (NUMERICALLY WRONG)",
+        "note": "correct AND fast \u2014 the Goal-1 headline deliverable."
+      },
+      "rms_norm_TEST": {
+        "per_shape": {
+          "(2048,2560)": 1.014,
+          "(2048,1025)": 0.7,
+          "(4096,10240)": 0.987,
+          "(8192,2048)": 0.996,
+          "(1,131072)": 0.512,
+          "(65536,512)": 0.993
+        },
+        "geomean_full": 0.841,
+        "geomean_excl_noisefloor": 0.992,
+        "run1_was": "0.828 (NO raw log)",
+        "note": "now backed; full ~= run-1; noise-floor (M=1/sub-25us 2048x1025,1x131072) undefendable \u2014 seed at parity on real shapes (0.992).",
+        "noise_floor_shapes": [
+          "(2048,2560)",
+          "(2048,1025)",
+          "(1,131072)"
+        ]
+      },
+      "TEST_O": {
+        "v7": 0.8629,
+        "run2_full": 0.9461,
+        "run2_rms_excl_NF": 0.9636,
+        "note": "others (sum/long_sum/ln/CE/softmax/kl/jsd) NOT re-read, carried from v7 per firewall. welford 0.396->0.892 drives TEST O 0.863->~0.945."
+      },
+      "raw": "_lab/logs/run2/TEST_reread.json"
     }
   }
 }
