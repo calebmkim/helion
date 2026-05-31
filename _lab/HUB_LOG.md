@@ -269,3 +269,15 @@
   the eviction win (no round-trip bug; run-1's persistent fix in place).
 - IN FLIGHT: capstone adversarial auditor (whole run-2 deliverable; gates Phase II). NEXT: Phase II Goal 3a
   (budget reduction) + 3b (beat max-effort, multi-seed portfolio) once capstone PASSES.
+- **GOAL 3 (Product B) DONE + GATED → RUN 2 COMPLETE (2026-05-31).** 3a BUDGET REDUCTION validated on 3
+  kernels (welford/softmax/cross_entropy): seeded-QUICK matches unseeded-FULL optimum within 0.1-0.9% → drop
+  full→quick budget (welford ~30x wall-clock reduction to the same optimum). 3b BEAT-MAX-EFFORT = HONEST NULL
+  (welford 4096 hard-coupling + sum Band-A control, N=5/arm: both arms reach optimum 5/5 at full; seed within
+  1.3% = at ceiling). A preliminary incomplete-data "beat" was CAUGHT + corrected (anti-lucky-run discipline).
+  Product-B auditor PASS (seed-injection genuine, 3a real, 3b null honest, no over-claim, no cherry-picking).
+- **=== RUN 2 COMPLETE — all 6 goals delivered + independently gated ===** in-sample O 0.9786→0.998, TEST O
+  0.863→0.946, prime-N welford 0.082(WRONG)→0.905(correct+fast). Welford fix + simplified Band-C; eviction
+  (overturns run-1's "autotuner-only"); pid owned; codegen-knobs honest null; in-sample-v2; generality
+  (standardize + cross_entropy_online closing the wide-vocab source ceiling); device_ir robustness; TEST
+  re-locked; multi-seed plumbing. Product B: 3a budget reduction (the win) + 3b honest null. FINAL_REPORT_run2.md.
+  ruff/pyrefly clean, tests pass, 8 non-touched kernels byte-identical, capstone+Product-B auditors PASS. NEVER pushed.

@@ -2054,6 +2054,11 @@
         "iter": "CAPSTONE (whole run-2 deliverable, pre-Phase-II)",
         "verdict": "PASS",
         "auditor": "No kernel-identity smuggling (0 kernel-name literals in executable code; all workload-keyed; standardize generalizes is_structured_combine, correct prime N=3079). Headline reproduced (rms full-set 0.9786; welford 4096 0.983, prime 0.905 correct; sum/long_sum/rms in ballpark). Overfit gap small (validation ~1.0). Correctness not gamed (the one fp32-artifact FAIL gated to None, not scored). NO hidden regression (worst run2/v8=0.998; 6 kernels byte-identical + behavior-neutral pid). Eviction real (matched A/B + generated Triton). TEST reproduced (welford 0.8924, rms real-shapes 0.9956, CE online 0.9554). Phase-II gate OPEN."
+      },
+      {
+        "iter": "Product B (3a+3b)",
+        "verdict": "PASS",
+        "auditor": "Seed injection genuine (seeded n>=1, unseeded 0; matched A/B). 3a budget reduction REAL (seeded-quick/unseeded-full within 0.1-0.9%; welford ~30x wall-clock reduction to same optimum; cold-cache sound, no warm-cache cheat; real per-gen CSVs). 3b NULL honest (both arms 5/5 reach optimum; the 6.117 confirmed a gen-1 mid-run snapshot of s3 [6.656,6.117,5.92,5.80] before convergence to 4.02 -> correction correct; no beat claimed/hidden). Fair re-bench seed +1.35% = at ceiling. No over-claim; CSVs md5-identical to archives (no cherry-picking); noise-floor handled."
       }
     ],
     "in_sample_v2": {
@@ -2564,7 +2569,22 @@
         "note": "easier optimum -> modest advantage (1.35x faster to 95%, gen0 22% better)."
       },
       "headline": "3a-a BUDGET REDUCTION CONFIRMED: seeded-QUICK reaches the unseeded-FULL optimum (within 0.1-0.9%) -> the autotune budget can drop full->quick. 3a-b: the seed's convergence/time-to-target advantage scales with config-discovery difficulty (welford: at-optimum gen0 vs unseeded 380-664s; softmax: 1.35x). Run-1 floor (quick time-to-95% 1.94x) corroborated. Honest caveat: a seeded FULL search is not cheaper overall (LFBO explores around the seed); the value is quick-matches-full + reaching target sooner.",
-      "caveat": "full-budget wall-clock to-target is dominated by the 100-config gen0 compile floor; the QUICK-budget time-to-target (run-1's axis) shows the advantage more sharply. Both axes (gen + wall-clock) reported separately per brief."
+      "caveat": "full-budget wall-clock to-target is dominated by the 100-config gen0 compile floor; the QUICK-budget time-to-target (run-1's axis) shows the advantage more sharply. Both axes (gen + wall-clock) reported separately per brief.",
+      "cross_entropy(8192,131072)": {
+        "budget_3a_a": "seeded-QUICK/unseeded-FULL=1.002 (+0.2%) -> quick matches full optimum",
+        "convergence_3a_b": {
+          "to95pct": {
+            "seeded_full": "gen1.5 / 596s",
+            "unseeded_full": "gen3 / 710s"
+          },
+          "to99pct": {
+            "seeded_full": "gen3 / 761s",
+            "unseeded_full": "gen6 / 1036s"
+          }
+        },
+        "note": "existing (T1 looped) CE. seed helps convergence 1.2-1.36x (gen1.5 vs 3 to 95%); gen0 tied. Budget reduction holds."
+      },
+      "FINAL_VERDICT": "3a BUDGET REDUCTION validated across 3 kernels (welford/softmax/cross_entropy): seeded-QUICK reaches the unseeded-FULL optimum within 0.1-0.9% -> autotune budget can drop full->quick (the robust seeded WIN). Convergence/time-to-target advantage scales with config-discovery difficulty (welford dramatic: at-optimum gen0 vs unseeded 380-664s; CE moderate 1.2-1.36x; softmax modest 1.35x). Corroborates run-1's median time-to-95% 1.94x (the floor)."
     },
     "product_B_3b": {
       "date": "2026-05-31",
@@ -2625,6 +2645,7 @@
         "verdict": "NO BEAT (expected) \u2014 both arms reach ~0.066ms reliably. Confirms the 3b null is well-calibrated: no beat on EITHER the hardest coupling (welford) or at-ceiling Band-A (sum). autotune found sum eviction ['first','last'] ~= my seed's ['first','first'] (both at ceiling)."
       },
       "final_verdict": "3b BEAT-MAX-EFFORT = HONEST NULL on the pre-registered pilot (welford 262144,4096 hard-coupling + sum 2048,16384 Band-A control), N=5/arm, full budget. At max effort the LFBO autotuner reliably reaches the optimum (both arms 5/5); the deterministic seed is at/within ~1.3% of it but does not beat it. Anti-lucky-run discipline applied (complete-N runs, fair median-of-7 re-bench, control) and CAUGHT a preliminary incomplete-data false-positive. The seeded strategy's measurable victory is 3a BUDGET REDUCTION (quick matches full). NOT claiming a beat (per brief: report the honest null, don't rabbit-hole)."
-    }
+    },
+    "STATUS": "RUN 2 COMPLETE (all 6 goals delivered + gated). Phase I: in-sample O 0.9786->0.998, TEST O 0.863->0.946, prime-N welford 0.082(wrong)->0.905(correct+fast); capstone PASS. Phase II: 3a budget reduction validated (seeded-quick matches unseeded-full; the seeded WIN), 3b honest null (autotuner thorough at max effort; seed at ceiling). All changes referee+auditor gated; 8 non-touched kernels byte-identical; ruff/pyrefly clean; tests pass. Never pushed."
   }
 }
