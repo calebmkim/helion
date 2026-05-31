@@ -2049,6 +2049,11 @@
         "iter": "G2-eviction",
         "results_referee": "PASS (full-curriculum matched-lever A/B w/ noise-rechecks: RULE A sum+29%/long_sum+16% zero regressions 20/20; RULE B welford +6.68% no robust regression; softmax re-read REJECTED (-10% at 4096,2048, left default); rms/ln x-only REJECTED (noisy), left default)",
         "adversarial_auditor": "PASS (no kernel-identity smuggling - num_load==1 fires sum+long_sum, is_structured_combine structural; 8 non-evict byte-identical; small-N welford neutral 0.9995; correctness intact; eviction in generated Triton = really used; reproducible). FLAG: is_structured_combine eviction welford-only -> Goal 5 generality."
+      },
+      {
+        "iter": "CAPSTONE (whole run-2 deliverable, pre-Phase-II)",
+        "verdict": "PASS",
+        "auditor": "No kernel-identity smuggling (0 kernel-name literals in executable code; all workload-keyed; standardize generalizes is_structured_combine, correct prime N=3079). Headline reproduced (rms full-set 0.9786; welford 4096 0.983, prime 0.905 correct; sum/long_sum/rms in ballpark). Overfit gap small (validation ~1.0). Correctness not gamed (the one fp32-artifact FAIL gated to None, not scored). NO hidden regression (worst run2/v8=0.998; 6 kernels byte-identical + behavior-neutral pid). Eviction real (matched A/B + generated Triton). TEST reproduced (welford 0.8924, rms real-shapes 0.9956, CE online 0.9554). Phase-II gate OPEN."
       }
     ],
     "in_sample_v2": {
