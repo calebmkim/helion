@@ -390,6 +390,44 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         return max(1, bs_spec.min_size, bs_spec.autotuner_min)
 
     @classmethod
+    def _eviction_policies(cls, env: CompileEnvironment, kind: str) -> list[str] | None:
+        """``load_eviction_policies`` list (length == the live spec's, built EXACTLY
+        — the field is NOT length-validated by ``normalize``), keyed on per-load
+        cache RESIDENCY. Returns None to leave the autotuner default ('').
+
+        Two matched-lever-A/B-validated wins (run-2; evidence
+        ``_lab/harness/{run2_evict_probe,run2_wf_knobs}.py``, raw numbers in
+        ``ledger.run2.eviction``) — these OVERTURN run-1's "eviction is
+        autotuner-only" by finding the separating workload property (per-load
+        reuse), not a global rule:
+
+        - ``"stream"`` — a single streamed reduction input (``num_load == 1``:
+          sum, long_sum) is read ONCE and never reused, so EVERY load is
+          ``'first'`` (evict_first frees L2). e.g. sum (512,8192) G 0.925->1.451,
+          (2048,16384) 0.931->1.087.
+        - ``"reread"`` — a structured combine (welford) RE-READS the reduction
+          input: x loaded in the combine pass is loaded AGAIN in the apply pass.
+          The combine load (slot 0 — the combine graph is emitted first, so the
+          load-slot order puts it first) wants ``'last'`` (kept L2-resident for the
+          re-read); every later load is a final use -> ``'first'`` (stream). e.g.
+          welford (262144,4096) G 0.759->0.950, (262144,5120) 0.696->0.807.
+
+        Multi-load reductions with REUSED broadcast operands (rms_norm/layer_norm:
+        a streamed x PLUS a weight/bias reused across the grid) are LEFT DEFAULT —
+        a blanket policy regresses (x wants 'first' but the reused operands want
+        'last'/default) and no clean per-slot rule survives matched A/B (this is
+        the genuinely-contradictory case run-1 saw). So those callers pass no kind.
+        """
+        n = env.config_spec.load_eviction_policies.length
+        if n <= 0:
+            return None
+        if kind == "stream":
+            return ["first"] * n
+        if kind == "reread":
+            return ["last"] + ["first"] * (n - 1)
+        return None
+
+    @classmethod
     def get_seed_config(
         cls, env: CompileEnvironment, device_ir: DeviceIR
     ) -> Config | None:
@@ -466,6 +504,15 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 "num_warps": num_warps,
                 "num_stages": 1,
             }
+            # Eviction: a single streamed reduction input (num_load==1: sum,
+            # long_sum) wants 'first' (read once, never reused -> evict_first frees
+            # L2). Multi-load T1 (rms_norm/layer_norm: streamed x + reused operands)
+            # has no clean per-slot rule -> left default. See _eviction_policies.
+            evict = cls._eviction_policies(
+                env, "stream" if fact.num_load == 1 else "none"
+            )
+            if evict is not None:
+                seed["load_eviction_policies"] = evict
             return Config(**seed)
 
         if fact.is_structured_combine:
@@ -517,11 +564,19 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                     sc_block_sizes.append(apply_block)
                 else:
                     sc_block_sizes.append(cls._block_floor(bs_spec))
-            return Config(
-                block_sizes=sc_block_sizes,
-                num_warps=num_warps,
-                num_stages=1,
-            )
+            sc_seed: dict[str, Any] = {
+                "block_sizes": sc_block_sizes,
+                "num_warps": num_warps,
+                "num_stages": 1,
+            }
+            # Eviction: the structured combine RE-READS the reduction input (x in
+            # the combine pass, re-read in the apply pass) -> 'last' on the combine
+            # load (slot 0), 'first' on later loads. welford (262144,4096) G
+            # 0.759->0.950, (5120) 0.696->0.807. See _eviction_policies.
+            sc_evict = cls._eviction_policies(env, "reread")
+            if sc_evict is not None:
+                sc_seed["load_eviction_policies"] = sc_evict
+            return Config(**sc_seed)
 
         # T2 (user-tiled / manually-looped): the reduction axis IS a block_sizes
         # entry (the inner `hl.tile(n, block_size=R_BLOCK)`); there is no

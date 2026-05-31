@@ -112,3 +112,31 @@ CE 0.715, kl 1.054, jsd 1.030, sum 1.050, long_sum 0.726; OVERALL 0.890. All cor
 Goal-2 targets (G<0.90): rms/ln small-M+medium (persistent, eviction re-read target), welford 5120 (eviction),
 CE wide-vocab 0.54-0.80 (SOURCE ceiling -> Goal5 online-logsumexp), long_sum few-row 0.67 (grid-starved ->
 split-K DEFERRED, attribute not chase). softmax/kl/jsd/sum all >=1.0 (no codegen headroom needed).
+
+## Goal 2 — EVICTION the separating property = PER-TENSOR REUSE (2026-05-31). Slot map via generated Triton.
+Confirmed clean, principled wins (matched block_sizes, eviction-only):
+- num_load==1 PURE STREAM (sum/long_sum, only x): 'first' (evict_first) -> sum (512,8192) 0.925->1.451,
+  (2048,16384) 0.931->1.087. Stream once, no reuse -> evict_first frees L2.
+- RE-READ reduction tensor (welford x across 2 tile-loops; softmax_two_pass x across 2 passes): 'last' on
+  non-final read(s), 'first' on final read -> welford(262144,4096) 0.759->0.950, (5120) 0.696->0.807;
+  softmax(8192,32768) 0.983->1.010. (Per-load reuse rule, computed by run2_evict_probe.)
+NOISY / leave DEFAULT: rms_norm/layer_norm FUSE the two x-uses into ONE load (slots=[x,weight(,bias)]); x
+wants 'first' but reused weight/bias want 'last'/default -> blanket policy REGRESSES (rms 256,5120 first=-8%;
+512,8192 last=-25%). all_last/all_first/default each win at different shapes = run-1's "contradictory" (REAL
+for these). cross_entropy eviction-neutral (~1.05; its gap is SOURCE ceiling not eviction).
+RULE DESIGN (co-design device_ir per-load fact -> heuristic emit load_eviction_policies):
+  per load slot (graph order): if tensor re-read LATER in kernel -> 'last'; elif it is the (final read of a)
+  re-read tensor -> 'first'; elif num_load==1 single streamed reduction input -> 'first'; else '' (default).
+  i.e. ONLY set policies that are CLEAN wins (stream + re-read); leave multi-load-with-operands at default.
+pid_type -> emit 'flat' explicitly (run-1 lock, principled constant). tensor_descriptor: OOMs on welford wide
+combine; defer/limited. POSSIBLE refinement: rms_norm reduction-input(x)-only 'first' (leave weight default) —
+needs per-load classification (reduction-input vs broadcast operand); verify separately.
+
+## Goal 2 — eviction IMPLEMENTED (uncommitted, pending gate). triton.py _eviction_policies helper.
+RULE (matched-lever, in-process A/B): num_load==1 -> ['first']*len (sum/long_sum); is_structured_combine ->
+['last']+['first']*(len-1) (welford, slot0=combine-x re-read). Others left default.
+LIVE-seed G uplift (run2_measure_g): welford 4096 0.760->0.951(+19%), 5120 0.694->0.806(+11%), 2560 ->0.980,
+1536 in-process 0.963->0.975, 1024/2048 ~tie (NO regression — earlier cross-process 1536 dip was noise);
+sum 2048,16384 0.931->1.011, 512,8192 ->0.970, 32768,256 ->1.132. 8 non-evict kernels byte-identical (evict=None).
+ruff/pyrefly clean; 56 unit tests pass. PENDING: verification agent RULE A/B/C (full curriculum no-regression +
+rms_norm x-only-first test) -> then add rms/ln eviction if clean, then referee+auditor gate, commit.
