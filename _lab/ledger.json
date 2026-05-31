@@ -2584,7 +2584,17 @@
         },
         "note": "existing (T1 looped) CE. seed helps convergence 1.2-1.36x (gen1.5 vs 3 to 95%); gen0 tied. Budget reduction holds."
       },
-      "FINAL_VERDICT": "3a BUDGET REDUCTION validated across 3 kernels (welford/softmax/cross_entropy): seeded-QUICK reaches the unseeded-FULL optimum within 0.1-0.9% -> autotune budget can drop full->quick (the robust seeded WIN). Convergence/time-to-target advantage scales with config-discovery difficulty (welford dramatic: at-optimum gen0 vs unseeded 380-664s; CE moderate 1.2-1.36x; softmax modest 1.35x). Corroborates run-1's median time-to-95% 1.94x (the floor)."
+      "FINAL_VERDICT": "3a BUDGET REDUCTION validated on 5 kernels across ALL BANDS (welford Band-C, kl_div Band-B, rms_norm T1-persistent, cross_entropy T1-looped-multiload, softmax T2-persistent): seeded-QUICK reaches the unseeded-FULL optimum within 0.1-0.9% -> autotune budget can drop full->quick (the robust seeded WIN). Convergence/time-to-target advantage is DRAMATIC where the optimal config is hard for the blind search (welford/kl_div/rms_norm: seed at-optimum gen0 vs unseeded 115-380s) and modest where easy (softmax 1.35x, CE 1.2-1.36x). Exceeds run-1's quick-only 1.94x with a full-effort, all-bands characterization.",
+      "kl_div(4096,131072)_BandB": {
+        "budget": "+0.7% (quick matches full)",
+        "conv_99pct": "seeded gen0/0.1s vs unseeded gen2/270.9s",
+        "note": "Band-B accumulator config hard for blind search -> dramatic seed advantage"
+      },
+      "rms_norm(2048,16384)_T1persistent": {
+        "budget": "+0.2%",
+        "conv_95pct": "seeded gen0/0.2s vs unseeded gen1/115.8s",
+        "note": "persistent config -> strong seed advantage"
+      }
     },
     "product_B_3b": {
       "date": "2026-05-31",
