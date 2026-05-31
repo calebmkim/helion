@@ -89,3 +89,26 @@ GOAL-2 SEED FOR WELFORD: big codegen-knob residual — N=4096 seedable 0.76 vs c
 DEFERRED: welford TEST re-read (clean shapes 7168,1280,768,(131072,2048); 1543 canary already 0.958) ->
 consolidated TEST pass w/ rms_norm TEST G (Goal 6). warps residual: N=5120 ramp gives w16 (0.696) vs w8
 optimum (0.721) — left simple (no regression); possible later refinement.
+
+## Goal 2 — codegen knobs [STARTED 2026-05-31]. BIG FINDING: load_eviction_policies is seedable.
+OVERTURNS run-1's "eviction = autotuner-only, no seedable rule". welford (262144,4096), MATCHED block_sizes
+(G1 seed [16,4096,2048]w8), eviction-only (no TD): default G=0.760; **evict=[last,first,last,first] G=0.947
+(+18.7%)**; all_last=0.842; all_first=0.669. So per-slot alternating last/first is the win (not a global rule).
+tensor_descriptor OOMs on welford's wide combine load (needs 262KB shared > limit) → TD not usable at
+combine=4096 (oracle used combine=1024 to fit TD, reaching 0.961; eviction-only at our block_sizes already
+gets 0.947). pid_type stays flat. num_sm_multiplier/maxnreg N/A (flat).
+SLOT MAP (welford, indexing.length=5 [4 loads + store@idx4], evict.length=4): loads in graph order. HYPOTHESIS
+(cache residency, brief's hint): welford RE-READS x in the apply pass, so x-in-combine wants 'last' (keep in
+L2 for the apply re-read) and x-in-apply wants 'first' (last use → stream/evict). weight/bias small. MUST map
+slots→tensors empirically (generated Triton) to find the GENERAL workload property (NOT copy [last,first,...]).
+PLAN: (1) map slots; (2) test eviction generality across welford shapes (2560/5120/8192/1024) + on
+rms_norm/sum/cross_entropy small-N & wide (run-1 noted +11-23% there); (3) co-design a ReductionFact eviction
+rule keyed on the residency property; (4) matched-lever A/B + persist raw numbers + DISJOINT-shape validation
++ auditor (anti-fit-to-oracle). Make pid_type='flat' explicit in the seed (principled constant, run-1 lock).
+
+## Goal 4 — in-sample-v2 added + baselined (2026-05-31). list_of_kernels.md updated (snapshot _lab/list_of_kernels_run2.md).
+Baseline G_seed (current G1 heuristic) geomean per kernel: rms 0.776, ln 0.867, wf 0.876, softmax 1.005,
+CE 0.715, kl 1.054, jsd 1.030, sum 1.050, long_sum 0.726; OVERALL 0.890. All correct, no OOM.
+Goal-2 targets (G<0.90): rms/ln small-M+medium (persistent, eviction re-read target), welford 5120 (eviction),
+CE wide-vocab 0.54-0.80 (SOURCE ceiling -> Goal5 online-logsumexp), long_sum few-row 0.67 (grid-starved ->
+split-K DEFERRED, attribute not chase). softmax/kl/jsd/sum all >=1.0 (no codegen headroom needed).

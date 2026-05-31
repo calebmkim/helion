@@ -2039,6 +2039,254 @@
         "results_referee": "ACCEPT (independent re-run GPU2: correctness all N incl prime; G reproduces 1536+6.7%/2560+12.2%; worst -0.20%; 20/20 non-wf byte-identical)",
         "adversarial_auditor": "PASS (fix real: same cfg err0.65 OLD vs 1.4e-6 NEW; OOB zero-fill in Triton; gate structural not kernel-identity, softmax doesn't fire; 2 synthetic structured-combine kernels DO fire -> gate generalizes; no masked regression). FLAG for Goal5: byte-cap VALUES welford-curriculum-fit (12KiB apply = 2-point sep) -> validate w/ real 2nd structured-combine kernel."
       }
-    ]
+    ],
+    "in_sample_v2": {
+      "added": "2026-05-31",
+      "split": "in-sample-v2 (Goal 4); folded into Product A under >10% per-kernel backstop",
+      "shapes": {
+        "rms_norm": [
+          [
+            256,
+            4096
+          ],
+          [
+            512,
+            8192
+          ],
+          [
+            256,
+            5120
+          ],
+          [
+            1024,
+            2560
+          ]
+        ],
+        "layer_norm": [
+          [
+            512,
+            4096
+          ],
+          [
+            512,
+            8192
+          ],
+          [
+            256,
+            5120
+          ],
+          [
+            1024,
+            2560
+          ]
+        ],
+        "welford": [
+          [
+            262144,
+            2560
+          ],
+          [
+            262144,
+            5120
+          ],
+          [
+            8192,
+            4096
+          ],
+          [
+            16384,
+            4096
+          ]
+        ],
+        "softmax": [
+          [
+            8192,
+            3072
+          ],
+          [
+            8192,
+            32768
+          ]
+        ],
+        "cross_entropy": [
+          [
+            8192,
+            32000
+          ],
+          [
+            8192,
+            50257
+          ],
+          [
+            4096,
+            128256
+          ],
+          [
+            4096,
+            151936
+          ]
+        ],
+        "kl_div": [
+          [
+            8192,
+            32000
+          ],
+          [
+            4096,
+            50257
+          ],
+          [
+            4096,
+            128256
+          ],
+          [
+            2048,
+            151936
+          ]
+        ],
+        "jsd": [
+          [
+            8192,
+            32000
+          ],
+          [
+            8192,
+            50257
+          ],
+          [
+            8192,
+            128256
+          ],
+          [
+            4096,
+            151936
+          ]
+        ],
+        "sum": [
+          [
+            256,
+            4096
+          ],
+          [
+            512,
+            8192
+          ],
+          [
+            32,
+            65536
+          ],
+          [
+            256,
+            262144
+          ]
+        ],
+        "long_sum": [
+          [
+            4,
+            524288
+          ],
+          [
+            8,
+            393216
+          ]
+        ]
+      },
+      "firewall": "7 non-re-read kernels disjoint from sealed TEST+VAL; rms_norm+welford promote some TEST/val shapes (their TEST re-constituted). prime (262144,1543) = canary only.",
+      "baseline_G_seed_geomean": {
+        "rms_norm": 0.776,
+        "layer_norm": 0.867,
+        "welford": 0.876,
+        "softmax": 1.005,
+        "cross_entropy": 0.715,
+        "kl_div": 1.054,
+        "jsd": 1.03,
+        "sum": 1.05,
+        "long_sum": 0.726,
+        "overall": 0.89
+      },
+      "weakness_targets_G_lt_0.90": {
+        "rms_norm": [
+          [
+            256,
+            4096,
+            0.709
+          ],
+          [
+            512,
+            8192,
+            0.754
+          ],
+          [
+            256,
+            5120,
+            0.771
+          ],
+          [
+            1024,
+            2560,
+            0.879
+          ]
+        ],
+        "layer_norm": [
+          [
+            512,
+            8192,
+            0.864
+          ],
+          [
+            256,
+            5120,
+            0.779
+          ],
+          [
+            1024,
+            2560,
+            0.848
+          ]
+        ],
+        "welford": [
+          [
+            262144,
+            5120,
+            0.694
+          ]
+        ],
+        "cross_entropy": [
+          [
+            8192,
+            50257,
+            0.798
+          ],
+          [
+            4096,
+            128256,
+            0.58
+          ],
+          [
+            4096,
+            151936,
+            0.537
+          ]
+        ],
+        "long_sum": [
+          [
+            4,
+            524288,
+            0.669
+          ],
+          [
+            8,
+            393216,
+            0.788
+          ]
+        ]
+      },
+      "target_diagnosis": {
+        "rms_norm/layer_norm small-M/medium": "persistent seed loses to tc -> eviction(re-read x) codegen-knob (Goal2)",
+        "welford 5120": "eviction (Goal2, +10%)",
+        "cross_entropy wide-vocab": "kernel-SOURCE ceiling (re-reads wide row) -> online-logsumexp rewrite (Goal5 scope-note)",
+        "long_sum few-row huge-N": "grid-starved (4-8 programs) -> split-K, wip-DEFERRED out-of-scope (attribute, don't chase)"
+      }
+    }
   }
 }
