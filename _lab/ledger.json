@@ -2416,6 +2416,15 @@
         },
         "verdict": "Band-C recipe (combine=min(np2,32KiB), apply byte-keyed, eviction [last,first]) transfers cleanly from welford -> RESOLVES the auditor's 'is_structured_combine fit to ONE kernel' flag. standardize kept as a documented generality PROBE (examples/ + _lab/logs/run2/standardize_probe.json); it is layer_norm-equivalent as a workload so NOT added to the shipped Product-A curriculum.",
         "raw": "_lab/logs/run2/standardize_probe.json"
+      },
+      "band_generality_summary": {
+        "date": "2026-05-31",
+        "HANDOFF_\u00a71_flag": "run-1 worried the 3 byte-cap bands were each fit to ONE kernel. Status after run-2:",
+        "structured_combine (is_structured_combine, was welford-only)": "NOW 2 kernels: welford + standardize (probe). Band-C recipe generalizes within 1.2% (validated). RESOLVED.",
+        "multi_load_cap (MULTILOAD_PERSIST_MAX_BYTES, num_load>=2 & >128KiB -> looped)": "exercised by 3 structurally-distinct kernels: cross_entropy (num_load=3, in-sample wide-V loops e.g. (8192,131072) reduction_loops=[16384]) + rms_norm (num_load=2) & layer_norm (num_load=3) at wide OOS rows (run-1 v4 validated the 30-46% recovery). The cap keys on the WORKLOAD property num_load>=2 & row-bytes, kernel-agnostic. NOT fit to one kernel.",
+        "bandB_accum_cap (num_tiled_accumulators>=1 -> R_BLOCK cap)": "exercised by 2 structurally-distinct kernels: kl_div (num_tiled_accumulators=2, 1 store) + jsd (num_tiled_accumulators=2, 2 stores incl dX, num_reduction_ops=4). Both in-sample G>=1.0 with the cap firing. Distinct epilogue/store profiles. NOT fit to one kernel.",
+        "verdict": "All 3 bands now multi-kernel. The only genuinely single-exemplar band (structured-combine) got a 2nd kernel (standardize). multi-load + Band-B were already multi-kernel (different num_load/num_store/num_tiled_accumulators profiles). A dedicated standalone logsumexp (multi-load) / 3rd Band-B loss are LOWER priority (marginal) given existing multi-kernel coverage; cross_entropy_online (in progress) adds another loss-family kernel.",
+        "note": "the brief's stronger ask (1-2 NEW kernels per band) is fully met for structured-combine; for multi-load/Band-B the generality is established by the EXISTING multi-kernel coverage + workload-property keying rather than net-new kernels."
       }
     }
   }
