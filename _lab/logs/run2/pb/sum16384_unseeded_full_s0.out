@@ -1,0 +1,463 @@
+[driver] GPU=1 helion=/home/calebkim/helion-new-heuristics/wt-reduction-2/helion/__init__.py kernel=sum shape=(2048, 16384) mode=unseeded rand_seed=0 disable_heur='1' effort='full' max_gen=None log='/tmp/pb3b/sum16384_unseeded_full_s0'
+[verify] UNSEEDED OK: no compiler seed in gen0
+[0s] Starting autotuning process, this may take a while...
+[0s] Autotune random seed: 0
+[0s] Starting LFBOTreeSearch with initial_population=FROM_RANDOM, copies=5, max_generations=20, similarity_penalty=1.0
+[63s] Timeout after 60s compiling Config(atomic_indexing=[], block_sizes=[128], indexing=['pointer', 'tensor_descriptor', 'tensor_descriptor'], load_eviction_policies=['first', ''], maxnreg=128, num_sm_multiplier=16, num_stages=3, num_warps=1, pid_type='persistent_blocked', range_flattens=[None], range_multi_buffers=[True], range_num_stages=[1], range_unroll_factors=[2], range_warp_specializes=[], reduction_loops=[256])
+Initial population precompiling 100% ━━━━━━━━━━━━━━━━━━━━━ 100/100 0.5 configs/s
+[143s] Benchmark subprocess failed for helion.Config(atomic_indexing=[], block_sizes=[128], indexing=['pointer', 'tensor_descriptor', 'tensor_descriptor'], load_eviction_policies=['', ''], num_stages=1, num_warps=1, pid_type='flat', range_flattens=[None], range_multi_buffers=[None], range_num_stages=[0], range_unroll_factors=[0], range_warp_specializes=[], reduction_loops=[256]): benchmark timeout after 30.0s
+Initial population exploring neighbors 100% ━━━━━━━━━━━━━━ 100/100 0.9 configs/s
+[247s] Adaptive compile timeout: 30s (90% percentile=3.8s, bounds=[30.0s, 60s])
+Verifying initial results 100% ━━━━━━━━━━━━━━━━━━━━━━━ 1000/1000 111.6 configs/s
+[256s] Initial random population of 100, 5 starting points: 
+error=4
+timeout=1
+ok=95
+min=0.0653
+mid=0.1097
+max=11.4829
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'pointer', 'tensor_descriptor'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'maxnreg': 64,
+ 'num_sm_multiplier': 8,
+ 'num_stages': 2,
+ 'num_warps': 32,
+ 'pid_type': 'persistent_interleaved',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [True],
+ 'range_num_stages': [3],
+ 'range_unroll_factors': [3],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [1024]}
+[256s] Fitting surrogate: 100 points, 100 targets
+[257s] Generation 1 starting: 63 neighbors, 5 active search path(s)
+Generation 1: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 64/64 9.6 configs/s
+Generation 1: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 64/64 4.3 configs/s
+Generation 1: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 90.2 configs/s
+[293s] Generation 1 complete: 
+ok=68
+min=0.0633
+mid=0.0711
+max=0.4453
+best={'atomic_indexing': [],
+ 'block_sizes': [2],
+ 'indexing': ['tensor_descriptor', 'pointer', 'tensor_descriptor'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'maxnreg': 128,
+ 'num_sm_multiplier': 8,
+ 'num_stages': 2,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_interleaved',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [True],
+ 'range_num_stages': [2],
+ 'range_unroll_factors': [3],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[293s] Fitting surrogate: 164 points, 164 targets
+[294s] Generation 2 starting: 66 neighbors, 5 active search path(s)
+Generation 2: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━ 69/69 154.8 configs/s
+Generation 2: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 69/69 2.4 configs/s
+Generation 2: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 81.1 configs/s
+[342s] Generation 2 complete: 
+ok=72
+min=0.0672
+mid=0.0710
+max=0.2377
+best={'atomic_indexing': [],
+ 'block_sizes': [2],
+ 'indexing': ['tensor_descriptor', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['first', ''],
+ 'maxnreg': 128,
+ 'num_sm_multiplier': 16,
+ 'num_stages': 2,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_interleaved',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [4],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[342s] Fitting surrogate: 233 points, 233 targets
+[343s] Generation 3 starting: 90 neighbors, 5 active search path(s)
+Generation 3: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 93/93 16.8 configs/s
+Generation 3: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 93/93 3.6 configs/s
+Generation 3: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 64.0 configs/s
+[388s] Generation 3 complete: 
+ok=95
+min=0.0635
+mid=0.0657
+max=0.2262
+best={'atomic_indexing': [],
+ 'block_sizes': [2],
+ 'indexing': ['tensor_descriptor', 'tensor_descriptor', 'pointer'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'maxnreg': 128,
+ 'num_sm_multiplier': 16,
+ 'num_stages': 3,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_blocked',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [False],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [4],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[388s] Fitting surrogate: 326 points, 326 targets
+[389s] Copy 1 finish because of no improvement
+[389s] Generation 4 starting: 70 neighbors, 4 active search path(s)
+Generation 4: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 71/71 45.1 configs/s
+Generation 4: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 71/71 5.4 configs/s
+Generation 4: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 79.0 configs/s
+[420s] Generation 4 complete: 
+ok=74
+min=0.0642
+mid=0.0658
+max=0.1494
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'pointer', 'tensor_descriptor'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'num_sm_multiplier': 8,
+ 'num_stages': 2,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_blocked',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [True],
+ 'range_num_stages': [3],
+ 'range_unroll_factors': [3],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[420s] Fitting surrogate: 397 points, 397 targets
+[422s] Generation 5 starting: 72 neighbors, 4 active search path(s)
+Generation 5: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 74/74 17.4 configs/s
+Generation 5: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 74/74 2.4 configs/s
+Generation 5: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 77.1 configs/s
+[481s] Generation 5 complete: 
+ok=76
+min=0.0679
+mid=0.0709
+max=0.1550
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'pointer', 'tensor_descriptor'],
+ 'load_eviction_policies': ['first', ''],
+ 'num_sm_multiplier': 8,
+ 'num_stages': 2,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_blocked',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [True],
+ 'range_num_stages': [3],
+ 'range_unroll_factors': [4],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[481s] Fitting surrogate: 471 points, 471 targets
+[482s] Generation 6 starting: 71 neighbors, 4 active search path(s)
+Generation 6: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 74/74 8.0 configs/s
+Generation 6: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 74/74 3.0 configs/s
+Generation 6: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 76.0 configs/s
+[530s] Generation 6 complete: 
+ok=76
+min=0.0633
+mid=0.0652
+max=0.5115
+best={'atomic_indexing': [],
+ 'block_sizes': [2],
+ 'indexing': ['tensor_descriptor', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['first', ''],
+ 'maxnreg': 128,
+ 'num_sm_multiplier': 16,
+ 'num_stages': 3,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_interleaved',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [False],
+ 'range_num_stages': [1],
+ 'range_unroll_factors': [4],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[530s] Fitting surrogate: 545 points, 545 targets
+[531s] Generation 7 starting: 68 neighbors, 4 active search path(s)
+Generation 7: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 69/69 2.2 configs/s
+Generation 7: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 69/69 5.6 configs/s
+Generation 7: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 80.4 configs/s
+[560s] Generation 7 complete: 
+ok=72
+min=0.0632
+mid=0.0644
+max=0.1969
+best={'atomic_indexing': [],
+ 'block_sizes': [2],
+ 'indexing': ['tensor_descriptor', 'pointer', 'tensor_descriptor'],
+ 'load_eviction_policies': ['first', 'last'],
+ 'num_stages': 3,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[560s] Fitting surrogate: 614 points, 614 targets
+[561s] Generation 8 starting: 67 neighbors, 4 active search path(s)
+Generation 8: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 68/68 15.1 configs/s
+Generation 8: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 68/68 2.0 configs/s
+Generation 8: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 87.5 configs/s
+[619s] Generation 8 complete: 
+ok=71
+min=0.0668
+mid=0.0694
+max=0.4557
+best={'atomic_indexing': [],
+ 'block_sizes': [2],
+ 'indexing': ['tensor_descriptor', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'maxnreg': 128,
+ 'num_sm_multiplier': 16,
+ 'num_stages': 4,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_interleaved',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [False],
+ 'range_num_stages': [1],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[619s] Fitting surrogate: 682 points, 682 targets
+[620s] Copy 4 finish because of no improvement
+[620s] Generation 9 starting: 53 neighbors, 3 active search path(s)
+Generation 9: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━ 56/56 77.5 configs/s
+Generation 9: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━━ 56/56 3.7 configs/s
+Generation 9: verifying top configs 100% ━━━━━━━━━━━━━━ 1000/1000 103.7         
+                                                                  configs/s     
+[651s] Generation 9 complete: 
+ok=57
+min=0.0638
+mid=0.0656
+max=0.1780
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'num_sm_multiplier': 16,
+ 'num_stages': 4,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_interleaved',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [False],
+ 'range_num_stages': [1],
+ 'range_unroll_factors': [2],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[651s] Fitting surrogate: 738 points, 738 targets
+[653s] Generation 10 starting: 52 neighbors, 3 active search path(s)
+Generation 10: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━ 53/53 21.5 configs/s
+Generation 10: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 53/53 4.1 configs/s
+Generation 10: verifying top configs 100% ━━━━━━━━━━━━━ 1000/1000 112.3         
+                                                                  configs/s     
+[679s] Generation 10 complete: 
+ok=55
+min=0.0637
+mid=0.0656
+max=0.2467
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'num_stages': 6,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[679s] Fitting surrogate: 791 points, 791 targets
+[680s] Generation 11 starting: 50 neighbors, 3 active search path(s)
+Generation 11: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━ 51/51 72.7 configs/s
+Generation 11: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 51/51 4.4 configs/s
+Generation 11: verifying top configs 100% ━━━━━━━━━━━━━ 1000/1000 120.2         
+                                                                  configs/s     
+[704s] Generation 11 complete: 
+ok=53
+min=0.0632
+mid=0.0647
+max=0.3839
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['pointer', 'pointer', 'pointer'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'num_sm_multiplier': 32,
+ 'num_stages': 4,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_interleaved',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [False],
+ 'range_num_stages': [1],
+ 'range_unroll_factors': [4],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[704s] Fitting surrogate: 842 points, 842 targets
+[704s] Copy 0 finish because of no improvement
+[704s] Generation 12 starting: 35 neighbors, 2 active search path(s)
+Generation 12: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━ 36/36 65.2 configs/s
+Generation 12: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 36/36 3.0 configs/s
+Generation 12: verifying top configs 100% ━━━━━━━━━━━━━ 1000/1000 154.4         
+                                                                  configs/s     
+[724s] Generation 12 complete: 
+ok=37
+min=0.0636
+mid=0.0659
+max=0.2414
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['pointer', 'tensor_descriptor', 'pointer'],
+ 'load_eviction_policies': ['first', ''],
+ 'num_stages': 4,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[724s] Fitting surrogate: 878 points, 878 targets
+[725s] Generation 13 starting: 33 neighbors, 2 active search path(s)
+Generation 13: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━ 34/34 40.0 configs/s
+Generation 13: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 34/34 3.8 configs/s
+Generation 13: verifying top configs 100% ━━━━━━━━━━━━━ 1000/1000 161.0         
+                                                                  configs/s     
+[742s] Generation 13 complete: 
+ok=35
+min=0.0639
+mid=0.0654
+max=0.0768
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'tensor_descriptor', 'pointer'],
+ 'load_eviction_policies': ['first', ''],
+ 'num_stages': 4,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[742s] Fitting surrogate: 912 points, 912 targets
+[743s] Generation 14 starting: 34 neighbors, 2 active search path(s)
+Generation 14: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 35/35 - configs/s
+Generation 14: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 35/35 2.4 configs/s
+Generation 14: verifying top configs 100% ━━━━━━━━━━━━━ 1000/1000 157.6         
+                                                                  configs/s     
+[765s] Generation 14 complete: 
+ok=36
+min=0.0636
+mid=0.0645
+max=0.0765
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'tensor_descriptor', 'pointer'],
+ 'load_eviction_policies': ['first', 'last'],
+ 'num_stages': 4,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[765s] Fitting surrogate: 947 points, 947 targets
+[766s] Generation 15 starting: 33 neighbors, 2 active search path(s)
+Generation 15: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 33/33 - configs/s
+Generation 15: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 33/33 7.1 configs/s
+Generation 15: verifying top configs 100% ━━━━━━━━━━━━━ 1000/1000 161.8         
+                                                                  configs/s     
+[785s] Generation 15 complete: 
+ok=35
+min=0.0639
+mid=0.0643
+max=0.0757
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['pointer', 'tensor_descriptor', 'pointer'],
+ 'load_eviction_policies': ['first', 'last'],
+ 'num_stages': 6,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[785s] Fitting surrogate: 980 points, 980 targets
+[786s] Generation 16 starting: 32 neighbors, 2 active search path(s)
+Generation 16: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━ 32/32 179.1 configs/s
+Generation 16: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 32/32 3.8 configs/s
+Generation 16: verifying top configs 100% ━━━━━━━━━━━━━ 1000/1000 166.6         
+                                                                  configs/s     
+[807s] Generation 16 complete: 
+ok=34
+min=0.0640
+mid=0.0647
+max=0.0764
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'tensor_descriptor', 'pointer'],
+ 'load_eviction_policies': ['first', 'last'],
+ 'num_stages': 6,
+ 'num_warps': 16,
+ 'pid_type': 'flat',
+ 'range_flattens': [None],
+ 'range_multi_buffers': [None],
+ 'range_num_stages': [0],
+ 'range_unroll_factors': [0],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[807s] Fitting surrogate: 1012 points, 1012 targets
+[808s] Copy 3 finish because of no improvement
+[808s] Generation 17 starting: 18 neighbors, 1 active search path(s)
+Generation 17: precompiling 100% ━━━━━━━━━━━━━━━━━━━━━━━━━ 18/18 180.5 configs/s
+Generation 17: exploring neighbors 100% ━━━━━━━━━━━━━━━━━━━━ 18/18 6.8 configs/s
+Generation 17: verifying top configs 100% ━━━━━━━━━━━━━ 1000/1000 277.4         
+                                                                  configs/s     
+[821s] Generation 17 complete: 
+ok=20
+min=0.0674
+mid=0.0683
+max=0.0702
+best={'atomic_indexing': [],
+ 'block_sizes': [1],
+ 'indexing': ['tensor_descriptor', 'tensor_descriptor', 'tensor_descriptor'],
+ 'load_eviction_policies': ['first', 'first'],
+ 'maxnreg': 32,
+ 'num_sm_multiplier': 32,
+ 'num_stages': 6,
+ 'num_warps': 16,
+ 'pid_type': 'persistent_blocked',
+ 'range_flattens': [False],
+ 'range_multi_buffers': [False],
+ 'range_num_stages': [1],
+ 'range_unroll_factors': [3],
+ 'range_warp_specializes': [],
+ 'reduction_loops': [4096]}
+[821s] Fitting surrogate: 1030 points, 1030 targets
+[821s] Copy 2 finish because of no improvement
+[821s] Autotuning stop at generation 18 because of no active search path
+[823s] Autotuning complete in 823.3s after searching 1029 configs.
+One can hardcode the best config and skip autotuning with:
+    @helion.kernel(config=helion.Config(atomic_indexing=[], block_sizes=[1], indexing=['tensor_descriptor', 'tensor_descriptor', 'tensor_descriptor'], load_eviction_policies=['first', 'first'], maxnreg=32, num_sm_multiplier=32, num_stages=6, num_warps=16, pid_type='persistent_blocked', range_flattens=[False], range_multi_buffers=[False], range_num_stages=[1], range_unroll_factors=[3], range_warp_specializes=[], reduction_loops=[4096]), static_shapes=True)
+
+[823s] 4 of 1029 configs failed due to compile failures.
+[823s] Code of selected kernel: /tmp/claude-calebkim/claude-740159/torchinductor_calebkim/qa/cqamr2pvojuynfwmtkz2and25crqo3xn5myikvkokceimtixjv4t.py
+[driver] DONE best_config={'block_sizes': [1], 'reduction_loops': [4096], 'range_unroll_factors': [3], 'range_warp_specializes': [], 'range_num_stages': [1], 'range_multi_buffers': [False], 'range_flattens': [False], 'load_eviction_policies': ['first', 'first'], 'num_warps': 16, 'num_stages': 6, 'indexing': ['tensor_descriptor', 'tensor_descriptor', 'tensor_descriptor'], 'atomic_indexing': [], 'pid_type': 'persistent_blocked', 'num_sm_multiplier': 32, 'maxnreg': 32}
