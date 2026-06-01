@@ -14,7 +14,7 @@
   in-sample↔TEST gap −0.115→−0.05.
 - Every accepted change was independently **results-referee + adversarial-auditor** gated; a **capstone**
   auditor (pre-Phase-II) and a **Product-B** auditor both PASSed. 187 tests pass; ruff/pyrefly clean; diff vs
-  v8 = 8 files, +527/−123 (shippable). 8 of the 9 kernels' seeds are byte-identical to v8 (only welford,
+  v8 = 8 files, +527/−123 (shippable). 6 of the 9 kernels' seeds are byte-identical to v8 (only welford,
   sum, long_sum changed — welford via Band-C, sum/long_sum via eviction).
 
 ## 1. Where the knowledge lives (read in this order)

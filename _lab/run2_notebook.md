@@ -137,7 +137,7 @@ RULE (matched-lever, in-process A/B): num_load==1 -> ['first']*len (sum/long_sum
 ['last']+['first']*(len-1) (welford, slot0=combine-x re-read). Others left default.
 LIVE-seed G uplift (run2_measure_g): welford 4096 0.760->0.951(+19%), 5120 0.694->0.806(+11%), 2560 ->0.980,
 1536 in-process 0.963->0.975, 1024/2048 ~tie (NO regression — earlier cross-process 1536 dip was noise);
-sum 2048,16384 0.931->1.011, 512,8192 ->0.970, 32768,256 ->1.132. 8 non-evict kernels byte-identical (evict=None).
+sum 2048,16384 0.931->1.011, 512,8192 ->0.970, 32768,256 ->1.132. 7 non-evict kernels byte-identical (evict=None; sum/long_sum got eviction).
 ruff/pyrefly clean; 56 unit tests pass. PENDING: verification agent RULE A/B/C (full curriculum no-regression +
 rms_norm x-only-first test) -> then add rms/ln eviction if clean, then referee+auditor gate, commit.
 
