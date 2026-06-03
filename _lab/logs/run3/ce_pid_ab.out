@@ -1,0 +1,114 @@
+GPU=0 helion=/home/dev/local/helion-reduction-heuristics-run2/helion/__init__.py
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+
+=== cross_entropy(4096,98304) ===  tc=566.4us  [V*4=384KiB]  cached_oracle(full)=588.4us
+                 arm                    pid       rl  ns        us  /seed /oracle    /tc corr
+                seed                   flat  [16384]   1     955.8   1.00   1.621  0.593 OK
+         full_oracle persistent_interleaved   [4096]   4     589.6   1.62   1.000  0.961 OK
+          seed+chunk                   flat   [4096]   1    1018.2   0.94   1.727  0.556 OK
+     seed+pidcluster persistent_interleaved  [16384]   1     850.4   1.12   1.442  0.666 OK
+       seed+pipeline                   flat  [16384]   4     955.4   1.00   1.620  0.593 OK
+       seed+indexing                   flat  [16384]   1     955.7   1.00   1.621  0.593 OK
+       seed+eviction                   flat  [16384]   1     732.3   1.31   1.242  0.773 OK
+        oracle-chunk persistent_interleaved  [16384]   4     594.9   1.61   1.009  0.952 OK
+   oracle-pidcluster                   flat   [4096]   4     888.1   1.08   1.506  0.638 OK
+     oracle-pipeline persistent_interleaved   [4096]   1     589.2   1.62   0.999  0.961 OK
+     oracle-indexing persistent_interleaved   [4096]   4     621.2   1.54   1.054  0.912 OK
+     oracle-eviction persistent_interleaved   [4096]   4     949.1   1.01   1.610  0.597 OK
+
+[wrote /home/dev/local/helion-reduction-heuristics-run2/_lab/logs/run3/ce_pid_ab.json]

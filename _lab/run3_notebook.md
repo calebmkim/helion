@@ -471,6 +471,46 @@ oracle reading the answer key (anti-giving-up failure mode #7).
 3. Re-check pid='flat' generality: does persistent_interleaved help the OTHER wide shapes (softmax wide,
    welford wide, long_sum)? run-2's flat lock must be re-litigated, not assumed.
 
+## 2026-06-03 — wide-CE LEVER ISOLATION (ablation from VERBATIM oracle) — eviction + pid carry it
+
+METHOD NOTE (important): my first lever A/B RECONSTRUCTED the oracle from a subset of fields (chunk+pid+
+pipeline) and got 1005us != the real 589us -- because it OMITTED indexing + load_eviction_policies, which ARE
+part of the coupled winning bundle ("oracle is a bundle" trap). FIX: re-bench the VERBATIM cached oracle
+config (589.2us, reproduces the cached 588.4us) and ablate ONE lever group at a time FROM it. run3_ce_pid_ab.py
+updated to load the verbatim cached oracle + ablate.
+
+CE(4096,98304) ablation (tc=566us, seed=956us, verbatim oracle=589.6us=1.62x seed; median-of-7):
+
+ADDITIVE (seed + one oracle lever):           ABLATION (verbatim oracle - one lever):
+  seed+eviction  = 732us  (1.31x !!)            oracle-eviction  = 949us  (COLLAPSES to seed -- essential)
+  seed+pidcluster= 850us  (1.12x)               oracle-pidcluster= 888us  (loses most -- essential)
+  seed+indexing  = 956us  (no change)           oracle-indexing  = 621us  (small: 5% help)
+  seed+chunk     =1018us  (WORSE)               oracle-chunk     = 595us  (negligible: chunk 4096~16384 in-bundle)
+  seed+pipeline  = 956us  (inert)               oracle-pipeline  = 589us  (ZERO effect -- inert)
+
+LOAD-BEARING LEVERS = **load_eviction_policies + the persistent-pid cluster** (coupled). chunk-size and
+pipelining are NEARLY INERT inside the bundle (chunk 4096 vs 16384 barely matters with the right evict+pid).
+- eviction `['','','last','first','last']` ALONE = 1.31x. This is the SAME KIND of finding run-2 made for
+  WELFORD (re-read -> 'last' on the kept-resident load). CE is a 2-PASS RE-READ kernel (amax-pass then
+  exp-sum-pass re-read the logits row), so the row load wants 'last' (keep L2-resident for the re-read pass).
+  RUN-2 EXPLICITLY left CE eviction at default ("cross_entropy eviction-neutral ... its gap is SOURCE ceiling
+  not eviction") -- WRONG: at wide V, CE eviction is a 1.31x win. run-2's eviction analysis was on NARROW CE
+  (where the row fits and re-read is cheap); at wide V the re-read eviction matters a lot.
+- pidcluster (persistent_interleaved + num_sm_multiplier + maxnreg) adds the rest -> 1.62x together.
+
+=> The wide-CE fix is NOT chunk size and NOT a source ceiling. It's (1) APPLY THE RE-READ EVICTION to CE (the
+existing `_eviction_policies(env,"reread")` recipe is for is_structured_combine only; CE needs a re-read fact
+to qualify -- connects to the num_load/re-read provenance question I asked code-investigator), and (2) a
+persistent-interleaved pid + sm_mult/maxnreg branch for grid-light wide multi-load. Lever (1) (eviction) is
+the cleaner, more principled first step (re-read is a real workload property; the welford recipe already
+exists). Lever (2) (pid) is bigger structurally but re-opens run-2's pid='flat' lock -> heavier gate scrutiny.
+
+NEXT: (a) map the CE eviction slots (which load is the re-read row) via generated Triton; confirm the
+welford-style reread policy (or the oracle's exact `['','','last','first','last']`) is what helps and WHY.
+(b) Check if the re-read property is recoverable from provenance (code-investigator) -> a principled
+`is_reread`/`num_row_passes` fact gating the reread eviction for CE (and generalizing). (c) Then the pid
+cluster. A/B each vs the verbatim oracle, correctness-gate, no-regression.
+
 ### Tried / rejected (updated)
 - **REJECTED: EDIT#2 "bump LOOPED_CHUNK 16384->32768".** The full oracle wants a SMALLER chunk (4096) +
   persistent-pid, not a bigger chunk. My coarse grid (16384-131072) suggested 32768 but the full oracle (588us
