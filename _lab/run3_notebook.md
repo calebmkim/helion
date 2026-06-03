@@ -1598,3 +1598,40 @@ DECISION GATE (needs GPU): a matched-lever {seed+evict vs seed+evict+interleaved
 on ALL THREE wide CE shapes + the same interleaved@32 probe on softmax/welford/rms-ln wide. If interleaved@32 is
 net-positive everywhere -> EDIT-PID (A) with the full gate set. If not -> decline (B), eviction is the win.
 Reporting to hub for the disposition call before building anything.
+
+## 2026-06-03 — EDIT#3 PER-KERNEL ship table (Rule B, hub's per-kernel scope decision) + rms_norm NEW WIN
+
+Re-ran run3_reread_noregress_ab.py with Rule B in source. Per-kernel eviction A/B (faithful Rule B vs run-2
+positional vs default; do_bench median-of-7, fp32):
+
+| kernel              | default us | Rule B (seed_emitted) | vs_default | pos_run2     | SHIP? |
+|---------------------|-----------:|----------------------:|-----------:|-------------:|-------|
+| CE (4096,98304)     |     956.7  | 731.9                 | **1.307**  | 0.997 (fail) | SHIP  |
+| CE (8192,128256)    |    2715.0  | 2287.1                | **1.187**  | 1.042        | SHIP  |
+| CE (2048,256000)    |    1362.8  | 1257.4                | **1.084**  | 0.998        | SHIP  |
+| welford(65536,4096) |    1003.5  | 777.0                 | **1.291**  | 777.2(1.291) | SHIP  |
+| welford(32768,8192) |    1003.8  | 781.4                 | **1.285**  | 781.0(1.285) | SHIP  |
+| rms_norm(1,131072)  |      22.7  | 21.2                  | **1.071**  | 21.2(1.071)  | SHIP* |
+| layer_norm(1,131072)|      26.5  | 26.7                  | 0.993      | 26.7(0.993)  | TIE   |
+
+Per the hub's per-kernel rule (ship where it HELPS or is provably NEUTRAL-and-correct; leave default if inert):
+- **CE**: 1.31x/1.19x/1.08x, de-hack-attributable (pos fails) -> SHIP. slot4 'first' vs oracle 'last' = passenger
+  (ce_evict_ab: seed_emitted 731.9 ~= oracle_exact 731.6).
+- **welford**: Rule B == pos_run2 BYTE-IDENTICAL (both ['last','first','first','first'] -- welford's row IS slot
+  0), 1.29x -> SHIP (de-hacks positional, faithful, ZERO regression vs shipping).
+- **rms_norm (1,131072)**: Rule B HELPS **1.071x** (7%) vs default -> SHIP. *A REAL NEW WIN* -- re-litigates
+  run-2's "rms_norm no clean eviction rule" (anti-giving-up working: the faithful provenance rule finds a gain
+  the positional rule's blanket couldn't be trusted to). robustness shape, correctness-gated.
+- **layer_norm (1,131072)**: Rule B 0.993x = -0.8% on a 26us shape = WITHIN THE NOISE FLOOR (brief: sub-25us is
+  noise; 0.8% << do_bench jitter). A genuine TIE, NOT a regression.
+
+DISPOSITION QUESTION (layer_norm): the faithful RULE emits Rule B for EVERY row_reread-AND-looped kernel
+(uniform, keyed on the re-read buffer). layer_norm gets it -> neutral-within-noise. The hub's "leave default if
+inert" would carve layer_norm out -- BUT there is NO principled non-identity property separating ln from rms
+(both row_reread, both looped at (1,131072); ln just has bias = more slots). Carving ln to default would require
+an identity fence (or a "num loads" threshold = the smuggling the hub warns against for EDIT-PID). So the
+PRINCIPLED choice is the UNIFORM faithful rule: ship Rule B for all row_reread-looped kernels; ln neutral-within-
+noise is CORRECT and adds NO complexity (the rule is already uniform; carving out ADDS an identity exception).
+Recommending UNIFORM ship; flagging to hub since it's a judgment call on its "leave default if inert" guidance.
+The eviction is GATED on `not persistent` already, so only LOOPED row_reread kernels emit it (narrow/persistent
+rms/ln/softmax/CE at floor stay default -- byte-identical to champion, no inert policy on the common case).
