@@ -1976,3 +1976,35 @@ the DERIVED sm_mult, stronger than the 3x3's const-32). Running it now (GPU-GRAN
 NOTE the gate's variant-key prior (row-bytes>=1MB -> blocked else interleaved) is a FINER rule than the coarse
 interleaved seed; per the hub's rule the COARSE interleaved (with 256000 as a documented small miss) is the
 disposition unless the derived A/B shows interleaved net-negative somewhere -- then de-correlate + variant-key.
+
+## 2026-06-03 — EDIT-PID confirming A/B: (A) VALIDATED; maxnreg=64 is LOAD-BEARING (corrects my "passenger" lean)
+
+run3_pid_derived_ab.py (do_bench median-7), DERIVED sm_mult + maxnreg isolated:
+
+| shape         | flat   | pid_derived_mnr64 (SHIP) | pid_derived_nomnr |
+|---------------|-------:|-------------------------:|------------------:|
+| CE(4096,98304)|  732.0 | **594.6 (1.231)**        | 695.1 (1.053)     |
+| CE(8192,128256)| 2279.3| **1830.6 (1.245)**       | 1973.1 (1.155)    |
+| CE(2048,256000)| 1258.1| **1194.2 (1.054)**       | 1258.6 (1.000)    |
+| rms(1,131072) |   21.2 | 21.1 (1.008)             | 21.2 (1.002)      |
+| ln(1,131072)  |   27.2 | 26.9 (1.010)             | 27.1 (1.004)      |
+
+FINDINGS:
+1. **maxnreg=64 is LOAD-BEARING — my "passenger, leave default" lean was WRONG (own it).** With maxnreg64:
+   1.231/1.245/1.054; WITHOUT: 1.053/1.155/1.000 (TIE at 256000). maxnreg=64 ~DOUBLES the gain AND is what makes
+   256000 net-positive (1.054 vs 1.000). Caught by ISOLATING maxnreg in the A/B (the earlier decomp's "+0.02"
+   was on the eviction-STRIPPED baseline; on the evicted seed maxnreg's contribution is large). Almost shipped a
+   config that ties at 256000 -> the isolation A/B saved it. The SHIPPING config INCLUDES maxnreg=64.
+2. **(A) VALIDATED:** {pid_type='persistent_interleaved', num_sm_multiplier=DERIVED, maxnreg=64} BEATS flat on ALL
+   3 CE (1.231/1.245/1.054) -> the gate's decision rule for (A) is SATISFIED -> BUILD. Reproduces the 3x3
+   (1.230/1.244/1.052) -> the 3x3 WAS with maxnreg, consistent; the first derived run (no maxnreg) was the
+   anomaly, now explained.
+3. rms/ln(1,131072) = TIE (1.008/1.010, 26us noise) -> T1-scope fires harmlessly. Derived sm_mult=1 there (M=1).
+4. derived sm_mult (32/32/16) validated; ~= const-32 (256000 sm16 mnr64 = 1.054, fine).
+
+maxnreg=64 PRINCIPLED anchor: register-cap-per-thread; capping regs raises OCCUPANCY (more resident warps) ->
+hides the memory latency of the looped-reread passes. 64 = a standard high-occupancy cap (~2x warps vs uncapped
+for a heavy-accumulator persistent kernel), physically motivated for the memory-bound looped-reread regime, NOT
+a fit-to-oracle (though the oracle also picked 64 — convergent, like sm_mult~32 from M/SM). EDIT-PID seed =
+{persistent_interleaved, sm_mult=clamp(np2(ceil(M/num_sm)),1,32), maxnreg=64}, T1-branch, gated row_reread AND
+not persistent. BUILD next (champion-advancing -> after hub confirms the maxnreg-now-included config).

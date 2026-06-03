@@ -1,0 +1,177 @@
+[
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      98304
+    ],
+    "tc_us": 566.6239857673645,
+    "derived_sm_mult": 32,
+    "arms": {
+      "flat": {
+        "us": 731.9679856300354,
+        "spread": 0.007125998085564907,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "sm_mult": null
+      },
+      "pid_derived_mnr64": {
+        "us": 594.5919752120972,
+        "spread": 0.00879932210580258,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 32
+      },
+      "pid_derived_nomnr": {
+        "us": 695.1200067996979,
+        "spread": 0.004258295309062539,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 32
+      }
+    }
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      8192,
+      128256
+    ],
+    "tc_us": 1403.040051460266,
+    "derived_sm_mult": 32,
+    "arms": {
+      "flat": {
+        "us": 2279.296040534973,
+        "spread": 0.002239264071602894,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "sm_mult": null
+      },
+      "pid_derived_mnr64": {
+        "us": 1830.560028553009,
+        "spread": 0.0020016149545087065,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 32
+      },
+      "pid_derived_nomnr": {
+        "us": 1973.0560183525085,
+        "spread": 0.005157452844714794,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 32
+      }
+    }
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      2048,
+      256000
+    ],
+    "tc_us": 741.8240010738373,
+    "derived_sm_mult": 16,
+    "arms": {
+      "flat": {
+        "us": 1258.1279873847961,
+        "spread": 0.0026452200208595036,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "sm_mult": null
+      },
+      "pid_derived_mnr64": {
+        "us": 1194.1760182380676,
+        "spread": 0.0008440750211043712,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 16
+      },
+      "pid_derived_nomnr": {
+        "us": 1258.5920095443726,
+        "spread": 0.0023009925803917186,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 16
+      }
+    }
+  },
+  {
+    "kernel": "rms_norm",
+    "shape": [
+      1,
+      131072
+    ],
+    "tc_us": 23.93599972128868,
+    "derived_sm_mult": 1,
+    "arms": {
+      "flat": {
+        "us": 21.215999498963356,
+        "spread": 0.003016614292939762,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "sm_mult": null
+      },
+      "pid_derived_mnr64": {
+        "us": 21.056000143289566,
+        "spread": 0.003039536801483747,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 1
+      },
+      "pid_derived_nomnr": {
+        "us": 21.183999255299568,
+        "spread": 0.0030210832199881244,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 1
+      }
+    }
+  },
+  {
+    "kernel": "layer_norm",
+    "shape": [
+      1,
+      131072
+    ],
+    "tc_us": 35.90400144457817,
+    "derived_sm_mult": 1,
+    "arms": {
+      "flat": {
+        "us": 27.2000003606081,
+        "spread": 0.004705918123461734,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "sm_mult": null
+      },
+      "pid_derived_mnr64": {
+        "us": 26.944000273942947,
+        "spread": 0.003562903331731816,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 1
+      },
+      "pid_derived_nomnr": {
+        "us": 27.103999629616737,
+        "spread": 0.004722586201458023,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "sm_mult": 1
+      }
+    }
+  }
+]
