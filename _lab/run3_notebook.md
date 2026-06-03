@@ -1929,3 +1929,23 @@ gain; the GENERALIZABLE win is the rule, validated on CE+welford TRAIN shapes to
 PIVOT (hub: don't idle while EDIT#3 gates + anti-giving-up run): EDIT#4 welford apply-cap (non-GPU design now) +
 jsd Band-B narrow-V (~1.20) + softmax small-N (~1.15) field-diffs vs FRESH oracles + at-floor-vs-at-ORACLE
 spot-checks (at-floor != at-oracle; parity is the bar). REQ-GPU for those.
+
+## 2026-06-03 — EDIT#4 design (welford apply-cap) — non-GPU prep while floor-oracle batch is REQ'd
+
+Welford oracle field-diff (recorded earlier, run3_wf_tile_ab.py header): the apply (normalize) tile is too small.
+  (4096,16384): seed apply_tile 2048 -> oracle 4096 (seed/oracle 1.146)
+  (32768,8192): seed apply_tile 2048 -> oracle 4096 w32 (1.089)
+Current: STRUCTURED_APPLY_LOOP_CHUNK_BYTES=8192 -> apply_block = 8192/4 = 2048 fp32 (the looped-apply cap, line
+342 + 678-681). Oracle wants 4096 fp32 -> needs the constant = 16384.
+
+EDIT#4 = raise STRUCTURED_APPLY_LOOP_CHUNK_BYTES 8192 -> 16384 (apply_block 2048 -> 4096). PHYSICAL rationale
+(not a welford fit): the Band-C apply/normalize is a SINGLE masked pass over the row; a 2048-elem chunk
+under-utilizes memory bandwidth at wide N (too many short loop iters); 4096 amortizes the apply loop. Byte-cap
+keyed on the apply pass's per-iter work (like the combine cap STRUCTURED_COMBINE_CAP_BYTES=32768), NOT kernel
+identity. Scope: fires on welford/standardize (is_structured_combine) wide-N looped-apply rows only; narrow rows
+(n_valid <= STRUCTURED_APPLY_PERSIST_MAX_BYTES=12288) take the PERSISTENT apply (np2_n), unaffected.
+DISCIPLINE: must A/B-confirm net-positive across welford TRAIN shapes (narrow welford apply may prefer smaller or
+be neutral; the widest may want even bigger -> is 16384 the right single cap or does it need to scale?).
+run3_wf_tile_ab.py exists (sweeps apply-tile {seed,4096,8192} x combine x warps) -> REQ-GPU for it after the
+floor batch. Also re-confirm EDIT#4 doesn't regress the EDIT#3 welford eviction (both touch Band-C; the eviction
+is on the COMBINE-pass loads, the cap on the APPLY tile -- independent, but A/B with eviction ON).
