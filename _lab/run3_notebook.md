@@ -2220,3 +2220,28 @@ the extreme bands per kernel) before counting toward PARITY. The mid-band quick-
 => Worklist: jsd-narrow-V (real EDIT), softmax-small-N (real but trap-prone). Full-confirm the winners +
 the spot-check parities. REQ-GPU for full oracles next (per hub priority: after EDIT#6 referee + EDIT-PID A/B,
 both already done -> these full-confirms + EDIT#4 are next).
+
+## 2026-06-03 — EDIT#5 scoping (jsd narrow-V Band-B) — non-GPU prep while EDIT-PID gates run
+
+Triage answer-key: jsd narrow-V wants block [4096,1]->[2048,1] (R_BLOCK chunk 4096->2048 fp32) + num_warps
+32->8/16. Two levers, both Band-B (num_tiled_accumulators>=1):
+1. R_BLOCK chunk: current BANDB_R_BLOCK_BYTES=16384 -> 4096 fp32. Oracle wants 2048 at narrow V (30522/32000).
+   The cap is too BIG at narrow V. QUESTION: is the principled key "V below some threshold -> smaller chunk"?
+   The Band-B accumulator footprint is [M_BLOCK,R_BLOCK]; M_BLOCK=1 (numel constraint). So R_BLOCK=4096 holds
+   4096 fp32 accumulators/program. At narrow V the row is SHORT (30K) -> fewer chunks -> the big R_BLOCK
+   under-utilizes occupancy (few programs). A SMALLER R_BLOCK at narrow V = more chunks = more parallelism. So
+   the key may be: R_BLOCK scaled so the chunk-count gives enough programs to fill the machine (an occupancy
+   argument like EDIT-PID's sm_mult, but for the Band-B chunk). NOT a fit-to-jsd threshold.
+2. num_warps 32->8/16: the rnumel warp ramp gives w32 for rnumel>16384; jsd narrow-V (30K) gets w32 but wants
+   8/16. The ramp over-warps a SHORT Band-B row carrying a [1,R_BLOCK] accumulator. Band-B may want a LOWER
+   warp count than the streaming ramp (the accumulator recurrence is register-heavy; fewer warps = more regs/warp).
+
+DISCIPLINE before building EDIT#5: (a) FULL-confirm the jsd-narrow-V gap (quick 1.21/1.13 -> full); (b) field-diff
+the full oracle (is it chunk, warps, or both that carry?); (c) lever-decomp (chunk-alone vs warps-alone vs both)
+like the CE pid decomp -> find the CARRIER; (d) derive the key from PHYSICS (occupancy/register, NOT a jsd V
+threshold) -- the p-hacking guard. The jsd shapes are narrow-V (30522/32000/...); a fix keyed on "narrow V" must
+generalize (kl_div is also Band-B narrow-V -- does it want the same? kl_div(8192,30522) was at PARITY in triage,
+so kl_div does NOT want the smaller chunk -> jsd vs kl_div differ despite both Band-B narrow-V -> the key is
+NOT just "Band-B narrow-V"; there's a finer property, OR jsd's gap is jsd-source-specific). CAUTION: this could
+be a (B)-Product-B situation if no clean non-identity key separates jsd-wants-2048 from kl_div-at-parity. The
+full-confirm + decomp + the kl_div contrast decide it. NOT building until that's measured.
