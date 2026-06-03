@@ -1844,3 +1844,37 @@ asks for as "step 3" are ALL DONE this session (58ebff1b full oracles, 0c332375 
 under the only faithful gate; oracle-only). So CE wide-V's pid residual is ATTRIBUTED to Product-B/autotuner —
 which is the honest closure of point-2's open: the seedable part (eviction) is banked; the residual is
 autotuner-only (a peer-regressing, oracle-only, CE-specific config). NOT a give-up — measured + full-oracle-backed.
+
+## 2026-06-03 — EDIT-PID: the DECIDING A/B decides (B) from DATA (not reasoning); finer-key considered + falsified
+
+Hub ruling: don't decline on REASONING (#8: "no clean rule" is never about the world, only the current fact
+vocab) — RUN the deciding A/B, the DATA decides, anti-giving-up checks both directions; source ceiling bounds it
+(don't grind a 4th experiment; ambiguous + ceiling -> lean Product-B). The hub's NAMED decisive A/B = the 3x3
+{interleaved@32/blocked@4/flat} on all 3 wide CE + the interleaved@32 probe on the OTHER kernels it'd fire on.
+That A/B is DONE (769ab5cd). The DATA (not my reasoning) by the hub's OWN outcome criterion:
+
+  interleaved@32 vs flat, EVERYWHERE a `row_reread AND looped` seed rule would fire:
+    CE(4096,98304)  1.230   CE(8192,128256) 1.244   CE(2048,256000) 1.052   -> beats flat
+    softmax(512,131072) 0.998 (neutral)
+    welford(65536,4096) **0.968  <- LOSES to flat -3.2%**
+    rms_norm(1,131072) 1.011 (tie, 26us noise)
+
+Hub's criterion: "interleaved@32 LOSES to flat ANYWHERE it fires -> not a clean coarse rule -> finer key OR
+Product-B." DATA: it LOSES on welford -> by the hub's own rule, NOT a clean coarse rule. So (B) falls out of the
+DATA, not reasoning.
+
+FINER-KEY considered (the #8 discipline — is there a measurable property separating CE-helps from welford-hurts,
+making it a missing fact not an absent rule?):
+- By M (grid rows): helps mid-M (CE 2048-8192), neutral low-M (softmax 512-1024), HURTS high-M (welford
+  32768-65536). A candidate "M-count / rows-per-SM" finer key. BUT grid-occupancy was ALREADY FALSIFIED
+  (progs/SM=31 for BOTH flat and persistent CE — occupancy doesn't separate; code-investigator). So the obvious
+  finer key is the falsified hypothesis re-dressed.
+- By num_load: CE=3, welford=4, softmax=2 — not a clean separator.
+=> No principled non-falsified finer fact in hand. Per the hub's bound (source ceiling = oracle<tc everywhere,
+0.62-0.95, the LOWEST-leverage gap; don't grind a 4th experiment), I do NOT invent a finer-fact GPU experiment.
+DATA-DRIVEN disposition: **(B) Product-B** — interleaved@32 is not net-positive everywhere a faithful gate fires
+(welford -3.2%), the finer-key candidate is falsified, and the residual is oracle-only on source-bound shapes.
+
+anti-giving-up briefing (hub firing it): 3-shape FULL oracles (1.62/1.24/1.07, variant interleaved@32 x2 +
+blocked@4 x1) + this 3x3 + source ceiling (oracle/tc 0.62-0.95) + the falsified grid-occupancy finer-key. If
+anti-giving-up names a specific NON-falsified finer-fact probe, I'll run it; else (B) stands on the data.
