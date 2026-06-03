@@ -337,9 +337,19 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # (persistent) and 4096's 16 KiB (looped). EVIDENCE: run2_wf_sweep.py apply sweeps.
     STRUCTURED_APPLY_PERSIST_MAX_BYTES = 12288
     # Looped-apply chunk (bytes) used when the per-row apply work exceeds the persist
-    # threshold. 8 KiB (= 2048 fp32) is best/near-best at the wide in-sample-v2 rows
-    # (N=4096/5120 apply 2048 best; N=8192 nearly flat 512-2048). Same byte discipline.
-    STRUCTURED_APPLY_LOOP_CHUNK_BYTES = 8192
+    # threshold. EDIT#4 (run-3): raised 8192 -> 16384 (= 4096 fp32). A fresh full oracle
+    # field-diff showed the wide-N looped APPLY tile wants 4096, not 2048: the 2048 chunk
+    # under-utilizes memory bandwidth on the single masked apply pass at wide N (too many
+    # short loop iterations). Matched-lever A/B (run3_wf_tile_ab.py, do_bench median-7):
+    # welford(4096,16384) apply 2048->4096 G 1.000->1.068; (32768,8192) 1.000->1.047
+    # (1.104 with w32). NEUTRAL on narrow (16384,768: apply already PERSISTENT at np2<=
+    # STRUCTURED_APPLY_PERSIST_MAX_BYTES, so this looped chunk never applies -> byte-id).
+    # 4096 is the SAFE value: applyNp2 (16384) HURTS at (4096,16384) (0.844) at M_block=1/
+    # combine=8192 -- a BIGGER apply only pays WITH a bigger combine + M_block (the
+    # multi-lever welford full-close = a separate EDIT#4b, NOT this cap). So 16384 bytes
+    # (= 4096 fp32) captures the clean single-lever apply win; the full welford gap
+    # (seed/oracle 1.12-1.16) needs combine+M_block beyond this. Same byte discipline.
+    STRUCTURED_APPLY_LOOP_CHUNK_BYTES = 16384
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
     @classmethod
