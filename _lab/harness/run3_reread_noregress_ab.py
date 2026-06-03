@@ -61,10 +61,14 @@ from triton.testing import do_bench  # noqa: E402
 
 LOG_DIR = os.path.abspath(os.path.join(_HARNESS_DIR, "..", "logs", "run3"))
 
-# (kernel, M, N): the shapes where reread-eviction is emitted + matters.
+# (kernel, M, N): the shapes where reread-eviction is emitted + matters. ONLY
+# TRAIN shapes (the brief: never bench val/test except at the freeze checkpoint).
+# welford train has (65536,4096)+(32768,8192) -- wide enough that the apply loops and
+# eviction bites (the run-2 eviction win was at (262144,4096), a val/test sibling; the
+# SAME wide-N regime, so the train shapes are a faithful no-regression proxy).
 CASES = [
-    ("welford", 262144, 4096),   # run-2 eviction win shape
-    ("welford", 32768, 8192),
+    ("welford", 65536, 4096),    # train, wide -> looped apply, eviction emitted
+    ("welford", 32768, 8192),    # train, wide
     ("rms_norm", 1, 131072),     # robustness canary (looped, now gets reread policy)
     ("layer_norm", 1, 131072),   # robustness canary
 ]
