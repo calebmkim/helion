@@ -1034,6 +1034,7 @@ class DeviceIR:
                 is_structured_combine=is_structured_combine,
                 apply_block_ids=apply_tiles if is_structured_combine else (),
                 row_reread=self._compute_row_reread(),
+                reread_buffer_slots=self._compute_reread_buffer_slots(red_block_id),
             )
         )
 
@@ -1186,6 +1187,13 @@ class DeviceIR:
         jsd) -> each 1 -> not a re-read. Resolves loads to host-buffer names via
         ``_fx_trace_tensor_arg_rw_names`` (device temporaries excluded), so it
         tracks the workload's dataflow, not the load-op count or coding style.
+
+        This is the EDIT-GATE-v2 bool that fact-integrity PASSed (the persist-cap
+        gate's only consumer needs the binary >=2, nothing finer). The EVICTION
+        consumer's per-slot mapping is a SEPARATE, finer computation off the same
+        provenance resolver — see ``_compute_reread_buffer_slots`` (an int count would
+        serve NEITHER consumer: the cap wants the bool, eviction wants per-slot
+        buffer-identity+order).
         """
         from ..language.memory_ops import load as _load_op
 
@@ -1202,6 +1210,101 @@ class DeviceIR:
             for nm in names_in_graph:
                 per_buffer[nm] = per_buffer.get(nm, 0) + 1
         return any(c >= 2 for c in per_buffer.values())
+
+    def _compute_reread_buffer_slots(self, red_block_id: int) -> tuple[int, ...]:
+        """The ``load_eviction_policies`` SLOT indices that load the re-read REDUCTION
+        ROW — the EVICTION consumer's provenance (a DIFFERENT, finer question than the
+        ``row_reread`` bool). Slot ``i`` = the i-th ``hl.load`` in
+        ``_count_device_loads_and_stores`` codegen-emission order.
+
+        Selects the host buffer that is BOTH (a) HBM-re-read = loaded in >= 2 distinct
+        LOOP graphs (e.g. cross_entropy's amax + exp-sum passes both ``tl.load``
+        logits) AND (b) a REDUCTION INPUT = its loaded value feeds a
+        ``ReductionLowering(red_block_id)``. The (a)-AND-(b) is the fact-integrity
+        cap-vs-eviction TIGHTENING: the eviction consumer equates "the re-read buffer"
+        with "the row to keep L2-resident", so it must select the reduction ROW
+        specifically — NOT a coincidentally re-loaded broadcast operand (an
+        adversarial/transfer kernel with a reused weight loaded in 2 loop graphs would
+        otherwise get the wrong slot marked 'last'; proven load-bearing by the ``adv3``
+        probe — LOOSE picks the broadcast, this picks the row). Returns the slots that
+        load that buffer (empty if no buffer is both). The seed sets the first such
+        slot -> 'last' (keep L2-resident for the re-read), the rest -> 'first' (stream
+        the final uses) — de-hacking the run-2 POSITIONAL slot-0 rule (which only
+        happened to be right for welford). Verified 9/9: CE -> logits slots (NOT
+        labels/logits_flat); welford -> x slots (NOT weight/bias); sum/long_sum/kl_div/
+        jsd -> () (no HBM-re-read reduction input).
+        """
+        from ..language.memory_ops import load as _load_op
+        from .inductor_lowering import ReductionLowering
+
+        host = HostFunction.current()
+
+        # (b) REDUCTION-INPUT buffers: a loaded tile whose value reaches a
+        # ReductionLowering(red_block_id) (cut AT the reduction). A consumer-dataflow
+        # trace — so a broadcast that's never reduced is NOT a reduction input even if
+        # it is re-loaded across passes.
+        reduction_input_buffers: set[str] = set()
+        for gi in self.graphs:
+            g = gi.graph
+            redset = {
+                id(nd)
+                for nd in g.nodes
+                if isinstance(nd.meta.get("lowering"), ReductionLowering)
+                and getattr(nd.meta["lowering"], "block_index", None) == red_block_id
+            }
+            if not redset:
+                continue
+            for node in g.find_nodes(op="call_function", target=_load_op, sort=False):
+                seen: set[int] = set()
+                stack = list(node.users)
+                feeds = False
+                while stack:
+                    u = stack.pop()
+                    if id(u) in redset:
+                        feeds = True
+                        break  # do not traverse THROUGH the reduction
+                    if id(u) in seen:
+                        continue
+                    seen.add(id(u))
+                    stack.extend(u.users)
+                if feeds:
+                    reduction_input_buffers.update(
+                        _fx_trace_tensor_arg_rw_names(host, node.args[0])
+                    )
+
+        # (a) per-slot host names (emission order) + per-buffer LOOP-graph count.
+        slot_host_names: list[list[str]] = []
+        loop_graph_count: dict[str, int] = {}
+        for gi in self.graphs:
+            is_loop = isinstance(gi, (ReductionLoopGraphInfo, ForLoopGraphInfo))
+            names_in_graph: set[str] = set()
+            for node in gi.graph.find_nodes(
+                op="call_function", target=_load_op, sort=False
+            ):
+                names = _fx_trace_tensor_arg_rw_names(host, node.args[0])
+                slot_host_names.append(list(names))
+                names_in_graph.update(names)
+            if is_loop:
+                for nm in names_in_graph:
+                    loop_graph_count[nm] = loop_graph_count.get(nm, 0) + 1
+
+        # (a) AND (b): the re-read ROW.
+        hbm_reread = {
+            nm
+            for nm, c in loop_graph_count.items()
+            if c >= 2 and nm in reduction_input_buffers
+        }
+        reread_name: str | None = None
+        for names in slot_host_names:
+            hit = [nm for nm in names if nm in hbm_reread]
+            if hit:
+                reread_name = hit[0]
+                break
+        if reread_name is None:
+            return ()
+        return tuple(
+            i for i, names in enumerate(slot_host_names) if reread_name in names
+        )
 
     def _build_reduction_fact(
         self, rdim: BlockSizeInfo, used_graphs: set[int]
@@ -1241,6 +1344,7 @@ class DeviceIR:
             num_reduction_ops=num_reduction_ops,
             num_tiled_accumulators=num_tiled_accumulators,
             row_reread=self._compute_row_reread(),
+            reread_buffer_slots=self._compute_reread_buffer_slots(rdim.block_id),
         )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:

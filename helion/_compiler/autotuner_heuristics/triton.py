@@ -222,11 +222,11 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # they stay persistent to the structural cap. EVIDENCE:
     # _lab/harness/t2_bandb_chunk_sweep.py + t2_bandb_narrow_check.py.
     BANDB_R_BLOCK_BYTES = 16384
-    # Persistent byte ceiling for RE-READ reductions (gated by num_load>=2 as a
-    # KNOWN-IMPERFECT placeholder pending the faithful ``row_reread`` fact — see the
-    # gate note in get_seed_config), in BYTES (per row, via itemsize so it
-    # generalizes across dtypes). Above this a re-read reduction loops over a fixed
-    # chunk instead of staying persistent.
+    # Persistent byte ceiling for RE-READ reductions (gated by the faithful
+    # ``fact.row_reread`` property — the reduction-input row is reused/live across
+    # the reduction boundary; see the gate note in get_seed_config), in BYTES (per
+    # row, via itemsize so it generalizes across dtypes). Above this a re-read
+    # reduction loops over a fixed chunk instead of staying persistent.
     #
     # WHY this is gated on re-reading the row (the cross_entropy widening). The
     # champion's "persistent to the 2**20 structural cap" was validated ONLY on
@@ -423,33 +423,44 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         return max(1, bs_spec.min_size, bs_spec.autotuner_min)
 
     @classmethod
-    def _eviction_policies(cls, env: CompileEnvironment, kind: str) -> list[str] | None:
+    def _eviction_policies(
+        cls,
+        env: CompileEnvironment,
+        kind: str,
+        reread_slots: tuple[int, ...] = (),
+    ) -> list[str] | None:
         """``load_eviction_policies`` list (length == the live spec's, built EXACTLY
         — the field is NOT length-validated by ``normalize``), keyed on per-load
         cache RESIDENCY. Returns None to leave the autotuner default ('').
-
-        Two matched-lever-A/B-validated wins (run-2; evidence
-        ``_lab/harness/{run2_evict_probe,run2_wf_knobs}.py``, raw numbers in
-        ``ledger.run2.eviction``) — these OVERTURN run-1's "eviction is
-        autotuner-only" by finding the separating workload property (per-load
-        reuse), not a global rule:
 
         - ``"stream"`` — a single streamed reduction input (``num_load == 1``:
           sum, long_sum) is read ONCE and never reused, so EVERY load is
           ``'first'`` (evict_first frees L2). e.g. sum (512,8192) G 0.925->1.451,
           (2048,16384) 0.931->1.087.
-        - ``"reread"`` — a structured combine (welford) RE-READS the reduction
-          input: x loaded in the combine pass is loaded AGAIN in the apply pass.
-          The combine load (slot 0 — the combine graph is emitted first, so the
-          load-slot order puts it first) wants ``'last'`` (kept L2-resident for the
-          re-read); every later load is a final use -> ``'first'`` (stream). e.g.
-          welford (262144,4096) G 0.759->0.950, (262144,5120) 0.696->0.807.
+        - ``"reread"`` — the reduction-input row is RE-READ across >= 2 passes
+          (``fact.row_reread``: welford combine+apply re-read x; cross_entropy
+          amax-pass + exp-sum-pass re-read logits). The FIRST load of the re-read
+          ROW wants ``'last'`` (kept L2-resident for the later re-read); EVERY OTHER
+          slot -> ``'first'`` (stream/evict-first frees L2 — both the row's own
+          re-reads, which are final uses, and all streamed-once operands). RUN-3
+          DE-HACK: the slot getting ``'last'`` is derived from WHICH host buffer is
+          the re-read ROW (``device_ir``'s ``_compute_reread_buffer_slots``: HBM-
+          re-read AND reduction-input), NOT the run-2 POSITIONAL ``slot 0`` — which
+          only happened to be right for welford (its row's first load IS slot 0) and
+          mis-places ``'last'`` for cross_entropy (whose row ``logits`` first loads at
+          slot 2, behind a labels + a target-gather load). A/B
+          (run3_reread_rulefix_ab.py): CE wide-V 1.31x/1.19x; welford 1.28x/1.27x ==
+          the run-2 positional rule (its row IS slot 0, so streaming the rest matches).
+          The earlier "row re-reads -> 'first', OTHERS default ''" variant regressed
+          welford 3-6% (under-streamed weight/bias); positional ``'last'`` on slot 0
+          FAILS CE (0.99/1.04, marks labels resident) — so the win is the buffer-
+          identity ``'last'`` placement, not "some eviction."
 
         Multi-load reductions with REUSED broadcast operands (rms_norm/layer_norm:
-        a streamed x PLUS a weight/bias reused across the grid) are LEFT DEFAULT —
-        a blanket policy regresses (x wants 'first' but the reused operands want
-        'last'/default) and no clean per-slot rule survives matched A/B (this is
-        the genuinely-contradictory case run-1 saw). So those callers pass no kind.
+        a streamed x PLUS a weight/bias reused across the grid) historically had
+        no clean per-slot rule under the positional rule (run-1); whether the
+        provenance-faithful policy gives them a clean win is a SEPARATE measured
+        question — those callers still pass no kind until A/B-confirmed.
         """
         n = env.config_spec.load_eviction_policies.length
         if n <= 0:
@@ -457,7 +468,32 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         if kind == "stream":
             return ["first"] * n
         if kind == "reread":
-            return ["last"] + ["first"] * (n - 1)
+            # Faithful re-read policy: the re-read reduction ROW's FIRST load (from the
+            # fact's reread_buffer_slots, which identify WHICH buffer is the re-read
+            # row via provenance) -> 'last' (keep it L2-resident for its later re-read);
+            # EVERY OTHER slot -> 'first' (stream/evict-first frees L2). This keeps the
+            # buffer-IDENTITY de-hack for the single 'last' slot (the fact-integrity
+            # caveat: 'last' goes on the verified reduction row, NOT the run-2 positional
+            # slot 0 -- for cross_entropy that's logits@slot2, not labels@slot0) while
+            # streaming all other loads, which is the run-2 positional behavior that was
+            # actually RIGHT for the non-row slots. A/B (run3_reread_rulefix_ab.py):
+            #   CE wide-V: ['first','first','last','first','first'] -> 1.31x/1.19x (ties
+            #     my earlier ['','','last',...] -- streaming the labels/logits_flat
+            #     gathers is marginally better, never worse).
+            #   welford: row x@slot0 -> ['last','first','first','first'] == the run-2
+            #     positional rule -> reproduces its win (1.28x/1.27x); BYTE-IDENTICAL to
+            #     the shipping champion for welford (no regression).
+            # The earlier "row slots -> first, OTHERS default ''" variant REGRESSED
+            # welford 3-6% (it under-streamed weight/bias); this streams them.
+            # Positional ['last',...] FAILS on CE (0.99/1.04) because it marks labels
+            # 'last' -- so the win is the buffer-identity de-hack, not "some eviction."
+            # Guard: slots must be in range of the live spec length.
+            slots = [s for s in reread_slots if 0 <= s < n]
+            if not slots:
+                return None
+            policy = ["first"] * n
+            policy[slots[0]] = "last"
+            return policy
         return None
 
     @classmethod
@@ -481,20 +517,32 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         # persistent wins or ties at every feasible byte size up to that cap, so
         # there is no perf byte fence below it.
         #
-        # For RE-READ reductions the row is read from HBM in >= 2 distinct passes
+        # For RE-READ reductions the reduction-input row is REUSED ACROSS THE
+        # REDUCTION BOUNDARY — it feeds the reduction AND a downstream consumer
         # (cross_entropy amax-pass + exp-sum-pass; softmax max-pass + exp-sum-pass;
-        # rms_norm/layer_norm sum-pass + a post-reduction APPLY/normalize re-read).
-        # A persistent seed holds the whole row resident across all passes (one HBM
-        # read) and WINS while it fits, but SPILLS once the resident row exceeds the
-        # register/SMEM budget (~256 KiB on sm_90), where a looped chunk that streams
-        # the row per pass wins. So a re-read reduction gets an additional PERF byte
-        # ceiling (MULTILOAD_PERSIST_MAX_BYTES, run-3-re-derived to 240 KiB; see the
-        # constant) below the structural one.
+        # rms_norm/layer_norm reduction + the APPLY/normalize that reuses the row).
+        # That reuse pins the WHOLE ROW LIVE/RESIDENT across the boundary whether the
+        # consumer re-reads it from HBM (CE) or holds it in registers (rms_norm) — the
+        # liveness, not the load mechanism, is what matters. A persistent seed holds
+        # the whole row resident and WINS while it fits, but SPILLS once the resident
+        # row exceeds the register/SMEM budget (~256 KiB on sm_90), where a looped
+        # chunk that streams the row per pass wins. So a re-read reduction gets an
+        # additional PERF byte ceiling (MULTILOAD_PERSIST_MAX_BYTES, run-3-re-derived
+        # to 240 KiB; see the constant) below the structural one.
         #
         # GATE = ``fact.row_reread`` (EDIT-GATE-v2). This is the FAITHFUL "the kernel
-        # re-reads its reduction-input row" property, computed in device_ir from the
-        # roller's host-buffer read provenance (a buffer loaded in >= 2 distinct LOOP
-        # graphs). It REPLACES two rejected proxies: ``num_load>=2`` (OVER-counts —
+        # re-reads its reduction-input row" property, computed in device_ir
+        # (``_compute_row_reread``): some host buffer is loaded in >= 2 distinct LOOP
+        # graphs (loads resolved to host-buffer names via the roller's read
+        # provenance, device temporaries excluded). The post-roller reality is what
+        # spills: each rolled reduction pass + each no-reduction apply pass is its own
+        # loop graph, so rms_norm's apply pass genuinely RE-EMITS the x load (x in 2
+        # loop graphs -> True), cross_entropy's amax + exp-sum passes both load logits,
+        # softmax's max + sum passes both load x. A single-pass stream (sum/long_sum)
+        # touches its row in only ONE loop graph -> 1. Two DISTINCT inputs each read
+        # once (kl_div yp/yt, jsd) -> each 1 -> False. Dataflow-, not load-op-count- or
+        # coding-style-dependent (softmax_decomposed=True too). It REPLACES two rejected
+        # proxies: ``num_load>=2`` (OVER-counts —
         # cross_entropy's scalar label gather inflates num_load to 3) and
         # ``num_reduction_ops>=2`` (UNDER-counts — rms_norm/layer_norm's apply-pass
         # re-read is NOT a ReductionLowering, so num_reduction_ops==1, which would
@@ -565,13 +613,30 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 # this knob and sets it to 'flat'.
                 "pid_type": "flat",
             }
-            # Eviction: a single streamed reduction input (num_load==1: sum,
-            # long_sum) wants 'first' (read once, never reused -> evict_first frees
-            # L2). Multi-load T1 (rms_norm/layer_norm: streamed x + reused operands)
-            # has no clean per-slot rule -> left default. See _eviction_policies.
-            evict = cls._eviction_policies(
-                env, "stream" if fact.num_load == 1 else "none"
-            )
+            # Eviction (keyed on the FAITHFUL re-read property, RUN-3):
+            #  - num_load==1 (sum/long_sum): a single streamed input read ONCE ->
+            #    'first' everywhere (evict_first frees L2).
+            #  - else row_reread AND LOOPED (cross_entropy wide-V: logits re-read
+            #    across amax + exp-sum passes, the row STREAMED from HBM each pass):
+            #    the re-read buffer's first load -> 'last' (keep L2-resident for the
+            #    re-read), its re-reads -> 'first'; from provenance (WHICH buffer is
+            #    re-read), not a positional slot. CE wide-V 1.31x/1.19x/1.09x.
+            #    GATED on `not persistent` because eviction policy only affects
+            #    HBM-STREAMED loads: a PERSISTENT row is held in registers/SMEM across
+            #    the passes (no HBM re-stream), so its load eviction is moot — A/B
+            #    confirms eviction is NEUTRAL on the persistent CE boundary (50304:
+            #    1.001). This scopes the change to the looped re-read regime (the win)
+            #    and leaves persistent re-read kernels (rms/ln/softmax at floor, CE
+            #    boundary) BYTE-IDENTICAL — avoiding an unmeasured blanket change to
+            #    at-floor kernels. (rms/ln only loop at >240KiB robustness rows, where
+            #    the same wide-row physics applies.)
+            #  - else: default.
+            if fact.num_load == 1:
+                evict = cls._eviction_policies(env, "stream")
+            elif fact.row_reread and not persistent:
+                evict = cls._eviction_policies(env, "reread", fact.reread_buffer_slots)
+            else:
+                evict = None
             if evict is not None:
                 seed["load_eviction_policies"] = evict
             return Config(**seed)
@@ -632,10 +697,13 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 "pid_type": "flat",  # principled constant — see the T1 branch.
             }
             # Eviction: the structured combine RE-READS the reduction input (x in
-            # the combine pass, re-read in the apply pass) -> 'last' on the combine
-            # load (slot 0), 'first' on later loads. welford (262144,4096) G
-            # 0.759->0.950, (5120) 0.696->0.807. See _eviction_policies.
-            sc_evict = cls._eviction_policies(env, "reread")
+            # the combine pass, re-read in the apply pass) -> 'last' on x's FIRST
+            # load (keep L2-resident), 'first' on its re-reads. RUN-3 DE-HACK: the
+            # 'last' slot is now derived from WHICH host buffer is re-read (device_ir
+            # provenance), not the POSITIONAL slot 0 — for welford the re-read buffer
+            # IS slot 0 so this is byte-identical to the run-2 win (welford
+            # (262144,4096) G 0.759->0.950, (5120) 0.696->0.807), but faithful.
+            sc_evict = cls._eviction_policies(env, "reread", fact.reread_buffer_slots)
             if sc_evict is not None:
                 sc_seed["load_eviction_policies"] = sc_evict
             return Config(**sc_seed)

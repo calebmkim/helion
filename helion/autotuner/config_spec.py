@@ -172,6 +172,16 @@ class ReductionFact(NamedTuple):
     is_structured_combine: bool = False
     apply_block_ids: tuple[int, ...] = ()
     row_reread: bool = False
+    # ``load_eviction_policies`` SLOT indices that load the RE-READ host buffer (the
+    # ``row_reread`` buffer), in codegen-emission order (slot i = the i-th hl.load).
+    # Empty unless ``row_reread``. The seed builds the faithful re-read eviction from
+    # this — first slot -> 'last' (keep L2-resident for the re-read), the rest ->
+    # 'first' (stream the final uses) — keyed on WHICH host buffer is re-read, NOT a
+    # positional slot. Captured at fact-build (the host-buffer provenance resolver
+    # needs the HostFunction context, unavailable in the seed heuristic). Provenance,
+    # not policy: the SEED decides the eviction values; the FACT only says which slots
+    # touch the re-read buffer.
+    reread_buffer_slots: tuple[int, ...] = ()
 
 
 def shrink_block_sizes_for_numel_constraints(
