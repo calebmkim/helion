@@ -1,0 +1,182 @@
+[
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      98304
+    ],
+    "tc_us": 565.9199953079224,
+    "arms": {
+      "flat_evict": {
+        "us": 732.2719991207123,
+        "spread": 0.007407073981732346,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 595.4560041427612,
+        "spread": 0.00634138177278412,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      },
+      "blocked4": {
+        "us": 742.7520155906677,
+        "spread": 0.005148374837928369,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_blocked",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      8192,
+      128256
+    ],
+    "tc_us": 1402.3360013961792,
+    "arms": {
+      "flat_evict": {
+        "us": 2279.7759771347046,
+        "spread": 0.0033196251838055837,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 1832.2400450706482,
+        "spread": 0.003938368413650968,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      },
+      "blocked4": {
+        "us": 1881.5040588378906,
+        "spread": 0.0031974504536469157,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_blocked",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      2048,
+      256000
+    ],
+    "tc_us": 741.4399981498718,
+    "arms": {
+      "flat_evict": {
+        "us": 1257.0080161094666,
+        "spread": 0.0023038921300321327,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 1194.8959827423096,
+        "spread": 0.0010444440941569993,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      },
+      "blocked4": {
+        "us": 1199.8720169067383,
+        "spread": 0.002467001336081268,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_blocked",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "softmax",
+    "shape": [
+      512,
+      131072
+    ],
+    "tc_us": 276.41600370407104,
+    "arms": {
+      "flat": {
+        "us": 275.55200457572937,
+        "spread": 0.0005226048781574631,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 276.095986366272,
+        "spread": 0.0006953616506646414,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      65536,
+      4096
+    ],
+    "tc_us": 706.7199945449829,
+    "arms": {
+      "flat": {
+        "us": 778.4000039100647,
+        "spread": 0.0008632872068631103,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 803.9680123329163,
+        "spread": 0.001174161841204388,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "rms_norm",
+    "shape": [
+      1,
+      131072
+    ],
+    "tc_us": 25.280000641942024,
+    "arms": {
+      "flat": {
+        "us": 21.056000143289566,
+        "spread": 0.0015197684007418734,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 20.8320003002882,
+        "spread": 0.0015361099847596073,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  }
+]

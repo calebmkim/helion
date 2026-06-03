@@ -1775,3 +1775,41 @@ tc-BEATING win (1.31x/1.08x; oracle/tc 1.39/1.10). NO new fact (reread_buffer_sl
 This is the eviction rule applied uniformly to every looped-reread reduction regardless of track. Reporting to hub;
 EDIT#6 is a clean extension of the accepted EDIT#3 eviction. Needs: the seed-emit change + a no-regression check
 (other T2 kernels: kl_div/jsd are row_reread=False -> unaffected; only softmax is T2-AND-row_reread).
+
+## 2026-06-03 — EDIT-PID DISPOSITION A/B (anti-giving-up answer key) — verdict (B) DECLINE (evidenced)
+
+run3_pid_disposition_ab.py, do_bench median-of-7, fp32. All arms on the EDIT#3-evicted seed (eviction = banked
+carrier; pid = the residual tested ON TOP). flat_evict = the shipping baseline.
+
+CE wide (interleaved@32 / blocked@4 vs flat):
+| shape         | flat_evict | interleaved32 (flat/arm) | blocked4 (flat/arm) |
+|---------------|-----------:|-------------------------:|--------------------:|
+| (4096,98304)  |   732.3    | 595.5 (**1.230**)        | 742.8 (0.986)       |
+| (8192,128256) |  2279.8    | 1832.2 (**1.244**)       | 1881.5 (1.212)      |
+| (2048,256000) |  1257.0    | 1194.9 (**1.052**)       | 1199.9 (1.048)      |
+
+OTHER looped-reread kernels (does interleaved@32 help or HURT vs flat? -- a `row_reread AND looped` pid gate
+would fire on these too):
+| kernel              | flat  | interleaved32 (flat/arm) | verdict        |
+|---------------------|------:|-------------------------:|----------------|
+| softmax(512,131072) | 275.6 | 276.1 (0.998)            | neutral        |
+| welford(65536,4096) | 778.4 | 804.0 (**0.968**)        | **HURTS 3.2%** |
+| rms_norm(1,131072)  |  21.1 |  20.8 (1.011)            | tie (26us noise)|
+
+VERDICT: **(B) DECLINE EDIT-PID as a Product-A seed.** Evidence (anti-giving-up satisfied -- this is NOT "no
+clean rule from quick oracles"; it's a MEASURED demonstration on full oracles + a 3x3 A/B that the candidate
+rule REGRESSES a kernel it fires on):
+1. interleaved@32 helps CE everywhere (1.23/1.24/1.05x, incl 256000 where the oracle wanted blocked4 -- 1.052 ~=
+   blocked4's 1.048, so the variant divergence is perf-immaterial). So FOR CE the (A) condition holds.
+2. BUT a `row_reread AND looped` gate (the only non-identity workload key available) ALSO fires on softmax/welford/
+   rms-ln -- and interleaved@32 REGRESSES welford -3.2% + is neutral on softmax. So the SAME workload key that
+   would seed CE's gain REGRESSES welford. No principled property separates "CE wants interleaved@32" from
+   "welford doesn't" (both looped row_reread) WITHOUT kernel identity (banned).
+3. AND the CE pid gain is ORACLE-ONLY (all CE oracles lose to tc 0.62-0.95) -- not a tc-beating opportunity.
+=> The pid choice is CE-specific + would regress a peer kernel under any faithful gate + oracle-only. It belongs
+to Product-B (the autotuner finds it per-kernel), NOT the Product-A seed. Honest null for EDIT-PID's seed,
+backed by full oracles + the disposition A/B. The bankable wide-CE seed win is the EVICTION (EDIT#3, 1.08-1.31x).
+
+(Contrast EDIT#6 softmax eviction: helps softmax, and the SAME eviction rule already helps CE+welford -- a
+uniform faithful rule that regresses nothing. THAT generalizes; the pid does not. Eviction = ship; pid = decline.)
+GPU session steps 1-3 done. Releasing GPU.
