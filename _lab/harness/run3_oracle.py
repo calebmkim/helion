@@ -9,9 +9,11 @@ winning config (the differing fields ARE the Phase-2 worklist), and CACHE the re
 keyed by a kernel-source-hash in `_lab/logs/run3/oracle_cache.json`.
 
 VICTORY bar: seed/oracle <= 1+eps (eps 3-5%). FLOOR (re-confirmed): G=tc/seed >= 1-eps.
-A cached entry is FRESH only while its source_hash matches the current source; the hash
-covers the kernel source + the heuristic + the fact vocabulary + the fact population so
-ANY edit that could move the generated Triton invalidates it (staleness is fatal).
+A cached entry is FRESH only while its source_hash matches the current source. KEY recipe
+(ledger-keeper guardian, see source_hash): kernel source + generated Triton of the DEFAULT
+config (codegen reference) + config_spec knob/range dump. EXCLUDES the heuristic/seed code
+(the oracle is what the SEARCH finds, not what the seed emits). Safety net: victory-confirm
+ALWAYS re-runs a FRESH FULL oracle, so cache under-invalidation can't taint a done-verdict.
 
 The autotuner budget is set by HELION_AUTOTUNE_EFFORT (quick to iterate, full to
 confirm) — pass it in the environment. HELION_FORCE_AUTOTUNE is implied by force=True;
@@ -45,17 +47,14 @@ _HARNESS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HARNESS_DIR not in sys.path:
     sys.path.insert(0, _HARNESS_DIR)
 
-import helion  # noqa: E402
-
-from run2_measure_g import (  # noqa: E402
-    KERNELS,
-    N_RUNS,
-    get_seed,
-    check_correct,
-    codegen_kind,
-)
-
+from run2_measure_g import KERNELS  # noqa: E402
+from run2_measure_g import N_RUNS  # noqa: E402
+from run2_measure_g import check_correct  # noqa: E402
+from run2_measure_g import codegen_kind  # noqa: E402
+from run2_measure_g import get_seed  # noqa: E402
 from triton.testing import do_bench  # noqa: E402
+
+import helion  # noqa: E402
 
 EPS = 0.05
 LOG_DIR = os.path.abspath(os.path.join(_HARNESS_DIR, "..", "logs", "run3"))
@@ -64,16 +63,6 @@ CACHE_PATH = os.path.join(LOG_DIR, "oracle_cache.json")
 # Worktree root (derived, machine-portable) for the source-hash inputs.
 _WT = os.path.abspath(os.path.join(_HARNESS_DIR, "..", ".."))
 
-# Source-hash inputs: any edit to these can move a kernel's generated Triton and
-# therefore its oracle. Per-kernel source + the heuristic + fact vocab + fact
-# population. (examples/<kernel>.py is added per-kernel below.)
-_SHARED_HASH_FILES = [
-    "helion/_compiler/autotuner_heuristics/triton.py",
-    "helion/_compiler/autotuner_heuristics/__init__.py",
-    "helion/_compiler/autotuner_heuristics/registry.py",
-    "helion/autotuner/config_spec.py",
-    "helion/_compiler/device_ir.py",
-]
 # kernel name -> the examples source file(s) that define its computation.
 _KERNEL_SRC = {
     "rms_norm": ["examples/rms_norm.py"],
@@ -88,16 +77,53 @@ _KERNEL_SRC = {
 }
 
 
-def source_hash(kernel: str) -> str:
+def source_hash(kernel: str, bound) -> str:
+    """Oracle-cache key (LEDGER-KEEPER guardian recipe, 2026-06-03):
+        sha256( read(examples/<kernel>.py)
+                + to_triton_code(DEFAULT_config for this shape)  # codegen, per-shape
+                + repr(sorted config_spec knobs+ranges) )        # search space
+    EXCLUDES the heuristic file + any seed-only fact code: the oracle is what the
+    autotuner SEARCH finds — it does NOT depend on the seed the heuristic emits, so
+    keying on the heuristic would invalidate every cached oracle on every heuristic
+    edit and defeat the cache's cheap-first purpose. The generated Triton of the
+    DEFAULT config is a fixed, heuristic-independent per-shape reference that moves
+    iff codegen that actually alters THIS kernel's Triton changes (it naturally
+    takes the relevant path: looped at wide N, persistent at narrow). Safety net:
+    victory-confirm ALWAYS re-runs a FRESH FULL oracle, so under-invalidation can
+    only mislead during iteration, never at a done-verdict."""
     h = hashlib.sha256()
-    files = list(_SHARED_HASH_FILES) + _KERNEL_SRC[kernel]
-    for rel in files:
-        p = os.path.join(_WT, rel)
-        with open(p, "rb") as f:
+    # (a) kernel source
+    for rel in _KERNEL_SRC[kernel]:
+        with open(os.path.join(_WT, rel), "rb") as f:
             h.update(rel.encode())
             h.update(b"\0")
             h.update(f.read())
             h.update(b"\0")
+    # (b) generated Triton of the DEFAULT config for this shape (codegen reference)
+    try:
+        default_cfg = bound.config_spec.default_config()
+        h.update(b"TRITON\0")
+        h.update(bound.to_triton_code(default_cfg).encode())
+        h.update(b"\0")
+    except Exception as e:
+        h.update(f"TRITON_ERR:{type(e).__name__}\0".encode())
+    # (c) config_spec knob/range dump (search space)
+    try:
+        spec = bound.config_spec
+        knobs = []
+        for attr in sorted(dir(spec)):
+            if attr.startswith("_"):
+                continue
+            try:
+                v = getattr(spec, attr)
+            except Exception:
+                continue
+            if callable(v):
+                continue
+            knobs.append(f"{attr}={v!r}")
+        h.update(("KNOBS\0" + "\n".join(knobs)).encode())
+    except Exception as e:
+        h.update(f"KNOBS_ERR:{type(e).__name__}\0".encode())
     return h.hexdigest()[:16]
 
 
@@ -109,9 +135,14 @@ def _bench_samples(fn, n=N_RUNS):
 def _stats(samples):
     s = sorted(samples)
     med = s[len(s) // 2]
-    return {"median_ms": med, "min_ms": s[0], "max_ms": s[-1],
-            "spread": (s[-1] - s[0]) / med if med > 0 else None,
-            "n": len(samples), "samples_ms": samples}
+    return {
+        "median_ms": med,
+        "min_ms": s[0],
+        "max_ms": s[-1],
+        "spread": (s[-1] - s[0]) / med if med > 0 else None,
+        "n": len(samples),
+        "samples_ms": samples,
+    }
 
 
 def field_diff(seed_cfg: dict, oracle_cfg: dict):
@@ -129,7 +160,7 @@ def run_one(kernel: str, M: int, N: int, effort: str):
     args, ref, out_extract = builder(M, N)
     for a in args:
         if torch.is_tensor(a) and a.is_floating_point():
-            assert a.dtype == torch.float32, f"{kernel}{(M,N)} non-fp32 {a.dtype}"
+            assert a.dtype == torch.float32, f"{kernel}{(M, N)} non-fp32 {a.dtype}"
 
     # --- live seed (normalized) + correctness + codegen kind ---
     seed_raw, _ = get_seed(fn, args)
@@ -163,7 +194,7 @@ def run_one(kernel: str, M: int, N: int, effort: str):
     tc = torch.compile(tc_ref)
     out_tc = out_extract(tc(args))
     ok_tc, _ = check_correct(out_tc, ref)
-    assert ok_tc, f"tc reference FAIL {kernel} {(M,N)}"
+    assert ok_tc, f"tc reference FAIL {kernel} {(M, N)}"
 
     # --- SAME-PROCESS do_bench of all three (noise-robust ratios) ---
     seed_st = _stats(_bench_samples(lambda: bound_s(*args))) if seed_ok else None
@@ -179,22 +210,29 @@ def run_one(kernel: str, M: int, N: int, effort: str):
     oracle_vs_tc = (tc_med / oracle_med) if oracle_med else None
 
     entry = {
-        "kernel": kernel, "shape": [M, N],
-        "source_hash": source_hash(kernel),
+        "kernel": kernel,
+        "shape": [M, N],
+        "source_hash": source_hash(kernel, bk),
         "effort": effort,
         "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
         "autotune_s": round(autotune_s, 1),
-        "seed_cfg": seed_norm, "seed_codegen": seed_codegen,
-        "seed_correct": seed_ok, "seed_maxerr": seed_maxerr,
-        "oracle_cfg": oracle_norm, "oracle_codegen": oracle_codegen,
-        "oracle_correct": oracle_ok, "oracle_maxerr": oracle_maxerr,
+        "seed_cfg": seed_norm,
+        "seed_codegen": seed_codegen,
+        "seed_correct": seed_ok,
+        "seed_maxerr": seed_maxerr,
+        "oracle_cfg": oracle_norm,
+        "oracle_codegen": oracle_codegen,
+        "oracle_correct": oracle_ok,
+        "oracle_maxerr": oracle_maxerr,
         "seed_us": seed_med * 1000 if seed_med else None,
         "oracle_us": oracle_med * 1000 if oracle_med else None,
         "tc_us": tc_med * 1000,
-        "seed_oracle": seed_oracle,         # VICTORY: <= 1+eps
-        "G_floor": g_floor,                 # FLOOR: >= 1-eps
-        "oracle_vs_tc": oracle_vs_tc,       # >1 => oracle beats tc
-        "seed_dist": seed_st, "oracle_dist": oracle_st, "tc_dist": tc_st,
+        "seed_oracle": seed_oracle,  # VICTORY: <= 1+eps
+        "G_floor": g_floor,  # FLOOR: >= 1-eps
+        "oracle_vs_tc": oracle_vs_tc,  # >1 => oracle beats tc
+        "seed_dist": seed_st,
+        "oracle_dist": oracle_st,
+        "tc_dist": tc_st,
         "field_diff_seed_vs_oracle": field_diff(seed_norm, oracle_norm),
     }
     return entry
@@ -225,23 +263,35 @@ def _print_entry(e):
     so = f"{e['seed_oracle']:.3f}" if e["seed_oracle"] is not None else "None"
     gf = f"{e['G_floor']:.3f}" if e["G_floor"] is not None else "None"
     ot = f"{e['oracle_vs_tc']:.3f}" if e["oracle_vs_tc"] is not None else "None"
-    verdict = ("VICTORY" if (e["seed_oracle"] is not None
-                             and e["seed_oracle"] <= 1 + EPS) else "GAP")
-    print(f"\n=== {e['kernel']}({e['shape'][0]},{e['shape'][1]}) [{verdict}] "
-          f"effort={e['effort']} autotune={e['autotune_s']}s ===", flush=True)
-    print(f"  seed/oracle={so}  G_floor(tc/seed)={gf}  oracle/tc(tc/oracle)={ot}",
-          flush=True)
-    print(f"  seed_us={e['seed_us']:.1f} ({e['seed_codegen']}) "
-          f"oracle_us={e['oracle_us']:.1f} ({e['oracle_codegen']}) "
-          f"tc_us={e['tc_us']:.1f}", flush=True)
-    print(f"  seed_correct={e['seed_correct']} (err {e['seed_maxerr']:.1e})  "
-          f"oracle_correct={e['oracle_correct']} (err {e['oracle_maxerr']:.1e})",
-          flush=True)
-    print(f"  FIELD DIFF seed->oracle (the worklist):", flush=True)
+    verdict = (
+        "VICTORY"
+        if (e["seed_oracle"] is not None and e["seed_oracle"] <= 1 + EPS)
+        else "GAP"
+    )
+    print(
+        f"\n=== {e['kernel']}({e['shape'][0]},{e['shape'][1]}) [{verdict}] "
+        f"effort={e['effort']} autotune={e['autotune_s']}s ===",
+        flush=True,
+    )
+    print(
+        f"  seed/oracle={so}  G_floor(tc/seed)={gf}  oracle/tc(tc/oracle)={ot}",
+        flush=True,
+    )
+    print(
+        f"  seed_us={e['seed_us']:.1f} ({e['seed_codegen']}) "
+        f"oracle_us={e['oracle_us']:.1f} ({e['oracle_codegen']}) "
+        f"tc_us={e['tc_us']:.1f}",
+        flush=True,
+    )
+    print(
+        f"  seed_correct={e['seed_correct']} (err {e['seed_maxerr']:.1e})  "
+        f"oracle_correct={e['oracle_correct']} (err {e['oracle_maxerr']:.1e})",
+        flush=True,
+    )
+    print("  FIELD DIFF seed->oracle (the worklist):", flush=True)
     if e["field_diff_seed_vs_oracle"]:
         for k, v in e["field_diff_seed_vs_oracle"].items():
-            print(f"    {k}: seed={v['seed']!r}  oracle={v['oracle']!r}",
-                  flush=True)
+            print(f"    {k}: seed={v['seed']!r}  oracle={v['oracle']!r}", flush=True)
     else:
         print("    (seed config == oracle config — already matched)", flush=True)
 
@@ -273,7 +323,7 @@ def main():
             torch.cuda.empty_cache()
             print(f"[OOM ] {tag}: {type(ex).__name__}", flush=True)
             continue
-        except Exception as ex:  # noqa: BLE001
+        except Exception as ex:
             print(f"[ERR ] {tag}: {type(ex).__name__}: {ex}"[:300], flush=True)
             continue
         _save_entry(e)

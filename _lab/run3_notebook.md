@@ -5,6 +5,25 @@
 > losslessly from here. Every iteration: decision + empirical WHY + tried-and-rejected + open hypotheses
 > + current champion.
 
+## RESOLVED CONFOUNDS / HUB DIRECTIVES (2026-06-03)
+
+- **CE kernel identity (the run-2 "source ceiling closed" confound): RESOLVED.** The harness benchmarks the
+  STANDARD `cross_entropy` (run2_measure_g.py:65 `from examples.cross_entropy import cross_entropy`;
+  KERNELS["cross_entropy"]=(cross_entropy,...)), NOT `cross_entropy_online`. So all my floor + oracle CE
+  results are on the standard 2-pass kernel. Run-2 "closed the wide-CE source ceiling via cross_entropy_online"
+  — a DIFFERENT kernel `train` does not measure — so the closure never applied to the measured kernel = a
+  measuring-the-wrong-thing artifact the geomean hid. My finding stands: standard CE wide-V is SEEDABLE (full
+  oracle 588us within 5% of tc; looped seed 2x off) — fix = re-branch/re-tune the SEED, NOT accept a ceiling.
+- **Oracle-cache KEY recipe CORRECTED (ledger-keeper guardian).** DROP the heuristic from the key — the oracle
+  is what the autotuner SEARCH finds, independent of the seed; keying on the heuristic would invalidate every
+  cached oracle on every heuristic edit. New recipe (run3_oracle.py source_hash, applied):
+  `sha256(read(examples/<kernel>.py) + to_triton_code(DEFAULT_config for shape) + repr(config_spec knobs+ranges))`
+  — per-(kernel,shape); EXCLUDES heuristic/seed code. Safety net: victory-confirm ALWAYS re-runs a FRESH FULL
+  oracle. NOTE: batch-1 cached entries carry the OLD-recipe hash (oracle DATA still valid — no kernel-source
+  edit yet; only the key string is stale) — re-stamp on next oracle run; flagged to ledger-keeper.
+- **Quick oracle can UNDERSHOOT (fake parity).** Never declare DONE on a quick oracle — "done" needs seed
+  within ε of a FULL/fresh oracle. (Live: quick CE(4096,98304) looked ~tc but FULL found a 1.62x-better config.)
+
 ## The bar (run 3 is STRICTLY per-shape; the aggregate is NOT the bar)
 
 - `G = tc_default_lat / seed_lat`. **FLOOR:** `G >= 1-eps` (eps≈0.05). Necessary, NOT victory.
