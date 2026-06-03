@@ -520,9 +520,38 @@ cluster. A/B each vs the verbatim oracle, correctness-gate, no-regression.
   the quick oracle under-explored; the full oracle found a 1.62x-better config. (Anti-giving-up: a hand grid is
   not an oracle; run the full search before claiming a ceiling.)
 
+## 2026-06-03 — EDIT#1 GATED: fact-integrity FAIL on num_load proxy -> EDIT#2 re-key onto num_reduction_ops
+
+Hub gated EDIT#1 (ledger run3.gate_verdicts): results-referee PASS (reproduced the 3 parity deltas + floor),
+adversarial-auditor PASS-with-flag, **fact-integrity FAIL** on the GATE (not the value). Finding: `num_load`
+is a syntactic hl.load FX-node count (device_ir.py:1108-1121), NOT a faithful re-read/resident property —
+over-counts CE (scalar gather + row), style-dependent (cross_entropy vs _online differ), misclassifies. The
+cap VALUE (240KiB) endorsed. Hub: re-key onto a faithful property (num_reduction_ops or resident-operand-
+bytes), NOT bytes-alone (bytes-alone loops long_sum's 11/12 >240KiB nro=1 rows = regression). Verify flip-set
+(softmax wide = prime risk). Disposition: EDIT#1 not accepted standalone; fold in EDIT#2, combined re-gate.
+
+**EDIT#2: gate `num_load >= 2` -> `num_reduction_ops >= 2`** (helion/_compiler/autotuner_heuristics/triton.py).
+num_reduction_ops = count of reduction lowerings over the rdim = number of PASSES over the row (device_ir.py
+:1124-1129, already computed). The faithful "re-reads the row (>=2 passes)" property. Fact values (verified):
+  CE nro=2, softmax nro=2, layer_norm nro=2, jsd nro=2 | long_sum nro=1, sum nro=1, rms_norm nro=1, kl_div nro=1.
+
+FLIP-SET (empirical scan of ALL train shapes):
+- vs ORIGINAL champion (num_load>=2, 128KiB): exactly 3 flips = CE(49152/50257/50304) looped->persistent
+  (the intended targets). NO softmax flip (wide softmax >240KiB stays looped under both). NO long_sum flip
+  (nro=1 excludes it -> stays persistent, killing the bytes-alone regression). NO other kernel.
+- gate re-key ALONE (num_load,240KiB -> nro,240KiB): ZERO flips = byte-identical (the re-key is a pure
+  faithfulness fix; rms_norm/kl_div drop out of the gate via nro=1 but their rows are <<240KiB so no change).
+
+VERIFIED (HELION_AUTOTUNE_EFFORT=none): CE boundary persistent+correct (G 1.07-1.09); CE wide still looped;
+ALL 8 non-CE kernels byte-IDENTICAL codegen vs committed floor. Lint+format clean.
+
+EDIT#2 makes the cap principled: gates on the real re-read-pass property; long_sum stays persistent BECAUSE
+nro=1 (not a byte coincidence); CE/softmax capped because they genuinely re-read. num_reduction_ops is ALSO
+the right signal for the re-read EVICTION (next), so one faithful fact does double duty.
+
 ### Current champion
-- Run-2 `TritonReductionHeuristic` + EDIT#1 (CE persist cap 131072->245760, dab1eea8 + re-measure 8d55a50c).
-  3/4 CE boundary at oracle parity, 8 non-CE kernels byte-identical, correctness clean. Gate pipeline pending.
-  Open (re-scoped): wide-CE is SEEDABLE 1.62x via persistent_interleaved+pipelined-small-chunk (NOT a source
-  ceiling, NOT a chunk-size fix); isolate the lever cluster + re-litigate run-2's pid='flat' lock; welford
-  apply-tile + warps; jsd Band-B; softmax small-N.
+- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap value 240KiB) + EDIT#2 (gate -> num_reduction_ops>=2). 3 CE
+  boundary shapes at oracle parity (0.996-1.00), all else byte-identical, correctness clean. Ready for combined
+  re-gate (fact-integrity + referee). Open (re-scoped): CE wide-V is SEEDABLE 1.62x via re-read eviction
+  (1.31x alone) + persistent-pid cluster (the next edits, gated on nro>=2 = re-read); welford apply-tile +
+  warps; jsd Band-B; softmax small-N.

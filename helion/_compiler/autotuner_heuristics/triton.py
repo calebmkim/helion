@@ -222,11 +222,13 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # they stay persistent to the structural cap. EVIDENCE:
     # _lab/harness/t2_bandb_chunk_sweep.py + t2_bandb_narrow_check.py.
     BANDB_R_BLOCK_BYTES = 16384
-    # Persistent byte ceiling for MULTI-LOAD reductions (num_load >= 2), in BYTES
-    # (per row, via itemsize so it generalizes across dtypes). Above this a
-    # multi-load reduction loops over a fixed chunk instead of staying persistent.
+    # Persistent byte ceiling for RE-READ reductions (num_reduction_ops >= 2 — i.e.
+    # >=2 reduction PASSES over the row, so the row is re-read; gate RE-KEYED from
+    # the old num_load>=2 proxy in run-3, see the get_seed_config branch), in BYTES
+    # (per row, via itemsize so it generalizes across dtypes). Above this a re-read
+    # reduction loops over a fixed chunk instead of staying persistent.
     #
-    # WHY this is num_load-gated (the cross_entropy widening, 2026-05-29). The
+    # WHY this is gated on a re-read pass count (the cross_entropy widening). The
     # champion's "persistent to the 2**20 structural cap" was validated ONLY on
     # num_load=1 (sum_kernel, v3_crossover_sweep). A direct persistent-vs-looped
     # A/B at MATCHED warps across num_load (_lab/harness/persist_crossover_by_numload.py
@@ -479,18 +481,41 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         # persistent wins or ties at every feasible byte size up to that cap, so
         # there is no perf byte fence below it.
         #
-        # For MULTI-LOAD reductions (num_load>=2: rms_norm, layer_norm,
-        # cross_entropy) a matched-warps A/B (persist_crossover_by_numload.py +
-        # ce_crossover_tight.py) shows persistent LOSES to a looped chunk above
-        # ~256 KiB/row (1.6-4x slower — the wide row is re-streamed per load pass
-        # and a persistent kernel that holds it resident spills). So multi-load
-        # reductions get an additional PERF byte ceiling (MULTILOAD_PERSIST_MAX_
-        # BYTES) below the structural one. This fires only for the wide
-        # cross_entropy rows in-sample; every existing num_load>=2 kernel has
-        # rnumel <= 64 KiB and is unaffected (byte-identical).
+        # For RE-READ reductions (>= 2 reduction PASSES over the row: cross_entropy
+        # amax-pass + exp-sum-pass; softmax max-pass + exp-sum-pass) the row is read
+        # from HBM once per pass. A persistent seed holds the whole row resident
+        # across both passes (one HBM read) and WINS while it fits, but SPILLS once
+        # the resident row exceeds the register/SMEM budget (~256 KiB on sm_90),
+        # where a looped chunk that streams the row per pass wins. So a re-read
+        # reduction gets an additional PERF byte ceiling (MULTILOAD_PERSIST_MAX_
+        # BYTES) below the structural one. RUN-3 RE-DERIVATION of the byte value
+        # (128->240 KiB; see the constant) AND the GATE:
+        #
+        # GATE = ``num_reduction_ops >= 2`` (the count of reduction lowerings over
+        # this rdim = the number of PASSES over the row), NOT ``num_load >= 2``.
+        # WHY (fact-integrity, 2026-06-03): ``num_load`` is a syntactic op-count of
+        # ``hl.load`` FX nodes — a hacky proxy that (a) OVER-counts (CE has a scalar
+        # label-gather load on top of the row, num_load~3), (b) is STYLE-dependent
+        # (cross_entropy vs cross_entropy_online compute the same workload with
+        # different load-node counts), and (c) MISCLASSIFIES the property: the cap
+        # is really about "does this kernel RE-READ the row (>=2 passes)?", which is
+        # exactly ``num_reduction_ops``. num_load==2 with ONE pass (rms_norm: x + a
+        # broadcast weight, num_reduction_ops==1) is NOT a re-read and must not be
+        # capped; num_load==1 single-pass (sum/long_sum, num_reduction_ops==1) must
+        # stay persistent to the structural cap even at >240 KiB (long_sum's wide
+        # rows). ``num_reduction_ops>=2`` separates these correctly:
+        #   CE nro=2 (capped), softmax nro=2 (capped), layer_norm nro=2 (but 16 KiB
+        #   rows << cap), jsd nro=2 (Band-B, R_BLOCK cap dominates); long_sum/sum
+        #   nro=1 (uncapped -> persistent), rms_norm nro=1 (uncapped; 16 KiB anyway).
+        # Re-key verified byte-identical to the num_load gate at this byte value on
+        # the whole train curriculum EXCEPT the intended CE boundary flips; long_sum
+        # wide rows stay persistent (nro=1), softmax wide rows stay looped (>240 KiB)
+        # — no regression (run-3 flip-set scan). ``num_reduction_ops`` is also the
+        # principled signal for the re-read load-eviction policy (a >=2-pass kernel
+        # keeps the row L2-resident for the re-read — see _eviction_policies).
         persist_cap = env.backend.max_tensor_numel  # None ⇒ no element cap
         can_persist = persist_cap is None or fact.size_hint <= persist_cap
-        if fact.num_load >= 2:
+        if fact.num_reduction_ops >= 2:
             row_bytes = fact.size_hint * max(1, fact.itemsize)
             if row_bytes > cls.MULTILOAD_PERSIST_MAX_BYTES:
                 can_persist = False
