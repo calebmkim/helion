@@ -2287,3 +2287,34 @@ FINDINGS -> EDIT#4 = raise STRUCTURED_APPLY_LOOP_CHUNK_BYTES 8192->16384 (apply 
 => EDIT#4 = STRUCTURED_APPLY_LOOP_CHUNK_BYTES 8192->16384, 1-constant change, A/B-confirmed. Build it (next),
 no-regression backstop: narrow welford byte-identical (apply persistent), other kernels untouched (Band-C only).
 Welford was a floor-loser (0.946); this closes the wide-N apply gap.
+
+## 2026-06-03 — triage FULL-confirm batch (4 open-question shapes) — jsd real, welford multi-lever
+
+Full-effort oracles (run3_oracle.py, seed=HEAD champion). Results + field-diffs:
+
+| shape              | FULL seed/oracle | oracle/tc | oracle field-diff (the lever set)                          |
+|--------------------|-----------------:|----------:|------------------------------------------------------------|
+| jsd(8192,30522)    | **1.214**        | 1.015     | block [4096,1]->[2048,1] + num_warps 32->16 + num_stages 1->4 |
+| jsd(8192,32000)    | **1.127**        | 1.030     | block [4096,1]->[2048,1] + num_warps 32->16 + num_stages 1->8 |
+| welford(32768,8192)| **1.116**        | 0.988     | apply 2048->**4096** + num_warps 16->32                     |
+| welford(4096,16384)| **1.163**        | 1.018     | combine 8192->**16384** + apply 2048->**16384** + M_block 1->2 |
+
+FINDINGS:
+1. **jsd narrow-V CONFIRMED real (1.21/1.13), beats tc.** Full field-diff = SMALLER R_BLOCK chunk (4096->2048)
+   + FEWER warps (32->16) + MORE stages (1->4/8). Richer than quick (which missed num_stages). EDIT#5 lever set.
+2. **welford(32768,8192) 1.116: the oracle path is EDIT#4's apply 2048->4096 + warps 16->32 — NOT pid.** So the
+   earlier +6.4%-interleaved-pid is SUPERSEDED by EDIT#4 (the oracle doesn't use pid here; it uses apply+warps).
+   Resolves the hub's Q: the Band-C pid candidate is MOOT — EDIT#4 (apply-cap) is the welford-oracle path.
+3. **welford(4096,16384) 1.163: MULTI-LEVER — combine 8192->16384 + apply 2048->16384 + M_block 1->2.** CRUCIAL
+   NUANCE: my EDIT#4 A/B showed applyNp2(16384) HURTS here (0.844) at M_block=1/combine=8192 — but the oracle's
+   16384-apply works ONLY WITH the bigger combine + M_block=2. So:
+   - **EDIT#4 (apply 2048->4096 alone) is a real PARTIAL win** (1.068 at 4096,16384; 1.047/1.10-w32 at 32768,8192)
+     -- but it does NOT fully close welford. The full gap (1.16/1.12) needs combine-cap raise + M_block + warps.
+   - => EDIT#4 = ship the apply-cap (real net-positive, partial), but welford does NOT reach seed≈oracle on
+     EDIT#4 alone. The residual = a BIGGER Band-C edit (combine cap + M_block + warps) -- EDIT#4b/c, separate,
+     to be decomposed (which lever carries? does M_block=2 generalize? is combine=16384 safe?). NOT claiming
+     EDIT#4 closes welford to parity -- it's a partial improvement; the full close is a follow-on.
+
+HONEST PER-SHAPE STATUS: jsd narrow-V = real gap, EDIT#5 (chunk+warps+stages). welford = real gap, EDIT#4
+(apply-cap) closes PART, full close needs combine+M_block+warps (EDIT#4b). softmax-smallN + kl_div/sum parity
+= deferred 2nd batch. NOT at PARITY yet on welford/jsd -- these are the remaining worklist before the milestone.

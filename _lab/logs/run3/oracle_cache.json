@@ -1519,10 +1519,10 @@
         4096,
         16384
       ],
-      "source_hash": "561713c66d09ed5a",
-      "effort": "quick",
-      "ts": "2026-06-03 09:53:56",
-      "autotune_s": 34.1,
+      "source_hash": "ffdab84838c74b4d",
+      "effort": "full",
+      "ts": "2026-06-03 18:08:22",
+      "autotune_s": 517.6,
       "seed_cfg": {
         "block_sizes": [
           1,
@@ -1541,107 +1541,109 @@
       },
       "seed_codegen": "looped",
       "seed_correct": true,
-      "seed_maxerr": 1.0728836059570312e-06,
+      "seed_maxerr": 1.3113021850585938e-06,
       "oracle_cfg": {
         "block_sizes": [
-          1,
+          2,
           16384,
-          4096
+          16384
         ],
         "range_unroll_factors": [
-          0,
-          0,
-          0
+          4,
+          4,
+          1
         ],
         "range_warp_specializes": [],
         "range_num_stages": [
           0,
-          0,
+          2,
           0
         ],
         "range_multi_buffers": [
           null,
-          null,
-          null
+          true,
+          false
         ],
         "range_flattens": [
           null,
-          true,
-          null
+          null,
+          true
         ],
         "load_eviction_policies": [
           "last",
-          "first",
           "last",
+          "",
           "last"
         ],
         "num_warps": 16,
-        "num_stages": 1,
+        "num_stages": 7,
         "indexing": [
+          "pointer",
           "tensor_descriptor",
           "tensor_descriptor",
           "pointer",
-          "pointer",
-          "pointer"
+          "tensor_descriptor"
         ],
         "atomic_indexing": [],
-        "pid_type": "flat"
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 16,
+        "maxnreg": 128
       },
-      "oracle_codegen": "looped",
+      "oracle_codegen": "persistent",
       "oracle_correct": true,
-      "oracle_maxerr": 1.430511474609375e-06,
-      "seed_us": 213.42399716377258,
-      "oracle_us": 186.3040030002594,
-      "tc_us": 186.68800592422485,
-      "seed_oracle": 1.1455684994781106,
-      "G_floor": 0.8747282798802064,
-      "oracle_vs_tc": 1.0020611630334368,
+      "oracle_maxerr": 1.5497207641601562e-06,
+      "seed_us": 214.20800685882568,
+      "oracle_us": 184.2239946126938,
+      "tc_us": 187.6160055398941,
+      "seed_oracle": 1.1627584523349916,
+      "G_floor": 0.8758589760071055,
+      "oracle_vs_tc": 1.0184124274057327,
       "seed_dist": {
-        "median_ms": 0.21342399716377258,
-        "min_ms": 0.21334399282932281,
-        "max_ms": 0.21372799575328827,
-        "spread": 0.0017992490491628569,
+        "median_ms": 0.21420800685882568,
+        "min_ms": 0.21398399770259857,
+        "max_ms": 0.21438399702310562,
+        "spread": 0.0018673406581420184,
         "n": 7,
         "samples_ms": [
-          0.21334399282932281,
-          0.21334399282932281,
-          0.21342399716377258,
-          0.2133760005235672,
-          0.21372799575328827,
-          0.21356800198554993,
-          0.2136159986257553
+          0.21420800685882568,
+          0.2141920030117035,
+          0.21427200734615326,
+          0.21438399702310562,
+          0.2141759991645813,
+          0.21398399770259857,
+          0.21425600349903107
         ]
       },
       "oracle_dist": {
-        "median_ms": 0.1863040030002594,
-        "min_ms": 0.1862879991531372,
-        "max_ms": 0.18636800348758698,
-        "spread": 0.00042942896106025523,
+        "median_ms": 0.1842239946126938,
+        "min_ms": 0.1841920018196106,
+        "max_ms": 0.18428799510002136,
+        "spread": 0.0005210682821886454,
         "n": 7,
         "samples_ms": [
-          0.1863040030002594,
-          0.1862879991531372,
-          0.18636800348758698,
-          0.1863040030002594,
-          0.1863359957933426,
-          0.1863040030002594,
-          0.1863040030002594
+          0.18428799510002136,
+          0.18425600230693817,
+          0.1841920018196106,
+          0.1842239946126938,
+          0.1842239946126938,
+          0.1842239946126938,
+          0.1841920018196106
         ]
       },
       "tc_dist": {
-        "median_ms": 0.18668800592422485,
-        "min_ms": 0.1865919977426529,
-        "max_ms": 0.18670400232076645,
-        "spread": 0.0005999559401744194,
+        "median_ms": 0.1876160055398941,
+        "min_ms": 0.18751999735832214,
+        "max_ms": 0.18768000602722168,
+        "spread": 0.0008528519112166705,
         "n": 7,
         "samples_ms": [
-          0.18665599822998047,
-          0.18668800592422485,
-          0.18662400543689728,
-          0.18670400232076645,
-          0.18668800592422485,
-          0.18668800592422485,
-          0.1865919977426529
+          0.18768000602722168,
+          0.1876160055398941,
+          0.18751999735832214,
+          0.1876479983329773,
+          0.1876160055398941,
+          0.1876160055398941,
+          0.18758399784564972
         ]
       },
       "field_diff_seed_vs_oracle": {
@@ -1656,19 +1658,19 @@
             2048
           ],
           "oracle": [
-            1,
+            2,
             16384,
-            4096
+            16384
           ]
         },
         "indexing": {
           "seed": null,
           "oracle": [
+            "pointer",
             "tensor_descriptor",
             "tensor_descriptor",
             "pointer",
-            "pointer",
-            "pointer"
+            "tensor_descriptor"
           ]
         },
         "load_eviction_policies": {
@@ -1680,50 +1682,64 @@
           ],
           "oracle": [
             "last",
-            "first",
             "last",
+            "",
             "last"
           ]
+        },
+        "maxnreg": {
+          "seed": null,
+          "oracle": 128
+        },
+        "num_sm_multiplier": {
+          "seed": null,
+          "oracle": 16
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 7
+        },
+        "pid_type": {
+          "seed": "flat",
+          "oracle": "persistent_interleaved"
         },
         "range_flattens": {
           "seed": null,
           "oracle": [
             null,
-            true,
-            null
+            null,
+            true
           ]
         },
         "range_multi_buffers": {
           "seed": null,
           "oracle": [
             null,
-            null,
-            null
+            true,
+            false
           ]
         },
         "range_num_stages": {
           "seed": null,
           "oracle": [
             0,
-            0,
+            2,
             0
           ]
         },
         "range_unroll_factors": {
           "seed": null,
           "oracle": [
-            0,
-            0,
-            0
+            4,
+            4,
+            1
           ]
         },
         "range_warp_specializes": {
           "seed": null,
           "oracle": []
         }
-      },
-      "old_source_hash": "155251868f501581",
-      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+      }
     },
     "welford:32768x8192": {
       "kernel": "welford",
@@ -1731,10 +1747,10 @@
         32768,
         8192
       ],
-      "source_hash": "fef9dbefe276dfb9",
-      "effort": "quick",
-      "ts": "2026-06-03 09:54:45",
-      "autotune_s": 44.1,
+      "source_hash": "4d7fe349d31f2ce3",
+      "effort": "full",
+      "ts": "2026-06-03 17:59:41",
+      "autotune_s": 436.0,
       "seed_cfg": {
         "block_sizes": [
           2,
@@ -1753,7 +1769,7 @@
       },
       "seed_codegen": "looped",
       "seed_correct": true,
-      "seed_maxerr": 1.7881393432617188e-06,
+      "seed_maxerr": 1.5497207641601562e-06,
       "oracle_cfg": {
         "block_sizes": [
           2,
@@ -1774,18 +1790,18 @@
         "range_multi_buffers": [
           null,
           null,
-          false
+          null
         ],
         "range_flattens": [
           null,
-          false,
-          true
+          null,
+          null
         ],
         "load_eviction_policies": [
           "last",
           "first",
           "first",
-          ""
+          "first"
         ],
         "num_warps": 32,
         "num_stages": 1,
@@ -1799,61 +1815,61 @@
         "atomic_indexing": [],
         "pid_type": "flat"
       },
-      "oracle_codegen": "persistent",
+      "oracle_codegen": "looped",
       "oracle_correct": true,
-      "oracle_maxerr": 1.5497207641601562e-06,
-      "seed_us": 775.5520045757294,
-      "oracle_us": 712.2560143470764,
-      "tc_us": 705.1200270652771,
-      "seed_oracle": 1.0888669087430258,
-      "G_floor": 0.9091847134751685,
-      "oracle_vs_tc": 0.9899811484381205,
+      "oracle_maxerr": 1.7285346984863281e-06,
+      "seed_us": 796.1919903755188,
+      "oracle_us": 713.6960029602051,
+      "tc_us": 705.3280174732208,
+      "seed_oracle": 1.1155898128518924,
+      "G_floor": 0.8858768060961747,
+      "oracle_vs_tc": 0.9882751403226636,
       "seed_dist": {
-        "median_ms": 0.7755520045757294,
-        "min_ms": 0.7751199901103973,
-        "max_ms": 0.7757599949836731,
-        "spread": 0.0008252249617043741,
+        "median_ms": 0.7961919903755188,
+        "min_ms": 0.7944319844245911,
+        "max_ms": 0.7967680096626282,
+        "spread": 0.002933997410518207,
         "n": 7,
         "samples_ms": [
-          0.7754240036010742,
-          0.7751199901103973,
-          0.7755520045757294,
-          0.7757599949836731,
-          0.7756800055503845,
-          0.775551974773407,
-          0.7756800055503845
+          0.7961599826812744,
+          0.7959679961204529,
+          0.7967680096626282,
+          0.7962239980697632,
+          0.7963519990444183,
+          0.7944319844245911,
+          0.7961919903755188
         ]
       },
       "oracle_dist": {
-        "median_ms": 0.7122560143470764,
-        "min_ms": 0.7120320200920105,
-        "max_ms": 0.7124159932136536,
-        "spread": 0.0005390942496920209,
+        "median_ms": 0.7136960029602051,
+        "min_ms": 0.7135679721832275,
+        "max_ms": 0.7138239741325378,
+        "spread": 0.00035869886933439523,
         "n": 7,
         "samples_ms": [
-          0.7120320200920105,
-          0.7123519778251648,
-          0.7122560143470764,
-          0.7123839855194092,
-          0.7124159932136536,
-          0.7121919989585876,
-          0.712224006652832
+          0.7136960029602051,
+          0.7137280106544495,
+          0.7135679721832275,
+          0.7137600183486938,
+          0.7136960029602051,
+          0.7136960029602051,
+          0.7138239741325378
         ]
       },
       "tc_dist": {
-        "median_ms": 0.7051200270652771,
-        "min_ms": 0.705024003982544,
-        "max_ms": 0.7052479982376099,
-        "spread": 0.000317668264221889,
+        "median_ms": 0.7053280174732208,
+        "min_ms": 0.7052640020847321,
+        "max_ms": 0.705407977104187,
+        "spread": 0.0002041249119391778,
         "n": 7,
         "samples_ms": [
-          0.705024003982544,
-          0.7052479982376099,
-          0.7051200270652771,
-          0.7050560116767883,
-          0.7051360011100769,
-          0.7050880193710327,
-          0.7051360011100769
+          0.7052800059318542,
+          0.7053760290145874,
+          0.7053120136260986,
+          0.7052640020847321,
+          0.705407977104187,
+          0.7053280174732208,
+          0.7053920030593872
         ]
       },
       "field_diff_seed_vs_oracle": {
@@ -1883,20 +1899,6 @@
             "pointer"
           ]
         },
-        "load_eviction_policies": {
-          "seed": [
-            "last",
-            "first",
-            "first",
-            "first"
-          ],
-          "oracle": [
-            "last",
-            "first",
-            "first",
-            ""
-          ]
-        },
         "num_warps": {
           "seed": 16,
           "oracle": 32
@@ -1905,8 +1907,8 @@
           "seed": null,
           "oracle": [
             null,
-            false,
-            true
+            null,
+            null
           ]
         },
         "range_multi_buffers": {
@@ -1914,7 +1916,7 @@
           "oracle": [
             null,
             null,
-            false
+            null
           ]
         },
         "range_num_stages": {
@@ -1937,9 +1939,7 @@
           "seed": null,
           "oracle": []
         }
-      },
-      "old_source_hash": "155251868f501581",
-      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+      }
     },
     "welford:16384x768": {
       "kernel": "welford",
@@ -2163,10 +2163,10 @@
         8192,
         30522
       ],
-      "source_hash": "49c77d0f2700cf99",
-      "effort": "quick",
-      "ts": "2026-06-03 17:15:44",
-      "autotune_s": 28.7,
+      "source_hash": "cef9a3763b7ee2ad",
+      "effort": "full",
+      "ts": "2026-06-03 17:45:00",
+      "autotune_s": 403.5,
       "seed_cfg": {
         "block_sizes": [
           4096,
@@ -2186,12 +2186,12 @@
         ],
         "range_unroll_factors": [
           0,
-          0
+          1
         ],
         "range_warp_specializes": [],
         "range_num_stages": [
           0,
-          0
+          2
         ],
         "range_multi_buffers": [
           null,
@@ -2199,78 +2199,78 @@
         ],
         "range_flattens": [
           null,
-          null
+          false
         ],
         "load_eviction_policies": [
           "last",
           ""
         ],
-        "num_warps": 8,
-        "num_stages": 1,
+        "num_warps": 16,
+        "num_stages": 4,
         "indexing": [
+          "tensor_descriptor",
           "pointer",
           "tensor_descriptor",
-          "tensor_descriptor",
-          "pointer"
+          "tensor_descriptor"
         ],
         "atomic_indexing": [],
         "pid_type": "flat"
       },
-      "oracle_codegen": "looped",
+      "oracle_codegen": "persistent",
       "oracle_correct": true,
       "oracle_maxerr": 0.0,
-      "seed_us": 803.551971912384,
-      "oracle_us": 664.2559766769409,
-      "tc_us": 670.6240177154541,
-      "seed_oracle": 1.209702283647181,
-      "G_floor": 0.8345745404860709,
-      "oracle_vs_tc": 1.0095867274997967,
+      "seed_us": 803.8079738616943,
+      "oracle_us": 662.0639860630035,
+      "tc_us": 671.7920005321503,
+      "seed_oracle": 1.214094091783452,
+      "G_floor": 0.8357618017953886,
+      "oracle_vs_tc": 1.0146934656980737,
       "seed_dist": {
-        "median_ms": 0.803551971912384,
-        "min_ms": 0.799839973449707,
-        "max_ms": 0.8043199777603149,
-        "spread": 0.0055752514674886405,
+        "median_ms": 0.8038079738616943,
+        "min_ms": 0.8034240007400513,
+        "max_ms": 0.8047360181808472,
+        "spread": 0.0016322523332191379,
         "n": 7,
         "samples_ms": [
-          0.799839973449707,
-          0.8037760257720947,
-          0.8042720258235931,
-          0.8027200102806091,
-          0.8028479814529419,
-          0.803551971912384,
-          0.8043199777603149
+          0.8034560084342957,
+          0.8037440180778503,
+          0.8038879930973053,
+          0.8047360181808472,
+          0.8034240007400513,
+          0.8040639758110046,
+          0.8038079738616943
         ]
       },
       "oracle_dist": {
-        "median_ms": 0.6642559766769409,
-        "min_ms": 0.6591840088367462,
-        "max_ms": 0.6685119867324829,
-        "spread": 0.014042745904073861,
+        "median_ms": 0.6620639860630035,
+        "min_ms": 0.6603359878063202,
+        "max_ms": 0.6628639996051788,
+        "spread": 0.0038183798727545815,
         "n": 7,
         "samples_ms": [
-          0.6591840088367462,
+          0.6603359878063202,
+          0.6603839993476868,
+          0.6610719859600067,
+          0.6620639860630035,
           0.6621440052986145,
-          0.6592000126838684,
-          0.6642559766769409,
-          0.6653279960155487,
-          0.6685119867324829,
-          0.6661440134048462
+          0.6628639996051788,
+          0.6628159880638123
         ]
       },
       "tc_dist": {
-        "median_ms": 0.6706240177154541,
-        "min_ms": 0.6701120138168335,
-        "max_ms": 0.6729120016098022,
-        "spread": 0.004175197605518485,
+        "median_ms": 0.6717920005321503,
+        "min_ms": 0.6705600023269653,
+        "max_ms": 0.6733919978141785,
+        "spread": 0.00421558381905383,
         "n": 7,
         "samples_ms": [
-          0.6714719831943512,
-          0.6703360080718994,
-          0.6706240177154541,
-          0.6701120138168335,
-          0.6701920032501221,
-          0.6716799736022949,
-          0.6729120016098022
+          0.6728320121765137,
+          0.6705600023269653,
+          0.67084801197052,
+          0.6715680062770844,
+          0.6717920005321503,
+          0.67262402176857,
+          0.6733919978141785
         ]
       },
       "field_diff_seed_vs_oracle": {
@@ -2291,10 +2291,10 @@
         "indexing": {
           "seed": null,
           "oracle": [
+            "tensor_descriptor",
             "pointer",
             "tensor_descriptor",
-            "tensor_descriptor",
-            "pointer"
+            "tensor_descriptor"
           ]
         },
         "load_eviction_policies": {
@@ -2304,15 +2304,19 @@
             ""
           ]
         },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 4
+        },
         "num_warps": {
           "seed": 32,
-          "oracle": 8
+          "oracle": 16
         },
         "range_flattens": {
           "seed": null,
           "oracle": [
             null,
-            null
+            false
           ]
         },
         "range_multi_buffers": {
@@ -2326,14 +2330,14 @@
           "seed": null,
           "oracle": [
             0,
-            0
+            2
           ]
         },
         "range_unroll_factors": {
           "seed": null,
           "oracle": [
             0,
-            0
+            1
           ]
         },
         "range_warp_specializes": {
@@ -3068,10 +3072,10 @@
         8192,
         32000
       ],
-      "source_hash": "c95aae288d1fb187",
-      "effort": "quick",
-      "ts": "2026-06-03 17:17:01",
-      "autotune_s": 46.1,
+      "source_hash": "8b1845053e61f5a0",
+      "effort": "full",
+      "ts": "2026-06-03 17:52:21",
+      "autotune_s": 435.3,
       "seed_cfg": {
         "block_sizes": [
           4096,
@@ -3096,11 +3100,11 @@
         "range_warp_specializes": [],
         "range_num_stages": [
           0,
-          0
+          2
         ],
         "range_multi_buffers": [
           null,
-          null
+          false
         ],
         "range_flattens": [
           null,
@@ -3111,71 +3115,71 @@
           ""
         ],
         "num_warps": 16,
-        "num_stages": 1,
+        "num_stages": 8,
         "indexing": [
-          "pointer",
-          "pointer",
-          "pointer",
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor",
           "pointer"
         ],
         "atomic_indexing": [],
         "pid_type": "flat"
       },
-      "oracle_codegen": "looped",
+      "oracle_codegen": "persistent",
       "oracle_correct": true,
       "oracle_maxerr": 0.0,
-      "seed_us": 769.2800164222717,
-      "oracle_us": 681.1839938163757,
-      "tc_us": 704.6400010585785,
-      "seed_oracle": 1.1293277930861711,
-      "G_floor": 0.91597335952607,
-      "oracle_vs_tc": 1.0344341726393027,
+      "seed_us": 767.1999931335449,
+      "oracle_us": 680.895984172821,
+      "tc_us": 701.1680006980896,
+      "seed_oracle": 1.126750650564593,
+      "G_floor": 0.9139311874003611,
+      "oracle_vs_tc": 1.029772559974628,
       "seed_dist": {
-        "median_ms": 0.7692800164222717,
-        "min_ms": 0.7676799893379211,
-        "max_ms": 0.7695040106773376,
-        "spread": 0.0023710759417611927,
+        "median_ms": 0.7671999931335449,
+        "min_ms": 0.7670080065727234,
+        "max_ms": 0.7677119970321655,
+        "spread": 0.0009176100961194827,
         "n": 7,
         "samples_ms": [
-          0.7676799893379211,
-          0.7694079875946045,
-          0.7689279913902283,
-          0.7695040106773376,
-          0.7690240144729614,
-          0.7694399952888489,
-          0.7692800164222717
+          0.7671999931335449,
+          0.7671040296554565,
+          0.7674880027770996,
+          0.7671040296554565,
+          0.7677119970321655,
+          0.7670080065727234,
+          0.7674880027770996
         ]
       },
       "oracle_dist": {
-        "median_ms": 0.6811839938163757,
-        "min_ms": 0.6797440052032471,
-        "max_ms": 0.6844480037689209,
-        "spread": 0.00690562110733017,
+        "median_ms": 0.680895984172821,
+        "min_ms": 0.6803200244903564,
+        "max_ms": 0.68367999792099,
+        "spread": 0.004934635405017657,
         "n": 7,
         "samples_ms": [
-          0.6797440052032471,
-          0.6800000071525574,
-          0.6826879978179932,
-          0.6811839938163757,
-          0.6809920072555542,
-          0.6813759803771973,
-          0.6844480037689209
+          0.6823359727859497,
+          0.6803200244903564,
+          0.680976003408432,
+          0.6805760264396667,
+          0.68367999792099,
+          0.6805440187454224,
+          0.680895984172821
         ]
       },
       "tc_dist": {
-        "median_ms": 0.7046400010585785,
-        "min_ms": 0.704479992389679,
-        "max_ms": 0.7056000232696533,
-        "spread": 0.0015895079448963248,
+        "median_ms": 0.7011680006980896,
+        "min_ms": 0.7008320093154907,
+        "max_ms": 0.7016639709472656,
+        "spread": 0.0011865367942441658,
         "n": 7,
         "samples_ms": [
-          0.7054559886455536,
-          0.7046400010585785,
-          0.704479992389679,
-          0.7049919962882996,
-          0.7046080231666565,
-          0.7046080231666565,
-          0.7056000232696533
+          0.7009599804878235,
+          0.7011680006980896,
+          0.7014719843864441,
+          0.7015359997749329,
+          0.7016639709472656,
+          0.7009919881820679,
+          0.7008320093154907
         ]
       },
       "field_diff_seed_vs_oracle": {
@@ -3196,9 +3200,9 @@
         "indexing": {
           "seed": null,
           "oracle": [
-            "pointer",
-            "pointer",
-            "pointer",
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "tensor_descriptor",
             "pointer"
           ]
         },
@@ -3208,6 +3212,10 @@
             "",
             ""
           ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 8
         },
         "num_warps": {
           "seed": 32,
@@ -3224,14 +3232,14 @@
           "seed": null,
           "oracle": [
             null,
-            null
+            false
           ]
         },
         "range_num_stages": {
           "seed": null,
           "oracle": [
             0,
-            0
+            2
           ]
         },
         "range_unroll_factors": {
@@ -3774,6 +3782,6 @@
       }
     }
   },
-  "updated": "2026-06-03 17:18:49",
+  "updated": "2026-06-03 18:08:22",
   "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
 }
