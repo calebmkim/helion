@@ -1009,6 +1009,36 @@ looped) + welford de-hack + 2 wide robustness canaries — no unmeasured change 
 A/B still required: CE looped wins reproduced + welford no-regression (faithful vs positional) + rms/ln(1,131072)
 robustness not-catastrophically-slow. Lint+pyrefly clean.
 
+## 2026-06-03 — hub design anchors (1)+(2) checked against my impl — row_reread IS region-membership
+
+Hub gave 2 anchors to avoid a 3rd proxy. Checked both against my COMMITTED row_reread (91dfd8ef):
+
+ANCHOR (1) "region-membership, NOT load-node count": SATISFIED already. My `_compute_reread_provenance` counts
+DISTINCT LOOP-GRAPH REGIONS whose read-SET contains B (set per region), then row_reread=any(count>=2). It is
+NOT a load-node count -> immune to (a) single-pass double-load (one region = count 1 regardless of #loads) and
+(b) fusion (collapsing loads within a region doesn't change membership). Demonstrated (run3_row_reread_probe +
+region dump): per-region read-sets e.g. rms_norm regions=[{x},{weight,x}] -> x in 2 regions -> True; sum
+regions=[{x}] -> 1 -> False; kl_div regions=[{y_pred,y_true}] -> each 1 -> False. 9/9.
+ACID TEST (the separating kernel fact-integrity will demand): **rms_norm** — num_load=2 (fires, over-counts the
+broadcast weight), num_reduction_ops=1 (would EXEMPT, misses the apply re-read), row_reread=True (GOVERNS,
+x read in reduction-region AND apply-region). row_reread is right where BOTH proxies fail. (Same for layer_norm.)
+
+ANCHOR (2) "per-slot eviction by buffer-identity + emission-order, not positional": my eviction IS faithful
+(derived from reread_buffer_slots = which slots load the re-read buffer, codegen-emission order; first slot ->
+'last', rest -> 'first' — NOT slot[2,3]/slot[0] literals). BUT the hub proposes a DIFFERENT assignment: "'last'
+iff the slot's buffer is read in a LATER region." For CE (logits at slot2=root, slot3=amax, slot4=expsum):
+  - hub's rule: slot2='last'(later reads exist), slot3='last'(expsum is later), slot4='first' -> [.,.,last,last,first]
+  - my rule:    slot2='last', slot3='first', slot4='first' -> [.,.,last,first,first]
+  - ORACLE + my A/B winner: slot2='last', slot3='first', slot4='last'(passenger) -> empirics say slot3='FIRST'.
+So the hub's a-priori "later-region->last" over-marks slot3 (oracle disagrees). BOTH assignments are FAITHFUL
+(buffer-identity+region-order, no positional literal); they differ only at the intermediate-pass slot. I'll
+A/B BOTH (my first->last/rest->first VS hub's later-region->last) on the CE looped shapes and let the oracle
+arbitrate the assignment — keeping whichever wins. (My current impl = the A/B-matched one. The provenance to
+support the hub's variant would need per-slot "has-later-read" flags; cheap to add if the A/B prefers it.)
+
+NET: row_reread (the cap gate) is DONE + faithful + acid-tested — ready to re-gate as-is. The eviction
+assignment has a faithful-vs-faithful A/B to settle (mine vs hub's), needs GPU. Neither is a proxy.
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
