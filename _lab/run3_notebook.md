@@ -2123,3 +2123,22 @@ So EDIT-PID (94851da9, T1-scoped) = data-confirmed (A). The hub's "(B) admissibl
 ANYWHERE IT FIRES" -> it's net-negative on welford which it does NOT fire on -> (B) not triggered. Reporting the
 full table + this track-scope reconciliation; gate EDIT-PID. (welford's own shape-dependent pid = a possible
 FUTURE Band-C pid investigation, separate; NOT EDIT-PID's scope.)
+
+## 2026-06-03 — EDIT#6 BUILT + committed (8577b675) — reread-eviction now spans all 3 tracks
+
+Hub APPROVED EDIT#6. Built: the T2 plain-path return gets the SAME reread-eviction as T1/Band-C, gated
+`fact.row_reread and not persistent`. Emission-verified 6/6: softmax(512,131072)/(1024,65536) wide-looped ->
+['last','first']; softmax(8192,2048)/(262144,128) narrow/persistent -> None (not-persistent gate, byte-identical);
+kl_div/jsd (row_reread=False) -> None (byte-identical). triton.py-only, NO fact change (new consumer of existing
+reread_buffer_slots; softmax slots=(0,1)). Full-oracle 1.36x/1.10x tc-beating; eviction-alone carrier (decomp).
+The faithful reread rule now generalizes across ALL 3 reduction tracks (T1 CE + Band-C welford + T2 softmax) off
+ONE provenance — the "faithful fact generalizes" payoff. Gates (hub firing): auditor (de-hack/uniform, not a
+softmax fence) + referee (1.31x/1.08x reproduce + kl_div/jsd byte-identical). NO fact-integrity (no new fact).
+REQ-GPU for the referee-reproduce A/B.
+
+EDIT-PID note: my last cross-kernel probe concluded (A) for the T1-scoped EDIT-PID (already built 94851da9), NOT
+(B). The hub's message framed it as "(B) decline gating" (stale-crossed). The hub's anti-giving-up finer-fact hunt
+(is_structured_combine separating CE-helps from welford-hurts) is EXACTLY what the T1-scope encodes (T1 = NOT
+structured-combine = scalar-accumulator multi-pass; Band-C welford = structured-combine recurrence). So the finer
+fact the gate hunts EXISTS and IS EDIT-PID's scope -> RATIFIES (A), doesn't decline. Clarifying to hub (am I
+gating an (A)-build or a (B)-decline? — they're opposite, and the finer-fact = T1-scope = (A)).
