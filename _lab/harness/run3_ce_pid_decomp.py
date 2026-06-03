@@ -47,13 +47,25 @@ CACHE_PATH = os.path.join(LOG_DIR, "oracle_cache.json")
 
 # Individual oracle levers (from the full CE(4096,98304) oracle). Each is added to
 # the seed independently; the pid cluster is split so we see which sub-lever carries.
+# NOTE: the live seed now ALREADY emits the EDIT#3 Rule B eviction
+# (['first','first','last','first','first']); we STRIP it for the decomposition
+# baseline (-> the true pre-EDIT#3 looped 955us floor) and re-add eviction as one of
+# the additive levers, so each lever's INDEPENDENT contribution on the floor is
+# isolated. The 1.62x = eviction(1.31x, confirmed) x the residual cluster.
 PID = {"pid_type": "persistent_interleaved", "num_sm_multiplier": 32}
 PID_MAXNREG = {"pid_type": "persistent_interleaved", "num_sm_multiplier": 32,
                "maxnreg": 64}
 PIPELINE = {"num_stages": 4, "range_unroll_factors": [4], "range_num_stages": [2],
             "range_flattens": [False]}
 CHUNK = {"reduction_loops": [4096]}
+# Eviction: the oracle's exact policy AND the EDIT#3-shipping Rule B (equivalent in
+# the A/B: oracle_exact 731.6us ~= seed_emitted 731.9us) -- use the oracle's verbatim.
 EVICT = {"load_eviction_policies": ["", "", "last", "first", "last"]}
+# Indexing: the oracle uses tensor_descriptor (TMA) on H100 -- a 6th lever the seed
+# leaves default (None). Decompose it too (could be a real carrier or a passenger).
+INDEXING = {"indexing": ["tensor_descriptor", "tensor_descriptor", "pointer",
+                         "tensor_descriptor", "tensor_descriptor",
+                         "tensor_descriptor"]}
 
 
 def _bench(fn, n=N_RUNS):
@@ -89,34 +101,44 @@ def run_shape(M, N, oracle_us=None):
     for a in args:
         if torch.is_tensor(a) and a.is_floating_point():
             assert a.dtype == torch.float32
-    seed = dict(get_seed(fn, args)[0])
+    seed_live = dict(get_seed(fn, args)[0])
+    # STRIP the EDIT#3 eviction so the decomposition baseline is the true pre-EDIT#3
+    # looped 955us floor (each lever's contribution measured independently on it).
+    seed = {k: v for k, v in seed_live.items() if k != "load_eviction_policies"}
 
     torch._dynamo.reset()
     tc = torch.compile(tc_ref)
     assert check_correct(out_extract(tc(args)), ref)[0]
     tc_med, _ = _bench(lambda: tc(args))
 
-    # additive arms: seed + ONE lever (or sub-cluster)
+    # additive arms: seed (NO eviction = floor) + ONE lever (or sub-cluster). Each
+    # benched vs the floor (seed/arm) and tc; the oracle target is printed for context.
     arms = {
-        "seed": (dict(seed), []),
+        "seed_floor": (dict(seed), []),
         "seed+pid": ({**seed, **PID}, list(PID)),
         "seed+pid+maxnreg": ({**seed, **PID_MAXNREG}, list(PID_MAXNREG)),
         "seed+pipeline": ({**seed, **PIPELINE}, list(PIPELINE)),
         "seed+chunk": ({**seed, **CHUNK}, list(CHUNK)),
         "seed+evict": ({**seed, **EVICT}, list(EVICT)),
-        # carrier candidate combos
-        "seed+pid+maxnreg+evict": ({**seed, **PID_MAXNREG, **EVICT},
-                                   list(PID_MAXNREG) + list(EVICT)),
-        "seed+pid+maxnreg+pipeline": ({**seed, **PID_MAXNREG, **PIPELINE},
-                                      list(PID_MAXNREG) + list(PIPELINE)),
-        "full_bundle": ({**seed, **PID_MAXNREG, **PIPELINE, **CHUNK, **EVICT},
-                        list(PID_MAXNREG) + list(PIPELINE) + list(CHUNK) + list(EVICT)),
+        "seed+indexing": ({**seed, **INDEXING}, list(INDEXING)),
+        # carrier candidate combos (build up from the strongest single levers)
+        "seed+evict+pid+maxnreg": ({**seed, **EVICT, **PID_MAXNREG},
+                                   list(EVICT) + list(PID_MAXNREG)),
+        "seed+evict+indexing": ({**seed, **EVICT, **INDEXING},
+                                list(EVICT) + list(INDEXING)),
+        "seed+evict+pid+maxnreg+indexing": (
+            {**seed, **EVICT, **PID_MAXNREG, **INDEXING},
+            list(EVICT) + list(PID_MAXNREG) + list(INDEXING)),
+        "full_bundle": (
+            {**seed, **PID_MAXNREG, **PIPELINE, **CHUNK, **EVICT, **INDEXING},
+            list(PID_MAXNREG) + list(PIPELINE) + list(CHUNK) + list(EVICT)
+            + list(INDEXING)),
     }
     results = {n: _run(fn, args, ref, out_extract, c, w) for n, (c, w) in arms.items()}
 
-    so = results["seed"].get("us")
+    so = results["seed_floor"].get("us")
     print(f"\n=== cross_entropy({M},{N}) === tc={tc_med*1000:.1f}us "
-          f"oracle_target={oracle_us}us seed={so:.1f}us", flush=True)
+          f"oracle_target={oracle_us}us seed_floor={so:.1f}us", flush=True)
     print(f"  {'arm':>26} {'us':>9} {'seed/arm':>9} {'arm/tc':>7} {'pid':>22} "
           f"{'dropped':>8} corr", flush=True)
     for name, r in results.items():

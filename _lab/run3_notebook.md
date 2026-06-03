@@ -1467,3 +1467,45 @@ CONCLUSION: softmax-wide is at oracle (1.000 / 1.012). NO new EDIT. The at-floor
 was correctly "at oracle" after all -- this CLOSES the softmax-wide open. (Good anti-giving-up discipline: I
 oracle'd it rather than assuming; the oracle confirmed the cap, didn't reveal a gap. Honest null result.)
 softmax persist A/B (run3_softmax_persist_ab.py) is now UNNECESSARY -- the oracle already answered (looped wins).
+
+## 2026-06-03 — EDIT-PID lever DECOMPOSITION (5b) — TWO carriers (evict + pid-cluster), rest passengers
+
+GPU-GRANTED. run3_ce_pid_decomp.py on CE(4096,98304): each oracle lever added ONE-AT-A-TIME to the
+eviction-STRIPPED seed (the true 955us floor), do_bench median-of-7. Oracle target 588.4us (1.624x). All arms
+round-trip-survive normalize (dropped='-' everywhere) -> Product-A-seedable (5a holds for the carrier set).
+
+| arm                              | us     | seed/arm | arm/tc | pid                    | verdict       |
+|----------------------------------|-------:|---------:|-------:|------------------------|---------------|
+| seed_floor (no evict)            |  955.3 | 1.000    | 0.593  | flat                   | floor         |
+| seed+pid (interleaved,sm_mult32) |  866.9 | 1.102    | 0.654  | persistent_interleaved | CARRIER       |
+| seed+pid+maxnreg(64)             |  849.9 | 1.124    | 0.667  | persistent_interleaved | CARRIER (+.02)|
+| seed+pipeline (ns4,unroll,...)   |  955.3 | 1.000    | 0.593  | flat                   | PASSENGER     |
+| seed+chunk (rl=4096)             | 1018.1 | 0.938    | 0.557  | flat                   | HURTS         |
+| seed+evict (Rule B / oracle)     |  733.1 | 1.303    | 0.773  | flat                   | CARRIER (top) |
+| seed+indexing (tensor_descriptor)|  955.8 | 1.000    | 0.593  | flat                   | PASSENGER     |
+| seed+evict+pid+maxnreg           |  595.0 | **1.606**| 0.952  | persistent_interleaved | **= oracle**  |
+| seed+evict+indexing              |  733.5 | 1.302    | 0.773  | flat                   | (idx nothing) |
+| seed+evict+pid+maxnreg+indexing  |  594.3 | 1.608    | 0.954  | persistent_interleaved | (idx nothing) |
+| full_bundle (7 levers)           |  590.2 | 1.619    | 0.960  | persistent_interleaved | the oracle    |
+
+DECOMPOSITION (clean — confirms the hub hypothesis):
+- **TWO carriers**: (1) EVICTION Rule B = 1.303x alone (EDIT#3, re-confirmed). (2) PID-CLUSTER
+  pid='persistent_interleaved' + num_sm_multiplier=32 + maxnreg=64 = 1.124x alone (pid 1.102 + maxnreg +0.022).
+- **evict x pid-cluster = 1.606x** = essentially the FULL bundle (1.619x). The two carriers capture ~99% of the
+  1.62x; they SYNERGIZE (1.303 x 1.124 = 1.465 < measured 1.606 -> super-multiplicative: a persistent grid +
+  L2-resident re-read row compound).
+- **PASSENGERS / HARMFUL** (the other 4 oracle levers): pipeline (num_stages=4 + range_* = 1.000, exactly inert),
+  indexing (tensor_descriptor = 1.000, EXACTLY inert -- adds nothing even on top of evict: 733.5 vs 733.1),
+  chunk (reduction_loops=4096 = 0.938, actively HURTS -- the oracle's chunk is WORSE than the seed's 16384 in
+  isolation; the autotuner kept it as a passenger coupled to the pid grid, not a real win).
+
+=> EDIT-PID carrier = the 3-lever PID-CLUSTER {pid_type='persistent_interleaved', num_sm_multiplier=32,
+maxnreg=64}, on top of EDIT#3 eviction. A 3-lever seed captures the full 1.62x -- FAR more general than the
+7-lever oracle (drop the 4 passengers). This is the run-2 'flat' lock RE-OPENED with evidence: persistent_
+interleaved BEATS flat by 1.10-1.12x ON THIS WIDE LOOPED MULTI-LOAD RE-READ SHAPE (NOT the narrow-forward
+shapes where run-1 found flat dominant 1.5-4x). The WORKLOAD KEY question (5c, code-investigator): WHAT property
+separates "wide looped re-read CE -> wants persistent_interleaved" from "narrow forward -> wants flat"? Candidate:
+the LOOPED regime (row_reread AND not persistent AND wide) -- a persistent grid amortizes the looped inner
+re-read passes' launch/occupancy. NOT grid-occupancy alone (progs/SM didn't separate). Need: the fact that keys
+sm_multiplier/maxnreg too (they require pid_type != flat). Reporting to hub; EDIT-PID needs the workload fact +
+full gate set (fact-integrity on the grid fact + auditor + narrow-forward no-regression that flat is undisturbed).
