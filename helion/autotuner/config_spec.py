@@ -139,6 +139,24 @@ class ReductionFact(NamedTuple):
       apply tile block_ids the seed must widen.
     - ``apply_block_ids``: for a structured combine, the non-grid non-reduction
       apply/normalize tile block_ids (empty otherwise).
+    - ``row_reread``: True iff some reduction-input HOST BUFFER is read in >= 2
+      distinct PASSES over the reduction axis — i.e. the kernel RE-READS its row (a
+      2nd reduction pass and/or a post-reduction apply pass), so a persistent
+      whole-row tile must stay resident across both passes and SPILLS once the row
+      exceeds the register/SMEM budget. This is the FAITHFUL property the persist
+      byte cap (``MULTILOAD_PERSIST_MAX_BYTES``) and the re-read load-eviction policy
+      key on — NOT ``num_load`` (a syntactic load-op count that OVER-counts a scalar
+      gather, e.g. cross_entropy's label load) and NOT ``num_reduction_ops`` (which
+      UNDER-counts: rms_norm/layer_norm re-read the row in an APPLY pass that is not
+      a ``ReductionLowering`` -> num_reduction_ops==1). Computed from the reduction
+      roller's host-buffer read provenance: a buffer is loaded in >= 2 distinct LOOP
+      graphs (``ReductionLoopGraphInfo`` T1-rollable; ``ForLoopGraphInfo`` T2
+      user-tiled). Immune to the roller's root+loop DUPLICATION (a single-pass
+      stream's row is in the root graph AND its one rolled loop graph, but only ONE
+      is a loop graph -> count 1) and to coding style (tracks dataflow, not op
+      counts). Right set (verified): sum/long_sum=False; rms_norm/layer_norm/softmax/
+      cross_entropy=True; kl_div/jsd=False (two DISTINCT inputs each read once);
+      welford=True. A WORKLOAD property (re-read dataflow), NOT kernel identity.
     """
 
     block_id: int
@@ -153,6 +171,7 @@ class ReductionFact(NamedTuple):
     num_tiled_accumulators: int = 0
     is_structured_combine: bool = False
     apply_block_ids: tuple[int, ...] = ()
+    row_reread: bool = False
 
 
 def shrink_block_sizes_for_numel_constraints(

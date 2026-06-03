@@ -1033,6 +1033,7 @@ class DeviceIR:
                 num_tiled_accumulators=num_tiled_accumulators,
                 is_structured_combine=is_structured_combine,
                 apply_block_ids=apply_tiles if is_structured_combine else (),
+                row_reread=self._compute_row_reread(),
             )
         )
 
@@ -1170,6 +1171,38 @@ class DeviceIR:
             num_tiled_accumulators,
         )
 
+    def _compute_row_reread(self) -> bool:
+        """True iff some host buffer is loaded in >= 2 distinct LOOP graphs.
+
+        The FAITHFUL "the kernel re-reads its reduction-input row" property (see
+        ``ReductionFact.row_reread``). A LOOP graph is a ``ReductionLoopGraphInfo``
+        (T1 rollable: each rolled reduction pass + a no-reduction apply pass is its
+        own loop graph) or a ``ForLoopGraphInfo`` (T2 user-tiled: each ``hl.tile``
+        pass). A single-pass stream (sum/long_sum) loads its row in the root graph
+        AND its ONE rolled loop graph, but only the loop graph is counted -> 1.
+        A re-read kernel (rms_norm sum-pass + apply-pass; cross_entropy amax-pass +
+        exp-sum-pass; softmax max-pass + sum-pass) loads the SAME host buffer in
+        >= 2 loop graphs -> 2. Two DISTINCT inputs each read once (kl_div yp/yt,
+        jsd) -> each 1 -> not a re-read. Resolves loads to host-buffer names via
+        ``_fx_trace_tensor_arg_rw_names`` (device temporaries excluded), so it
+        tracks the workload's dataflow, not the load-op count or coding style.
+        """
+        from ..language.memory_ops import load as _load_op
+
+        host = HostFunction.current()
+        per_buffer: dict[str, int] = {}
+        for gi in self.graphs:
+            if not isinstance(gi, (ReductionLoopGraphInfo, ForLoopGraphInfo)):
+                continue
+            names_in_graph: set[str] = set()
+            for node in gi.graph.find_nodes(
+                op="call_function", target=_load_op, sort=False
+            ):
+                names_in_graph.update(_fx_trace_tensor_arg_rw_names(host, node.args[0]))
+            for nm in names_in_graph:
+                per_buffer[nm] = per_buffer.get(nm, 0) + 1
+        return any(c >= 2 for c in per_buffer.values())
+
     def _build_reduction_fact(
         self, rdim: BlockSizeInfo, used_graphs: set[int]
     ) -> ReductionFact:
@@ -1207,6 +1240,7 @@ class DeviceIR:
             num_store=num_store,
             num_reduction_ops=num_reduction_ops,
             num_tiled_accumulators=num_tiled_accumulators,
+            row_reread=self._compute_row_reread(),
         )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:

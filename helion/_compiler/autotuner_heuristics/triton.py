@@ -481,46 +481,35 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         # persistent wins or ties at every feasible byte size up to that cap, so
         # there is no perf byte fence below it.
         #
-        # For RE-READ reductions (>= 2 reduction PASSES over the row: cross_entropy
-        # amax-pass + exp-sum-pass; softmax max-pass + exp-sum-pass) the row is read
-        # from HBM once per pass. A persistent seed holds the whole row resident
-        # across both passes (one HBM read) and WINS while it fits, but SPILLS once
-        # the resident row exceeds the register/SMEM budget (~256 KiB on sm_90),
-        # where a looped chunk that streams the row per pass wins. So a re-read
-        # reduction gets an additional PERF byte ceiling (MULTILOAD_PERSIST_MAX_
-        # BYTES) below the structural one. RUN-3 RE-DERIVATION of the byte value
-        # (128->240 KiB; see the constant) AND the GATE:
+        # For RE-READ reductions the row is read from HBM in >= 2 distinct passes
+        # (cross_entropy amax-pass + exp-sum-pass; softmax max-pass + exp-sum-pass;
+        # rms_norm/layer_norm sum-pass + a post-reduction APPLY/normalize re-read).
+        # A persistent seed holds the whole row resident across all passes (one HBM
+        # read) and WINS while it fits, but SPILLS once the resident row exceeds the
+        # register/SMEM budget (~256 KiB on sm_90), where a looped chunk that streams
+        # the row per pass wins. So a re-read reduction gets an additional PERF byte
+        # ceiling (MULTILOAD_PERSIST_MAX_BYTES, run-3-re-derived to 240 KiB; see the
+        # constant) below the structural one.
         #
-        # GATE = ``num_reduction_ops >= 2`` (the count of reduction lowerings over
-        # this rdim = the number of PASSES over the row), NOT ``num_load >= 2``.
-        # The GATE for this cap is discussed below at the ``if`` (it is a KNOWN-
-        # IMPERFECT ``num_load>=2`` placeholder pending the faithful ``row_reread``
-        # fact — both num_load (over-counts) and num_reduction_ops (under-counts)
-        # are proxies; see the inline note).
+        # GATE = ``fact.row_reread`` (EDIT-GATE-v2). This is the FAITHFUL "the kernel
+        # re-reads its reduction-input row" property, computed in device_ir from the
+        # roller's host-buffer read provenance (a buffer loaded in >= 2 distinct LOOP
+        # graphs). It REPLACES two rejected proxies: ``num_load>=2`` (OVER-counts —
+        # cross_entropy's scalar label gather inflates num_load to 3) and
+        # ``num_reduction_ops>=2`` (UNDER-counts — rms_norm/layer_norm's apply-pass
+        # re-read is NOT a ReductionLowering, so num_reduction_ops==1, which would
+        # EXEMPT their wide 512 KiB rows -> persistent -> ~2.9x spill). row_reread
+        # gives the exact right set: sum/long_sum=False (single stream -> persist to
+        # the structural cap even at >240 KiB); rms_norm/layer_norm/softmax/
+        # cross_entropy=True (re-read -> governed by this byte cap); kl_div/jsd=False
+        # (two DISTINCT inputs each read once — and Band-B's R_BLOCK cap dominates
+        # them anyway); welford=True (re-reads x; Band-C caps dominate). Verified on
+        # all 9 kernels + flip-set across train+val+test+ROBUSTNESS (the widest rows
+        # live in robustness; the cap fires on byte width). See
+        # ReductionFact.row_reread + _lab/harness/run3_row_reread_probe.py.
         persist_cap = env.backend.max_tensor_numel  # None ⇒ no element cap
         can_persist = persist_cap is None or fact.size_hint <= persist_cap
-        # GATE = num_load>=2 (a KNOWN-IMPERFECT proxy, retained as the LESS-WRONG
-        # placeholder until the faithful ``row_reread`` fact lands — EDIT-GATE-v2).
-        # RUN-3 history: EDIT#2 re-keyed this to ``num_reduction_ops>=2`` to fix
-        # num_load's OVER-count (CE's scalar gather), but the hub-prescreen REJECTED
-        # that: num_reduction_ops UNDER-counts (the mirror error) — rms_norm/
-        # layer_norm RE-READ the row in a post-reduction APPLY pass (normalize
-        # y=x*rstd*w) that is NOT a ReductionLowering, so num_reduction_ops==1 there
-        # and nro>=2 would EXEMPT their wide (512 KiB ROBUSTNESS) rows -> persistent
-        # -> ~2.9x spill regression (run-2's own P/L table). The FAITHFUL property is
-        # ``row_reread`` (is the reduction-input HOST BUFFER read in >1 distinct
-        # pass/region — a 2nd reduction pass OR an apply re-read?), computed from the
-        # reduction roller's host-buffer provenance (device_ir
-        # _reduction_fx_inter_loop_rw_names / _fx_trace_tensor_arg_rw_names). Right
-        # set: sum/long_sum=False (single-stream, exempt -> persist to structural
-        # cap); rms_norm/layer_norm/softmax/cross_entropy=True (re-read -> governed
-        # by this byte cap). num_load>=2 fires for {rms,ln,softmax,CE} (the RIGHT
-        # set, but by luck of over-counting), so it is the safe placeholder; nro>=2
-        # fires for {CE,softmax,ln,jsd} and wrongly exempts rms_norm — strictly
-        # worse. Keep num_load until row_reread is implemented + flip-set-verified
-        # across ALL splits (train+val+test+ROBUSTNESS — the widest rows live in
-        # robustness; the cap fires on byte width).
-        if fact.num_load >= 2:
+        if fact.row_reread:
             row_bytes = fact.size_hint * max(1, fact.itemsize)
             if row_bytes > cls.MULTILOAD_PERSIST_MAX_BYTES:
                 can_persist = False

@@ -771,10 +771,47 @@ provenance — a SMALL targeted addition, not a framework), wire BOTH consumers 
 no-regression on wide rms/ln robustness staying LOOPED), DM the design to hub before commit -> fact-integrity
 + referee + auditor re-gate. The code-investigator's T2 answer (pending) will corroborate; not blocking on it.
 
+## 2026-06-03 — EDIT-GATE-v2 IMPLEMENTED + verified (row_reread fact wired into the persist cap)
+
+Wrote the faithful fact + first consumer. Changes (3 files):
+- `config_spec.py`: ReductionFact gains `row_reread: bool = False` (+ docstring: faithful re-read property,
+  why NOT num_load/num_reduction_ops).
+- `device_ir.py`: `DeviceIR._compute_row_reread()` = the unified discriminator (buffer in >=2 ReductionLoop/
+  ForLoop graphs), wired into BOTH `_build_reduction_fact` (T1) and `register_user_tiled_reductions` (T2).
+  Verified computable AT fact-build time (self.graphs already holds the loop graphs; build-time == post-bind).
+- `triton.py`: persist-cap GATE `if fact.num_load >= 2` -> `if fact.row_reread` (EDIT-GATE-v2). Comment rewritten.
+
+VERIFICATION (all GREEN):
+- PRODUCTION fact.row_reread correct 9/9 (sum/long_sum=F, rms/ln/softmax/CE/welford=T, kl_div/jsd=F).
+- FULL 4-split FLIP-SET (train+val+test+ROBUSTNESS, the EDIT#2 lesson): the ONLY cap-gate-decision flips vs
+  the num_load placeholder are kl_div/jsd wide-vocab (num_load=2->fires; row_reread=F->doesn't). But those are
+  Band-B (num_tiled_accumulators>=1): the BANDB_R_BLOCK cap (4096) clamps R_BLOCK IDENTICALLY whether
+  can_persist is T or F -> their SEEDS are BYTE-IDENTICAL (verified: block_sizes=[4096,1], looped, w32, correct
+  on kl_div(2048,151936)/(1024,256000), jsd(8192,65536)/(4096,98304)/(2048,256000)). No other kernel flips.
+- So EDIT-GATE-v2 is SEED-BYTE-IDENTICAL to the num_load placeholder across the WHOLE curriculum; the 3 CE
+  boundary persistent flips are from EDIT#1's cap VALUE (240KiB), not the gate.
+- CRUCIALLY avoids the EDIT#2(nro) regression: rms_norm/layer_norm (1,131072)=512KiB ROBUSTNESS stay LOOPED
+  (row_reread=True -> governed), G 1.10/1.32, correct. (nro=1 would have exempted them -> 2.9x spill.)
+- Correctness maxerr <= ~3e-4 (fp32 reduction-order, within tol) on all checked shapes. Lint+pyrefly clean.
+  Tests: test_reductions 34p, test_autotuner_heuristics + subtests, test_autotuner 107p — all PASS.
+
+FACT-INTEGRITY readiness (the gate will check): row_reread computes the REAL property (multi-pass re-read)
+from provenance (_fx_trace_tensor_arg_rw_names), passes the divergence test (right on kernels where num_load
+over-counts + num_reduction_ops under-counts), is style-independent (dataflow not op-count), has a consumer
+(the persist-cap gate; + the reread eviction next). Probe `_lab/harness/run3_row_reread_probe.py` is the
+falsification artifact (9/9). NOT a general framework — a single targeted discriminator reusing existing
+provenance.
+
+PENDING: DM the design to hub before committing (task #8 protocol), then commit -> fact-integrity + referee +
+auditor re-gate. SECOND consumer (de-hack the reread EVICTION onto row_reread + name the re-read buffer's
+slot) is a FOLLOW-ON edit (the eviction win 1.31x is the next perf gain; this commit is the GATE fix only).
+
 ### Current champion
-- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap value 240KiB) ONLY (gate = num_load>=2 placeholder, 1cb50a6a).
-  3 CE boundary at oracle parity, all else byte-identical, correctness clean. row_reread fact SOLVED + verified
-  9/9 (the faithful replacement for the num_load gate); writing the fact + EDIT-GATE-v2 next.
+- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
+  the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
+  num_load placeholder curriculum-wide; CE boundary at oracle parity; wide rms/ln robustness correctly looped
+  (no regression); tests pass. Ready to DM design + commit + re-gate. NEXT perf: reread eviction (1.31x CE
+  wide, same fact) then the pid cluster.
 - HELD/characterized edits (A/B done): EDIT#3 CE re-read eviction (1.09-1.31x wide CE, matches oracle; needs
   faithful per-slot re-read provenance -- code-investigator query out); EDIT#4 welford apply-cap 8192->16384
   (1.05-1.10x); EDIT#5 jsd Band-B warps 32->16 (num_tiled_accumulators-keyed, 1.12-1.21x). HARDER/deferred:
