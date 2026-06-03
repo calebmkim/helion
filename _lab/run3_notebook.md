@@ -1228,3 +1228,34 @@ occupancy. ALL needs GPU (full oracles + A/B); deferred to after EDIT-GATE-v2/ED
 - Deliberately NOT committing more edits until (a) hub re-gates EDIT#1+2 and (b) provenance answer lands --
   to avoid building on unconfirmed foundations + flooding the gate queue. Board fully characterized; ready to
   execute the edit queue on the hub's cadence.
+
+## 2026-06-03 — softmax-wide persist-vs-loop A/B PRE-STAGED (hub GPU-step #2, non-GPU prep)
+
+Hub confirmed (DM): my softmax row_reread check found a real FORWARD GAIN, not a risk. Affirmed: EDIT-GATE-v2
+cannot regress softmax (wide softmax already looped under num_load>=2; row_reread doesn't move its persist/loop
+split). NEW open is a legit Phase-2 oracle target: **is softmax-wide-LOOPED optimal, or does PERSISTENT beat it?**
+Physics: softmax_two_pass is SINGLE-OPERAND re-read (x re-read for the exp-sum pass after the max pass) -> resident
+set is ONE row of x, LIGHTER than CE's multi-pass working set (logits + labels + target gather). So softmax may
+SPILL LESS than CE at the same byte width and want a HIGHER persist threshold than CE's 240KiB cap.
+
+Built `_lab/harness/run3_softmax_persist_ab.py` (committed 6906970e). softmax_two_pass is T2 (user-tiled): the
+reduction axis is a `block_sizes` entry (inner `hl.tile(n, block_size=block_size_n)`), NO reduction_loops knob.
+PERSISTENT == block_size_n >= np2(N); LOOPED == capped chunk. The harness finds the reduction-axis index
+GENERICALLY (fact.block_id -> block_sizes index, NOT hardcoded) then mutates ONLY that entry. Arms: seed_looped
+(block_size_n=16384,w32), persist (np2(N)), persist_w16, persist_ns2, chunk_32768 (bigger looped chunk -- isolates
+chunk-size from full-persistence), tc_default. do_bench median-of-N, correctness-gated, fp32 asserted, one process.
+AST+import verified (no GPU): _np2(65536)=65536, _np2(131072)=131072 (both pow2 -> persist arm = whole row).
+
+Target shapes (both >240KiB so currently looped at floor G~1.0=tc, never oracle'd):
+  softmax(1024,65536)=256KiB ; softmax(512,131072)=512KiB.
+Pair the A/B with a FRESH oracle (run3_oracle.py --kernel softmax) on the same two shapes -- the A/B settles
+"does persistent beat looped", the oracle is the actual arbiter (may find an even better chunk/warps/stages).
+If persistent wins: the cap differentiator may need to become row_reread AND (distinct-streamed-operands>1) so
+CE (heavier) caps lower than softmax (single x) -- but re-examine WHY they'd differ (notebook open Q lines
+891-896): both hold one np2(N) row resident across 2 passes, should behave the same; if they DON'T, there's a
+finer property the oracle exposes. If persistent LOSES/ties: softmax-wide is confirmed at oracle (the 240KiB
+cap is right for it too), close the open.
+
+GPU SEQUENCING (hub holds token; await GPU-GRANTED): (1) EDIT#3 eviction A/B [highest value, 1.31x ready] ->
+(2) softmax-wide persist-vs-loop A/B + oracle [this new gain] -> (3-later) pid cluster + long_sum-tail
+anti-giving-up. All harnesses ready; no GPU touched.
