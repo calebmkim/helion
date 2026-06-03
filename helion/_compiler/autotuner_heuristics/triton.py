@@ -530,14 +530,15 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         # additional PERF byte ceiling (MULTILOAD_PERSIST_MAX_BYTES, run-3-re-derived
         # to 240 KiB; see the constant) below the structural one.
         #
-        # GATE = ``fact.row_reread`` (EDIT-GATE-v2). This is the FAITHFUL "the kernel
-        # re-reads its reduction-input row" property, computed in device_ir
-        # (``_compute_row_reread``): some host buffer is loaded in >= 2 distinct LOOP
-        # graphs (loads resolved to host-buffer names via the roller's read
-        # provenance, device temporaries excluded). The post-roller reality is what
-        # spills: each rolled reduction pass + each no-reduction apply pass is its own
-        # loop graph, so rms_norm's apply pass genuinely RE-EMITS the x load (x in 2
-        # loop graphs -> True), cross_entropy's amax + exp-sum passes both load logits,
+        # GATE = ``fact.row_reread`` (EDIT-GATE-v2). The FAITHFUL "the reduction-input
+        # row is REUSED / LIVE across the reduction boundary" property, computed in
+        # device_ir (``_compute_row_reread``) by a CONSUMER-DATAFLOW trace cutting AT
+        # the reduction: a loaded reduction-input tile's value feeds >= 2 distinct
+        # reduction lowerings (softmax/cross_entropy: max + sum) OR feeds a reduction
+        # AND reaches a store BYPASSING the reduction (rms_norm/layer_norm: x feeds the
+        # sum-of-squares AND the x*rstd*w apply). Liveness, NOT a load-op count and NOT
+        # a read-region count — right for in-register reuse (rms_norm: one hl.load of
+        # x, value used twice) and immune to the single-pass-double-load false positive.
         # softmax's max + sum passes both load x. A single-pass stream (sum/long_sum)
         # touches its row in only ONE loop graph -> 1. Two DISTINCT inputs each read
         # once (kl_div yp/yt, jsd) -> each 1 -> False. Dataflow-, not load-op-count- or

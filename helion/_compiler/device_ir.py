@@ -1033,7 +1033,7 @@ class DeviceIR:
                 num_tiled_accumulators=num_tiled_accumulators,
                 is_structured_combine=is_structured_combine,
                 apply_block_ids=apply_tiles if is_structured_combine else (),
-                row_reread=self._compute_row_reread(),
+                row_reread=self._compute_row_reread(red_block_id),
                 reread_buffer_slots=self._compute_reread_buffer_slots(red_block_id),
             )
         )
@@ -1172,44 +1172,80 @@ class DeviceIR:
             num_tiled_accumulators,
         )
 
-    def _compute_row_reread(self) -> bool:
-        """True iff some host buffer is loaded in >= 2 distinct LOOP graphs.
+    def _compute_row_reread(self, red_block_id: int) -> bool:
+        """True iff the reduction-input row is REUSED / LIVE across the reduction
+        boundary — the FAITHFUL persist-cap gate property (see
+        ``ReductionFact.row_reread``), computed at fact-build.
 
-        The FAITHFUL "the kernel re-reads its reduction-input row" property (see
-        ``ReductionFact.row_reread``). A LOOP graph is a ``ReductionLoopGraphInfo``
-        (T1 rollable: each rolled reduction pass + a no-reduction apply pass is its
-        own loop graph) or a ``ForLoopGraphInfo`` (T2 user-tiled: each ``hl.tile``
-        pass). A single-pass stream (sum/long_sum) loads its row in the root graph
-        AND its ONE rolled loop graph, but only the loop graph is counted -> 1.
-        A re-read kernel (rms_norm sum-pass + apply-pass; cross_entropy amax-pass +
-        exp-sum-pass; softmax max-pass + sum-pass) loads the SAME host buffer in
-        >= 2 loop graphs -> 2. Two DISTINCT inputs each read once (kl_div yp/yt,
-        jsd) -> each 1 -> not a re-read. Resolves loads to host-buffer names via
-        ``_fx_trace_tensor_arg_rw_names`` (device temporaries excluded), so it
-        tracks the workload's dataflow, not the load-op count or coding style.
+        A CONSUMER-DATAFLOW trace cutting AT the reduction: for a load whose value
+        feeds a ``ReductionLowering(red_block_id)``, the row is reused iff that value
+        is consumed by ``>= 2`` distinct such reductions (softmax/cross_entropy:
+        max + sum re-read the row) OR by a reduction AND a STORE reached on a path
+        that BYPASSES the reduction (rms_norm/layer_norm: x feeds the sum-of-squares
+        AND the x*rstd*w apply -> store). Liveness, NOT a load-op count and NOT a
+        read-region count: right for IN-REGISTER reuse (rms_norm loads x with ONE
+        ``hl.load``, value used twice -> True) and immune to the
+        single-pass-double-load false positive (two loads feeding ONE reduction with
+        no bypass-store -> False).
 
-        This is the EDIT-GATE-v2 bool that fact-integrity PASSed (the persist-cap
-        gate's only consumer needs the binary >=2, nothing finer). The EVICTION
-        consumer's per-slot mapping is a SEPARATE, finer computation off the same
-        provenance resolver — see ``_compute_reread_buffer_slots`` (an int count would
-        serve NEITHER consumer: the cap wants the bool, eviction wants per-slot
-        buffer-identity+order).
+        9/9: sum/long_sum False (x feeds only the reduction, no bypass-store);
+        rms_norm/layer_norm/softmax/cross_entropy True; kl_div/jsd False (two DISTINCT
+        inputs each feed one reduction, neither reused). ACID = rms_norm: num_load=2
+        OVER-counts (the broadcast weight, fires), num_reduction_ops=1 UNDER-counts
+        (the apply is not a ReductionLowering, exempts), this consumer-trace is the
+        only one that's right. FAITHFULNESS UPGRADE over the prior region-membership
+        form ("some buffer in >= 2 LOOP graphs"): behaviorally identical seeds on all
+        curriculum splits (byte-identity verified), but keyed on the reduction-INPUT
+        tile's dataflow specifically — closing the "any >= 2-graph buffer" loophole.
+        Dataflow-, not coding-style-dependent (softmax_decomposed=True too). The
+        EVICTION consumer's per-slot ``reread_buffer_slots`` is a SEPARATE, finer
+        computation off the same resolver (``_compute_reread_buffer_slots``).
         """
         from ..language.memory_ops import load as _load_op
+        from ..language.memory_ops import store as _store_op
+        from .inductor_lowering import ReductionLowering
 
-        host = HostFunction.current()
-        per_buffer: dict[str, int] = {}
         for gi in self.graphs:
-            if not isinstance(gi, (ReductionLoopGraphInfo, ForLoopGraphInfo)):
+            g = gi.graph
+            redset = {
+                id(nd)
+                for nd in g.nodes
+                if isinstance(nd.meta.get("lowering"), ReductionLowering)
+                and getattr(nd.meta["lowering"], "block_index", None) == red_block_id
+            }
+            if not redset:
                 continue
-            names_in_graph: set[str] = set()
-            for node in gi.graph.find_nodes(
-                op="call_function", target=_load_op, sort=False
-            ):
-                names_in_graph.update(_fx_trace_tensor_arg_rw_names(host, node.args[0]))
-            for nm in names_in_graph:
-                per_buffer[nm] = per_buffer.get(nm, 0) + 1
-        return any(c >= 2 for c in per_buffer.values())
+            for node in g.find_nodes(op="call_function", target=_load_op, sort=False):
+                # which red_block_id-reductions does this load feed (cut AT them)?
+                feeds: set[int] = set()
+                seen: set[int] = set()
+                stack = list(node.users)
+                while stack:
+                    u = stack.pop()
+                    if id(u) in redset:
+                        feeds.add(id(u))
+                        continue  # do not traverse THROUGH the reduction
+                    if id(u) in seen:
+                        continue
+                    seen.add(id(u))
+                    stack.extend(u.users)
+                if not feeds:
+                    continue
+                if len(feeds) >= 2:  # disjunct A: feeds >= 2 reductions
+                    return True
+                # disjunct B: the loaded tile reaches a store on a path BYPASSING the
+                # reduction (used outside the reduction = live across the boundary)
+                seen2: set[int] = set()
+                stack = list(node.users)
+                while stack:
+                    u = stack.pop()
+                    if id(u) in redset or id(u) in seen2:
+                        continue
+                    seen2.add(id(u))
+                    if u.op == "call_function" and u.target is _store_op:
+                        return True
+                    stack.extend(u.users)
+        return False
 
     def _compute_reread_buffer_slots(self, red_block_id: int) -> tuple[int, ...]:
         """The ``load_eviction_policies`` SLOT indices that load the re-read REDUCTION
@@ -1343,7 +1379,7 @@ class DeviceIR:
             num_store=num_store,
             num_reduction_ops=num_reduction_ops,
             num_tiled_accumulators=num_tiled_accumulators,
-            row_reread=self._compute_row_reread(),
+            row_reread=self._compute_row_reread(rdim.block_id),
             reread_buffer_slots=self._compute_reread_buffer_slots(rdim.block_id),
         )
 
