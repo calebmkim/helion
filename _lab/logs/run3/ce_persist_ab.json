@@ -2,9 +2,9 @@
   {
     "shape": [
       8192,
-      49152
+      57344
     ],
-    "tc_us": 563.264012336731,
+    "tc_us": 649.6639847755432,
     "arms": {
       "seed_looped": {
         "cfg_rl": [
@@ -15,8 +15,8 @@
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
-        "us": 539.0080213546753,
-        "spread": 0.0076585852522831335
+        "us": 729.3760180473328,
+        "spread": 0.004957710282645955
       },
       "persist": {
         "cfg_rl": [
@@ -27,8 +27,8 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 527.0560085773468,
-        "spread": 0.005342926361876533
+        "us": 673.3600199222565,
+        "spread": 0.0006177688065523681
       },
       "persist_w16": {
         "cfg_rl": [
@@ -39,8 +39,8 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 593.2160019874573,
-        "spread": 0.010464995122337444
+        "us": 637.8560066223145,
+        "spread": 0.01204033323340916
       },
       "persist_ns4": {
         "cfg_rl": [
@@ -51,74 +51,17 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 593.311995267868,
-        "spread": 0.009681214021505761
-      }
-    }
-  },
-  {
-    "shape": [
-      4096,
-      50304
-    ],
-    "tc_us": 303.45600843429565,
-    "arms": {
-      "seed_looped": {
-        "cfg_rl": [
-          16384
-        ],
-        "cfg_w": 32,
-        "cfg_ns": 1,
-        "codegen": "looped",
-        "correct": true,
-        "maxerr": 0.0,
-        "us": 441.76000356674194,
-        "spread": 0.003621903681345066
-      },
-      "persist": {
-        "cfg_rl": [
-          null
-        ],
-        "cfg_w": 32,
-        "cfg_ns": 1,
-        "codegen": "persistent",
-        "correct": true,
-        "maxerr": 0.0,
-        "us": 282.51200914382935,
-        "spread": 0.009854497005653233
-      },
-      "persist_w16": {
-        "cfg_rl": [
-          null
-        ],
-        "cfg_w": 16,
-        "cfg_ns": 1,
-        "codegen": "persistent",
-        "correct": true,
-        "maxerr": 0.0,
-        "us": 310.41599810123444,
-        "spread": 0.003608064933839902
-      },
-      "persist_ns4": {
-        "cfg_rl": [
-          null
-        ],
-        "cfg_w": 16,
-        "cfg_ns": 4,
-        "codegen": "persistent",
-        "correct": true,
-        "maxerr": 0.0,
-        "us": 310.2400004863739,
-        "spread": 0.0013408355313154453
+        "us": 640.4160261154175,
+        "spread": 0.010093445905484886
       }
     }
   },
   {
     "shape": [
       8192,
-      50257
+      65536
     ],
-    "tc_us": 678.3999800682068,
+    "tc_us": 733.6160242557526,
     "arms": {
       "seed_looped": {
         "cfg_rl": [
@@ -129,8 +72,8 @@
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
-        "us": 1041.8239831924438,
-        "spread": 0.006742012343335446
+        "us": 810.0799918174744,
+        "spread": 0.00900654975646549
       },
       "persist": {
         "cfg_rl": [
@@ -141,8 +84,8 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 619.6799874305725,
-        "spread": 0.004699175347869308
+        "us": 916.1919951438904,
+        "spread": 0.004121356949782095
       },
       "persist_w16": {
         "cfg_rl": [
@@ -153,8 +96,8 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 623.4720051288605,
-        "spread": 0.003284760138371202
+        "us": 792.0480072498322,
+        "spread": 0.003959329670503746
       },
       "persist_ns4": {
         "cfg_rl": [
@@ -165,74 +108,17 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 623.7760186195374,
-        "spread": 0.001256876942445098
-      }
-    }
-  },
-  {
-    "shape": [
-      4096,
-      98304
-    ],
-    "tc_us": 566.4640069007874,
-    "arms": {
-      "seed_looped": {
-        "cfg_rl": [
-          16384
-        ],
-        "cfg_w": 32,
-        "cfg_ns": 1,
-        "codegen": "looped",
-        "correct": true,
-        "maxerr": 9.5367431640625e-07,
-        "us": 955.1520049571991,
-        "spread": 0.002998478950568561
-      },
-      "persist": {
-        "cfg_rl": [
-          null
-        ],
-        "cfg_w": 32,
-        "cfg_ns": 1,
-        "codegen": "persistent",
-        "correct": true,
-        "maxerr": 9.5367431640625e-07,
-        "us": 1837.0240330696106,
-        "spread": 0.0017767597424658784
-      },
-      "persist_w16": {
-        "cfg_rl": [
-          null
-        ],
-        "cfg_w": 16,
-        "cfg_ns": 1,
-        "codegen": "persistent",
-        "correct": true,
-        "maxerr": 9.5367431640625e-07,
-        "us": 1413.5040044784546,
-        "spread": 0.001845061084994591
-      },
-      "persist_ns4": {
-        "cfg_rl": [
-          null
-        ],
-        "cfg_w": 16,
-        "cfg_ns": 4,
-        "codegen": "persistent",
-        "correct": true,
-        "maxerr": 9.5367431640625e-07,
-        "us": 1413.4880304336548,
-        "spread": 0.0022525981477747228
+        "us": 792.2559976577759,
+        "spread": 0.003675635821951045
       }
     }
   },
   {
     "shape": [
       8192,
-      128256
+      73728
     ],
-    "tc_us": 1403.167963027954,
+    "tc_us": 824.5600163936615,
     "arms": {
       "seed_looped": {
         "cfg_rl": [
@@ -243,8 +129,8 @@
         "codegen": "looped",
         "correct": true,
         "maxerr": 9.5367431640625e-07,
-        "us": 2711.359977722168,
-        "spread": 0.002502051481727304
+        "us": 1265.120029449463,
+        "spread": 0.005944068727387719
       },
       "persist": {
         "cfg_rl": [
@@ -255,8 +141,8 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 9.5367431640625e-07,
-        "us": 5793.600082397461,
-        "spread": 0.0014912683558764319
+        "us": 1289.3439531326294,
+        "spread": 0.002643169932582894
       },
       "persist_w16": {
         "cfg_rl": [
@@ -267,8 +153,8 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 9.5367431640625e-07,
-        "us": 10598.848342895508,
-        "spread": 0.00046798104465318384
+        "us": 1171.4239716529846,
+        "spread": 0.005682016795913425
       },
       "persist_ns4": {
         "cfg_rl": [
@@ -279,17 +165,17 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 9.5367431640625e-07,
-        "us": 10599.935531616211,
-        "spread": 0.0008754063711949738
+        "us": 1171.7760562896729,
+        "spread": 0.003359048259486427
       }
     }
   },
   {
     "shape": [
       2048,
-      256000
+      57344
     ],
-    "tc_us": 742.6239848136902,
+    "tc_us": 180.4800033569336,
     "arms": {
       "seed_looped": {
         "cfg_rl": [
@@ -300,8 +186,8 @@
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
-        "us": 1364.416003227234,
-        "spread": 0.002392283254864707
+        "us": 209.28000658750534,
+        "spread": 0.013608559082037803
       },
       "persist": {
         "cfg_rl": [
@@ -312,8 +198,8 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 5011.45601272583,
-        "spread": 0.0007407382739037954
+        "us": 188.22400271892548,
+        "spread": 0.015130904099347196
       },
       "persist_w16": {
         "cfg_rl": [
@@ -324,8 +210,8 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 10521.599769592285,
-        "spread": 0.0004410526274763097
+        "us": 182.78400599956512,
+        "spread": 0.020658256882790726
       },
       "persist_ns4": {
         "cfg_rl": [
@@ -336,8 +222,65 @@
         "codegen": "persistent",
         "correct": true,
         "maxerr": 0.0,
-        "us": 10519.007682800293,
-        "spread": 0.00038640146096379695
+        "us": 183.20000171661377,
+        "spread": 0.019213957247332596
+      }
+    }
+  },
+  {
+    "shape": [
+      2048,
+      65536
+    ],
+    "tc_us": 202.7519941329956,
+    "arms": {
+      "seed_looped": {
+        "cfg_rl": [
+          16384
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 231.58399760723114,
+        "spread": 0.016166882403118546
+      },
+      "persist": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 251.64799392223358,
+        "spread": 0.012334695124193419
+      },
+      "persist_w16": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 219.80799734592438,
+        "spread": 0.013539090228400458
+      },
+      "persist_ns4": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 4,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 219.9840024113655,
+        "spread": 0.013382825494746908
       }
     }
   }
