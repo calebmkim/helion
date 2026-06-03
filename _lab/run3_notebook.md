@@ -2264,3 +2264,26 @@ flat_noevict=eviction-stripped):
 | jsd(1024,4096)     |     28.3     | 28.3 (ev=None)                  | 0.999     | BYTE-ID |
 => EDIT#6 reproduces 1.31x/1.08x tc-beating + kl_div/jsd byte-identical (no-regression). Referee answer key.
 The reread-eviction now confirmed across ALL 3 tracks (T1 CE / Band-C welford / T2 softmax), one faithful rule.
+
+## 2026-06-03 — EDIT#4 welford apply-cap A/B — CONFIRMED (apply 2048->4096 net-positive wide, neutral narrow)
+
+run3_wf_tile_ab.py (do_bench median-7). seed = combine=8192, apply=2048. Key arms (vs_seed):
+| shape            | apply4096 | apply8192 | combineNp2+apply4096 | applyNp2 | warps note            |
+|------------------|----------:|----------:|---------------------:|---------:|-----------------------|
+| welford(4096,16384)| **1.068** | 1.066    | **1.089**            | 0.844(hurt)| w32=0.981, w8=0.851  |
+| welford(32768,8192)| **1.047** | 1.053    | 1.047                | 1.054    | apply4096+w32=**1.104**|
+| welford(16384,768) | 1.000    | 1.000    | 1.000                | 1.000    | narrow: w8=0.864(hurt)|
+
+FINDINGS -> EDIT#4 = raise STRUCTURED_APPLY_LOOP_CHUNK_BYTES 8192->16384 (apply 2048->4096 fp32):
+1. apply 2048->4096 HELPS wide (1.05-1.07x), INERT on narrow (16384,768: apply already np2=1024 persistent,
+   <STRUCTURED_APPLY_PERSIST_MAX_BYTES). CONFIRMED net-positive-or-neutral -> the core EDIT#4 claim holds.
+2. 4096 is the safe value: applyNp2(16384) HURTS at (4096,16384)=0.844 (too big); apply8192 ties 4096 but is
+   riskier wider. So cap=16384 bytes (=4096 fp32) is right; don't go bigger.
+3. OUT OF EDIT#4 SCOPE (separate levers, shape-dependent — NOT this edit):
+   - combine 8192->16384 (combineNp2) adds ~+0.02 at (4096,16384) but EXCEEDS STRUCTURED_COMBINE_CAP_BYTES=
+     32768(=8192fp32) -> a separate combine-cap raise (EDIT#4b candidate, smaller). Note, don't fold in.
+   - warps: w32 helps (32768,8192) 1.104 but HURTS narrow (16384,768) 0.864 -> shape-dependent, NOT a clean
+     uniform bump. Leave the warp ramp (EDIT#4 is the apply cap only).
+=> EDIT#4 = STRUCTURED_APPLY_LOOP_CHUNK_BYTES 8192->16384, 1-constant change, A/B-confirmed. Build it (next),
+no-regression backstop: narrow welford byte-identical (apply persistent), other kernels untouched (Band-C only).
+Welford was a floor-loser (0.946); this closes the wide-N apply gap.
