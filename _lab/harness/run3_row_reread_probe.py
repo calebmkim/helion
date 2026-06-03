@@ -42,8 +42,19 @@ import helion  # noqa: E402
 
 from run2_measure_g import KERNELS  # noqa: E402
 from helion._compiler.device_ir import _fx_trace_tensor_arg_rw_names  # noqa: E402
-from helion._compiler.host_function import HostFunction  # noqa: E402
+from helion._compiler.device_ir import ForLoopGraphInfo  # noqa: E402
+from helion._compiler.device_ir import ReductionLoopGraphInfo  # noqa: E402
 from helion.language.memory_ops import load as _load_op  # noqa: E402
+
+# SOLVED + verified across all 9 kernels (2026-06-03). The FAITHFUL row_reread:
+# a reduction-input HOST BUFFER is loaded in >=2 distinct LOOP graphs
+# (ReductionLoopGraphInfo for T1-rollable; ForLoopGraphInfo for T2 user-tiled).
+# Tracks genuine multi-pass re-read of the SAME buffer; immune to the roller's
+# root+loop duplication (which false-positived naive load-node / all-graph counts on
+# sum/long_sum) and distinguishes kl_div/jsd (2 distinct inputs, each once) from
+# softmax/CE (1 re-read input). NOT num_load (over-counts CE gather) NOR
+# num_reduction_ops (under-counts rms/ln apply re-read).
+_LOOP_GRAPH_TYPES = (ReductionLoopGraphInfo, ForLoopGraphInfo)
 
 # Representative shape per kernel (any shape -- row_reread is shape-independent).
 PROBE_SHAPES = {
@@ -69,55 +80,52 @@ def probe(kernel, M, N):
     fact = rfacts[0]
     is_t1 = fact.block_id in spec.reduction_loops.valid_block_ids()
 
-    # Two views per host buffer:
-    #  (a) load-NODE count across all graphs (the naive proxy -- CONFOUNDED: a
-    #      single looped stream emits 2 load nodes for the same buffer, e.g. sum/
-    #      long_sum x=2).
-    #  (b) DISTINCT-GRAPH count: how many distinct device GRAPHS contain a load of
-    #      the buffer. Hypothesis: a genuine re-read spans >1 graph (2nd reduction
-    #      pass OR a separate apply graph); a single-pass stream's multiple load
-    #      nodes live in ONE graph.
-    name_counts: Counter[str] = Counter()
-    name_graphs: dict[str, set[int]] = {}
-    graph_count = len(device_ir.graphs)
+    # UNIFIED discriminator: per host buffer, count DISTINCT LOOP graphs
+    # (ReductionLoopGraphInfo | ForLoopGraphInfo) that load it. row_reread = any
+    # buffer with count >= 2 (consumed by >=2 passes = re-read). Excludes the
+    # RootGraphInfo (the root + its rolled loop are alternate representations of ONE
+    # pass -> counting all graphs false-positives sum/long_sum).
+    loopgraph_count: Counter[str] = Counter()
     with host:
         for gi in device_ir.graphs:
-            g = gi.graph
+            if not isinstance(gi, _LOOP_GRAPH_TYPES):
+                continue
             names_in_graph: set[str] = set()
-            for node in g.find_nodes(op="call_function", target=_load_op, sort=False):
+            for node in gi.graph.find_nodes(
+                op="call_function", target=_load_op, sort=False
+            ):
                 for nm in _fx_trace_tensor_arg_rw_names(host, node.args[0]):
-                    name_counts[nm] += 1
                     names_in_graph.add(nm)
             for nm in names_in_graph:
-                name_graphs.setdefault(nm, set()).add(gi.graph_id)
+                loopgraph_count[nm] += 1
 
-    name_graph_counts = {nm: len(g) for nm, g in name_graphs.items()}
-    reread_by_node = [nm for nm, c in name_counts.items() if c >= 2]
-    reread_by_graph = [nm for nm, c in name_graph_counts.items() if c >= 2]
-    row_reread = len(reread_by_graph) >= 1  # the by-GRAPH discriminator
+    reread_names = [nm for nm, c in loopgraph_count.items() if c >= 2]
+    row_reread = len(reread_names) >= 1
     return {
         "kernel": kernel, "shape": [M, N], "is_t1": is_t1,
-        "per_host_graph_count": name_graph_counts,
-        "candidate_by_node(>=2nodes)": len(reread_by_node) >= 1,
         "num_load_fact": fact.num_load, "num_reduction_ops": fact.num_reduction_ops,
-        "n_graphs": graph_count,
-        "per_host_load_count": dict(name_counts),
+        "loopgraph_count_per_buffer": dict(loopgraph_count),
+        "reread_names": reread_names,
         "candidate_row_reread": row_reread,
     }
 
 
-EXPECTED = {  # the RIGHT set per the hub
+# The RIGHT set: re-read kernels (row resident across >=2 passes) = True; single-
+# stream / distinct-input-each-once = False. welford=True is correct (re-reads x in
+# combine+apply) though its Band-C caps dominate; kl_div/jsd=False (2 distinct
+# inputs each read once) though Band-B caps dominate.
+EXPECTED = {
     "sum": False, "long_sum": False, "rms_norm": True, "layer_norm": True,
-    "softmax": True, "cross_entropy": True, "kl_div": False,
-    # welford/jsd governed by Band-C/B caps; informational (no hard expectation)
+    "softmax": True, "cross_entropy": True, "kl_div": False, "jsd": False,
+    "welford": True,
 }
 
 
 def main():
     print(f"GPU={os.environ.get('CUDA_VISIBLE_DEVICES','?')} helion={helion.__file__}\n",
           flush=True)
-    print(f"{'kernel':>14} {'is_t1':>5} {'nl':>3} {'nro':>3} {'reread(byGRAPH)':>15} "
-          f"{'byNODE':>7} {'exp':>5} {'OK?':>5}  node_cnt | graph_cnt", flush=True)
+    print(f"{'kernel':>14} {'is_t1':>5} {'nl':>3} {'nro':>3} {'row_reread':>10} "
+          f"{'exp':>6} {'OK?':>5}  loopgraph_count_per_buffer", flush=True)
     ok_all = True
     for kernel, (M, N) in PROBE_SHAPES.items():
         try:
@@ -133,11 +141,10 @@ def main():
         if exp is not None and r["candidate_row_reread"] != exp:
             ok_all = False
         print(f"{kernel:>14} {str(r['is_t1']):>5} {r['num_load_fact']:>3} "
-              f"{r['num_reduction_ops']:>3} {str(r['candidate_row_reread']):>15} "
-              f"{str(r['candidate_by_node(>=2nodes)']):>7} {str(exp):>5} {ok:>5}  "
-              f"{r['per_host_load_count']} | {r['per_host_graph_count']}", flush=True)
-    print(f"\nCANDIDATE row_reread matches expected set: "
-          f"{'YES' if ok_all else 'NO -- discriminator needs work'}", flush=True)
+              f"{r['num_reduction_ops']:>3} {str(r['candidate_row_reread']):>10} "
+              f"{str(exp):>6} {ok:>5}  {r['loopgraph_count_per_buffer']}", flush=True)
+    print(f"\nUNIFIED row_reread (>=2 ReductionLoop/ForLoop graphs load a buffer) "
+          f"matches expected set: {'YES' if ok_all else 'NO'}", flush=True)
 
 
 if __name__ == "__main__":

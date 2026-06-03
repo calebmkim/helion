@@ -734,11 +734,47 @@ For T2 I need the code-investigator's read of `register_user_tiled_reductions` g
 True, kl_div False). ASKED (sharpened with this empirical data). HOLDING the fact write until the T2 half is
 nailed — T1 is empirically proven, T2 is the last gap.
 
+## 2026-06-03 — *** row_reread fact SOLVED + verified 9/9 (the EDIT-GATE-v2 substrate) ***
+
+Dumped the T2 graph structure myself (didn't wait on the investigator) and UNIFIED T1+T2 into one faithful
+discriminator. T2 structure: softmax = 2 ForLoopGraphInfo loading x (max+sum pass, n_red=2; + apply pass
+n_red=0) -> re-read; kl_div = 1 ForLoopGraphInfo loading y_pred+y_true (each once) -> not.
+
+**FAITHFUL row_reread (run3_row_reread_probe.py, verified 9/9 kernels):**
+`row_reread = (some reduction-input HOST BUFFER is loaded in >=2 distinct LOOP graphs, where a LOOP graph is
+ReductionLoopGraphInfo (T1-rollable) OR ForLoopGraphInfo (T2 user-tiled))`.
+Per-buffer loop-graph counts (the proof):
+  sum {x:1}=F, long_sum {x:1}=F, rms_norm {x:2}=T, layer_norm {x:3}=T, softmax {x:2}=T,
+  cross_entropy {logits:2}=T, kl_div {y_pred:1,y_true:1}=F, jsd {_input:1,target:1}=F, welford {x:2}=T.
+
+WHY FAITHFUL (fact-integrity divergence test PASSES):
+- Tracks genuine multi-pass re-read of the SAME host buffer (the real property), via the reduction roller's
+  host-buffer read provenance (_fx_trace_tensor_arg_rw_names). NOT num_load (over-counts CE's scalar gather:
+  nl=3) NOR num_reduction_ops (under-counts rms/ln apply re-read: nro=1). It gives the RIGHT answer on exactly
+  the kernels where those two proxies diverge from the property.
+- Immune to the roller's root+loop DUPLICATION: a single-pass stream (sum) = RootGraphInfo + 1 Reduction-
+  LoopGraphInfo both loading x, but only 1 is a LOOP graph -> count 1 -> False. (Counting all graphs or load
+  nodes false-positived sum at x=2.)
+- Style-independent: it's the workload's dataflow (buffer consumed by >=2 passes), not a load-op count.
+- Distinguishes 2-distinct-inputs-each-once (kl_div/jsd -> False) from 1-re-read-input (softmax/CE -> True).
+
+CONSUMERS (both, per the hub's task #8): (1) persist-cap gate -> `row_reread` replaces `num_load>=2`
+(governed set rms/ln/softmax/CE/welford; exempt sum/long_sum -> persistent to structural cap; kl_div/jsd
+Band-B own-cap dominates). (2) reread load-eviction -> the SAME provenance names WHICH buffer is re-read, so I
+can put 'last' on that buffer's first-pass load + 'first' on its re-read final-use (de-hacks run-2's POSITIONAL
+welford slot[0]='last' AND generalizes the CE eviction win 1.31x).
+
+NEXT (task #8 execution, now UNBLOCKED — I derived the fact rigorously, no guess): add `row_reread: bool` to
+ReductionFact (config_spec.py), compute it in device_ir (the loop-graph discriminator, reusing the existing
+provenance — a SMALL targeted addition, not a framework), wire BOTH consumers in triton.py, predict the FULL
+4-split flip-set (train+val+test+ROBUSTNESS), correctness-gate, A/B (CE wide eviction + the persist boundary +
+no-regression on wide rms/ln robustness staying LOOPED), DM the design to hub before commit -> fact-integrity
++ referee + auditor re-gate. The code-investigator's T2 answer (pending) will corroborate; not blocking on it.
+
 ### Current champion
-- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap value 240KiB) ONLY (EDIT#2 nro re-key REVERTED; gate =
-  num_load>=2 placeholder, 1cb50a6a). 3 CE boundary at oracle parity, all else byte-identical, correctness
-  clean. EDIT#1 value banked; gate pending the faithful row_reread fact (task #8): T1 discriminator SOLVED
-  (>=2 ReductionLoopGraphInfo graphs load the buffer), T2 half pending code-investigator.
+- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap value 240KiB) ONLY (gate = num_load>=2 placeholder, 1cb50a6a).
+  3 CE boundary at oracle parity, all else byte-identical, correctness clean. row_reread fact SOLVED + verified
+  9/9 (the faithful replacement for the num_load gate); writing the fact + EDIT-GATE-v2 next.
 - HELD/characterized edits (A/B done): EDIT#3 CE re-read eviction (1.09-1.31x wide CE, matches oracle; needs
   faithful per-slot re-read provenance -- code-investigator query out); EDIT#4 welford apply-cap 8192->16384
   (1.05-1.10x); EDIT#5 jsd Band-B warps 32->16 (num_tiled_accumulators-keyed, 1.12-1.21x). HARDER/deferred:
