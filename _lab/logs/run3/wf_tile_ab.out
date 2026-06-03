@@ -1,0 +1,36 @@
+GPU=0 helion=/home/dev/local/helion-reduction-heuristics-run2/helion/__init__.py
+
+=== welford(4096,16384) === tc=184.8us seed_bs=[1, 8192, 2048] seed_w=16 np2(N)=16384
+                    seed bs=   [1, 8192, 2048] w16     214.7us vs_seed=1.000 arm/tc=0.861 sp=0.00 OK
+               apply4096 bs=   [1, 8192, 4096] w16     200.9us vs_seed=1.069 arm/tc=0.920 sp=0.00 OK
+               apply8192 bs=   [1, 8192, 8192] w16     201.2us vs_seed=1.067 arm/tc=0.918 sp=0.00 OK
+                applyNp2 bs=  [1, 8192, 16384] w16     254.4us vs_seed=0.844 arm/tc=0.726 sp=0.00 OK
+              combineNp2 bs=  [1, 16384, 2048] w16     211.3us vs_seed=1.016 arm/tc=0.874 sp=0.00 OK
+    combineNp2_apply4096 bs=  [1, 16384, 4096] w16     197.1us vs_seed=1.089 arm/tc=0.937 sp=0.00 OK
+                warps_x2 bs=   [1, 8192, 2048] w32     217.8us vs_seed=0.986 arm/tc=0.848 sp=0.00 OK
+              warps_half bs=   [1, 8192, 2048] w8      252.3us vs_seed=0.851 arm/tc=0.732 sp=0.00 OK
+       apply4096_warpsx2 bs=   [1, 8192, 4096] w32     200.9us vs_seed=1.069 arm/tc=0.920 sp=0.00 OK
+
+=== welford(32768,8192) === tc=705.3us seed_bs=[2, 8192, 2048] seed_w=16 np2(N)=8192
+                    seed bs=   [2, 8192, 2048] w16     787.4us vs_seed=1.000 arm/tc=0.896 sp=0.00 OK
+               apply4096 bs=   [2, 8192, 4096] w16     752.2us vs_seed=1.047 arm/tc=0.938 sp=0.00 OK
+               apply8192 bs=   [2, 8192, 8192] w16     747.7us vs_seed=1.053 arm/tc=0.943 sp=0.00 OK
+                applyNp2 bs=   [2, 8192, 8192] w16     747.8us vs_seed=1.053 arm/tc=0.943 sp=0.00 OK
+              combineNp2 bs=   [2, 8192, 2048] w16     787.6us vs_seed=1.000 arm/tc=0.895 sp=0.00 OK
+    combineNp2_apply4096 bs=   [2, 8192, 4096] w16     752.4us vs_seed=1.047 arm/tc=0.937 sp=0.00 OK
+                warps_x2 bs=   [2, 8192, 2048] w32     912.0us vs_seed=0.863 arm/tc=0.773 sp=0.00 OK
+              warps_half bs=   [2, 8192, 2048] w8      877.2us vs_seed=0.898 arm/tc=0.804 sp=0.01 OK
+       apply4096_warpsx2 bs=   [2, 8192, 4096] w32     713.8us vs_seed=1.103 arm/tc=0.988 sp=0.00 OK
+
+=== welford(16384,768) === tc=39.6us seed_bs=[1, 1024, 1024] seed_w=4 np2(N)=1024
+                    seed bs=   [1, 1024, 1024] w4       40.2us vs_seed=1.000 arm/tc=0.983 sp=0.00 OK
+               apply4096 bs=   [1, 1024, 1024] w4       40.2us vs_seed=1.000 arm/tc=0.983 sp=0.00 OK
+               apply8192 bs=   [1, 1024, 1024] w4       40.3us vs_seed=0.999 arm/tc=0.983 sp=0.00 OK
+                applyNp2 bs=   [1, 1024, 1024] w4       40.3us vs_seed=0.999 arm/tc=0.983 sp=0.00 OK
+              combineNp2 bs=   [1, 1024, 1024] w4       40.2us vs_seed=1.000 arm/tc=0.983 sp=0.00 OK
+    combineNp2_apply4096 bs=   [1, 1024, 1024] w4       40.2us vs_seed=1.000 arm/tc=0.983 sp=0.00 OK
+                warps_x2 bs=   [1, 1024, 1024] w8       46.7us vs_seed=0.862 arm/tc=0.848 sp=0.00 OK
+              warps_half bs=   [1, 1024, 1024] w2       40.6us vs_seed=0.991 arm/tc=0.974 sp=0.00 OK
+       apply4096_warpsx2 bs=   [1, 1024, 1024] w8       46.7us vs_seed=0.862 arm/tc=0.848 sp=0.00 OK
+
+[wrote /home/dev/local/helion-reduction-heuristics-run2/_lab/logs/run3/wf_tile_ab.json]

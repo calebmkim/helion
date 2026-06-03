@@ -586,9 +586,49 @@ the same host buffer across passes — `_reduction_fx_inter_loop_rw_names`). ASK
 per-slot re-read provenance is available, so the eviction fact is faithful (not a hardcoded slot index =
 another proxy/style-dependent hack the fact-integrity gate would reject). HOLDING EDIT#3 until that answer.
 
+## 2026-06-03 — welford apply/combine/warps A/B (independent thread; data-gathering)
+
+`run3_wf_tile_ab.py` (median-of-7, fp32 asserted). block_sizes=[M_block, combine, apply]:
+- **(4096,16384)** seed [1,8192,2048] w16 = 214.7us (arm/tc 0.861). BEST = **[1,16384,4096] = 197.1us (1.089x,
+  arm/tc 0.937)** -- matches oracle. combine 8192->16384 AND apply 2048->4096 both help. applyNp2(16384)=254
+  (too big, WORSE).
+- **(32768,8192)** seed [2,8192,2048] w16 = 787.4us. BEST = **[2,8192,4096] w32 = 713.8us (1.103x, arm/tc
+  0.988)** -- matches oracle. apply->4096 AND warps->32 TOGETHER (warps32 alone=912 WORSE; only helps with the
+  bigger apply).
+- **(16384,768)** seed [1,1024,1024] w4 = 40.2us (arm/tc 0.983 -- ALREADY at parity). Nothing helps; warps_x2
+  hurts. The quick-oracle "w1, so=1.032" did NOT reproduce -> that gap was quick-oracle NOISE; shape is done.
+
+SYNTHESIS: the welford APPLY tile is over-capped -- `STRUCTURED_APPLY_LOOP_CHUNK_BYTES=8192` (2048 fp32) wants
+to be 16384 (4096 fp32). Combine cap `STRUCTURED_COMBINE_CAP_BYTES=32768` (8192 fp32) slightly low at
+(4096,16384) (wants 16384). Wide-M (32768,8192) also wants warps 16->32. Gains are MODEST (1.05-1.10x) but
+real, oracle-matched. EDIT#4 candidate: raise apply cap 8192->16384 (+ maybe combine, + a warps tweak) -- BUT
+must no-regression-check the other welford in-sample-v2 + train shapes (run-2 tuned these caps). HELD with EDIT#3
+until the CE gates settle (avoid overwhelming the gate queue with parallel uncommitted edits).
+
+## CONSOLIDATED PER-SHAPE seed/oracle TABLE (task #5 running tally; quick oracle unless noted)
+
+WORST-FLOOR / SEEDABLE (the worklist), with the identified lever:
+| shape | seed/oracle | oracle/tc | status | lever |
+|---|---|---|---|---|
+| CE(4096,50304) | 1.576->**1.000** | 1.07 | FIXED by EDIT#1+2 | persist cap (re-keyed nro>=2) |
+| CE(8192,50257) | 1.066->**1.000** | 1.09 | FIXED | persist cap |
+| CE(8192,49152) | 1.025->**0.996** | 1.05 | FIXED | persist cap |
+| CE(4096,98304) | 1.62 (full) | 0.95 | OPEN | re-read evict 1.31x (EDIT#3) + persistent-pid cluster |
+| CE(8192,128256)| 1.25 (quick) | 0.64q | OPEN | evict 1.19x + pid (full oracle not yet; quick under-explores) |
+| CE(2048,256000)| 1.13 (quick) | 0.62q | OPEN | evict 1.09x + pid |
+| jsd(8192,30522)| 1.196 | 1.01 | OPEN | Band-B (not yet dug) |
+| welford(4096,16384)| 1.146 | 1.00 | OPEN | apply 2048->4096 + combine (EDIT#4, A/B done) |
+| softmax(131072,256)| 1.147 | 1.00 | OPEN | small-N (not yet dug) |
+| welford(32768,8192)| 1.089 | 0.99 | OPEN | apply->4096 + w32 (EDIT#4) |
+| welford(16384,768)| 1.032 | 0.94 | DONE (noise) | none -- at parity, quick-oracle gap was noise |
+SOURCE-LIMIT candidates (seed≈oracle<tc): long_sum(16,2097152) seed/oracle=0.998 (N>2^20 structural;
+split-K source opportunity, NOT seed work) -- verify oracle real at full effort before recording.
+AT ORACLE (victory, from batch1): CE(8192,32000) 0.993.
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT#2 (gate num_reduction_ops>=2). 3 CE boundary
-  at oracle parity, all else byte-identical, correctness clean. Ready for combined re-gate. Open: EDIT#3 CE
-  re-read eviction (1.09-1.31x on wide looped CE, PRINCIPLED, matches oracle — but needs per-slot re-read
-  provenance for a faithful fact; code-investigator query out); then the persistent-PID cluster (the rest of
-  the wide-CE 1.62x; re-opens run-2 pid='flat'); welford apply-tile + warps; jsd Band-B; softmax small-N.
+  at oracle parity, all else byte-identical, correctness clean. Ready for combined re-gate.
+- HELD edits (A/B characterized, awaiting CE-gate settle + provenance answers): EDIT#3 CE re-read eviction
+  (1.09-1.31x wide CE, matches oracle; needs per-slot re-read provenance for a faithful fact -- code-investigator
+  query out); EDIT#4 welford apply-cap 8192->16384 (+combine/warps, 1.05-1.10x). Then: CE persistent-PID
+  cluster (rest of wide-CE 1.62x, re-opens run-2 pid='flat'); jsd Band-B; softmax small-N.
