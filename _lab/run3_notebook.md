@@ -657,9 +657,43 @@ BOARD NOW FULLY MAPPED. Lever taxonomy:
 - SOURCE-LIMIT candidate: long_sum(16,2097152) (verify full oracle).
 - DONE/at-parity: most of the curriculum; welford(16384,768) (quick-oracle gap was noise).
 
+## 2026-06-03 — EDIT#2 REJECTED by hub-prescreen (num_reduction_ops UNDER-counts) -> revert + row_reread
+
+GATE CAUGHT A REAL BUG IN MY EDIT#2. EDIT#1 gate verdicts: referee PASS, auditor PASS-with-flag,
+fact-integrity FAIL on num_load proxy. I "fixed" it (EDIT#2) by re-keying to num_reduction_ops>=2. Hub-prescreen
+REJECTED EDIT#2: num_reduction_ops is ALSO a proxy — it UNDER-counts (mirror of num_load's over-count).
+rms_norm/layer_norm RE-READ the row in a POST-REDUCTION APPLY pass (normalize y=x*rstd*w), which is NOT a
+ReductionLowering, so num_reduction_ops==1 for them. nro>=2 would EXEMPT their wide rows -> persistent ->
+~2.9x spill (run-2's own P/L table: rms P/L=2.91 @512KiB). **MY ERROR: my flip-set scan was TRAIN-ONLY**
+(rms train maxes 64KiB < cap), so I missed that rms_norm/layer_norm ROBUSTNESS (1,131072)=512KiB flip
+looped->persistent under nro>=2. LESSON (logged by hub): **flip-set scans MUST cover train+val+test+ROBUSTNESS**
+— the cap fires on byte-width, and the widest rows live in robustness.
+
+REVERTED EDIT#2 (commit 1cb50a6a): gate back to num_load>=2 (the LESS-WRONG placeholder; it fires for
+{rms,ln,softmax,CE} = the RIGHT set by luck of over-counting, vs nro>=2 = {CE,softmax,ln,jsd} which wrongly
+exempts rms). EDIT#1's 240KiB value stays banked. VERIFIED: CE boundary persistent (G 1.07-1.09); rms_norm/
+layer_norm(1,131072)=512KiB correctly LOOPED (G 1.34/1.42).
+
+**THE FAITHFUL FACT (hub-directed, task #8 EDIT-GATE-v2): `row_reread` boolean** = is the reduction-input HOST
+BUFFER read in >1 distinct pass/region (a 2nd reduction pass OR a post-reduction apply re-read)? From the
+reduction roller's provenance (_reduction_fx_inter_loop_rw_names / _fx_trace_tensor_arg_rw_names, device_ir.py
+~608-703 — each hl.load's tensor arg resolves to host buffer names, device temporaries excluded). RIGHT SET:
+sum/long_sum=False (single-stream -> exempt, persist to structural cap); rms_norm/layer_norm/softmax/CE=True
+(re-read -> governed by the byte cap); welford Band-C + kl/jsd Band-B have their own caps that dominate.
+BONUS: row_reread ALSO de-hacks the reread load-eviction (currently is_structured_combine-only) to CE — one
+faithful fact, double duty (matches my independent eviction finding).
+
+PROVENANCE DESIGN QUESTION (asked code-investigator #3, sharpened): for a T1 rollable reduction, is the APPLY
+pass (rms_norm's re-read) IN the candidate graph set `_count_reduction_workload` iterates, or a separate graph?
+Can I compute row_reread by counting, per resolved host-buffer-name, the # of distinct load nodes that read it
+across the reduction+apply region (>1 => re-read)? Need the exact graph topology before writing the fact — NOT
+guessing a third time (gate caught num_load over-count + nro under-count already). HOLDING EDIT#3/GATE-v2 until
+the topology lands.
+
 ### Current champion
-- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT#2 (gate num_reduction_ops>=2). 3 CE boundary
-  at oracle parity, all else byte-identical, correctness clean. AWAITING combined re-gate from hub.
+- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap value 240KiB) ONLY (EDIT#2 nro re-key REVERTED; gate =
+  num_load>=2 placeholder, 1cb50a6a). 3 CE boundary at oracle parity, all else byte-identical, correctness
+  clean. EDIT#1 value banked; gate pending the faithful row_reread fact (task #8).
 - HELD/characterized edits (A/B done): EDIT#3 CE re-read eviction (1.09-1.31x wide CE, matches oracle; needs
   faithful per-slot re-read provenance -- code-investigator query out); EDIT#4 welford apply-cap 8192->16384
   (1.05-1.10x); EDIT#5 jsd Band-B warps 32->16 (num_tiled_accumulators-keyed, 1.12-1.21x). HARDER/deferred:
