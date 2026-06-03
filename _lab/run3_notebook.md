@@ -2639,3 +2639,19 @@ the correct V-INDEPENDENT lever (narrow AND wide). Notes:
   fits, so the oracle stays persistent — consistent with the spill story: 4096 over-allocates, 2048 fits.)
 => EDIT#5 fully justified by the full oracle. The chunk cap alone lands BOTH jsd shapes at TIE. DM'd the hub the
 field-diff; AWAITING ack before commit. Cache updated (jsd:8192x30522, jsd:2048x256000).
+
+## 2026-06-03 — spot-check full-confirms (queue-item-3): sum(16384,2048)=VICTORY; kl_div batch CRASHED mid-run
+
+Full-oracle batch (sum + kl_div extremes) to confirm the quick-parity-suspect shapes toward PARITY.
+- **sum(16384,2048): seed/oracle=0.989 [full] = VICTORY** (the seed BEATS the autotuner's best by 1.1% — the
+  quick-1.032 was noise; G_floor=0.995, oracle/tc=0.984). The quick-parity-suspect resolves to a clean TIE/win.
+  CACHED [full].
+- **kl_div(8192,30522) + (1024,256000): NOT full-confirmed** — the batch process DIED mid-kl_div(8192,30522)
+  autotune (Generation 5, ~409s), no traceback / no "cache ->" / no clean exit; ps shows 0 oracle procs, GPU mem
+  0 MiB free. Likely a Helion-autotuner config-trial subprocess crash (segfault/OOM-kill of a worker) that took
+  the parent down silently — NOT my harness (sum saved fine just before). kl_div stays at quick-parity only
+  (0.9999 / 1.004); the full-confirm is still owed. NOTE: kl_div full-autotune is crash-prone here — retry with
+  care (maybe shorter per-shape, or one shape at a time); do NOT self-certify kl_div as full-confirmed.
+=> sum(16384,2048) is a confirmed PARITY shape (VICTORY). kl_div full-confirm = re-attempt needed (report to hub;
+low stakes — kl_div is at quick-parity, this is the PARITY-table formality, not a gap). EDIT#5 remains the
+high-value ready item awaiting the commit-ack.
