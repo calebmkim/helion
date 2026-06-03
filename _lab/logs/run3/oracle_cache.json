@@ -718,10 +718,10 @@
         4096,
         98304
       ],
-      "source_hash": "608b9bab3ac6650f",
-      "effort": "quick",
-      "ts": "2026-06-03 09:45:17",
-      "autotune_s": 121.9,
+      "source_hash": "add1986eedc7d231",
+      "effort": "full",
+      "ts": "2026-06-03 10:38:25",
+      "autotune_s": 1071.6,
       "seed_cfg": {
         "block_sizes": [
           1
@@ -735,102 +735,104 @@
       },
       "seed_codegen": "looped",
       "seed_correct": true,
-      "seed_maxerr": 0.0,
+      "seed_maxerr": 9.5367431640625e-07,
       "oracle_cfg": {
         "block_sizes": [
           1
         ],
         "reduction_loops": [
-          32768
+          4096
         ],
         "range_unroll_factors": [
-          0
+          4
         ],
         "range_warp_specializes": [],
         "range_num_stages": [
-          0
+          2
         ],
         "range_multi_buffers": [
           null
         ],
         "range_flattens": [
-          null
+          false
         ],
         "load_eviction_policies": [
           "",
-          "last",
+          "",
           "last",
           "first",
-          ""
+          "last"
         ],
         "num_warps": 32,
-        "num_stages": 1,
+        "num_stages": 4,
         "indexing": [
-          "pointer",
           "tensor_descriptor",
           "tensor_descriptor",
           "pointer",
-          "pointer",
+          "tensor_descriptor",
+          "tensor_descriptor",
           "tensor_descriptor"
         ],
         "atomic_indexing": [],
-        "pid_type": "flat"
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 32,
+        "maxnreg": 64
       },
       "oracle_codegen": "looped",
       "oracle_correct": true,
-      "oracle_maxerr": 0.0,
-      "seed_us": 955.9999704360962,
-      "oracle_us": 605.6640148162842,
-      "tc_us": 556.4479827880859,
-      "seed_oracle": 1.578432839081713,
-      "G_floor": 0.5820585774016839,
-      "oracle_vs_tc": 0.9187403728400029,
+      "oracle_maxerr": 9.5367431640625e-07,
+      "seed_us": 955.4880261421204,
+      "oracle_us": 588.3679986000061,
+      "tc_us": 556.9599866867065,
+      "seed_oracle": 1.6239632821901582,
+      "G_floor": 0.5829062965189515,
+      "oracle_vs_tc": 0.9466184225042262,
       "seed_dist": {
-        "median_ms": 0.9559999704360962,
-        "min_ms": 0.95551997423172,
-        "max_ms": 0.9595359861850739,
-        "spread": 0.004200849453501455,
+        "median_ms": 0.9554880261421204,
+        "min_ms": 0.9547999799251556,
+        "max_ms": 0.9576800167560577,
+        "spread": 0.003014205047163741,
         "n": 7,
         "samples_ms": [
-          0.9559999704360962,
-          0.9562879800796509,
-          0.9556480050086975,
-          0.9595359861850739,
-          0.9558400213718414,
-          0.9563359916210175,
-          0.95551997423172
+          0.9555040001869202,
+          0.955839991569519,
+          0.9554719924926758,
+          0.9576800167560577,
+          0.9554880261421204,
+          0.9549760222434998,
+          0.9547999799251556
         ]
       },
       "oracle_dist": {
-        "median_ms": 0.6056640148162842,
-        "min_ms": 0.6050559878349304,
-        "max_ms": 0.6095359921455383,
-        "spread": 0.007396847428630588,
+        "median_ms": 0.5883679986000061,
+        "min_ms": 0.5873280167579651,
+        "max_ms": 0.5892319977283478,
+        "spread": 0.00323603760726811,
         "n": 7,
         "samples_ms": [
-          0.6085759997367859,
-          0.6059520244598389,
-          0.6050559878349304,
-          0.6056640148162842,
-          0.6095359921455383,
-          0.6054720282554626,
-          0.6054080128669739
+          0.5892319977283478,
+          0.5879999995231628,
+          0.5873280167579651,
+          0.5877439975738525,
+          0.5889279842376709,
+          0.5889279842376709,
+          0.5883679986000061
         ]
       },
       "tc_dist": {
-        "median_ms": 0.5564479827880859,
-        "min_ms": 0.5560159981250763,
-        "max_ms": 0.5591679811477661,
-        "spread": 0.005664470211387576,
+        "median_ms": 0.5569599866867065,
+        "min_ms": 0.556848019361496,
+        "max_ms": 0.5670719742774963,
+        "spread": 0.01835671351692883,
         "n": 7,
         "samples_ms": [
-          0.556879997253418,
-          0.5563840270042419,
-          0.5564799904823303,
-          0.5563360154628754,
-          0.5560159981250763,
-          0.5564479827880859,
-          0.5591679811477661
+          0.5568640232086182,
+          0.5571040213108063,
+          0.5569279789924622,
+          0.5569599866867065,
+          0.556848019361496,
+          0.5617280006408691,
+          0.5670719742774963
         ]
       },
       "field_diff_seed_vs_oracle": {
@@ -841,11 +843,11 @@
         "indexing": {
           "seed": null,
           "oracle": [
-            "pointer",
             "tensor_descriptor",
             "tensor_descriptor",
             "pointer",
-            "pointer",
+            "tensor_descriptor",
+            "tensor_descriptor",
             "tensor_descriptor"
           ]
         },
@@ -853,16 +855,32 @@
           "seed": null,
           "oracle": [
             "",
-            "last",
+            "",
             "last",
             "first",
-            ""
+            "last"
           ]
+        },
+        "maxnreg": {
+          "seed": null,
+          "oracle": 64
+        },
+        "num_sm_multiplier": {
+          "seed": null,
+          "oracle": 32
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 4
+        },
+        "pid_type": {
+          "seed": "flat",
+          "oracle": "persistent_interleaved"
         },
         "range_flattens": {
           "seed": null,
           "oracle": [
-            null
+            false
           ]
         },
         "range_multi_buffers": {
@@ -874,13 +892,13 @@
         "range_num_stages": {
           "seed": null,
           "oracle": [
-            0
+            2
           ]
         },
         "range_unroll_factors": {
           "seed": null,
           "oracle": [
-            0
+            4
           ]
         },
         "range_warp_specializes": {
@@ -892,7 +910,7 @@
             16384
           ],
           "oracle": [
-            32768
+            4096
           ]
         }
       }
@@ -2638,5 +2656,5 @@
       }
     }
   },
-  "updated": "2026-06-03 10:15:10"
+  "updated": "2026-06-03 10:38:25"
 }

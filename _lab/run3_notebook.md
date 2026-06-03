@@ -415,7 +415,74 @@ separate Product-A scope. (c) 57344 edge: loop65536 wins -- consider whether the
 instead hand the 224KiB edge to a big looped chunk; but don't over-fit one shape -- the EDIT#1 cap is already
 a net win there and 3/4 boundary shapes are at oracle.
 
+## 2026-06-03 — *** FULL-EFFORT ORACLE REVERSES THE WIDE-V "SOURCE CEILING" *** (the pivot)
+
+Ran a FULL-effort oracle on cross_entropy(4096,98304) (autotune 1072s, 11 generations). DECISIVE and it
+OVERTURNS BOTH run-2's "wide-CE source ceiling" AND my own intermediate "wide-V is a 2x source ceiling"
+(which was an artifact of my coarse chunk-x-warps grid + the quick oracle under-exploring):
+
+**cross_entropy(4096,98304) FULL oracle:**
+- oracle_us = 588.4 (looped), tc = 557.0, **oracle/tc = 0.947** (oracle only ~5% off tc, NOT 2x!).
+- seed (looped, chunk 16384, w32, pid=flat) = 955.5, **seed/oracle = 1.624** -> 62% SEEDABLE on the table.
+- My chunk-x-warps grid best was 876us (chunk 32768) -- the full oracle (588) is FAR better -> my grid missed
+  the winning region entirely.
+
+**THE FULL-ORACLE WINNING CONFIG (the real answer key) — a strategy OUTSIDE the seed's design space:**
+```
+reduction_loops=[4096]   (SMALL chunk -- not bigger! I had the direction wrong)
+pid_type='persistent_interleaved'   (NOT 'flat'!)
+num_sm_multiplier=32, maxnreg=64     (persistent-pid-only knobs; run-2 said "inapplicable" -- WRONG)
+num_stages=4, range_unroll_factors=[4], range_num_stages=[2], range_flattens=[False]  (inner-loop pipelining)
+load_eviction_policies=['','','last','first','last'], indexing mostly tensor_descriptor
+```
+
+=> The wide-CE win comes from a PERSISTENT-PID + small-chunk + software-pipelined strategy. This DIRECTLY
+CHALLENGES run-2's `pid_type='flat'` "principled constant" lock (run-2: "flat dominates 1.5-4x on every
+forward reduction; persistent pid only amortizes launch/tail for grid-BOUND backward/Band-D"). For wide CE
+(grid-starved: M=4096 rows but each row is huge), a persistent-interleaved grid of 32*SM CTAs that loop over
+rows with maxnreg-capped occupancy + pipelined inner loop WINS by 1.62x over the flat seed. run-2's pid lock
+was validated on NARROW forward reductions; it is FALSE for wide grid-light multi-load rows.
+
+CONSEQUENCES (re-scoping P2):
+- Wide-V CE is HEAVILY SEEDABLE (1.62x), NOT a source ceiling. The residual oracle-vs-tc is only ~5% (the
+  genuine 2-pass-vs-single-pass source signal) -- small, and seed≈oracle is the bar, so once the seed matches
+  the oracle the 5% is a separate optional source-rewrite (cross_entropy_online).
+- The LEVER is NOT "scale the looped chunk" (EDIT#2 candidate is WRONG -- oracle wants SMALL chunk 4096). The
+  real levers are pid_type=persistent_interleaved + num_sm_multiplier + maxnreg + num_stages + range pipelining
+  -- a cluster the seed currently doesn't touch (it hardcodes pid=flat, num_stages=1, no range/maxnreg/sm_mult).
+- This is a MUCH bigger and more general finding than the persist-cap: the whole "flat pid + num_stages=1"
+  default may be leaving large gains on grid-light wide reductions across kernels. MUST matched-lever A/B to
+  isolate which lever(s) carry the 1.62x (is it the pid, the chunk, the pipelining, or maxnreg?), and check
+  generality (does persistent_interleaved help other wide/grid-light shapes, or is it CE-specific?).
+
+KILLED the remaining 2 full-oracle shapes (128256/256000) -- shape-1's answer key is decisive and the strategy
+family will be the same; full effort is ~18min/shape (too expensive to babysit 3). Re-litigates run-2 cleanly:
+the wide-CE "source ceiling" verdict was WRONG -- a real Helion config beats the seed 1.62x and nearly matches
+tc; run-2 missed it because (a) it locked pid=flat and (b) it declared a source ceiling without a fresh full
+oracle reading the answer key (anti-giving-up failure mode #7).
+
+### NEXT (re-scoped): isolate the wide-CE oracle levers
+1. Matched-lever A/B on CE(4096,98304) + (8192,128256): start from the seed, add ONE oracle lever at a time
+   (pid=persistent_interleaved+sm_mult; then +small-chunk 4096; then +num_stages 4; then +maxnreg 64; then
+   +range pipelining), bench each vs the full-VERBATIM oracle baseline (588us) -> which lever(s) carry the win.
+2. Then decide the heuristic: a workload-keyed branch (grid-light wide multi-load -> persistent_interleaved +
+   pipelined small-chunk). Needs a fact for "grid-light" (few rows relative to SM count?) -- ask code-investigator
+   whether m_block_ids / grid extent is available as a fact. fact-integrity will scrutinize any new fact.
+3. Re-check pid='flat' generality: does persistent_interleaved help the OTHER wide shapes (softmax wide,
+   welford wide, long_sum)? run-2's flat lock must be re-litigated, not assumed.
+
+### Tried / rejected (updated)
+- **REJECTED: EDIT#2 "bump LOOPED_CHUNK 16384->32768".** The full oracle wants a SMALLER chunk (4096) +
+  persistent-pid, not a bigger chunk. My coarse grid (16384-131072) suggested 32768 but the full oracle (588us
+  @ chunk 4096) crushes the best grid arm (876us @ 32768). Chunk size alone is the wrong lever; the win is the
+  pid/pipelining cluster. (Do NOT make EDIT#2 as conceived.)
+- **REJECTED: "wide-V CE is a ~2x source ceiling."** Full oracle is only 5% off tc (0.947), not 2x. My grid +
+  the quick oracle under-explored; the full oracle found a 1.62x-better config. (Anti-giving-up: a hand grid is
+  not an oracle; run the full search before claiming a ceiling.)
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (CE persist cap 131072->245760, dab1eea8 + re-measure 8d55a50c).
   3/4 CE boundary at oracle parity, 8 non-CE kernels byte-identical, correctness clean. Gate pipeline pending.
-  Open: LOOPED_CHUNK bump (EDIT#2 candidate), wide-V source-ceiling confirmation (full oracle), 57344 edge.
+  Open (re-scoped): wide-CE is SEEDABLE 1.62x via persistent_interleaved+pipelined-small-chunk (NOT a source
+  ceiling, NOT a chunk-size fix); isolate the lever cluster + re-litigate run-2's pid='flat' lock; welford
+  apply-tile + warps; jsd Band-B; softmax small-N.
