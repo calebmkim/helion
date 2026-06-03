@@ -2033,3 +2033,32 @@ PHYSICS-derived not oracle-fit -- the M=1->1 + the oracle-varies-32/32/4 args; m
 fence: welford/softmax untouched is the cross-branch byte-identity defense, NOT a CE-only carve) + referee (CE
 1.23-1.25x reproduce + byte-identical welford/softmax/sum/kl/jsd + rms/ln tie + 4-split flip-set). 256000
 interleaved-vs-blocked = documented small miss (1.054 net-positive, not a fence). DM hub the sha.
+
+## 2026-06-03 — EDIT#3 gates: fact-integrity PASS + auditor PASS-WITH-FLAGS. HEDGING my rms/ln over-claims (auditor right).
+
+CE wins STAND (the real EDIT#3 deliverable): 1.31x/1.19x/1.08x, buffer-identity-attributable (positional refit
+refuted, 30% gap), welford byte-identical (zero regression), uniform rule no fence, slot4 real passenger.
+fact-integrity PASS (reread_buffer_slots faithful, verified at generated-Triton: CE 'last' on logits not labels).
+
+**HEDGE 1 — rms_norm 1.071x is NOT a "new win overturning run-2" (auditor flagged; I OVER-claimed; correcting):**
+- It's SUB-NOISE-FLOOR: 1.5us on a 22us shape, do_bench jitter 5-10%. Not a headline number.
+- It's PLACEMENT-NON-DISCRIMINATING: ALL eviction variants tie ~21us on rms(1,131072) -> the +1.8% is "any
+  non-default eviction," NOT the buffer-identity de-hack (contrast CE: +30% AND positional fails -> there the
+  identity is load-bearing). So rms is NOT evidence FOR the buffer-identity rule.
+- It does NOT overturn run-2's "rms no clean eviction rule": run-2 rejected rms eviction for regressing
+  LARGER-M rms shapes; my `not persistent` gate SILENTLY EXCLUDES those (rms(2048,16384)=64KiB<240KiB ->
+  persistent -> NO eviction emitted). So I'm not contradicting run-2 — I'm not touching the shapes run-2 was
+  about. My earlier "overturns run-2 no-rule" claim was WRONG; retracted.
+- CORRECT FRAME: rms_norm(1,131072) is a ROBUSTNESS CANARY -- "correct + not-slower within noise" under the
+  uniform looped-reread eviction rule. NOT a perf win, NOT an overturn. (Supersedes the earlier notebook entry
+  that called it a "NEW 1.07x win" / "overturns run-2".)
+
+**HEDGE 2 — layer_norm: within-noise but leans slightly NEGATIVE (auditor flagged):** seed_emitted 26.69us =
+the SLOWEST arm vs default 26.50us (0.993, -0.7%). A defensible TIE (0.19us << noise floor on a 27us shape),
+shipped UNIFORM to avoid an identity-fence carve-out -- but the honest frame is "within-noise, leans slightly
+NEGATIVE, uniform to avoid a carve-out," NOT a clean tie. (The uniform-rule justification stands: carving ln
+out = an identity fence; the cost is a sub-noise possible-slight-negative on one robustness shape.)
+
+NET: EDIT#3's headline = the CE eviction wins (real, attributable). rms/ln = robustness canaries under the
+uniform rule (rms not-slower-within-noise; ln within-noise-leans-neg). welford = byte-identical (the run-2
+positional win, reproduced faithfully). I own the rms/ln over-claims; corrected here for the ledger.
