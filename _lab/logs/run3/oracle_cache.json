@@ -6,7 +6,7 @@
         4096,
         50304
       ],
-      "source_hash": "add1986eedc7d231",
+      "source_hash": "7177d546faf285d7",
       "effort": "quick",
       "ts": "2026-06-03 10:12:41",
       "autotune_s": 49.0,
@@ -175,7 +175,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "cross_entropy:8192x32000": {
       "kernel": "cross_entropy",
@@ -183,7 +185,7 @@
         8192,
         32000
       ],
-      "source_hash": "608b9bab3ac6650f",
+      "source_hash": "c30343def0eb0d7f",
       "effort": "quick",
       "ts": "2026-06-03 09:40:35",
       "autotune_s": 62.3,
@@ -352,7 +354,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "608b9bab3ac6650f",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "cross_entropy:8192x49152": {
       "kernel": "cross_entropy",
@@ -360,7 +364,7 @@
         8192,
         49152
       ],
-      "source_hash": "add1986eedc7d231",
+      "source_hash": "8d16f17a2107b297",
       "effort": "quick",
       "ts": "2026-06-03 10:11:49",
       "autotune_s": 33.6,
@@ -533,7 +537,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "cross_entropy:8192x50257": {
       "kernel": "cross_entropy",
@@ -541,7 +547,7 @@
         8192,
         50257
       ],
-      "source_hash": "add1986eedc7d231",
+      "source_hash": "5635978a1ac652ca",
       "effort": "quick",
       "ts": "2026-06-03 10:13:52",
       "autotune_s": 68.0,
@@ -710,7 +716,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "cross_entropy:4096x98304": {
       "kernel": "cross_entropy",
@@ -718,7 +726,7 @@
         4096,
         98304
       ],
-      "source_hash": "add1986eedc7d231",
+      "source_hash": "e40bf9d0c9e1e8f5",
       "effort": "full",
       "ts": "2026-06-03 10:38:25",
       "autotune_s": 1071.6,
@@ -913,7 +921,9 @@
             4096
           ]
         }
-      }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "cross_entropy:8192x128256": {
       "kernel": "cross_entropy",
@@ -921,7 +931,7 @@
         8192,
         128256
       ],
-      "source_hash": "608b9bab3ac6650f",
+      "source_hash": "31299862d5b8d172",
       "effort": "quick",
       "ts": "2026-06-03 09:47:54",
       "autotune_s": 153.9,
@@ -1103,7 +1113,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "608b9bab3ac6650f",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "cross_entropy:2048x256000": {
       "kernel": "cross_entropy",
@@ -1111,7 +1123,7 @@
         2048,
         256000
       ],
-      "source_hash": "608b9bab3ac6650f",
+      "source_hash": "06548b0dccec9926",
       "effort": "quick",
       "ts": "2026-06-03 09:51:57",
       "autotune_s": 240.1,
@@ -1306,7 +1318,9 @@
             2048
           ]
         }
-      }
+      },
+      "old_source_hash": "608b9bab3ac6650f",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "long_sum:16x2097152": {
       "kernel": "long_sum",
@@ -1314,7 +1328,7 @@
         16,
         2097152
       ],
-      "source_hash": "8fe4e7fe965b1dbe",
+      "source_hash": "f2e215348d26911c",
       "effort": "quick",
       "ts": "2026-06-03 09:53:18",
       "autotune_s": 78.2,
@@ -1468,7 +1482,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "8fe4e7fe965b1dbe",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "welford:4096x16384": {
       "kernel": "welford",
@@ -1476,7 +1492,7 @@
         4096,
         16384
       ],
-      "source_hash": "155251868f501581",
+      "source_hash": "561713c66d09ed5a",
       "effort": "quick",
       "ts": "2026-06-03 09:53:56",
       "autotune_s": 34.1,
@@ -1678,7 +1694,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "155251868f501581",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "welford:32768x8192": {
       "kernel": "welford",
@@ -1686,7 +1704,7 @@
         32768,
         8192
       ],
-      "source_hash": "155251868f501581",
+      "source_hash": "fef9dbefe276dfb9",
       "effort": "quick",
       "ts": "2026-06-03 09:54:45",
       "autotune_s": 44.1,
@@ -1892,7 +1910,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "155251868f501581",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "welford:16384x768": {
       "kernel": "welford",
@@ -1900,7 +1920,7 @@
         16384,
         768
       ],
-      "source_hash": "155251868f501581",
+      "source_hash": "f14a334d216b6b2c",
       "effort": "quick",
       "ts": "2026-06-03 09:55:23",
       "autotune_s": 33.7,
@@ -2106,7 +2126,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "155251868f501581",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "jsd:8192x30522": {
       "kernel": "jsd",
@@ -2114,7 +2136,7 @@
         8192,
         30522
       ],
-      "source_hash": "82b8f2324cfa6b11",
+      "source_hash": "2c49a17986eaaa4e",
       "effort": "quick",
       "ts": "2026-06-03 09:56:10",
       "autotune_s": 42.5,
@@ -2291,7 +2313,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "82b8f2324cfa6b11",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "softmax:131072x256": {
       "kernel": "softmax",
@@ -2299,7 +2323,7 @@
         131072,
         256
       ],
-      "source_hash": "8554056a8919d5dc",
+      "source_hash": "80d6c75c29dd192c",
       "effort": "quick",
       "ts": "2026-06-03 09:56:44",
       "autotune_s": 30.5,
@@ -2464,7 +2488,9 @@
           "seed": null,
           "oracle": []
         }
-      }
+      },
+      "old_source_hash": "8554056a8919d5dc",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     },
     "cross_entropy:8192x57344": {
       "kernel": "cross_entropy",
@@ -2472,7 +2498,7 @@
         8192,
         57344
       ],
-      "source_hash": "add1986eedc7d231",
+      "source_hash": "9a86bf4cba80583d",
       "effort": "quick",
       "ts": "2026-06-03 10:15:10",
       "autotune_s": 73.9,
@@ -2653,8 +2679,11 @@
             32768
           ]
         }
-      }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
     }
   },
-  "updated": "2026-06-03 10:38:25"
+  "updated": "2026-06-03 10:38:25",
+  "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
 }
