@@ -1949,3 +1949,30 @@ be neutral; the widest may want even bigger -> is 16384 the right single cap or 
 run3_wf_tile_ab.py exists (sweeps apply-tile {seed,4096,8192} x combine x warps) -> REQ-GPU for it after the
 floor batch. Also re-confirm EDIT#4 doesn't regress the EDIT#3 welford eviction (both touch Band-C; the eviction
 is on the COMBINE-pass loads, the cap on the APPLY tile -- independent, but A/B with eviction ON).
+
+## 2026-06-03 — anti-giving-up FAILED the EDIT-PID decline -> BUILD (A). Owning the correction.
+
+The gate BLOCKED my (B) decline. It's right on all 4 + corrected a real error of mine:
+1. **My grid hypothesis was discarded on a FALSE test (own it):** I checked progs/SM for FLAT-vs-PERSISTENT
+   (both 31 -> "doesn't separate" -> "occupancy falsified"). But the real question is INTERLEAVED-vs-BLOCKED
+   WITHIN persistent (M/SM grid-fill 31,62 vs 15.5; row-bytes 512K,512K vs 1M; chunk-count 6,8 vs 16) -- THREE
+   properties each cleanly separate the variant. 3 correlated points = MISSING-DATA, not no-rule. I tested the
+   wrong contrast and over-concluded. #8 trap, correctly caught.
+2. Gains LARGE not fading: 38%@98304, 19.5%@128256, 6.5%@256000 -- non-monotone, tracks the VARIANT not width.
+3. Source ceiling (oracle<tc) caps seed-vs-TC, never seed-vs-ORACLE; 1.07-1.24 is a real miss toward the bar.
+4. blocked@4 at 256000 IS a stable real optimum (gate confirmed, 6 gens) -- but that does NOT make interleaved@32
+   net-NEGATIVE there (it's 1.052 > flat), which is the ONLY thing that'd justify declining.
+
+DECISION RULE (gate+hub): interleaved@32 beats flat on all 3 wide CE -> BUILD (A) coarse interleaved rule
+(256000 interleaved-vs-blocked sub-optimality = a small DOCUMENTED miss, not a fence). **My 3x3 (769ab5cd)
+ALREADY IS the mandated experiment + already shows (A): interleaved@32 vs flat = 1.230/1.244/1.052 — beats flat
+on ALL 3 incl 256000.** So the data lands on BUILD. (The gate may not have seen 769ab5cd — it ran on the decline
+claim; the 3x3 post-dates/co-dates it. The mandated {flat, interleaved@32+maxnreg64, blocked@4+maxnreg64}×3 = my
+3x3 exactly.)
+
+=> BUILD EDIT-PID (A), T1-scoped, coarse interleaved, PHYSICS-derived sm_mult (formula proposed: clamp(np2(ceil(
+M/num_sm)),1,32) -> 32/32/16 for the 3 CE, 1 for rms/ln M=1). Confirming A/B = run3_pid_derived_ab.py (validates
+the DERIVED sm_mult, stronger than the 3x3's const-32). Running it now (GPU-GRANTED), then build the seed change.
+NOTE the gate's variant-key prior (row-bytes>=1MB -> blocked else interleaved) is a FINER rule than the coarse
+interleaved seed; per the hub's rule the COARSE interleaved (with 256000 as a documented small miss) is the
+disposition unless the derived A/B shows interleaved net-negative somewhere -- then de-correlate + variant-key.
