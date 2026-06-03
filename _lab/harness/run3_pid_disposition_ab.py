@@ -62,8 +62,18 @@ INTERLEAVED32 = {"pid_type": "persistent_interleaved", "num_sm_multiplier": 32,
 BLOCKED4 = {"pid_type": "persistent_blocked", "num_sm_multiplier": 4, "maxnreg": 64}
 
 CE_SHAPES = [(4096, 98304), (8192, 128256), (2048, 256000)]
-# other looped-reread kernels: does interleaved@32 help or HURT them vs flat?
-OTHER = [("softmax", 512, 131072), ("welford", 65536, 4096), ("rms_norm", 1, 131072)]
+# Cross-kernel probe (the LOAD-BEARING part per hub): does interleaved@32 beat flat on
+# the OTHER looped-reread kernels? These inform whether a TRACK-AGNOSTIC rule would be
+# viable -- EDIT-PID as-built is T1-scoped, so welford(Band-C)/softmax(T2) DON'T fire;
+# only rms/ln (T1) share EDIT-PID's firing set. Widest looped-reread shape per kernel +
+# layer_norm added (was missing) + a 2nd welford for breadth.
+OTHER = [
+    ("softmax", 512, 131072),
+    ("welford", 65536, 4096),
+    ("welford", 32768, 8192),
+    ("rms_norm", 1, 131072),
+    ("layer_norm", 1, 131072),
+]
 
 
 def _bench(fn, n=N_RUNS):

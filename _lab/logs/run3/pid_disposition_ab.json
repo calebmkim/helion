@@ -5,27 +5,27 @@
       4096,
       98304
     ],
-    "tc_us": 566.5599703788757,
+    "tc_us": 566.7840242385864,
     "arms": {
       "flat_evict": {
-        "us": 731.9839894771576,
-        "spread": 0.008634027496989473,
+        "us": 733.568012714386,
+        "spread": 0.007590335728700587,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 595.4079926013947,
-        "spread": 0.007309329388174143,
+        "us": 595.1039791107178,
+        "spread": 0.00564612765705133,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "dropped": []
       },
       "blocked4": {
-        "us": 743.008017539978,
-        "spread": 0.004823592210438867,
+        "us": 743.1039810180664,
+        "spread": 0.004306294203934543,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_blocked",
@@ -39,27 +39,27 @@
       8192,
       128256
     ],
-    "tc_us": 1402.5440216064453,
+    "tc_us": 1402.2079706192017,
     "arms": {
       "flat_evict": {
-        "us": 2279.5519828796387,
-        "spread": 0.0017898504507938076,
+        "us": 2277.4239778518677,
+        "spread": 0.002901580299466872,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 1831.503987312317,
-        "spread": 0.0034856355885069606,
+        "us": 1830.8000564575195,
+        "spread": 0.0020624612901898338,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "dropped": []
       },
       "blocked4": {
-        "us": 1883.6800456047058,
-        "spread": 0.0027010806316013903,
+        "us": 1881.983995437622,
+        "spread": 0.0030945905252765748,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_blocked",
@@ -73,27 +73,27 @@
       2048,
       256000
     ],
-    "tc_us": 742.1759963035583,
+    "tc_us": 741.7920231819153,
     "arms": {
       "flat_evict": {
-        "us": 1256.223976612091,
-        "spread": 0.0027256197006814546,
+        "us": 1256.0160160064697,
+        "spread": 0.002726023530626621,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 1192.5919651985168,
-        "spread": 0.0012342832673101407,
+        "us": 1192.3999786376953,
+        "spread": 0.0006709271691612241,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "dropped": []
       },
       "blocked4": {
-        "us": 1198.9439725875854,
-        "spread": 0.0018682629062514822,
+        "us": 1198.4319686889648,
+        "spread": 0.0025900770065101814,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_blocked",
@@ -107,19 +107,19 @@
       512,
       131072
     ],
-    "tc_us": 276.5119969844818,
+    "tc_us": 276.4799892902374,
     "arms": {
       "flat": {
-        "us": 275.7439911365509,
-        "spread": 0.000638264551604967,
+        "us": 275.7120132446289,
+        "spread": 0.0004062105463412947,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 276.2079983949661,
-        "spread": 0.0003475398285660799,
+        "us": 276.2559950351715,
+        "spread": 0.00046334188924607747,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
@@ -133,19 +133,45 @@
       65536,
       4096
     ],
-    "tc_us": 706.9759964942932,
+    "tc_us": 706.7840099334717,
     "arms": {
       "flat": {
-        "us": 777.5839865207672,
-        "spread": 0.0006996177934413533,
+        "us": 778.5279750823975,
+        "spread": 0.0008837401309432921,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 803.056001663208,
-        "spread": 0.0009164966729122238,
+        "us": 804.7040104866028,
+        "spread": 0.0005567491979856145,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      32768,
+      8192
+    ],
+    "tc_us": 705.2800059318542,
+    "arms": {
+      "flat": {
+        "us": 774.6559977531433,
+        "spread": 0.0014045243164523935,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 728.3680140972137,
+        "spread": 0.0003075289561466409,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
@@ -159,19 +185,45 @@
       1,
       131072
     ],
-    "tc_us": 27.295999228954315,
+    "tc_us": 23.391999304294586,
     "arms": {
       "flat": {
-        "us": 21.183999255299568,
-        "spread": 0.004531668793473848,
+        "us": 21.15200087428093,
+        "spread": 0.003025653462422245,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 21.088000386953354,
-        "spread": 0.0015174622096263634,
+        "us": 21.023999899625778,
+        "spread": 0.004566244836838699,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "layer_norm",
+    "shape": [
+      1,
+      131072
+    ],
+    "tc_us": 33.824000507593155,
+    "arms": {
+      "flat": {
+        "us": 27.168000116944313,
+        "spread": 0.0011778652652401059,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 26.976000517606735,
+        "spread": 0.0035587458907670776,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",

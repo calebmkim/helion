@@ -2091,3 +2091,35 @@ SOUND; this confirms it on the verified-stable tree (referee-grade). FINDINGS:
 
 So EDIT-PID (A) is the data-driven disposition, clean-tree-confirmed. Harness fix committed (the forced-flat
 baseline + the seed-emits-EDIT-PID confound note -- important for any future pid A/B now that EDIT-PID ships).
+
+## 2026-06-03 — EDIT-PID cross-kernel probe COMPLETE (hub's load-bearing part) — (A) for T1-scope; track-agnostic FAILS
+
+Completed the cross-kernel disposition A/B (hub: the LOAD-BEARING part — does interleaved@32 beat flat on the
+OTHER looped-reread kernels?). Added layer_norm + a 2nd welford. do_bench median-7, clean tree, forced-flat base.
+
+CE (carrier, reproduced 3rd time): interleaved@32 beats flat 1.233/1.244/1.053; blocked4 worse. Rock-solid.
+CROSS-KERNEL (interleaved@32 vs flat):
+| kernel               | track  | interleaved@32/flat | note            |
+|----------------------|--------|--------------------:|-----------------|
+| softmax(512,131072)  | T2     | 0.998               | neutral         |
+| welford(65536,4096)  | Band-C | **0.967**           | HURTS -3.3%     |
+| welford(32768,8192)  | Band-C | **1.064**           | HELPS +6.4%     |
+| rms_norm(1,131072)   | T1     | 1.006               | tie             |
+| layer_norm(1,131072) | T1     | 1.007               | tie             |
+
+THE VERDICT (reconciles the hub's framing with the T1-scope — the crucial distinction):
+1. **EDIT-PID's ACTUAL firing set = T1 looped-reread = CE-wide + rms/ln-wide.** On THAT set it's net-positive:
+   CE 1.23-1.25x (big), rms/ln 1.006/1.007 (tie, no regression). So (A) HOLDS for the T1-scoped EDIT-PID. ✓
+2. **A TRACK-AGNOSTIC rule (`row_reread and looped`, firing on Band-C+T2 too) would FAIL:** welford(65536,4096)
+   REGRESSES -3.3% AND welford is SELF-INCONSISTENT (65536,4096 hurts -3.3% but 32768,8192 helps +6.4% — pid
+   response is shape-dependent within one Band-C kernel). softmax neutral. So a track-agnostic key is unreliable.
+3. => This is EXACTLY WHY EDIT-PID is T1-SCOPED, and the probe VALIDATES it: welford(Band-C)/softmax(T2) are
+   structurally EXCLUDED (different branches), so EDIT-PID never fires on the kernels where interleaved is
+   inconsistent/negative. The cross-kernel probe does NOT block EDIT-PID — it confirms the track-scope is
+   necessary AND sufficient. (B) is NOT triggered: interleaved is net-negative only OUTSIDE EDIT-PID's firing
+   set; INSIDE (T1: CE+rms/ln) it's net-positive everywhere.
+
+So EDIT-PID (94851da9, T1-scoped) = data-confirmed (A). The hub's "(B) admissible if interleaved net-negative
+ANYWHERE IT FIRES" -> it's net-negative on welford which it does NOT fire on -> (B) not triggered. Reporting the
+full table + this track-scope reconciliation; gate EDIT-PID. (welford's own shape-dependent pid = a possible
+FUTURE Band-C pid investigation, separate; NOT EDIT-PID's scope.)
