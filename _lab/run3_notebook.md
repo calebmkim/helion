@@ -1309,3 +1309,37 @@ STATUS: source changes (consumer-trace row_reread + buffer-identity tightening +
 all UNCOMMITTED, lint+format clean. Holding for hub's version decision (subgraph-membership 91dfd8ef vs land the
 consumer-trace as the committed fact) + GPU-GRANTED for the eviction A/B. DMing the hub the eviction design +
 buffer-identity proof now.
+
+## 2026-06-03 — HUB DECISION (A): keep the gated BOOL row_reread; reconcile working tree (no re-gate)
+
+Hub adjudicated the bool-vs-int question: **keep the committed loop-graph-count BOOL `_compute_row_reread`**
+(the one fact-integrity PASSed). Reasoning (a real principle, not less-work): an int `row_read_passes=2` serves
+NEITHER consumer. Cap consumer needs only the binary >=2 -> bool sufficient. Eviction consumer needs per-SLOT
+buffer-identity + emission-order (which slot holds the re-read buffer, to set it 'last') -> FINER than an int,
+computed separately regardless. A scalar between them is generality no consumer consumes = textbook
+over-engineering (the symmetric failure to the proxy hack; work-order + fact-integrity both warn against it).
+Compute the EXACT property each branch needs: bool for the cap, per-slot mapping for eviction.
+
+**RECONCILED the working tree** (my uncommitted tree had REPLACED the gated bool with a consumer-trace
+`reduction_input_reused` returning (bool, slots) — a DIFFERENT computation, 9/9-equivalent on production but not
+the one gated). Restructured into TWO methods off the same provenance resolver:
+- `_compute_row_reread(self) -> bool` — RESTORED byte-identical to gated HEAD (only the docstring extended).
+  diff vs HEAD = docstring only; executable body unchanged -> fact-integrity's PASS carries over, NO re-gate.
+- `_compute_reread_buffer_slots(self, red_block_id) -> tuple[int,...]` — the EVICTION slots. Keeps the
+  consumer-dataflow walk ONLY to build `reduction_input_buffers` (which buffer feeds the ReductionLowering),
+  then selects the buffer that is BOTH HBM-re-read (>=2 loop graphs) AND a reduction input -> its slots. The
+  buffer-identity tightening (fact-integrity caveat); proven load-bearing by adv3.
+Both call sites: `row_reread=self._compute_row_reread()`, `reread_buffer_slots=self._compute_reread_buffer_slots(...)`.
+Dropped the consumer-trace bool entirely (`_compute_reread_provenance` GONE, 0 refs).
+
+**RE-VERIFIED 9/9 IDENTICAL** after the restructure (run3_reread_slots_probe.py, bind-only): bool sum/long_sum/
+kl_div/jsd=F, rms/ln/softmax/CE/welford=T; slots CE->logits(2,3,4), welford->x(0,1), rms->x(0,2,3), ln->x
+(0,3,4,5), broadcasts excluded; emitted eviction unchanged (CE ['','','last','first','first'], welford
+['last','first','','']). triton.py cap-gate comment corrected to describe the loop-graph-count mechanism (was
+mid-edit describing the consumer-trace + a now-deleted method name). Lint+format clean.
+
+So EDIT-GATE-v2 = the gated bool, final (no refine, no re-gate). EDIT#3 = the per-slot eviction mapping, finer,
+off the same resolver. Hub: EDIT-GATE-v2 fact-integrity PASS ✓, awaiting results-referee (byte-identity +
+no-regression, on GPU). On its PASS, EDIT#1(value)+EDIT-GATE-v2(bool) ship as the accepted champion advance.
+Comment cleanups = trivial follow-up commit (no gate). Source all UNCOMMITTED, awaiting hub commit go-ahead +
+GPU-GRANTED for the EDIT#3 A/B.
