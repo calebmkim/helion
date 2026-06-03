@@ -931,6 +931,41 @@ EDIT-PID guardrails (hub) + my progress:
   no narrow-forward regression. Re-check flat-vs-persistent on the OTHER grid-light shapes (softmax/welford/
   long_sum few-row) — measure, don't assume.
 
+## 2026-06-03 — EDIT#3 reread-eviction IMPLEMENTED (faithful, provenance-keyed) — UNCOMMITTED, needs A/B
+
+Hub's consolidated plan: do EDIT-GATE-v2 (cap, committed) + EDIT#3 (reread eviction) TOGETHER on the row_reread
+fact (one fact, 2 consumers); de-hack run-2's POSITIONAL welford eviction. Implemented (UNCOMMITTED, pending
+A/B + hub design review):
+- ADDED `ReductionFact.reread_buffer_slots: tuple[int,...]` = eviction-slot indices loading the re-read buffer
+  (codegen-emission order), captured at FACT-BUILD (HostFunction.current() is unavailable in the seed heuristic
+  — that was a bug in my first attempt; moved provenance to fact-build). Provenance, not policy.
+- `_compute_row_reread` -> `_compute_reread_provenance()` returns (row_reread, reread_buffer_slots), wired into
+  both T1+T2 builders.
+- `_eviction_policies(env,'reread',reread_slots)`: first slot -> 'last', rest -> 'first', others default.
+  De-hacks the positional ['last']+['first']*(n-1).
+- Routing: T1 num_load==1 -> 'stream'; elif row_reread -> 'reread'(slots); else default. Band-C welford ->
+  'reread'(slots). T2 non-combine (softmax) unchanged (no eviction call — pre-existing).
+
+EMITTED policies (verified, codegen): 
+  CE(*,*): ['','','last','first','first'] (logits slots 2,3,4; first->last). [A/B winner was slot4='', here
+    'first' — slot4 is a passenger per my A/B, expect ≈ equal; CONFIRM.]
+  welford: ['last','first','',''] (x slots 0,1). RUN-2 positional was ['last','first','first','first'] ->
+    DIFFERS at slots 2,3 (weight/bias): run-2 'first', faithful ''. NOT byte-identical — must A/B welford
+    no-regression (weight/bias are tiny broadcasts; eviction likely neutral, but MEASURE).
+  rms_norm: ['last','','first','first',''] ; layer_norm: ['last','','first','first','first','',''] — NEW
+    eviction (run-2 left rms/ln default). row_reread routes them to 'reread'. MUST A/B (run-2 found "no clean
+    rule" with the POSITIONAL version; faithful version targets x's real slots — may help OR regress; rows are
+    small <=16KB so likely neutral, but MEASURE — could re-litigate run-2's "rms/ln no-rule").
+  sum/long_sum: ['first','first'] (unchanged). kl_div/jsd: default (row_reread=False, unchanged).
+  softmax: default (T2 non-combine, no eviction path — pre-existing; a FUTURE gain, not EDIT#3).
+
+A/B PLAN (needs GPU): per affected kernel, NEW faithful eviction vs OLD champion eviction (CE/rms/ln: None;
+welford: positional) vs tc. Must show: CE wins (1.31x/1.19x/1.09x wide-V reproduced), welford no-regression
+(faithful vs positional), rms/ln no-regression. If rms/ln regress -> narrow the routing (gate on a finer
+property). HELD: do NOT commit until (a) hub reviews the design (esp. welford-differs + rms/ln-new) and (b) the
+A/B passes. Lint+pyrefly clean; seeds emit (no crash). Folding this A/B into the same GPU session as the pid
+decomposition (REQ-GPU pending).
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
