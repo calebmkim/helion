@@ -868,6 +868,37 @@ OPEN QUESTION for hub (flagged): option B (device_ir provenance helper + heurist
 provenance fact `reread_buffer_slots`. I lean B (keeps fact=provenance/heuristic=policy, avoids a 2nd
 fact-integrity gate; the heuristic already has device_ir). Will implement B unless hub prefers a fact.
 
+## 2026-06-03 — fact-integrity FAILed num_load (as expected) + hub/me message-cross; softmax verified no-regression
+
+Hub's fact-integrity returned FAIL on the num_load>=2 gate (correct — converges with my EDIT-GATE-v2 work). Hub
+then ADJUDICATED toward num_reduction_ops (EDIT#2) — but that crossed my commits: nro was ALREADY committed
+(82a0de72) + REJECTED (hub-prescreen + independent fact-integrity, nro UNDER-counts rms/ln apply re-read) +
+reverted (1cb50a6a). row_reread (EDIT-GATE-v2, 91dfd8ef) is the faithful replacement, strictly better than
+both proxies (right on rms/ln where nro fails AND on CE where num_load over-counts). Sent the hub a timeline
+reconciliation asking it to re-gate the COMMITTED EDIT-GATE-v2, not direct a fresh nro re-key.
+
+HUB'S SOFTMAX CONCERN — verified empirically (committed floor data, no GPU): NO REGRESSION from EDIT-GATE-v2.
+softmax is row_reread=True (2-pass max+sum). The 240KiB cap split is already correct + UNCHANGED vs num_load:
+  softmax(2048,24576)=96KiB persist G=1.28; (2048,32768)=128KiB persist G=1.22 (both <240KiB, beat tc);
+  softmax(1024,65536)=256KiB looped G=1.02; (512,131072)=512KiB looped G=1.00 (both >240KiB, at floor).
+The wide ones are ALREADY looped under num_load (num_load=2), so row_reread changes NOTHING for softmax ->
+cannot regress it. (Hub feared "512KiB softmax persistent->looped"; it's already looped at floor.)
+
+### OPEN WORKLIST (Phase-2 per-shape; GPU-needed, deferred until queue clears) — keep current
+- **softmax-wide persistent-vs-looped (NEW open):** softmax(1024,65536)/(512,131072) are looped at G≈1.0 (=tc)
+  but I have NOT oracle'd them — "at floor vs tc" != "at oracle". The hub's hypothesis: softmax's SINGLE-operand
+  re-read may spill LESS than CE's, so persistent might BEAT the looped seed at wide N (a potential FURTHER gain,
+  NOT a regression from EDIT-GATE-v2). Oracle softmax(512,131072) + a persist-vs-loop A/B when GPU frees. If
+  persistent wins, the 240KiB cap may need to be row_reread-AND-(num distinct streamed operands>1) — i.e. CE
+  (logits re-read, but the per-pass working set is just logits) vs ... actually CE & softmax both single-operand;
+  the CE spill came from the 2-pass resident row. Re-examine: WHY does CE spill at 256KiB but maybe softmax not?
+  (Both hold one np2(N) row resident across 2 passes — should behave the same. If they DON'T, there's a finer
+  property. Oracle decides.) This is exactly an anti-giving-up "is this shape really at its oracle?" check.
+- CE wide-V: reread-EVICTION (1.31x, designed, 2nd row_reread consumer) + persistent-PID cluster (task #9, the
+  rest of the 1.62x; blocked by #8 re-gate). jsd Band-B warps (w32->w16, 1.12-1.21x). welford apply-cap
+  (8192->16384, 1.05-1.10x). softmax small-N occupancy-warps (M-dependent, needs occupancy fact). long_sum 2M
+  source-limit (seed≈oracle, verify full oracle). CE residual oracle-vs-tc ~5% (2-pass source ceiling; online).
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
