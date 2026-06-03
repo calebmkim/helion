@@ -2601,3 +2601,20 @@ PENDING: full oracle jsd(narrow+wide) running (formal World-A confirm + field-di
 apply the edit -> correctness-gate -> commit -> hub fires fact-integrity (nro as the faithful accumulator count,
 generalizes: fires on jsd nro=2, NOT on kl_div nro=1) + auditor + referee. Will NOT commit until the oracle
 lands + the hub acks the field-diff (per "DM me before committing EDIT#5").
+
+FACT-INTEGRITY PRE-DEFENSE (the rule's GENERALITY, incl the TRANSFER Band-B probe):
+- The curriculum's Band-B kernels: kl_div (nro=1), jsd (nro=2) in-sample; and a TRANSFER probe **tv_distance**
+  (0.5*sum|p-q|, "Band-B accumulator probe, THINNER epilogue than kl/jsd", shapes_v3 TRANSFER) — explicitly the
+  fact-distinct probe for "does the R_BLOCK byte-cap generalize to a light-epilogue Band-B kernel?".
+- tv_distance = ONE sum over the row -> num_reduction_ops=1 -> my rule leaves it at the 4096 cap (== kl_div, the
+  other 1-reduction Band-B). This is the CORRECT prediction: tv carries 1 live accumulator -> wants the full
+  4096 chunk, like kl_div; jsd carries 2 -> gets 2048. The rule is NOT a jsd-fence — it predicts tv (light
+  epilogue) behaves like kl_div by the FAITHFUL accumulator count, and only the 2-reduction jsd narrows. Strong
+  generality: the divisor is the count of reduction lowerings, so ANY Band-B kernel's chunk scales as 1/n_acc.
+  (tv_distance has no example file yet — operator-supplied at TEST/transfer; the prediction is principled, not
+  measured here. argmax TRANSFER = a non-additive max+index reduction; its num_reduction_ops will be probed when
+  wired, but argmax is num_tiled_accumulators=0 (not Band-B) so the rule won't fire on it regardless.)
+- DIVERGENCE TEST: the rule fires iff num_tiled_accumulators>=1 AND num_reduction_ops>=2. In the curriculum only
+  jsd satisfies both. No T1 kernel (n_acc=0) and no 1-reduction Band-B (kl_div/tv) is touched. The gate fact is
+  not the only-jsd outcome (that would be a fence) but the PRINCIPLE (chunk = budget / live-accumulator-count);
+  jsd being the sole current firer is incidental to the curriculum, not engineered.
