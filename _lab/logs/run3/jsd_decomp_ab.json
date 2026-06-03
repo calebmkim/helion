@@ -1,0 +1,248 @@
+[
+  {
+    "kernel": "jsd",
+    "shape": [
+      8192,
+      30522
+    ],
+    "tc_us": 678.3040165901184,
+    "arms": {
+      "seed": {
+        "us": 800.1599907875061,
+        "spread": 0.004719073553589542,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32,
+        "ns": 1
+      },
+      "chunk2048": {
+        "us": 676.8160164356232,
+        "spread": 0.041417422682350734,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 32,
+        "ns": 1
+      },
+      "warps16": {
+        "us": 672.5279986858368,
+        "spread": 0.0943306821079845,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 16,
+        "ns": 1
+      },
+      "stages4": {
+        "us": 802.8799891471863,
+        "spread": 0.0018931943369944568,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32,
+        "ns": 4
+      },
+      "chunk+warps": {
+        "us": 659.8239839076996,
+        "spread": 0.003588885808995918,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16,
+        "ns": 1
+      },
+      "all": {
+        "us": 659.9520146846771,
+        "spread": 0.004000349525374797,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16,
+        "ns": 4
+      }
+    }
+  },
+  {
+    "kernel": "jsd",
+    "shape": [
+      8192,
+      32000
+    ],
+    "tc_us": 699.5840072631836,
+    "arms": {
+      "seed": {
+        "us": 766.9439911842346,
+        "spread": 0.0009596504596770778,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32,
+        "ns": 1
+      },
+      "chunk2048": {
+        "us": 698.0800032615662,
+        "spread": 0.042539519199333256,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 32,
+        "ns": 1
+      },
+      "warps16": {
+        "us": 683.6639940738678,
+        "spread": 0.005476339820514921,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 16,
+        "ns": 1
+      },
+      "stages4": {
+        "us": 769.6319818496704,
+        "spread": 0.003783606956539518,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32,
+        "ns": 4
+      },
+      "chunk+warps": {
+        "us": 678.1759858131409,
+        "spread": 0.00391636245864243,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16,
+        "ns": 1
+      },
+      "all": {
+        "us": 678.4639954566956,
+        "spread": 0.004669351492527676,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16,
+        "ns": 4
+      }
+    }
+  },
+  {
+    "kernel": "kl_div",
+    "shape": [
+      8192,
+      30522
+    ],
+    "tc_us": 725.9200215339661,
+    "arms": {
+      "seed": {
+        "us": 651.5200138092041,
+        "spread": 0.0001965108887891087,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32,
+        "ns": 1
+      },
+      "chunk2048": {
+        "us": 657.5999855995178,
+        "spread": 0.0004866443807892123,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 32,
+        "ns": 1
+      },
+      "warps16": {
+        "us": 659.8719954490662,
+        "spread": 0.000824419882366384,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 16,
+        "ns": 1
+      },
+      "stages4": {
+        "us": 651.423990726471,
+        "spread": 0.0005648690864309634,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32,
+        "ns": 4
+      },
+      "chunk+warps": {
+        "us": 657.3439836502075,
+        "spread": 0.0005841281447665764,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16,
+        "ns": 1
+      },
+      "all": {
+        "us": 657.3119759559631,
+        "spread": 0.0006328514177494918,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16,
+        "ns": 4
+      }
+    }
+  }
+]

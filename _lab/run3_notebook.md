@@ -2371,3 +2371,36 @@ DEFERRED (NOT self-certified): long_sum(16,2097152) 2M source-limit -> FLAG anti
 narrow-N cluster (rms-768/softmax-256, occupancy-aware, hardest) + long_sum-2M (anti-giving-up flag) + full-
 confirm the quick-VICTORY extreme bands. Most of the 6 at-floor kernels ARE at parity; the gaps are bounded +
 characterized. Reporting the gap-list to hub.
+
+## 2026-06-03 — EDIT#5 jsd decomp — 2 carriers (chunk+warps), stages inert; BUT kl_div HURT → finer-key needed
+
+run3_jsd_decomp_ab.py (do_bench median-7). jsd narrow-V:
+| arm | jsd(8192,30522) | jsd(8192,32000) | kl_div(8192,30522) |
+|-----|----------------:|----------------:|-------------------:|
+| seed       | 1.000 | 1.000 | 1.000 |
+| chunk2048  | **1.182** | **1.099** | **0.991 HURT** |
+| warps16    | **1.190** | **1.122** | **0.987 HURT** |
+| stages4    | 0.997 inert | 0.997 inert | 1.000 |
+| chunk+warps| 1.213 | 1.131 | 0.991 HURT |
+| all(+ns4)  | 1.212 | 1.130 | 0.991 HURT |
+
+FINDINGS:
+1. jsd carriers = **chunk 4096->2048 AND warps 32->16** (each ~1.18-1.19 independently, combine 1.21/1.13).
+   num_stages 1->4 is INERT (0.997, passenger -> DROP). So the jsd fix = smaller R_BLOCK + fewer warps, NOT stages.
+2. **CRITICAL — kl_div(8192,30522) is HURT by BOTH levers (chunk2048 0.991, warps16 0.987), and kl_div was
+   already at PARITY (beats tc 1.114).** So a gate keyed on "Band-B narrow-V" (fires on jsd AND kl_div) would
+   help jsd +18% but REGRESS kl_div -1%. SAME shape as welford/pid: helps one Band-B kernel, hurts its peer.
+   Need a FINER key separating jsd-wants-smaller from kl_div-at-parity.
+3. **The obvious finer key FAILED:** jsd AND kl_div BOTH have num_tiled_accumulators=2 (my hypothesis falsified).
+   The ONLY differing fact: num_reduction_ops (jsd=**2**, kl_div=**1**). Physical reason: jsd does 2 reductions
+   (the 2 KL terms: intermediate_loss + intermediate_dX) carrying 2x the accumulator/register state over the
+   same R_BLOCK -> wants a smaller chunk + fewer warps; kl_div's 1 reduction (loss_sum) doesn't.
+   => CANDIDATE key: num_reduction_ops>=2 AND num_tiled_accumulators>=1 (Band-B). BUT:
+   - num_reduction_ops was a REJECTED proxy earlier (under-counted rms_norm's apply). Its principled-ness HERE
+     rests on a 2-POINT jsd(nro=2)-vs-kl_div(nro=1) difference -> FENCE RISK (could be jsd-specific in disguise).
+   - This is a genuine FORK + a previously-rejected fact + fact-integrity will scrutinize hard. Per the
+     verify-separator + don't-self-certify discipline: NOT building EDIT#5 on num_reduction_ops without the hub's
+     read. Either (a) num_reduction_ops>=2 is a principled register-pressure key (2 reductions = 2x state) ->
+     build EDIT#5 gated on it; or (b) it's a 2-point fence -> EDIT#5 narrower / jsd Product-B.
+REPORTING to hub for the disposition (fork). jsd gap is real (1.21/1.13, beats tc) but the seedable key is the
+open question -- exactly the anti-giving-up "is there a principled non-identity separator?" test, now for Band-B.
