@@ -899,8 +899,40 @@ cannot regress it. (Hub feared "512KiB softmax persistent->looped"; it's already
   (8192->16384, 1.05-1.10x). softmax small-N occupancy-warps (M-dependent, needs occupancy fact). long_sum 2M
   source-limit (seed≈oracle, verify full oracle). CE residual oracle-vs-tc ~5% (2-pass source ceiling; online).
 
+## 2026-06-03 — HUB: EDIT#1 value BANKED (referee+auditor PASS) + HARD GPU PROTOCOL + sequencing (a) EDIT-PID
+
+Hub updates: (1) **NEW HARD GPU PROTOCOL** — before ANY GPU job DM "REQ-GPU <what/dur>", WAIT for "GPU-GRANTED",
+DM "GPU-RELEASED" after. Hub holds the single timing token (a near-collision: my killed long_sum oracle PID
+92659 was still autotuning when the referee spawned → it blocked 9min). I confirmed NO orphan GPU procs remain.
+(2) **EDIT#1 cap VALUE (240KiB) BANKED** — referee PASS (counterfactual: monkeypatch back to 128KiB reverts CE
+seeds to looped floor-loser → the raise is the sole cause) + auditor PASS (240KiB is a PHYSICAL threshold not a
+CE fence: no shape in (196.5,256]KiB except dev-only 57344, so any cap in that window = identical curriculum
+codegen). The num_load GATE under it still owes the faithful re-key = my committed EDIT-GATE/row_reread.
+(3) Naming: gate re-key = **EDIT-GATE** (=row_reread, committed 91dfd8ef); wide-CE pid work = **EDIT-PID**.
+(4) Sequencing: go (a) — land EDIT-PID first (largest gap 1.62x, generalizes).
+
+EDIT-PID guardrails (hub) + my progress:
+- **5a round-trip survival: PASS (non-GPU, verified).** The full-oracle CE(4096,98304) pid bundle
+  (pid_type='persistent_interleaved', num_sm_multiplier=32, maxnreg=64, num_stages=4, range_unroll_factors=[4],
+  range_num_stages=[2], range_flattens=[False], reduction_loops=[4096]) survives configs=[oracle] +
+  normalize() FULLY PRESERVED — every lever intact in bound._config. So it IS Product-A-seedable (no silent
+  knob-drop). Cleared.
+- **5b lever decomposition: harness ready (run3_ce_pid_decomp.py), needs GPU.** Additive arms: seed + each
+  lever (pid / pid+maxnreg / pipeline / chunk / evict) + carrier combos + full_bundle, each vs verbatim oracle
+  (588) AND seed (955), with per-arm round-trip-drop logging. My EARLIER coarse ablation (run3_ce_pid_ab.py)
+  already indicated eviction(1.31x)+pidcluster carry it, chunk/pipeline ~inert — this decomposes the pid
+  cluster itself (pid-only vs +sm_mult vs +maxnreg) to name the carrier. REQ-GPU pending.
+- **5c pid='flat' reversal rigor:** run-2 LOCKED flat via matched-lever A/B + pid_breakpoint_sweep concluding
+  flat dominates on grid-SATURATED forward reductions; persistent only for grid-BOUND. My finding = wide-CE
+  M=4096 is grid-LIGHT (few huge rows under-fill the SM grid) — a regime run-2 never probed. So the fix is a
+  NEW workload-keyed branch ("grid-light -> persistent_interleaved+sm_mult"), NOT flipping the global flat
+  default. Need a faithful GRID-OCCUPANCY fact (rows*m_block vs SM count: does the M-grid saturate the GPU?) —
+  ask code-investigator. fact-integrity fires on the new fact + a pid-specific auditor/anti-giving-up confirms
+  no narrow-forward regression. Re-check flat-vs-persistent on the OTHER grid-light shapes (softmax/welford/
+  long_sum few-row) — measure, don't assume.
+
 ### Current champion
-- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
+- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
   num_load placeholder curriculum-wide; CE boundary at oracle parity; wide rms/ln robustness correctly looped
   (no regression); tests pass. Ready to DM design + commit + re-gate. NEXT perf: reread eviction (1.31x CE
