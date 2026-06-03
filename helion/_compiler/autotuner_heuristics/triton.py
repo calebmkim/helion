@@ -791,6 +791,22 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             "num_stages": 1,
             "pid_type": "flat",  # principled constant — see the T1 branch.
         }
+        # EDIT#6: the SAME faithful reread-eviction as T1/Band-C, now on the T2 plain
+        # path. A T2 user-tiled reduction that RE-READS its row across passes and runs
+        # LOOPED (softmax_two_pass: x re-read in the max pass + the exp-sum pass; wide
+        # rows > the persist cap) wants the re-read row L2-resident: 'last' on the row's
+        # first load (reread_buffer_slots[0]), 'first' elsewhere. Gate is IDENTICAL to
+        # the T1 eviction (``fact.row_reread and not persistent``). Full-oracle: softmax
+        # (1024,65536) 1.36x / (512,131072) 1.10x, BEATS tc; lever-decomp isolates the
+        # eviction as the sole carrier (chunk/warps passengers; run3_softmax_decomp_ab).
+        # The fact already computes softmax's slots=(0,1) — this is purely a new
+        # CONSUMER of the existing reread_buffer_slots, no fact change. Other T2 kernels
+        # (kl_div/jsd) are row_reread=False -> unaffected; narrow/persistent softmax
+        # stays default (byte-identical). The reread rule now spans all 3 tracks.
+        if fact.row_reread and not persistent:
+            ev = cls._eviction_policies(env, "reread", fact.reread_buffer_slots)
+            if ev is not None:
+                seed["load_eviction_policies"] = ev
         return Config(**seed)
 
     @classmethod
