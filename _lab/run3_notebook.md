@@ -1376,3 +1376,69 @@ CONCLUSION: EDIT#3 is a clean seedable win, matches the oracle, attributable to 
 boundary regression. Reporting receipts to hub BEFORE committing (per hub directive). Welford no-regression A/B
 (run3_reread_noregress_ab.py) still to run (next GPU grant) to confirm the welford de-hack reproduces its run-2
 eviction win + rms/ln(1,131072) robustness canary -- THEN commit EDIT#3 (fires auditor+referee, no fact-integrity).
+
+## 2026-06-03 — EDIT#3 no-regress A/B FINDING: de-hack REGRESSES welford 3-6% vs shipping positional -> RULE FIX
+
+Ran run3_reread_noregress_ab.py (welford TRAIN + rms/ln robustness). do_bench median-of-7, fp32.
+
+| case               | default us | seed_emitted (de-hack) | pos_run2 (positional) | de-hack vs pos |
+|--------------------|-----------:|-----------------------:|----------------------:|---------------:|
+| welford(65536,4096)|    1003.5  | 799.2 (1.256x)         | 776.7 (1.292x)        | -2.9% (slower) |
+| welford(32768,8192)|    1004.5  | 844.5 (1.189x)         | 790.3 (1.271x)        | -6.4% (slower) |
+| rms_norm(1,131072) |      22.7  | 21.3 (1.066x)          | 21.3 (1.068x)         | ~tie           |
+| layer_norm(1,131072)|     26.6  | 26.2 (1.016x)          | 26.6 (1.001x)         | +tie/slight    |
+
+**CRITICAL: the CURRENTLY-SHIPPING champion (accepted EDIT-GATE-v2) emits the POSITIONAL rule for welford.**
+Committed `_eviction_policies(env,"reread")` = `["last"]+["first"]*(n-1)` (HEAD triton.py:460) -> welford ships
+`['last','first','first','first']` = pos_run2. My EDIT#3 de-hack `['last','first','','']` (row x slots 0,1;
+weight/bias slots 2,3 left default) is **3-6% SLOWER** -> EDIT#3 as-designed REGRESSES the accepted welford. NOT
+acceptable (regression on an accepted-champion shape).
+
+ROOT CAUSE: positional does TWO things — (1) 'last' on slot 0, (2) 'first' on ALL other slots. My de-hack does
+(1') 'last' on the re-read ROW's first load + 'first' on its re-reads, but leaves OTHER buffers DEFAULT ''. The
+welford loss is leaving weight/bias at '' instead of 'first': they're streamed-once small broadcasts, so
+evict-FIRST frees L2 (same physics as the num_load==1 stream recipe). My de-hack under-streams them.
+
+FIX (principled, faithful, captures BOTH wins): the reread policy = **'last' on the re-read row's FIRST load;
+'first' on EVERY OTHER slot** (row's re-reads AND all streamed-once operands -> stream/evict-first). This:
+  - welford: row x@slot0->'last', x re-read@slot1->'first', weight/bias@2,3->'first' = ['last','first','first',
+    'first'] == positional (reproduces the 1.27x win, byte-identical to shipping).
+  - CE: 'last' on logits@slot2 (the de-hack — provenance puts it on the ROW, not positional slot0=labels),
+    'first' on labels@0/logits_flat@1/logits-reread@3,4 = ['first','first','last','first','first'].
+The ONLY open: does CE want slots 0,1 (labels/logits_flat gathers) 'first' vs my tested ''? My A/B tested
+['','','last','first','first']=1.31x; need to test ['first','first','last','first','first']. Testing Rule B
+on CE now (still hold GPU token). If Rule B ties/beats my 1.31x on CE AND reproduces welford positional, it's
+the faithful rule that regresses nothing. (This keeps the buffer-IDENTITY de-hack for the 'last' slot — the
+fact-integrity caveat — while streaming everything else, which is the run-2 behavior that happened to be right.)
+
+## 2026-06-03 — RULE B CONFIRMED + IMPLEMENTED: the faithful reread policy that regresses nothing
+
+Rule-A-vs-Rule-B A/B (run3_reread_rulefix_ab.py, do_bench median-of-7, fp32):
+
+| case               | default | ruleA (mine, old) | ruleB (FIX)  | pos_run2 (shipping) |
+|--------------------|--------:|------------------:|-------------:|--------------------:|
+| CE(4096,98304)     |  1.000  | 1.303             | **1.305**    | 0.995               |
+| CE(8192,128256)    |  1.000  | 1.187             | **1.190**    | 1.040               |
+| welford(65536,4096)|  1.000  | 1.249             | **1.283**    | 1.283               |
+| welford(32768,8192)|  1.000  | 1.193             | **1.273**    | 1.277               |
+
+RULE B = 'last' on the provenance-identified re-read ROW's first load; 'first' on EVERY OTHER slot. Verdict:
+- CE: Rule B ties/beats Rule A (1.305 vs 1.303; 1.190 vs 1.187) -- streaming the labels/logits_flat gathers
+  ('first' on slots 0,1) is marginally better, never worse. The 1.31x/1.19x win HOLDS.
+- welford: Rule B == pos_run2 (1.283/1.283; 1.273/1.277 within noise) -- REPRODUCES the shipping positional
+  win. Rule B's welford policy IS ['last','first','first','first'] (row x@slot0->'last', rest 'first') =
+  BYTE-IDENTICAL to the shipping champion -> NO regression.
+- Rule B KEEPS the buffer-identity de-hack: CE policy ['first','first','last','first','first'] -- 'last' on
+  logits@slot2 (the ROW), NOT positional slot0=labels. pos_run2 STILL FAILS CE (0.995/1.040, marks labels
+  'last') -> the win is the buffer-identity 'last' placement, not "some eviction." Defeats "positional refit."
+
+IMPLEMENTED (triton.py `_eviction_policies` "reread"): policy = ['first']*n; policy[slots[0]]='last'. One-line
+change from Rule A (which had default '' on non-row slots). Re-verified emitted (bind-only, run3_reread_slots_probe):
+  sum/long_sum ['first','first']; rms ['last','first','first','first','first']; ln ['last']+['first']*7;
+  softmax None (T2); CE ['first','first','last','first','first']; kl/jsd None; welford ['last','first','first','first'].
+rms/ln(1,131072) robustness: Rule B's policy == the pos_run2 arm ALREADY tested in the no-regress A/B (rms 1.068x,
+ln 1.001x vs default) -> confirmed correct + not slower. So Rule B is validated on EVERY EDIT#3-affected shape:
+CE 1.31x/1.19x (=oracle), welford 1.27-1.28x (=shipping, no regress), rms/ln robustness 1.00-1.07x (canary OK).
+
+EDIT#3 = Rule B. Lint+format clean. Ready: report full receipts to hub, then commit (fires auditor+referee,
+no fact-integrity). welford no-regress now AFFIRMATIVE (Rule B reproduces shipping byte-identically).

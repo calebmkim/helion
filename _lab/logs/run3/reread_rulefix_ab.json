@@ -1,0 +1,238 @@
+[
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      98304
+    ],
+    "tc_us": 566.6880011558533,
+    "slots": [
+      2,
+      3,
+      4
+    ],
+    "arms": {
+      "default": {
+        "us": 955.1360011100769,
+        "spread": 0.0036685647366851417,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": null
+      },
+      "ruleA": {
+        "us": 733.0400049686432,
+        "spread": 0.008337893219268358,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "",
+          "",
+          "last",
+          "first",
+          "first"
+        ]
+      },
+      "ruleB": {
+        "us": 732.0800125598907,
+        "spread": 0.006359942826504021,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "first",
+          "first",
+          "last",
+          "first",
+          "first"
+        ]
+      },
+      "pos_run2": {
+        "us": 960.4160189628601,
+        "spread": 0.0002998800914063315,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first",
+          "first"
+        ]
+      }
+    }
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      8192,
+      128256
+    ],
+    "tc_us": 1402.6559591293335,
+    "slots": [
+      2,
+      3,
+      4
+    ],
+    "arms": {
+      "default": {
+        "us": 2711.199998855591,
+        "spread": 0.002018274126316647,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": null
+      },
+      "ruleA": {
+        "us": 2284.5120429992676,
+        "spread": 0.002731388994585438,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "",
+          "",
+          "last",
+          "first",
+          "first"
+        ]
+      },
+      "ruleB": {
+        "us": 2278.559923171997,
+        "spread": 0.0023454079026905277,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "first",
+          "first",
+          "last",
+          "first",
+          "first"
+        ]
+      },
+      "pos_run2": {
+        "us": 2606.112003326416,
+        "spread": 0.0017313421693840887,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first",
+          "first"
+        ]
+      }
+    }
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      65536,
+      4096
+    ],
+    "tc_us": 706.8799734115601,
+    "slots": [
+      0,
+      1
+    ],
+    "arms": {
+      "default": {
+        "us": 1002.17604637146,
+        "spread": 0.0008142158156039674,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": null
+      },
+      "ruleA": {
+        "us": 802.0959794521332,
+        "spread": 0.0006183799248528873,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "last",
+          "first",
+          "",
+          ""
+        ]
+      },
+      "ruleB": {
+        "us": 781.3439965248108,
+        "spread": 0.0006961747842685859,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ]
+      },
+      "pos_run2": {
+        "us": 781.1520099639893,
+        "spread": 0.0009831708017576668,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ]
+      }
+    }
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      32768,
+      8192
+    ],
+    "tc_us": 705.3120136260986,
+    "slots": [
+      0,
+      1
+    ],
+    "arms": {
+      "default": {
+        "us": 1001.8240213394165,
+        "spread": 0.00017569204997341118,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": null
+      },
+      "ruleA": {
+        "us": 839.6640121936798,
+        "spread": 0.0006859406549530037,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "last",
+          "first",
+          "",
+          ""
+        ]
+      },
+      "ruleB": {
+        "us": 786.9439721107483,
+        "spread": 0.007075469018564268,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ]
+      },
+      "pos_run2": {
+        "us": 784.3520045280457,
+        "spread": 0.011505031102472993,
+        "codegen": "looped",
+        "correct": true,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ]
+      }
+    }
+  }
+]
