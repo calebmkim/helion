@@ -2565,3 +2565,39 @@ rms_norm(8192,768)/(16384,768) + layer_norm(8192,768) [does the OCC rule govern 
 monotone OCC->warps contour exists across T1+T2 -> a principled occupancy-keyed _num_warps adjustment (real
 EDIT). If only M-runtime-dependent with no clean contour -> the admissible "knowable only at runtime" case, but
 PROVEN (anti-giving-up: the sweep IS the fact-hunt). Staged harness: run3_softmax_occ_warps_ab.py.
+
+## 2026-06-03 — EDIT#5 nro-footprint A/B: WORLD A CONFIRMED. The cap is CLEAN + V-independent. GPU-GRANTED.
+
+run3_bandb_nro_ab.py (do_bench median-7, fp32, correctness-gated). The proposed rule: bandb_cap =
+BANDB_R_BLOCK_BYTES // (itemsize * max(1,num_reduction_ops)) -> jsd(nro=2)->2048, kl_div(nro=1)->4096.
+| shape               | nro | nro_cap | seed_R | seed/nro_chunk | seed/nro_warps | seed/nro_both | nro_chunk arm/tc |
+|---------------------|----:|--------:|-------:|---------------:|---------------:|--------------:|-----------------:|
+| jsd(8192,30522)     | 2   | 2048    | 4096   | **1.190**      | 1.195          | 1.213         | 1.005            |
+| jsd(8192,32000)     | 2   | 2048    | 4096   | **1.098**      | 1.122          | 1.131         | 1.002            |
+| jsd(2048,256000)WIDE| 2   | 2048    | 4096   | **1.024**      | 1.026          | 1.022         | 1.028            |
+| kl_div(8192,30522)  | 1   | 4096    | 4096   | (no arm: cap==seed_R -> UNTOUCHED, byte-id) | | | |
+| kl_div(1024,256000) | 1   | 4096    | 4096   | (UNTOUCHED, byte-id)                        | | | |
+
+DECISIVE FINDINGS:
+1. **WORLD A CONFIRMED**: jsd WIDE-V (2048,256000) ALSO benefits from chunk 2048 (nro_chunk seed/arm=1.024,
+   arm/tc 1.028) — NO regression wide. So the footprint cap helps jsd at narrow AND wide V -> it is CLEAN +
+   V-INDEPENDENT. No V-axis needed. The byte-budget interpretation (16KiB live reduction state // nro) holds
+   across the whole V range.
+2. **CHUNK-ALONE lands jsd at the bar**: nro_chunk seed/arm = 1.190/1.098/1.024 (narrow/narrow/wide). Full-oracle
+   gaps were 1.214/1.127/(wide ~1.005 vs tc). New seed/oracle with chunk-alone: 1.214/1.190=**1.020**,
+   1.127/1.098=**1.026** (both TIE <=3%); wide jsd already near parity, chunk gives +2.4% headroom. The WARPS
+   lever is confirmed a passenger for parity (nro_both only +1-2% over nro_chunk) -> DROPPED, as planned.
+3. **kl_div UNTOUCHED (no-regression, STRUCTURAL)**: nro=1 -> cap stays 4096 == seed_R -> the rule does not fire
+   (byte-identical). kl_div stays at parity (narrow + wide). The rule fires ONLY where nro>=2.
+4. sum(4096,28672) -> harness KeyError (sum is T1: reduction axis is a rolled reduction_loop, NOT a block_sizes
+   entry, so block_id_to_index raises — there's no R_BLOCK to halve). This is EXPECTED + confirms the gate is
+   STRUCTURAL: the rule lives in the T2 num_tiled_accumulators>=1 branch; sum (T1, n_tiled=0) never reaches it.
+   No-regression on T1/non-Band-B is structural, not a timing question.
+
+=> EDIT#5 = the nro-footprint CHUNK cap ALONE, in the T2 Band-B block (triton.py:785-786): change the divisor
+from `max(1,fact.itemsize)` to `max(1,fact.itemsize) * max(1,fact.num_reduction_ops)`. The fact (num_reduction_ops)
+already exists; this is a new CONSUMER, no fact change (parallels EDIT#6's "new consumer of an existing fact").
+PENDING: full oracle jsd(narrow+wide) running (formal World-A confirm + field-diff) -> DM hub the field-diff ->
+apply the edit -> correctness-gate -> commit -> hub fires fact-integrity (nro as the faithful accumulator count,
+generalizes: fires on jsd nro=2, NOT on kl_div nro=1) + auditor + referee. Will NOT commit until the oracle
+lands + the hub acks the field-diff (per "DM me before committing EDIT#5").

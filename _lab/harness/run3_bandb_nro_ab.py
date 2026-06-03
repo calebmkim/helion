@@ -80,7 +80,14 @@ def _fact(fn_obj, args):
     b = k.bind(args)
     spec = b.env.config_spec
     f = spec.reduction_facts[0]
-    ridx = spec.block_sizes.block_id_to_index(f.block_id)
+    # T1 (rollable) reductions roll the rdim into a reduction_loop, so its block_id is
+    # NOT a block_sizes entry -> block_id_to_index raises. Those kernels are not Band-B
+    # (num_tiled_accumulators==0) and the nro-footprint cap structurally never fires on
+    # them, so ridx=None is the correct signal to skip the chunk arm.
+    try:
+        ridx = spec.block_sizes.block_id_to_index(f.block_id)
+    except KeyError:
+        ridx = None
     return f, ridx
 
 
@@ -120,6 +127,15 @@ def run_case(kernel, M, N):
     seed = dict(get_seed(fn, args)[0])
     seed_bs = list(seed["block_sizes"])
     seed_w = seed.get("num_warps")
+    if ridx is None:
+        # T1 rollable (reduction axis is a reduction_loop, not a block_sizes entry).
+        # The nro-footprint cap lives in the T2 num_tiled_accumulators>=1 branch and
+        # structurally cannot fire here -> nothing to A/B. Report as STRUCTURAL no-op.
+        print(f"\n=== {kernel}({M},{N}) === T1 (rdim is a reduction_loop, not block_sizes)"
+              f"  nro={nro} n_acc={n_acc} -> nro-footprint cap STRUCTURALLY N/A "
+              f"(not Band-B). UNTOUCHED.", flush=True)
+        return {"kernel": kernel, "shape": [M, N], "nro": nro, "n_acc": n_acc,
+                "is_bandb": False, "structural_skip": "T1_rollable"}
 
     # the cap the PROPOSED rule would set (only fires for Band-B; for non-Band-B we still
     # SHOW what it would be, but the rule's gate is num_tiled_accumulators>=1).
