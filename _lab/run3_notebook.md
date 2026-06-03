@@ -2191,3 +2191,32 @@ GAP CLOSED:
 4. rms/ln M=1 -> sm=1 (no over-subscription), tie 1.008 (no regression).
 => EDIT-PID (94851da9) shipping config (32/32/16/1, CAP=32 const, maxnreg=64) net-positive on every firing
 shape, tested LITERALLY. Fully validated as shipped. The hub's per-shape concern was valid + is now met.
+
+## 2026-06-03 — floor-oracle TRIAGE batch (quick) — at-floor→at-oracle sweep, EDIT candidates surfaced
+
+Quick triage (run3_oracle.py, cheap-first; quick-GAP=real, quick-PARITY=suspect-needs-full). Results + field-diffs:
+
+| shape              | seed/oracle | oracle/tc | verdict        | field-diff (the lever)                       |
+|--------------------|------------:|----------:|----------------|----------------------------------------------|
+| jsd(8192,30522)    | **1.210**   | 1.010     | GAP (real)     | block [4096,1]->[2048,1] + num_warps 32->8   |
+| jsd(8192,32000)    | **1.129**   | 1.034     | GAP (real)     | block [4096,1]->[2048,1] + num_warps 32->16  |
+| softmax(131072,256)| **1.205**   | 0.998     | GAP (real)     | num_warps 4->8                                |
+| softmax(4096,4096) | 1.050       | 1.112     | mild GAP       | (small; warps/M-block)                        |
+| sum(16384,2048)    | 1.032       | 1.024     | ~parity (susp) | num_warps 8->16 (small)                       |
+| kl_div(8192,30522) | 1.000       | 1.123     | PARITY         | (none — at oracle)                            |
+
+EDIT CANDIDATES (real quick-GAPs, clean levers — to full-confirm + design):
+1. **jsd narrow-V (1.21/1.13)**: oracle wants SMALLER Band-B R_BLOCK chunk (4096->2048) + FEWER warps (32->8/16)
+   at narrow V. The BANDB_R_BLOCK_BYTES=16384 cap (=4096 fp32) is too BIG at narrow V (over-chunks), and the
+   w32 streaming warps are too many for the narrow row. A principled Band-B narrow-V fix (EDIT#5 candidate).
+   NOTE oracle/tc=1.01-1.03 -> seedable + slightly beats tc.
+2. **softmax small-N (131072,256) 1.21**: oracle wants num_warps 4->8. BUT softmax small-N warps was a run-2
+   OVERFITTING TRAP (M/occupancy-dependent, not a clean rnumel rule). CAUTION: needs the occupancy-aware check,
+   not a blind warp bump. (131072 rows, N=256 -> tiny row, many rows -> grid-bound; warps interact with M.)
+
+AT-FLOOR SPOT-CHECKS (the "at-floor != at-oracle" question): kl_div(8192,30522)=PARITY (1.000, at oracle ✓);
+sum(16384,2048)=1.032 ~parity (suspect, small w8->16 lever). Per quick-PARITY-suspect: full-confirm both (esp
+the extreme bands per kernel) before counting toward PARITY. The mid-band quick-parity is lower-risk.
+=> Worklist: jsd-narrow-V (real EDIT), softmax-small-N (real but trap-prone). Full-confirm the winners +
+the spot-check parities. REQ-GPU for full oracles next (per hub priority: after EDIT#6 referee + EDIT-PID A/B,
+both already done -> these full-confirms + EDIT#4 are next).
