@@ -1109,6 +1109,43 @@ tree (uncommitted, with EDIT#3 eviction + comment refinement). DM hub: re-gate t
 (fact-integrity should PASS — it's the exact definition + the acid kernel). EDIT#3 eviction still awaits scope-OK
 (looped-gated) + A/B. Code-investigator crux question is now MOOT (switched to consumer-trace).
 
+## 2026-06-03 — EDIT#3 reread-eviction DESIGN verified vs hub's HBM-re-load discipline (gates firing on EDIT-GATE-v2)
+
+Hub: EDIT-GATE-v2 re-gate FIRING (fact-integrity acid=rms_norm + referee byte-identity/no-regression/CE-parity);
+referee owns the GPU queue -> I STAY OFF GPU. Gate-only commit of EDIT-GATE-v2 was RIGHT (atomic faithfulness
+fix). Proceed to design reread-eviction (EDIT#3, task #10); A/B needs REQ-GPU (after referee releases). Tasks
+split: #8 EDIT-GATE-v2, #10 EDIT#3 eviction.
+
+HUB DISCIPLINE for eviction (distinct from cap): eviction keys on per-LOAD-SLOT HBM-RE-LOAD ("a slot gets
+'last' iff its buffer is RE-LOADED in a later-emitted slot"), which is FINER than row_reread. rms_norm's x is
+loaded ONCE in-register (PERSISTENT form) -> no per-slot HBM re-load -> default (run-2's "x + broadcast -> no
+rule"). Don't apply 'last' just because row_reread=True.
+
+MY EDIT#3 ALREADY HONORS THIS (verified, codegen, non-GPU): routing = `row_reread AND not persistent` ->
+reread-eviction from reread_buffer_slots (slots loading a buffer in >=2 LOOP graphs = HBM-re-loaded). Emitted:
+  CE looped wide-V(98304): ['','','last','first','first'] (logits slots 2,3,4 — reduction-input-keyed, the win) ✓
+  CE persist boundary(50304): None (persistent -> not routed; eviction moot when row resident) ✓
+  rms_norm at-floor PERSISTENT(4096,4096): None ✓ (the hub's in-register case — persistent excluded)
+  rms_norm LOOPED robustness(1,131072): ['last','','first','first',''] — x GENUINELY HBM-re-loaded when looped ✓
+  layer_norm persist: None ✓ ; sum: ['first','first'] ✓ ; kl_div/jsd Band-B: None ✓
+  welford Band-C(262144,4096): ['last','first','',''] — x slots 0,1, FAITHFUL de-hack of run-2's positional
+    ['last','first','first','first'] (differs at weight/bias slots 2,3: run-2 'first', faithful '').
+So the looped-gate IS the mechanism that excludes the in-register-reuse case the hub flagged: persistent
+row_reread kernels (in-register, eviction moot) -> default; looped row_reread (HBM re-load) -> reread. The
+reread_buffer_slots property (buffer in >=2 loop graphs) == "buffer re-loaded in a later slot" (>=2 loop graphs
+=> >=2 slots load it). Reduction-input-keyed (CE logits, not labels/gather; welford x, not weight/bias).
+
+WELFORD DE-HACK PROOF (replaces positional slot[0]='last'): run-2 `['last']+['first']*(n-1)` hardcoded slot[0].
+For welford the re-read buffer x IS at slot[0] -> faithful gives slot[0]='last' too (the win reproduces), BUT
+now DERIVED from x's identity (reread_buffer_slots=(0,1)), not the literal. For CE the re-read buffer logits is
+at slot[2] (behind labels[0]+gather[1]) -> faithful gives slot[2]='last'; the positional rule would've wrongly
+put 'last' on slot[0]=labels. That's the de-hack: same welford result, correct CE extension, from provenance.
+
+A/B still required (REQ-GPU after referee releases): CE looped wins reproduced (1.31x/1.19x/1.09x), welford
+no-regression (faithful vs positional — weight/bias 'first'->'' ), rms/ln(1,131072) robustness canary not-slow.
+Also TODO: my eviction assignment (first->last,rest->first) vs the hub's earlier "later-region->last" at CE
+slot3 — A/B both, oracle arbitrates (my A/B winner had slot3='first').
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
