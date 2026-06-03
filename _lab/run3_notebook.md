@@ -2618,3 +2618,24 @@ FACT-INTEGRITY PRE-DEFENSE (the rule's GENERALITY, incl the TRANSFER Band-B prob
   jsd satisfies both. No T1 kernel (n_acc=0) and no 1-reduction Band-B (kl_div/tv) is touched. The gate fact is
   not the only-jsd outcome (that would be a fence) but the PRINCIPLE (chunk = budget / live-accumulator-count);
   jsd being the sole current firer is incidental to the curriculum, not engineered.
+
+## 2026-06-03 — EDIT#5 FULL ORACLE (both jsd) — World A CONFIRMED at full effort. Ready to build (awaiting hub ack).
+
+run3_oracle.py HELION_AUTOTUNE_EFFORT=full, cached. Both jsd shapes:
+| shape                  | seed/oracle | oracle/tc | oracle block_sizes | R_BLOCK lever | other oracle levers      |
+|------------------------|------------:|----------:|--------------------|---------------|--------------------------|
+| jsd(8192,30522) narrow | **1.213**   | 1.015     | [2048,1]           | 4096->**2048**| num_warps 32->16; ns(noise)|
+| jsd(2048,256000) wide  | **1.034**   | 1.030     | [2048,**4**]       | 4096->**2048**| M_BLOCK 1->4 (sub-1%)    |
+
+WORLD A CONFIRMED AT FULL EFFORT: BOTH oracles want R_BLOCK=2048 = 16384//(itemsize*nro=2). The footprint cap is
+the correct V-INDEPENDENT lever (narrow AND wide). Notes:
+- narrow: the gap is 1.213, lever = R_BLOCK (my cap) + warps (passenger, dropped). Post-cap seed/oracle =
+  1.213/1.190 = 1.020 (TIE; A/B chunk-alone 1.190).
+- wide: the gap is only 1.034 (already near parity). Lever = R_BLOCK 2048 (my cap, A/B +2.4%) + a SEPARATE
+  M_BLOCK 1->4 bump. My cap captures R_BLOCK -> post-cap wide seed/oracle ~= 1.034/1.024 ~= **1.010** (well within
+  tie). The M_BLOCK=4 residual is a sub-1% documented miss (like 256000's blocked@4 for EDIT-PID) — NOT a lever
+  worth adding (would need an M-tiling rule for <1%; out of scope, the cap closes the shape to tie).
+- BOTH oracles are PERSISTENT codegen at the smaller R_BLOCK; seed is looped. (At R_BLOCK=2048 the [M,R] state
+  fits, so the oracle stays persistent — consistent with the spill story: 4096 over-allocates, 2048 fits.)
+=> EDIT#5 fully justified by the full oracle. The chunk cap alone lands BOTH jsd shapes at TIE. DM'd the hub the
+field-diff; AWAITING ack before commit. Cache updated (jsd:8192x30522, jsd:2048x256000).
