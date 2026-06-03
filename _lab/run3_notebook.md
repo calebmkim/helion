@@ -2008,3 +2008,28 @@ for a heavy-accumulator persistent kernel), physically motivated for the memory-
 a fit-to-oracle (though the oracle also picked 64 — convergent, like sm_mult~32 from M/SM). EDIT-PID seed =
 {persistent_interleaved, sm_mult=clamp(np2(ceil(M/num_sm)),1,32), maxnreg=64}, T1-branch, gated row_reread AND
 not persistent. BUILD next (champion-advancing -> after hub confirms the maxnreg-now-included config).
+
+## 2026-06-03 — EDIT-PID BUILT + committed (94851da9) — T1-scoped, physics-derived, emission-verified 10/10
+
+Built per the gate mandate + (A)-validation. triton.py-only (no new fact; reuses row_reread + m_block_ids).
+The T1 seed dict gets, gated `fact.row_reread and not persistent` (IDENTICAL gate to the EDIT#3 eviction):
+  pid_type='persistent_interleaved'; num_sm_multiplier=clamp(np2(ceil(grid_rows/get_num_sm)),1,32); maxnreg=64.
+grid_rows = product of M-axis extents via env.size_hint(env.block_sizes[mbid].size) (NOT BlockSizeInfo.size_hint()
+which needs current-env; the passed env's size_hint works at seed-emit).
+
+EMISSION VERIFIED 10/10 (bind-only): CE(98304/128256/256000) -> interleaved sm=32/32/16 mnr=64; CE(50304
+persistent boundary) -> flat (not-persistent gate); rms_norm(1,131072) -> interleaved sm=1 mnr=64 (M=1, derived
+correctly to 1 -- the principled-vs-const-32 proof); rms_norm(8192,4096 at-floor)/softmax(T2)/welford(Band-C)/
+sum(num_load==1)/kl_div(T2) -> flat (byte-identical, untouched). Correctness confirmed via run3_pid_derived_ab.py
+(all arms OK).
+
+BUGS fixed during build: (1) circular import (from ...runtime import get_num_sm at module top -> runtime imports
+the heuristics) -> moved to a LOCAL import in the block. (2) env-current dependency: BlockSizeInfo.size_hint()
+calls CompileEnvironment.current() (raises NoCurrentEnvironment at seed-emit -> get_seed_config raised -> seed
+DROPPED -> "num seeds 0") -> use the PASSED env's env.size_hint(bs.size) instead.
+
+GATES (champion-advancing, fired on commit): fact-integrity (is_t1 + row_reread non-identity track-key; sm_mult
+PHYSICS-derived not oracle-fit -- the M=1->1 + the oracle-varies-32/32/4 args; maxnreg physical) + auditor (no
+fence: welford/softmax untouched is the cross-branch byte-identity defense, NOT a CE-only carve) + referee (CE
+1.23-1.25x reproduce + byte-identical welford/softmax/sum/kl/jsd + rms/ln tie + 4-split flip-set). 256000
+interleaved-vs-blocked = documented small miss (1.054 net-positive, not a fence). DM hub the sha.
