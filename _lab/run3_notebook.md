@@ -1146,6 +1146,34 @@ no-regression (faithful vs positional — weight/bias 'first'->'' ), rms/ln(1,13
 Also TODO: my eviction assignment (first->last,rest->first) vs the hub's earlier "later-region->last" at CE
 slot3 — A/B both, oracle arbitrates (my A/B winner had slot3='first').
 
+## 2026-06-03 — EDIT#4 (welford apply-cap) PRE-STAGED design (non-GPU, from the existing wf_tile_ab data)
+
+Independent small edit (hub: fine to pre-stage). From run3_wf_tile_ab.py (already measured, committed):
+- welford(4096,16384): seed [1,8192,2048] w16 (apply 2048) -> BEST [1,16384,4096] = 1.089x (combine 8192->16384
+  AND apply 2048->4096); applyNp2(16384) WORSE (too big).
+- welford(32768,8192): seed [2,8192,2048] -> BEST [2,8192,4096] w32 = 1.103x (apply->4096 + warps16->32 TOGETHER;
+  warps32 alone WORSE).
+- welford(16384,768): already at parity (apply moves inert).
+
+PROPOSED EDIT#4: raise `STRUCTURED_APPLY_LOOP_CHUNK_BYTES` 8192 -> 16384 (apply tile 2048 -> 4096 fp32). The
+apply tile is a PURE perf lever (masked write, correct at any width). The oracle/A/B want 4096, not the seed's
+2048; not full np2(N) (that over-spills). Possibly also raise STRUCTURED_COMBINE_CAP_BYTES at (4096,16384)
+(combine 8192->16384 helped there) — but that's a 2nd lever; A/B whether apply-alone gets most of it.
+The (32768,8192) warps16->32 is a SEPARATE welford-warps question (the structured-combine warp ramp) — defer
+unless apply+combine alone leaves it short.
+
+NO-REGRESSION RISK + PLAN (needs GPU A/B): run-2 tuned the apply cap (8192) against the welford in-sample-v2 +
+the wide-N curriculum; the 8 KiB threshold has a "valid-row-bytes" companion (STRUCTURED_APPLY_PERSIST_MAX_BYTES
+=12288) deciding persist-vs-loop apply. Must A/B the apply-cap raise across the WHOLE welford train+val+test+
+robustness for no-regression (esp. the narrow-N welford that were at floor, + the huge-M legacy 262144 rows).
+Flip-set: shapes where the apply tile = min(np2(N), cap/itemsize) changes from 2048->4096 (N>=4096-ish looped-
+apply welford). HELD until EDIT-GATE-v2 + EDIT#3 land (sequencing) + GPU; this is the smallest remaining gain
+(1.05-1.10x on a few welford shapes), lower priority than CE pid (1.62x).
+
+## SEQUENCING (hub-confirmed): EDIT-GATE-v2 (gating now) -> EDIT#3 reread-eviction (design done, A/B pending GPU)
+   -> EDIT#4 welford apply-cap (pre-staged) -> EDIT-PID grid-light pid cluster (5a done, 5b harness ready, 5c
+   grid-occupancy fact pending code-investigator). All A/Bs serialized behind the hub's GPU token (REQ-GPU each).
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
