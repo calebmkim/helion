@@ -2142,3 +2142,27 @@ EDIT-PID note: my last cross-kernel probe concluded (A) for the T1-scoped EDIT-P
 structured-combine = scalar-accumulator multi-pass; Band-C welford = structured-combine recurrence). So the finer
 fact the gate hunts EXISTS and IS EDIT-PID's scope -> RATIFIES (A), doesn't decline. Clarifying to hub (am I
 gating an (A)-build or a (B)-decline? — they're opposite, and the finer-fact = T1-scope = (A)).
+
+## 2026-06-03 — SCOPED the at-floor->at-oracle confirmation sweep (hub focus (c), non-GPU)
+
+The 6 "at-floor" kernels (rms/ln/sum/long_sum/kl/jsd) are confirmed at-floor-vs-tc (floor sweep 09353012) but
+NOT at seed≈ORACLE. Per the brief: one representative per (kernel, N-band). Staged 15-shape batch
+(/tmp/atfloor_oracle_batch.json), spanning narrow/mid/wide + high-M extremes (where gaps hide):
+  rms_norm: (8192,768) narrow, (4096,8192) mid, (2048,16384)=64KiB persist-wide, (32768,2048) high-M
+  layer_norm: (8192,768), (2048,16384), (32768,1024)
+  sum (num_load=1 stream): (16384,1024) narrow, (4096,28672) wide
+  long_sum: (256,65536) persistent, (16,2097152) the >2^20 looped-tail source-limit candidate
+  kl_div (Band-B): (8192,30522) narrow-V, (1024,256000) wide-V
+  jsd (Band-B): (8192,30522) the known ~1.20 quick-gap, (2048,256000) wide-V
+
+CHEAP-FIRST PLAN (+ the quick-undershoots caveat from the softmax reversal): run QUICK triage across all 15.
+- A quick GAP is REAL (full only widens) -> a per-shape EDIT candidate; full-confirm the winner + field-diff.
+- A quick PARITY is SUSPECT (softmax(1024,65536) quick said 1.000, full said 1.359!) -> for the
+  CONFIRM-AT-PARITY goal, quick-parity is NOT trustworthy. So full-confirm a SUBSET of the quick-parity shapes:
+  the EXTREME bands per kernel (narrowest + widest), where occupancy/cap/chunk gaps hide. Mid-band quick-parity
+  -> lower-risk, accept as likely-parity unless an extreme in that kernel shows a gap.
+This balances the false-null risk against the ~10min/shape full-oracle cost (15 full = ~2.5h; triage narrows it).
+Goal: produce the per-shape seed/oracle table -> the PARITY milestone (every measurable shape seed≈oracle), or
+the next worklist of buried gaps. KNOWN going in: jsd narrow-V ~1.20 (likely real EDIT), long_sum 2M source-limit
+(seed≈oracle<tc, flag for anti-giving-up full oracle not self-certify). REQ-GPU when this is the priority (after
+EDIT#6 referee + pid anti-giving-up settle, per hub sequencing).
