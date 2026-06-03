@@ -1903,3 +1903,29 @@ seed would be p-hacking AND wrong on the widest. Derive from the regime physics 
 principled num_sm_multiplier formula + maxnreg rationale (investigate the codegen + SM count). 256000
 interleaved@32=1.052 ~= blocked@4=1.048 -> the variant/sm_mult choice is perf-immaterial there -> a single
 principled coarse value is fine (coarse-but-positive (A), not per-shape tuning).
+
+## 2026-06-03 — HUB rulings: UNIFORM-SHIP affirmed, EDIT#3 GO (already committed), EDIT-PID HOLD for anti-giving-up
+
+(1) UNIFORM-SHIP affirmed: carving layer_norm out would ADD an identity-fence exception; the faithful rule is
+already uniform (keyed on re-read buffer, gated not-persistent); ln -0.8%@26us = within-noise TIE. Ship uniform. ✓
+(2) EDIT#3 GO — already committed (a62e26da + fa11264a, HEAD a15d71c3, tree clean). Awaiting hub's 3 gates.
+(3) EDIT-PID HOLD: anti-giving-up is in flight on the pid-residual decline; per protocol "no clean rule /
+autotuner-only" can't be self-certified -> DON'T commit a decline, DON'T run the interleaved@32 A/B (already ran
+it as the 3x3, but no further pid GPU + no decline commit until the gate rules). NOTE: task #9 was updated to
+"BUILD it (T1-scoped)" (reads like anti-giving-up RETURNED: welford=Band-C unreachable by T1-scope, ln=1.007 tie)
+but THIS message says anti-giving-up is still running + HOLD. CROSSED signals -> I do NEITHER (no seed build, no
+decline commit) = the HOLD state, which satisfies both until the hub confirms the gate verdict. My sm_mult-formula
+proposal DM is consistent with hold (commits nothing). When the gate returns: if it blesses (B) -> record decline;
+if it requires the build -> build T1-scoped with the physics-derived sm_mult (formula proposed, A/B harness ready).
+
+**rms_norm(1,131072) 1.071x eviction win OVERTURNS run-2's "rms_norm = no clean eviction rule" (hub highlight).**
+Run-2 left rms_norm eviction DEFAULT, declaring no clean per-slot rule (the positional blanket regressed it / was
+untrustworthy). The RUN-3 faithful provenance rule (reread_buffer_slots: 'last' on x's first load = the reduction
+ROW, 'first' the rest) finds a REAL 1.071x gain on the (1,131072) robustness shape. This is anti-giving-up working
+THROUGH THE SUBSTRATE: a FAITHFUL fact surfaced a win the impoverished proxy (num_load/positional) declared "no
+rule" for. Banked in EDIT#3. (Caveat: (1,131072) is robustness, so this is a not-perf-claim canary that happens to
+gain; the GENERALIZABLE win is the rule, validated on CE+welford TRAIN shapes too.)
+
+PIVOT (hub: don't idle while EDIT#3 gates + anti-giving-up run): EDIT#4 welford apply-cap (non-GPU design now) +
+jsd Band-B narrow-V (~1.20) + softmax small-N (~1.15) field-diffs vs FRESH oracles + at-floor-vs-at-ORACLE
+spot-checks (at-floor != at-oracle; parity is the bar). REQ-GPU for those.
