@@ -95,11 +95,19 @@ def run_ce(M, N):
     for a in args:
         if torch.is_tensor(a) and a.is_floating_point():
             assert a.dtype == torch.float32
-    base = dict(get_seed(fn, args)[0])  # the live EDIT#3-evicted seed (pid='flat')
+    # The live seed now EMITS EDIT-PID (persistent_interleaved) on these CE shapes
+    # (EDIT-PID is committed). So FORCE the flat baseline explicitly (strip the
+    # EDIT-PID keys) -- otherwise "flat" would silently be the EDIT-PID config and the
+    # A/B would measure interleaved-vs-interleaved. flat_evict = EDIT#3 eviction +
+    # pid=flat (the pre-EDIT-PID baseline = what EDIT-PID is measured against).
+    base = dict(get_seed(fn, args)[0])
+    flat_base = {k: v for k, v in base.items()
+                 if k not in ("num_sm_multiplier", "maxnreg")}
+    flat_base["pid_type"] = "flat"
     arms = {
-        "flat_evict": (dict(base), []),
-        "interleaved32": ({**base, **INTERLEAVED32}, list(INTERLEAVED32)),
-        "blocked4": ({**base, **BLOCKED4}, list(BLOCKED4)),
+        "flat_evict": (dict(flat_base), []),
+        "interleaved32": ({**flat_base, **INTERLEAVED32}, list(INTERLEAVED32)),
+        "blocked4": ({**flat_base, **BLOCKED4}, list(BLOCKED4)),
     }
     torch._dynamo.reset()
     tc = torch.compile(tc_ref)
@@ -128,10 +136,14 @@ def run_other(kernel, M, N):
     for a in args:
         if torch.is_tensor(a) and a.is_floating_point():
             assert a.dtype == torch.float32
+    # FORCE flat baseline (rms_norm(1,131072) now emits EDIT-PID from the live seed).
     base = dict(get_seed(fn, args)[0])
+    flat_base = {k: v for k, v in base.items()
+                 if k not in ("num_sm_multiplier", "maxnreg")}
+    flat_base["pid_type"] = "flat"
     arms = {
-        "flat": (dict(base), []),
-        "interleaved32": ({**base, **INTERLEAVED32}, list(INTERLEAVED32)),
+        "flat": (dict(flat_base), []),
+        "interleaved32": ({**flat_base, **INTERLEAVED32}, list(INTERLEAVED32)),
     }
     torch._dynamo.reset()
     tc = torch.compile(tc_ref)

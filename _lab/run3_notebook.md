@@ -2062,3 +2062,32 @@ out = an identity fence; the cost is a sub-noise possible-slight-negative on one
 NET: EDIT#3's headline = the CE eviction wins (real, attributable). rms/ln = robustness canaries under the
 uniform rule (rms not-slower-within-noise; ln within-noise-leans-neg). welford = byte-identical (the run-2
 positional win, reproduced faithfully). I own the rms/ln over-claims; corrected here for the ledger.
+
+## 2026-06-03 — EDIT-PID 3×3 RE-RUN clean (forced-flat baseline) — REPRODUCES (A); caught a harness confound
+
+EDIT#3 BANKED (champion advance #2, all 3 gates PASS). Hub: re-run the pid 3×3 on the verified-clean tree.
+CONFOUND CAUGHT: with EDIT-PID committed, get_seed now EMITS persistent_interleaved on the CE shapes -> the
+harness's "flat_evict" arm (=get_seed) was silently the EDIT-PID config (first re-run: flat_evict pid=
+persistent_interleaved, flat≈interleaved 1.002 = interleaved-vs-interleaved, USELESS). FIXED: force the flat
+baseline explicitly (strip num_sm_multiplier/maxnreg + pid_type='flat'). The fixed re-run (clean, stable tree):
+
+| shape         | flat_evict (pid=flat) | interleaved32          | blocked4        |
+|---------------|----------------------:|-----------------------:|----------------:|
+| CE(4096,98304)|  732.0                | **595.4 (1.229)**      | 743.0 (0.985)   |
+| CE(8192,128256)| 2279.6               | **1831.5 (1.245)**     | 1883.7 (1.210)  |
+| CE(2048,256000)| 1256.2               | **1192.6 (1.053)**     | 1198.9 (1.048)  |
+| softmax(512,131072)| 275.7            | 276.2 (0.998 neutral)  | -               |
+| welford(65536,4096)| 777.6            | 803.1 (**0.968 HURTS**)| -               |
+| rms_norm(1,131072)|  21.2             | 21.1 (1.005 tie)       | -               |
+
+REPRODUCES 769ab5cd EXACTLY (1.229/1.245/1.053 vs 1.230/1.244/1.052) -> the earlier (drift-period) data was
+SOUND; this confirms it on the verified-stable tree (referee-grade). FINDINGS:
+1. interleaved@32 BEATS flat on ALL 3 CE -> the gate's (A) rule SATISFIED -> EDIT-PID (A) correct (built 94851da9).
+2. blocked4 WORSE than interleaved (98304: 0.985 vs 1.229; 128256: 1.210 vs 1.245; 256000: ~tie) -> interleaved
+   is the right variant; the seed's coarse-interleaved is correct (256000's blocked-optimum is perf-immaterial,
+   interleaved 1.053 there).
+3. welford HURTS under interleaved (0.968) -> WHY EDIT-PID is T1-SCOPED (welford=Band-C never reaches the T1 pid
+   branch). softmax neutral, rms tie. The track-scope is load-bearing + validated.
+
+So EDIT-PID (A) is the data-driven disposition, clean-tree-confirmed. Harness fix committed (the forced-flat
+baseline + the seed-emits-EDIT-PID confound note -- important for any future pid A/B now that EDIT-PID ships).

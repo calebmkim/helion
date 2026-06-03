@@ -5,27 +5,27 @@
       4096,
       98304
     ],
-    "tc_us": 565.9199953079224,
+    "tc_us": 566.5599703788757,
     "arms": {
       "flat_evict": {
-        "us": 732.2719991207123,
-        "spread": 0.007407073981732346,
+        "us": 731.9839894771576,
+        "spread": 0.008634027496989473,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 595.4560041427612,
-        "spread": 0.00634138177278412,
+        "us": 595.4079926013947,
+        "spread": 0.007309329388174143,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "dropped": []
       },
       "blocked4": {
-        "us": 742.7520155906677,
-        "spread": 0.005148374837928369,
+        "us": 743.008017539978,
+        "spread": 0.004823592210438867,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_blocked",
@@ -39,27 +39,27 @@
       8192,
       128256
     ],
-    "tc_us": 1402.3360013961792,
+    "tc_us": 1402.5440216064453,
     "arms": {
       "flat_evict": {
-        "us": 2279.7759771347046,
-        "spread": 0.0033196251838055837,
+        "us": 2279.5519828796387,
+        "spread": 0.0017898504507938076,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 1832.2400450706482,
-        "spread": 0.003938368413650968,
+        "us": 1831.503987312317,
+        "spread": 0.0034856355885069606,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "dropped": []
       },
       "blocked4": {
-        "us": 1881.5040588378906,
-        "spread": 0.0031974504536469157,
+        "us": 1883.6800456047058,
+        "spread": 0.0027010806316013903,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_blocked",
@@ -73,27 +73,27 @@
       2048,
       256000
     ],
-    "tc_us": 741.4399981498718,
+    "tc_us": 742.1759963035583,
     "arms": {
       "flat_evict": {
-        "us": 1257.0080161094666,
-        "spread": 0.0023038921300321327,
+        "us": 1256.223976612091,
+        "spread": 0.0027256197006814546,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 1194.8959827423096,
-        "spread": 0.0010444440941569993,
+        "us": 1192.5919651985168,
+        "spread": 0.0012342832673101407,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "dropped": []
       },
       "blocked4": {
-        "us": 1199.8720169067383,
-        "spread": 0.002467001336081268,
+        "us": 1198.9439725875854,
+        "spread": 0.0018682629062514822,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_blocked",
@@ -107,19 +107,19 @@
       512,
       131072
     ],
-    "tc_us": 276.41600370407104,
+    "tc_us": 276.5119969844818,
     "arms": {
       "flat": {
-        "us": 275.55200457572937,
-        "spread": 0.0005226048781574631,
+        "us": 275.7439911365509,
+        "spread": 0.000638264551604967,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 276.095986366272,
-        "spread": 0.0006953616506646414,
+        "us": 276.2079983949661,
+        "spread": 0.0003475398285660799,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
@@ -133,19 +133,19 @@
       65536,
       4096
     ],
-    "tc_us": 706.7199945449829,
+    "tc_us": 706.9759964942932,
     "arms": {
       "flat": {
-        "us": 778.4000039100647,
-        "spread": 0.0008632872068631103,
+        "us": 777.5839865207672,
+        "spread": 0.0006996177934413533,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 803.9680123329163,
-        "spread": 0.001174161841204388,
+        "us": 803.056001663208,
+        "spread": 0.0009164966729122238,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
@@ -159,19 +159,19 @@
       1,
       131072
     ],
-    "tc_us": 25.280000641942024,
+    "tc_us": 27.295999228954315,
     "arms": {
       "flat": {
-        "us": 21.056000143289566,
-        "spread": 0.0015197684007418734,
+        "us": 21.183999255299568,
+        "spread": 0.004531668793473848,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "dropped": []
       },
       "interleaved32": {
-        "us": 20.8320003002882,
-        "spread": 0.0015361099847596073,
+        "us": 21.088000386953354,
+        "spread": 0.0015174622096263634,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
