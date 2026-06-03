@@ -1538,3 +1538,23 @@ Also: sm_multiplier=32/maxnreg=64 are CONSTANTS in the oracle bundle -- are they
 their own derivation? The decomp used the CE(4096,98304) values; the CE-consistency full oracles (running) will
 show if 8192x128256 + 2048x256000 pick the SAME sm_mult/maxnreg or different (-> whether they're constants or
 need a workload key). If they vary, the seed needs a principled rule for them, not the single observed value.
+
+## 2026-06-03 — EDIT-PID plumbing (non-GPU): pid_type gates sm_mult/maxnreg (the run-2 trap mechanism)
+
+code-read (config_spec.py normalize, 1226-1265): `num_sm_multiplier` + `maxnreg` are DROPPED by normalize when
+`pid_type in (flat, xyz)` (raise for user configs, silent pop for autotuner `_fix_invalid`). So they ONLY
+survive when pid_type is persistent_blocked/persistent_interleaved. This is the MECHANISM behind the run-2 trap
+(a seed setting sm_mult without persistent pid -> silently dropped) and why the decomp's 5a round-trip-survival
+mattered: the carrier bundle survived BECAUSE pid_type was persistent_interleaved. => the EDIT-PID branch must
+set all THREE together {pid_type='persistent_interleaved', num_sm_multiplier=K, maxnreg=64}; setting sm_mult/
+maxnreg alone is a no-op.
+
+Current seed hardcodes pid_type='flat' (T1 triton.py:587, Band-C:670, T2:721) -- a PRINCIPLED constant (run-1
+rejected persistent for narrow-forward, flat dominates 1.5-4x). EDIT-PID overrides 'flat'->'persistent_
+interleaved' ONLY on the validated looped-reread regime (pending the multi-kernel A/B + carrier-consistency
+oracle). sm_multiplier is NOISY in the full-oracle search (saw 1, 32, 64 across generations on 8192x128256) ->
+likely a weakly-determined knob; the seed should set a single PRINCIPLED value (an SM-count-derived default),
+NOT chase the per-shape oracle pick (which is search noise). The carrier-consistency oracles (running) +
+multi-kernel A/B will pin: (a) is persist_interleaved consistent across wide CE (early signal: YES -- 8192x128256
+gen-2 best IS persist_interleaved + my Rule B eviction), (b) what sm_mult value to seed, (c) does it generalize
+to softmax/welford/rms-ln wide or is it CE-specific.
