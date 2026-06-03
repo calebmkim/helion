@@ -690,10 +690,36 @@ across the reduction+apply region (>1 => re-read)? Need the exact graph topology
 guessing a third time (gate caught num_load over-count + nro under-count already). HOLDING EDIT#3/GATE-v2 until
 the topology lands.
 
+## 2026-06-03 — row_reread discriminator: EMPIRICAL probe (run3_row_reread_probe.py) — T1 SOLVED, T2 open
+
+Probed the host-buffer read provenance directly (fake-tensor trace, no do_bench) to find the FAITHFUL
+discriminator. Falsified two naive ones, then found the T1 answer:
+- **load-NODE count >=2 per buffer: WRONG.** sum/long_sum x=2 nodes (false positive) — a single looped stream
+  emits 2 load nodes for x.
+- **distinct-GRAPH count >=2: WRONG.** sum/long_sum x in 2 graphs too (RootGraphInfo + its ReductionLoop-
+  GraphInfo are alternate representations of ONE pass).
+- **GRAPH STRUCTURE (the key, dumped): each rolled reduction = {RootGraphInfo + ReductionLoopGraphInfo(s)}.**
+  sum: root + 1 ReductionLoopGraphInfo, both load x (= 1 logical pass). rms_norm: root + graph[1] Reduction-
+  Loop(sum x^2) + **graph[2] ReductionLoopGraphInfo with n_reduction_lowerings=0 that RE-loads x = the APPLY
+  pass**. CE: root + graph[1] ReductionLoop(amax) + graph[2] ReductionLoop(expsum), both load logits.
+- **WORKING T1 DISCRIMINATOR: a host buffer is loaded in >=2 distinct ReductionLoopGraphInfo graphs.** Verified
+  RIGHT for 6/7: sum/long_sum x=1 graph->False; rms_norm x=2->True; layer_norm x=3->True; CE logits=2->True;
+  kl_div {}->False. **ONLY softmax wrong** (predicted False) — because softmax is **T2 (user-tiled)**: it has
+  NO ReductionLoopGraphInfo graphs ({}); its max-pass + exp-sum-pass re-read live in the user's explicit
+  hl.tile loops, not roller graphs. So the T1 discriminator is solid; T2 (softmax=reread True, kl_div=False,
+  jsd=?) needs the analogous "buffer loaded across >=2 user-tile passes" detection — DIFFERENT graph topology.
+
+=> row_reread for T1 = "reduction-input host buffer loaded in >=2 ReductionLoopGraphInfo graphs" (faithful:
+tracks genuine multi-pass re-read, immune to the roller's root+loop duplication and to load-op-count style).
+For T2 I need the code-investigator's read of `register_user_tiled_reductions` graph structure (softmax must be
+True, kl_div False). ASKED (sharpened with this empirical data). HOLDING the fact write until the T2 half is
+nailed — T1 is empirically proven, T2 is the last gap.
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap value 240KiB) ONLY (EDIT#2 nro re-key REVERTED; gate =
   num_load>=2 placeholder, 1cb50a6a). 3 CE boundary at oracle parity, all else byte-identical, correctness
-  clean. EDIT#1 value banked; gate pending the faithful row_reread fact (task #8).
+  clean. EDIT#1 value banked; gate pending the faithful row_reread fact (task #8): T1 discriminator SOLVED
+  (>=2 ReductionLoopGraphInfo graphs load the buffer), T2 half pending code-investigator.
 - HELD/characterized edits (A/B done): EDIT#3 CE re-read eviction (1.09-1.31x wide CE, matches oracle; needs
   faithful per-slot re-read provenance -- code-investigator query out); EDIT#4 welford apply-cap 8192->16384
   (1.05-1.10x); EDIT#5 jsd Band-B warps 32->16 (num_tiled_accumulators-keyed, 1.12-1.21x). HARDER/deferred:
