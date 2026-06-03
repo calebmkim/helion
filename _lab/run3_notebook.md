@@ -2404,3 +2404,103 @@ FINDINGS:
      build EDIT#5 gated on it; or (b) it's a 2-point fence -> EDIT#5 narrower / jsd Product-B.
 REPORTING to hub for the disposition (fork). jsd gap is real (1.21/1.13, beats tc) but the seedable key is the
 open question -- exactly the anti-giving-up "is there a principled non-identity separator?" test, now for Band-B.
+
+## 2026-06-03 — EDIT#5 disposition (hub task #14 = build (a)) + fact probe SETTLES the key crux
+
+Hub task #14: build EDIT#5 as a WORKLOAD-keyed rule "narrow-V / **accumulator-row-bytes** -> smaller Band-B
+chunk + fewer warps, NOT a jsd-fence; check it generalizes (kl_div is the other Band-B kernel)." This resolves
+my fork toward (a) — a PRINCIPLED accumulator-footprint key — and reframes the question: not "separate jsd FROM
+kl_div" but "size the Band-B chunk by the LIVE REDUCTION-ACCUMULATOR FOOTPRINT."
+
+FACT PROBE (run3_bandb_fact_probe.py, compile-only, NO timing — exact ReductionFact dump):
+| kernel  | shape         | num_tiled_accum | num_reduction_ops | num_store |
+|---------|---------------|----------------:|------------------:|----------:|
+| jsd     | (8192,30522)  | 2               | **2**             | 2         |
+| jsd     | (8192,32000)  | 2               | **2**             | 2         |
+| jsd     | (2048,256000) | 2               | **2**             | 2         |
+| kl_div  | (8192,30522)  | 2               | **1**             | 1         |
+| kl_div  | (8192,32000)  | 2               | **1**             | 1         |
+| kl_div  | (1024,256000) | 2               | **1**             | 1         |
+| softmax | (1024,65536)  | 0               | 2                 | 1         |  (T2 scalar/row-acc, not Band-B)
+| welford | (2048,7168)   | 0               | 3                 | 1         |  (Band-C structured-combine)
+
+SETTLED: num_tiled_accumulators is **2 for BOTH** jsd and kl_div -> CANNOT discriminate (the docstring claim
+"kl_div carries 1 accumulator" is STALE/WRONG — both bind to 2 [M,R] buffers). The clean "multiply cap by
+num_tiled_accumulators" fix is DEAD. The ONLY differentiating fact is **num_reduction_ops** (jsd=2, kl_div=1;
+num_store is its shadow — one store per reduction).
+
+IS num_reduction_ops PRINCIPLED HERE (not a re-used rejected proxy)?  YES, and my earlier "rejected proxy"
+worry was a category error:
+- num_reduction_ops was rejected as a proxy for **row_reread** (it UNDER-counts: rms/ln re-read in an APPLY
+  pass that isn't a ReductionLowering -> nro=1 but the row IS re-read). That's a DIFFERENT question.
+- For "how many live reduction accumulators does the inner loop carry", num_reduction_ops is the DIRECT,
+  FAITHFUL count (docstring line 109: "count of reduction lowerings ... number of accumulators"). It is NOT a
+  proxy for accumulator-count — it IS the accumulator-count. A fact being a bad proxy for property X does not
+  bar it from being the faithful measure of property Y.
+- PHYSICS: jsd runs 2 reductions over the row (the 2 KL terms of symmetric JS divergence), each accumulating
+  into its own [M,R] buffer + carrying live per-element temporaries feeding 2 reductions. kl_div runs 1. At the
+  SAME R_BLOCK, jsd holds ~2x the live reduction state -> spills at R_BLOCK=4096 (wants 2048) and wants fewer
+  warps (less per-thread register contention); kl_div has headroom (stays at 4096, wants its warps). This is
+  the SAME class of derived-physical-quantity key as EDIT-PID's sm_mult, NOT a fit-to-jsd threshold.
+
+THE PRINCIPLED RULE (the hub's "accumulator-row-bytes"):  the Band-B cap should bound the LIVE reduction-
+accumulator footprint = num_reduction_ops * R_BLOCK * itemsize <= BANDB_R_BLOCK_BYTES (a single 16KiB budget),
+i.e.  bandb_cap_elems = BANDB_R_BLOCK_BYTES // (itemsize * max(1, num_reduction_ops)).
+  - jsd  (nro=2): 16384 // (4*2) = 2048  <- matches the oracle (4096->2048).
+  - kl_div(nro=1): 16384 // (4*1) = 4096  <- UNCHANGED (kl_div stays at parity, narrow AND wide).
+ONE byte budget predicts BOTH the jsd-wants-2048 and the kl_div-wants-4096 from the faithful accumulator count.
+NOT a fence — "any Band-B reduction with N live reduction-accumulators gets a 1/N chunk" generalizes.
+
+THE ONE UNMEASURED FACT that decides CLEAN-vs-V-GATED:  does jsd want 2048 at ALL V, or only narrow V?
+- kl_div is at PARITY at BOTH narrow (8192,30522 = 1.000) AND wide (1024,256000 = 1.004) V (triage + at-floor
+  sweep) -> the cap is correct for kl_div everywhere, so the nro=1 path needs no V-axis. Good.
+- jsd: I have narrow-V oracles (30522/32000 want 2048) but NO measured oracle for WIDE-V jsd (2048,256000) —
+  it was a triage target but never benched. TWO worlds:
+    World A: jsd wants 2048 at narrow AND wide -> the nro-footprint rule is CLEAN + V-independent (IDEAL; the
+             byte-budget interpretation holds at all V). Build the footprint cap as-is.
+    World B: jsd wants 2048 only narrow, 4096 wide -> the footprint cap would REGRESS wide jsd -> the rule
+             needs BOTH nro>=2 AND a V/footprint axis (messier; the hub anticipated this: "narrow-V").
+  => MUST measure jsd(2048,256000)'s oracle (+ A/B the nro-footprint cap there) BEFORE building. This is the
+     deciding experiment per task #14 ("distinguish narrow-Band-B-wants-smaller from the wide rows that want
+     the current cap"). REQ-GPU.
+- The warps lever (32->16) co-carries (~half the gain). Same physics (2 accumulators = more registers/thread ->
+  fewer warps). Need to confirm it follows the SAME nro>=2 key (not a separate V threshold) in the wide A/B.
+
+PLAN (one GPU, serial): REQ-GPU -> (1) full oracle jsd(2048,256000) [does wide jsd want 2048+w16?]; (2) A/B the
+nro-footprint cap [chunk = 16384//(4*nro), so 2048 for jsd / 4096 for kl_div] across jsd{narrow,wide} +
+kl_div{narrow,wide} + a wide-V CHECK that kl_div/sum/others are byte-identical; (3) confirm warps follows nro.
+If World A: build the footprint cap (+ warps if it follows nro) -> commit -> hub fires fact-integrity (nro as
+accumulator-count, generalizes to kl_div) + auditor + referee. If World B: report the V-axis need as a refined
+fork (occupancy/footprint threshold). Either way the wide-V jsd measurement is the gate.
+
+## 2026-06-03 — EDIT#4 REJECTED by results-referee → REVERTED (d09e08b7). Catastrophic untested-shape regression.
+
+results-referee (hub gate) REJECTED EDIT#4 (c3d90e8d, STRUCTURED_APPLY_LOOP_CHUNK_BYTES 8192->16384, apply
+2048->4096). Verdict: NOT a clean Band-C-only single lever. apply=4096 is a PATHOLOGICAL VALLEY at large-M /
+N~5120:
+  - welford(262144,5120) [in-sample-v2]: 4-7x SLOWER (live seed [16,8192,4096]=33.5ms vs parent [16,8192,2048]
+    =4.6ms). Reproduced 5x across 3 codepaths (referee harness + my run3_wf_tile_ab + isolated git-archive
+    parent-vs-HEAD) + 2 data seeds, sub-0.3% spread. End-to-end archive: parent 8.2ms vs HEAD 36.1ms (4.4x).
+  - welford(8192,4096) / (16384,4096) [in-sample-v2]: -2.3% each.
+  - The +1.05-1.07x at (4096,16384)/(32768,8192) reproduced (real, correctly sized) — but a 7x regression on a
+    documented curriculum shape is a net REJECT.
+ROOT CAUSE of my miss: my A/B (run3_wf_tile_ab.py) tested only 3 HAND-PICKED shapes {4096x16384, 32768x8192,
+16384x768} and clamped every arm to min(np2(N),...), so it NEVER benched apply=2048-vs-4096 on the wide-M
+in-sample shapes (262144,5120)/(8192,4096)/(16384,4096) where the 2048->4096 flip is pathological. The "neutral
+on narrow / byte-id non-Band-C" framing held only for the 3 picks. The cap DOES fire (flips apply) on every
+mid-to-wide-M welford row, not just my 2 wide-N picks.
+REVERTED to 8192 (= gated parent 6c942ce3), commit d09e08b7. Effective seed re-verified: welford(262144,5120)/
+(4096,16384)/(8192,4096) all emit apply=2048 again (the 4.6ms config). Comment now WARNS against a naive raise.
+
+LESSON BANKED (the EDIT#4 miss, generalizes to ALL future caps): when a cap/threshold flips a config on a
+WORKLOAD AXIS (here apply tile vs M and N), the no-regression A/B must sweep that axis — the wide-M EXTREME +
+INTERMEDIATE-M shapes, not just the narrowest + widest-N. A "Band-C/Band-B-only constant" claim is only as good
+as the set of in-curriculum shapes where the constant actually FIRES. -> APPLIES DIRECTLY to EDIT#5: the
+nro-footprint cap flips R_BLOCK on the V axis for jsd (all jsd shapes), so the EDIT#5 A/B already includes jsd
+narrow AND wide AND kl_div narrow AND wide AND a non-Band-B contrast — but I must ALSO sweep the M axis (high-M
+jsd) before declaring, AND confirm the referee will see the wide-M jsd shape. EDIT#4b folds in here: a wider
+apply only pays WITH a coupled bigger combine + M_block, and must be GATED so apply<=2048 at large-M/N=5120.
+
+GAP-LIST UPDATE (post-revert): welford wide-N apply gain is BACK ON THE TABLE but ONLY via a COUPLED+GATED
+EDIT#4b (combine+M_block+apply together, gated off large-M/N=5120) — the standalone apply cap is dead. EDIT#5
+(jsd nro-footprint) is the active worklist; narrow-N cluster (#15) + long_sum-2M (#flag) remain.
