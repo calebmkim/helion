@@ -1719,3 +1719,32 @@ Rule B's slot4='first' is marginally FASTER than the oracle's slot4='last' -> sl
 (2) De-hack-attributable: pos_slot0 (run-2 positional, 'last' on labels) only 0.998/1.042, REGRESSES boundary
 0.970. (3) Boundary (50304) NEUTRAL 0.999 (the `not persistent` gate; eviction moot for the register-resident
 persistent row). Identical to the earlier run -> stable, reproducible. Step 1 done; GPU held for step 2 (softmax).
+
+## 2026-06-03 — GPU step 2: softmax-wide FULL oracle OVERTURNS the quick-oracle null — REAL seedable gain
+
+The hub's "quick undershoots, full arbitrates" mandate VINDICATED. My earlier QUICK softmax oracle said
+1.000/1.012 (VICTORY, "no EDIT"). The FULL oracle says otherwise:
+
+| shape              | QUICK | FULL seed/oracle | oracle/tc | oracle key levers vs seed                                   |
+|--------------------|------:|-----------------:|----------:|-------------------------------------------------------------|
+| softmax(1024,65536)| 1.000 | **1.359**        | **1.390** | block 16384->32768; EVICT ['last','first']; tensor_descriptor; unroll[0,2] |
+| softmax(512,131072)| 1.012 | **1.097**        | **1.098** | EVICT ['last','']; num_stages 1->4; num_warps 32->16; tensor_descriptor; unroll[0,2] |
+
+FINDINGS (correct the null; honest reversal):
+1. The QUICK oracle BADLY undershot (1.000/1.012 -> 1.359/1.097). My "softmax-wide at oracle, no EDIT" was WRONG.
+   This is exactly the failure mode the hub flagged + the wide-CE reversal that started run-3. Lesson reinforced:
+   NEVER conclude "at oracle / no gap" from a quick oracle; full arbitrates.
+2. BOTH full oracles BEAT tc (1.390, 1.098) -> a REAL tc-beating seedable opportunity, NOT a source ceiling
+   (unlike CE-wide where oracle<tc). This is a genuine per-shape gap the geomean+quick-oracle buried.
+3. **COMMON lever: load_eviction_policies with 'last' on slot 0** (x's first load) on BOTH shapes -- softmax's
+   REREAD eviction. softmax is T2; the current seed emits NO eviction (the plain T2 path skips it). EDIT#3
+   already computes softmax reread_buffer_slots=(0,1) -- it's just not CONSUMED by the T2 path. So extending the
+   reread eviction to T2 captures the eviction portion of this gain directly (same faithful rule, new consumer).
+4. Other levers shape-vary (chunk 32768 / num_stages 4 / num_warps 16 / tensor_descriptor) -- like CE's pid,
+   likely a mix of a seedable piece (eviction) + finer autotuner tuning. The eviction is the clean common carrier.
+
+=> NEW EDIT candidate (EDIT#6?): extend the looped-reread eviction to the T2 plain path (softmax). Needs a
+matched-lever A/B isolating the eviction contribution (evict-only vs +chunk vs +warps/stages) like the CE lever-
+decomp, to find softmax's clean seedable carrier. This SUPERSEDES the "softmax-wide null" (cc7acb26) -- that was
+a quick-oracle artifact. Reporting to hub immediately (this is a found gain, the opposite of giving up).
+Disposition + the softmax lever-decomp A/B go in the next GPU step (I hold the token). step 3 (pid) still queued.
