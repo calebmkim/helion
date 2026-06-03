@@ -806,6 +806,37 @@ PENDING: DM the design to hub before committing (task #8 protocol), then commit 
 auditor re-gate. SECOND consumer (de-hack the reread EVICTION onto row_reread + name the re-read buffer's
 slot) is a FOLLOW-ON edit (the eviction win 1.31x is the next perf gain; this commit is the GATE fix only).
 
+## 2026-06-03 — reread-EVICTION de-hack DESIGN (the 2nd row_reread consumer; the 1.31x CE wide win)
+
+Mapped the eviction-slot -> host-buffer correspondence (codegen counts loads in device_ir.graphs order,
+node-by-node; slot i = i-th hl.load; device_ir.py:2468-2473). EMPIRICAL (run, no GPU contention):
+- **CE(4096,98304), len=5:** slot0=labels(Root), slot1=logits_flat(Root), slot2=**logits**(Root),
+  slot3=**logits**(ReductionLoop amax), slot4=**logits**(ReductionLoop expsum). Re-read buffer = `logits`
+  (the row_reread buffer, in 2 ReductionLoop graphs). Oracle eviction = ['','','last','first','last'];
+  A/B winner reread_rowlast=['','','last','first',''] matched (slot4 'last' is a passenger).
+- **welford(4096,4096), len=4:** slot0=x(ForLoop combine), slot1=x(ForLoop apply), slot2=weight, slot3=bias.
+  Re-read buffer=`x` (2 ForLoop). Run-2's POSITIONAL ['last','first','first','first'] happens to be right
+  here (x's first load=slot0='last', re-read=slot1='first') -- but it's a HACK: it assumes the re-read
+  buffer's first load is slot0. For CE the re-read buffer's first load is slot2 (logits in root), so the
+  welford positional rule would wrongly put 'last' on slot0=labels.
+
+**FAITHFUL UNIFIED eviction policy (the de-hack):** identify the re-read HOST BUFFER (the one loaded in >=2
+loop graphs = the row_reread buffer), find ITS load slots in codegen order, set the FIRST occurrence -> 'last'
+(keep L2-resident for the re-read) and all subsequent occurrences -> 'first' (stream/evict the final uses);
+every other buffer's slot -> default (''). Generalizes welford (slot0='last') AND CE (slot2='last', slot3/4=
+'first') from ONE principled rule keyed on the re-read buffer's identity (reusing the SAME provenance as
+row_reread), replacing run-2's positional slot[0]='last'. Verified-good on CE: reread_rowlast (slot2='last',
+slot3='first') = oracle within noise, 1.31x@98304 / 1.19x@128256 / 1.09x@256000; NEUTRAL on persistent (no HBM
+re-read). welford: reproduces run-2's slot0='last' (no regression).
+
+OPEN before the eviction commit: (a) confirm "first-occurrence->last, rest->first" generalizes vs the oracle
+on welford (does slot0='last' = the existing welford win? yes by construction) + a fresh non-CE re-read kernel;
+(b) the CE eviction win is on the LOOPED wide-V shapes -- it COMBINES with the persist cap (boundary persistent,
+wide looped+evicted) so it's additive to EDIT-GATE-v2, not a re-pairing; (c) A/B vs verbatim oracle, flip-set,
+correctness, auditor (NOT a positional refit -- it's provenance-keyed) + referee. This is a fact-CONSUMING
+heuristic change (no new fact) building on row_reread. HELD pending EDIT-GATE-v2 re-gate (don't stack
+unconfirmed fact-consuming edits); design is captured + ready to implement on a fresh continuation.
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
