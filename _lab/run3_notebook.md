@@ -2318,3 +2318,25 @@ FINDINGS:
 HONEST PER-SHAPE STATUS: jsd narrow-V = real gap, EDIT#5 (chunk+warps+stages). welford = real gap, EDIT#4
 (apply-cap) closes PART, full close needs combine+M_block+warps (EDIT#4b). softmax-smallN + kl_div/sum parity
 = deferred 2nd batch. NOT at PARITY yet on welford/jsd -- these are the remaining worklist before the milestone.
+
+## 2026-06-03 — EDIT#4 BUILT + committed (c3d90e8d) + referee-reproduce (clean)
+
+EDIT#6 BANKED (advance #5) -- eviction family COMPLETE+gated across all 3 tracks (T1/Band-C/T2) off one
+reread_buffer_slots fact + one gate. EDIT-PID banked (#4). Built EDIT#4 (STRUCTURED_APPLY_LOOP_CHUNK_BYTES
+8192->16384, apply tile 2048->4096), committed c3d90e8d. Emission-verified: welford wide -> apply 4096; narrow
+welford persistent unchanged; non-Band-C kernels byte-identical.
+
+EDIT#4 referee-reproduce (run3_edit4_reproduce.py, do_bench median-7, seed_live=apply4096 vs apply2048=pre-EDIT#4):
+| shape              | apply2048 | seed_live (apply4096) | apply2048/live | arm/tc |
+|--------------------|----------:|----------------------:|---------------:|-------:|
+| welford(4096,16384)|   214.0   | 200.3                 | **1.068** WIN  | 0.932  |
+| welford(32768,8192)|   787.6   | 752.0                 | **1.047** WIN  | 0.939  |
+| welford(16384,768) |     -     | 40.0 (byte-id)        | inert          | 0.990  |
+| rms_norm(8192,4096)|     -     | 94.7 (byte-id)        | inert          | 0.998  |
+=> EDIT#4 reproduces 1.068x/1.047x (matches the A/B), narrow welford + rms_norm byte-identical (no-regression).
+HONEST: EDIT#4 NARROWS welford (214->200) but does NOT close it to tc/oracle (still 0.93 arm/tc; full-oracle
+said combine+apply+M_block needed). The full welford close = EDIT#4b (task #16, multi-lever). EDIT#4 = the clean
+single-lever apply portion, banked-pending-gate (referee+auditor, no fact-integrity -- cap constant, no new fact).
+
+FORWARD (PARITY home stretch): EDIT#4 done -> next = at-floor sweep (task #12, queue #2) -- full-confirm the
+remaining at-floor kernels (rms/ln/sum/long_sum/kl_div bands + softmax small-N + long_sum-2M flag) at seed≈oracle.
