@@ -602,16 +602,16 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 "reduction_loops": reduction_loops,
                 "num_warps": num_warps,
                 "num_stages": 1,
-                # pid_type: a PRINCIPLED CONSTANT (a valid degenerate heuristic),
-                # not an un-owned default. Run 1 rejected persistent/interleaved
-                # with a gold-standard matched-lever A/B — flat dominates 1.5-4x on
-                # every forward reduction (these are grid-saturated at the M-grid;
-                # persistent pid only amortizes launch/tail for grid-BOUND backward/
-                # Band-D kernels, out of scope) and the oracle's pid pick was a
-                # confounded passenger (ledger.gate_verdicts pid_breakpoint_sweep /
-                # pid_within_oracle_bundle). num_sm_multiplier/maxnreg require a
-                # persistent pid_type, so they are inapplicable here. The seed OWNS
-                # this knob and sets it to 'flat'.
+                # pid_type: 'flat' is the PRINCIPLED DEFAULT for the COMMON case
+                # (persistent / narrow-looped reductions are grid-saturated at the
+                # M-grid; run-1's matched-lever A/B showed flat dominates 1.5-4x and
+                # the oracle's persistent pid was a confounded passenger). EDIT-PID
+                # (below) is the ONE measured EXCEPTION: a wide LOOPED RE-READ row
+                # (row_reread AND not persistent) is NOT grid-saturated — it's a few
+                # long rows (CE M=2048-8192 << machine) each grinding a heavy looped
+                # multi-pass re-read, where a persistent_interleaved grid + register
+                # cap measurably beats flat (1.05-1.25x). Set 'flat' here; EDIT-PID
+                # overrides it in that regime.
                 "pid_type": "flat",
             }
             # Eviction (keyed on the FAITHFUL re-read property, RUN-3):
@@ -640,6 +640,49 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 evict = None
             if evict is not None:
                 seed["load_eviction_policies"] = evict
+            # EDIT-PID: a wide LOOPED RE-READ T1 reduction (gate identical to the
+            # reread-eviction above: ``fact.row_reread and not persistent``) is a
+            # FEW-LONG-ROWS workload — M=2048-8192 rows (<< the machine's program
+            # capacity) each grinding a heavy looped multi-pass re-read. A
+            # ``persistent_interleaved`` grid of ``get_num_sm * num_sm_multiplier``
+            # resident programs (striding the M-grid) + a register cap measurably
+            # beats the default ``flat`` here (matched-lever A/B vs flat on the
+            # EDIT#3-evicted seed: CE (4096,98304) 1.23x / (8192,128256) 1.25x /
+            # (2048,256000) 1.05x; run3_pid_derived_ab.py). The eviction-gate scoping
+            # holds: PERSISTENT rows stay 'flat' (grid-saturated); welford (Band-C)
+            # and softmax (T2) take OTHER branches so are untouched; only T1 fires.
+            #   - num_sm_multiplier: PHYSICS-derived from the WORKLOAD (M rows) and
+            #     the HARDWARE (SM count), NOT the oracle's value: size the persistent
+            #     grid to ~= the row count so each row maps to ~one resident program
+            #     (fills the SMs the under-filling M-grid leaves idle, without
+            #     excessive per-program row-looping). = clamp(np2(ceil(M / num_sm)),
+            #     1, 32). Degenerate M=1 (rms/ln >240KiB robustness) -> 1 (no
+            #     over-subscription), where pid is a measured tie (1.008/1.010). The
+            #     oracle's own pick VARIES (32/32/4 across the 3 CE), so a derived
+            #     M-scaled value is MORE principled than any constant.
+            #   - maxnreg=64: a high-occupancy register cap — capping regs/thread
+            #     raises resident-warp count to hide the looped-reread memory latency.
+            #     LOAD-BEARING (not a passenger): isolating it, the gain ~halves
+            #     without it (1.05/1.15/1.00 vs 1.23/1.25/1.05) and 256000 ties flat
+            #     -> maxnreg=64 is what makes the widest net-positive. 64 = a standard
+            #     ~2x-occupancy cap for a heavy-accumulator persistent kernel.
+            if fact.row_reread and not persistent:
+                # local import: ``helion.runtime`` imports the heuristics, so a
+                # module-level import here is circular.
+                from ...runtime import get_num_sm
+
+                # grid_rows = product of the M-axis extents (the rows the flat grid
+                # launches). Use the passed ``env``'s ``size_hint`` on each block's
+                # static size (``BlockSizeInfo.size_hint()`` would need the env to be
+                # the CURRENT context, not guaranteed at seed-emit).
+                grid_rows = 1
+                for _mbid in fact.m_block_ids:
+                    grid_rows *= env.size_hint(env.block_sizes[_mbid].size)
+                num_sm = max(1, get_num_sm(env.device))
+                sm_mult = min(32, max(1, _np2(-(-grid_rows // num_sm))))
+                seed["pid_type"] = "persistent_interleaved"
+                seed["num_sm_multiplier"] = sm_mult
+                seed["maxnreg"] = 64
             return Config(**seed)
 
         if fact.is_structured_combine:
