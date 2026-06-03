@@ -1442,3 +1442,28 @@ CE 1.31x/1.19x (=oracle), welford 1.27-1.28x (=shipping, no regress), rms/ln rob
 
 EDIT#3 = Rule B. Lint+format clean. Ready: report full receipts to hub, then commit (fires auditor+referee,
 no fact-integrity). welford no-regress now AFFIRMATIVE (Rule B reproduces shipping byte-identically).
+
+## 2026-06-03 — GPU-step-2: softmax-wide oracle — persist hypothesis REFUTED; both shapes VICTORY (no EDIT)
+
+Quick oracle (run3_oracle.py, fresh autotune, fair-re-bench, source-hash cached):
+
+| shape              | seed_us | oracle_us | seed/oracle | oracle cfg (block_sizes) | verdict |
+|--------------------|--------:|----------:|------------:|--------------------------|---------|
+| softmax(1024,65536)|  263.7  |   263.7   | **1.000**   | [1,16384] (SAME as seed) | VICTORY |
+| softmax(512,131072)|  275.8  |   272.5   | **1.012**   | [1,4096] (smaller chunk) | VICTORY (tie) |
+
+The hub's hypothesis (single-operand softmax spills LESS than CE -> wants PERSISTENT wider than the 240KiB cap)
+is NOT borne out:
+- (1024,65536)=256KiB: oracle == seed == [1,16384] LOOPED. seed/oracle=1.000. The 240KiB cap is RIGHT for
+  softmax here too -- persistent did NOT win. (So softmax and CE behave the SAME at 256KiB: both spill, both
+  want looped. The "finer property" question from the earlier open is resolved: there ISN'T one; the cap is
+  correctly shared.)
+- (512,131072)=512KiB: oracle picked [1,4096] (a SMALLER looped chunk, w16), NOT persistent. 272.5us vs seed's
+  [1,16384] 275.8us = seed/oracle 1.012 -- within the 3-5% tie band (a VICTORY by the bar). The 1.2% is a
+  chunk-size preference (4096 vs 16384) at quick-oracle noise; chasing it would mean changing the SHARED
+  LOOPED_CHUNK=16384 for one shape (broad re-validation, sub-noise payoff) -- NOT worth it, and the bar is met.
+
+CONCLUSION: softmax-wide is at oracle (1.000 / 1.012). NO new EDIT. The at-floor-vs-tc observation ("G~1.0")
+was correctly "at oracle" after all -- this CLOSES the softmax-wide open. (Good anti-giving-up discipline: I
+oracle'd it rather than assuming; the oracle confirmed the cap, didn't reveal a gap. Honest null result.)
+softmax persist A/B (run3_softmax_persist_ab.py) is now UNNECESSARY -- the oracle already answered (looped wins).
