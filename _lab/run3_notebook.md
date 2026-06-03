@@ -1074,6 +1074,41 @@ the consumer-based definition ONLY if the investigator shows region-membership c
 reuse. Either way the BEHAVIORAL set is right (gate confirmed) — this is a faithfulness-of-derivation question,
 not a behavioral bug. Also TODO (gate cleanup): delete stale triton.py:494-499 num_reduction_ops comments.
 
+## 2026-06-03 — row_reread REIMPLEMENTED as CONSUMER-TRACE (the gate's faithful "reused across boundary")
+
+Hub firmly directed the CONSUMER-TRACE framing (not load-count, not region-count): rms_norm loads x with a
+SINGLE hl.load, reused IN-REGISTER across reduction->apply. I empirically derived + VERIFIED the faithful
+predicate, then REIMPLEMENTED `_compute_reread_provenance` to use it (device_ir.py). It supersedes my crux
+question to code-investigator (whether region-membership is faithful) — consumer-trace is faithful regardless
+of the roller's re-load behavior, so I switched to it.
+
+FAITHFUL predicate (verified 9/9 in PRODUCTION fact.row_reread): `reduction_input_reused` = a loaded
+reduction-input tile's VALUE is consumed by (>=2 distinct ReductionLowering(red_block_id)) OR (a
+ReductionLowering AND a store reached on a path that BYPASSES the reduction). Consumer-DATAFLOW, not loads.
+Derivation (empirically falsified 2 wrong predicates first): "reaches store" too coarse (sum's x reaches
+store THROUGH the reduction output -> FP); "immediate non-red user" too shallow (x goes via x.to/x*x -> FN).
+The correct one CUTS the BFS at the ReductionLowering: a store reachable from the load WITHOUT traversing the
+reduction = the tile used outside the reduction = live across the boundary. Plus the >=2-reductions disjunct
+for multi-reduction kernels (softmax/CE/welford whose reuse is feeding 2 reductions, not a bypass-store).
+  sum/long_sum: feeds 1 reduction, no bypass-store -> False ✓
+  rms_norm/layer_norm: feeds reduction + apply-store(bypass) -> True ✓ (ACID: single load, in-register reuse,
+    still True — num_load=2 over-counts/fires, nro=1 under-counts/exempts, consumer-trace is the ONLY right one)
+  softmax/cross_entropy/welford: feeds >=2 reductions -> True ✓
+  kl_div/jsd: distinct inputs each feed 1 reduction, no bypass-store -> False ✓
+
+IMPORTANT: this is faithful-by-CONSTRUCTION + behaviorally IDENTICAL to the prior region-membership version
+(same row_reread 9/9, same emitted seeds, same cap flip-set) -> a PURE faithfulness upgrade, no behavior change.
+The cap gate (fact.row_reread) is unchanged; the eviction (reread_buffer_slots) is computed SEPARATELY (HBM
+re-read = buffer in >=2 loop graphs -> which slots; the hub's cap-vs-eviction distinction: cap=liveness,
+eviction=HBM-re-load). Lint clean; the 2 pyrefly device_ir errors are PRE-EXISTING (lines 98/3125, not my
+function). row_reread VALUES identical -> cap behavior + tests unchanged (test-suite re-run deferred to GPU
+session; fact change is behaviorally inert so expected green).
+
+STATUS: the faithful fact the gate demanded is IMPLEMENTED + acid-tested (rms_norm proof ready). In working
+tree (uncommitted, with EDIT#3 eviction + comment refinement). DM hub: re-gate the consumer-trace row_reread
+(fact-integrity should PASS — it's the exact definition + the acid kernel). EDIT#3 eviction still awaits scope-OK
+(looped-gated) + A/B. Code-investigator crux question is now MOOT (switched to consumer-trace).
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
