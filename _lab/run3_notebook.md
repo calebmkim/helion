@@ -837,6 +837,37 @@ correctness, auditor (NOT a positional refit -- it's provenance-keyed) + referee
 heuristic change (no new fact) building on row_reread. HELD pending EDIT-GATE-v2 re-gate (don't stack
 unconfirmed fact-consuming edits); design is captured + ready to implement on a fresh continuation.
 
+## 2026-06-03 — eviction de-hack ARCHITECTURE decision + GPU yielded (hub firing gates on EDIT#1/GATE-v2)
+
+Hub fired the EDIT#1/EDIT-GATE-v2 gate pipeline (referee+auditor+fact-integrity; anti-giving-up after referee
+frees the GPU) and asked me to YIELD the GPU. Yielded — off the timing queue until cleared. Reconciled the
+hub's 4 directives (it was a few commits behind my head): (1) num_load fact -> DONE = EDIT-GATE-v2/row_reread;
+(2) oracle-key recipe -> DONE = corrected (0854c7bb) + re-keyed all 14 entries (02c825e8); (3) P2 looped-chunk
+-> SUPERSEDED by my full oracle (chunk inert; win = eviction+pid, NOT chunk-scaling); (4) tc Triton -> deferred
+to pid work. NON-GPU work proceeding: eviction de-hack design + pid scoping.
+
+EVICTION DE-HACK ARCHITECTURE (decided): the faithful reread-eviction needs per-eviction-slot buffer identity
+(which slots load the re-read buffer). This is PROVENANCE (device_ir), the POLICY is the heuristic's choice.
+`get_seed_config(env, device_ir)` ALREADY receives device_ir -> the heuristic CAN consume the provenance
+WITHOUT a new ReductionFact field. PLAN (option B, no new fact -> no extra fact-integrity gate, only auditor):
+- device_ir: a small PROVENANCE HELPER (NOT a fact) returning the reduction-load slot->host-buffer mapping in
+  codegen order (the same order `_count_device_loads_and_stores` numbers loads, device_ir.py:2468) — e.g.
+  `reduction_load_host_names() -> list[list[str]]` (per eviction slot, the host names it loads).
+- triton.py `_eviction_policies`: take device_ir; identify the re-read buffer (the host name appearing in >=2
+  loop graphs — same provenance as row_reread, OR pass it through), find its slots in order, set FIRST -> 'last'
+  + subsequent -> 'first', rest -> '' (default). Replaces run-2's POSITIONAL kind="reread" (['last']+['first']
+  *(n-1)) which assumed slot[0] (right for welford, WRONG for CE where the re-read buffer's first slot is [2]).
+- Applies to ALL row_reread T1+T2 kernels (not just is_structured_combine): welford reproduces slot0='last'
+  (no regression); CE gets slot2='last',slot3/4='first' (the 1.31x/1.19x/1.09x wide-V win); rms/ln/softmax get
+  their re-read buffer policied (NEW — re-litigate run-2's "rms/ln eviction = no clean rule"; the per-slot
+  re-read provenance MAY now give a clean rule where the load-count didn't).
+- HELD until EDIT-GATE-v2 re-gate lands (don't stack on an unconfirmed foundation) + GPU cleared for the A/B.
+  A/B-ready: run3_ce_evict_ab.py covers CE; extend to welford + rms/ln before the commit.
+
+OPEN QUESTION for hub (flagged): option B (device_ir provenance helper + heuristic policy, no new fact) vs a
+provenance fact `reread_buffer_slots`. I lean B (keeps fact=provenance/heuristic=policy, avoids a 2nd
+fact-integrity gate; the heuristic already has device_ir). Will implement B unless hub prefers a fact.
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
