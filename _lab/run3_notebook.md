@@ -2340,3 +2340,34 @@ single-lever apply portion, banked-pending-gate (referee+auditor, no fact-integr
 
 FORWARD (PARITY home stretch): EDIT#4 done -> next = at-floor sweep (task #12, queue #2) -- full-confirm the
 remaining at-floor kernels (rms/ln/sum/long_sum/kl_div bands + softmax small-N + long_sum-2M flag) at seed≈oracle.
+
+## 2026-06-03 — at-floor sweep COMPLETE (quick triage, 15 shapes) — the PARITY gap-list
+
+Remaining 11 at-floor shapes (quick triage; jsd/welford 4 already full-confirmed). Full picture:
+
+AT PARITY (VICTORY, seed/oracle <= 1.05 quick — most of the curriculum is genuinely at-or-near oracle):
+  rms_norm: (4096,8192)=1.015, (2048,16384)=1.003, (32768,2048)=1.005 [mid/wide/high-M parity]
+  layer_norm: (8192,768)=0.928 [seed BEATS quick oracle], (2048,16384)=1.043, (32768,1024)=1.016
+  sum: (16384,1024)=1.024, (4096,28672)=1.028 [num_load=1 stream, ~parity]
+  long_sum: (256,65536)=1.005 [persistent, beats tc 1.043]
+  kl_div: (8192,30522)=1.000, (1024,256000)=1.004 [Band-B narrow+wide-V, at oracle]
+  (CAVEAT: quick — VICTORY at EXTREME bands needs full-confirm per quick-undershoot rule before counting PARITY.
+   The small warp/M-block field-diffs on these are mostly noise-band.)
+
+REAL GAPs (quick-GAP=real -> EDIT candidates):
+  1. jsd narrow-V (8192,30522)=1.214 / (8192,32000)=1.127 [FULL-confirmed] -> EDIT#5 (chunk 4096->2048 + warps
+     32->16 + stages).
+  2. welford wide (4096,16384)=1.163 / (32768,8192)=1.116 [FULL-confirmed] -> EDIT#4 (apply, partial DONE) +
+     EDIT#4b (combine+M_block, full close).
+  3. **NARROW-N cluster (NEW theme):** rms_norm(8192,768)=1.136 + softmax(131072,256)=1.205 -- both NARROW rows
+     (768/256) wanting different warps/M-block. This is the run-2 OCCUPANCY-OVERFITTING-TRAP territory (warps
+     M-dependent, NOT a clean rnumel rule). Group with task #15 (softmax small-N). Needs an occupancy-aware
+     approach, NOT a blind warp bump -- CAUTION. (rms_norm(8192,768) oracle wants warps 16->8; softmax wants 4->8
+     -- OPPOSITE directions -> definitely not a uniform warp rule; M/occupancy-keyed.)
+
+DEFERRED (NOT self-certified): long_sum(16,2097152) 2M source-limit -> FLAG anti-giving-up (full oracle).
+
+=> PARITY GAP-LIST (what remains before === PARITY REACHED ===): EDIT#5 (jsd) + EDIT#4b (welford full) +
+narrow-N cluster (rms-768/softmax-256, occupancy-aware, hardest) + long_sum-2M (anti-giving-up flag) + full-
+confirm the quick-VICTORY extreme bands. Most of the 6 at-floor kernels ARE at parity; the gaps are bounded +
+characterized. Reporting the gap-list to hub.
