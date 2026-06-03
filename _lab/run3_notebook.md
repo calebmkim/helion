@@ -1174,6 +1174,47 @@ apply welford). HELD until EDIT-GATE-v2 + EDIT#3 land (sequencing) + GPU; this i
    -> EDIT#4 welford apply-cap (pre-staged) -> EDIT-PID grid-light pid cluster (5a done, 5b harness ready, 5c
    grid-occupancy fact pending code-investigator). All A/Bs serialized behind the hub's GPU token (REQ-GPU each).
 
+## 2026-06-03 — EDIT-PID SCOPING (pure analysis, no GPU): the pid cluster is NOT a clean workload rule (yet)
+
+Hub: chunk directive WITHDRAWN (full oracle is the arbiter, not the directive — affirmed I was right to
+supersede). Oracle re-key ACCEPTED by ledger-keeper. Pursue eviction + pid. GPU stays yielded (referee timing
+EDIT-GATE-v2). Scoped the pid cluster from the CACHED oracle configs (pure JSON analysis, NO bind/GPU — referee
+is timing):
+
+| shape | oracle_pid | sm_mult | maxnreg | rl | progs/SM(132) | seed/oracle | oracle/tc | full? |
+| (4096,50304) | flat | - | - | None | 31 | 1.00 | 1.06 | full |
+| (8192,49152) | flat | - | - | None | 62 | 1.00 | 1.05 | quick |
+| (8192,50257) | flat | - | - | None | 62 | 1.00 | 1.09 | quick |
+| (8192,32000) | flat | - | - | None | 62 | 0.99 | 1.07 | quick |
+| (8192,57344) | flat | - | - | [32768] | 62 | 1.11 | 1.05 | quick |
+| (4096,98304) | **persist_interleaved** | 32 | 64 | [4096] | 31 | 1.62 | 0.95 | FULL |
+| (8192,128256) | **persist_blocked** | 1 | - | [16384] | 62 | 1.25 | 0.64 | quick |
+| (2048,256000) | **persist_interleaved** | 1 | 32 | [2048] | 15.5 | 1.13 | 0.62 | quick |
+
+KEY FINDINGS (temper the "clean grid-light pid branch" hypothesis):
+1. The pid choice is SHAPE-INCONSISTENT across wide-CE: persist_interleaved/sm_mult=32 (98304), persist_blocked/
+   sm_mult=1 (128256), persist_interleaved/sm_mult=1 (256000). THREE different pid configs for three wide shapes
+   -> NOT a single clean rule. Looks like autotuner fine-tuning, not an obvious seedable workload property.
+2. progs/SM does NOT separate flat-vs-persistent: (4096,50304) flat AND (4096,98304) persistent BOTH have
+   progs/SM=31. So "grid-light by program count" is the WRONG property (my hypothesis to code-investigator is
+   likely falsified — the distinguishing factor is V/looped-vs-persistent reduction, not the grid occupancy).
+   The 1.62x at 98304 is the LOOPED regime (rl=[4096]); the flat parity shapes are PERSISTENT (rl=None).
+3. 2 of the 3 "persistent-pid wins" are QUICK oracles that LOSE to tc (oracle/tc 0.64/0.62) — SUSPECT
+   (under-explored, like the earlier CE wide quick oracles). Only (4096,98304) has a FULL oracle (1.62x, oracle/
+   tc=0.95 real). So the pid "win" is solidly evidenced on ONLY ONE shape so far.
+
+=> EDIT-PID RE-SCOPED: before ANY pid branch, NEED (a) FULL oracles on 128256 + 256000 (the quick ones are
+suspect; full might pick a consistent pid OR reveal it's not seedable), and (b) the lever-decomposition A/B
+(run3_ce_pid_decomp.py ready) to isolate which lever carries 98304's 1.62x (pid vs sm_mult vs maxnreg vs the
+looped chunk 4096 vs num_stages) — my earlier coarse ablation said eviction(1.31x)+pid carry it, chunk inert.
+If the pid lever (a) generalizes across the wide shapes with a faithful workload key and (b) survives as a
+seedable config, it's a branch; if it's shape-inconsistent autotuner-only fine-tuning, EDIT-PID may be
+SMALLER than 1.62x (the eviction 1.31x is the robust, seedable part; the pid residual may be autotuner-only).
+This is honest: the 1.62x = eviction(1.31x, seedable, EDIT#3) * pid-cluster(~1.24x, MAYBE seedable, EDIT-PID).
+Grid-occupancy fact (5c) hypothesis WEAKENED (progs/SM doesn't separate) — told code-investigator; the real
+question may be "looped wide multi-load re-read -> does a persistent grid help the looped inner pass?" not grid
+occupancy. ALL needs GPU (full oracles + A/B); deferred to after EDIT-GATE-v2/EDIT#3/EDIT#4 per sequencing.
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
