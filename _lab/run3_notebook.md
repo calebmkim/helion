@@ -140,8 +140,159 @@ INTERPRETATION: most of the curriculum (6/9 kernels) is at floor with the inheri
 (5) softmax small-N. The FLOOR pass already gives a strong answer-key hint for CE: tc-default is 2x faster
 on the SAME kernel, so the looped seed strategy is wrong there -- the oracle will confirm what to do.
 
+## 2026-06-03 — Phase-2 oracle harness + FIRST oracle (cross_entropy answer key)
+
+Wrote `_lab/harness/run3_oracle.py` (machine-portable): fresh autotune (force=True, ephemeral triton cache),
+fair-re-bench the winner with do_bench median-of-7, measure the live seed in the SAME process (noise-robust
+seed/oracle), correctness-gate BOTH, field-diff seed vs oracle (the worklist), cache keyed by source-hash.
+Source-hash = sha256 over examples/<kernel>.py + triton.py (heuristic) + __init__/registry + config_spec.py
+(ReductionFact) + device_ir.py (fact population) — any edit invalidates. Cache: `_lab/logs/run3/oracle_cache.json`.
+
+**FIRST ORACLE — cross_entropy(4096,50304), quick effort (autotune 107s):**
+- **seed/oracle = 1.576** (58% gap — seed FAR from oracle). G_floor=0.682 (matches floor sweep 0.689).
+- **oracle/tc = 1.074** — the oracle BEATS tc-default by 7.4%. => UNAMBIGUOUSLY a SEEDABLE gap, NOT a source
+  ceiling (a source ceiling would have oracle<=tc). The run-2 "wide-CE source ceiling" framing is wrong for
+  the standard cross_entropy kernel.
+- **Mechanism:** seed=LOOPED (reduction_loops=[16384], w32), oracle=PERSISTENT (reduction_loops=[None]).
+  seed 445.7us -> oracle 282.8us. The oracle ALSO picked num_stages 1->4 and mixed indexing (tensor_descriptor
+  on some loads), but kept pid_type='flat'. The DOMINANT lever is persistent-vs-looped.
+- **This indicts `MULTILOAD_PERSIST_MAX_BYTES=131072`.** V=50304 -> np2 65536 -> 256KiB, exactly run-2's
+  claimed crossover where it said persistent LOSES 1.6-4x (ce_crossover_tight.py). The FRESH oracle says
+  persistent WINS here (1.58x faster than the looped seed). TENSION to resolve: was run-2's A/B confounded
+  (e.g. by num_warps, or by measuring persistent/w32 vs looped/w32 when the win needs persistent/w16+stages)?
+  Running the CE vocab-range batch next to see if persistent wins at ALL wide vocabs or just near the boundary.
+
+**ORACLE BATCH 1 (quick effort) — cross_entropy persistent-vs-looped answer key:**
+Cache `_lab/logs/run3/oracle_cache.json`; batch out `_lab/logs/run3/oracle_batch1.out`.
+
+| shape | seed/oracle | G_floor | oracle/tc | seed_rl | oracle_rl | oracle codegen | note |
+|---|---|---|---|---|---|---|---|
+| (8192,32000)  | 0.993 | 1.082 | 1.074 | [None]  | [None]   | persistent | VICTORY (persistent seed=oracle) |
+| (8192,49152)  | 1.025 | 1.032 | 1.057 | [16384] | [None]   | persistent | tie-ish; oracle PERSISTENT, seed looped |
+| (4096,50304)  | 1.576 | 0.682 | 1.074 | [16384] | [None]   | persistent | BIG GAP; oracle persistent beats tc |
+| (8192,50257)  | 1.066 | 0.651 | **0.694** | [16384] | [4096]   | looped | quick oracle looped & LOSES to tc -- SUSPECT |
+| (4096,98304)  | 1.578 | 0.582 | **0.919** | [16384] | [32768]  | looped | quick oracle looped & ~tc -- SUSPECT |
+| (8192,128256) | 1.247 | 0.514 | **0.641** | [16384] | (looped) | looped | quick oracle looped & LOSES to tc -- SUSPECT |
+
+**READ:** The oracle goes PERSISTENT and beats tc-default at V up to ~50304 (4096,50304: persistent, 1.58x
+faster than the looped seed; oracle/tc=1.074). The seed's `MULTILOAD_PERSIST_MAX_BYTES=131072` cap forces
+looped there -> the cap is WRONG at the boundary. BUT at the WIDEST vocabs (50257@M8192, 98304, 128256) the
+QUICK oracle stayed LOOPED and LOSES to tc-default (oracle/tc 0.64-0.92). Per the brief, an oracle that loses
+to tc is a claim to FALSIFY (quick-effort under-exploration), NOT an accepted ceiling -- ESPECIALLY when the
+ADJACENT V=49152/50304 prove persistent is feasible+faster. The persistent footprint is M_BLOCK=1 * np2(V) *
+4B = 256KiB-1MiB per program regardless of M (M only scales the grid), so persistent should be feasible at
+M=8192 too. NEXT: re-run the 3 SUSPECT shapes at FULL effort + an explicit forced-persistent A/B to settle
+whether persistent wins all the way up (=> delete the CE cap) or there's a real looped regime at the widest V.
+
+cross_entropy.py structure (read): standard `cross_entropy` is a T1 rollable reduction over V. The row
+`logits[tile_n,:]` is loaded into `logits_rows` ONCE in source, then consumed by amax-pass + exp-sum-pass.
+So num_load>=2 likely reflects the compiler re-reading the row for the 2nd pass (asked code-investigator to
+confirm). If so, the run-2 reasoning "wide multi-load rows re-stream and a persistent kernel spills, so loop"
+is BACKWARDS for CE: persistent keeps the whole row resident and AVOIDS the re-stream -- which is exactly what
+the oracle's persistent win shows. The run-2 "wide-CE source ceiling closed by cross_entropy_online" was a
+misdiagnosis: tc-default + the fresh persistent oracle both beat the looped seed on the STANDARD kernel.
+
+**COMPLETE ORACLE BATCH 1 (13 entries, quick effort).** source_hash consistent within each kernel (per-kernel
+source file included). Full table sorted by kernel,N:
+
+| shape | seed/orcl | G_floor | orcl/tc | category |
+|---|---|---|---|---|
+| cross_entropy(8192,32000)  | 0.993 | 1.082 | 1.074 | VICTORY (persistent) |
+| cross_entropy(8192,49152)  | 1.025 | 1.032 | 1.057 | tie; oracle PERSISTENT |
+| cross_entropy(8192,50257)  | 1.066 | 0.651 | 0.694 | SUSPECT (quick orcl looped<tc) |
+| cross_entropy(4096,50304)  | 1.576 | 0.682 | 1.074 | SEEDABLE; oracle PERSISTENT beats tc |
+| cross_entropy(4096,98304)  | 1.578 | 0.582 | 0.919 | SUSPECT (quick orcl looped<tc) |
+| cross_entropy(8192,128256) | 1.247 | 0.514 | 0.641 | SUSPECT (quick orcl looped<tc) |
+| cross_entropy(2048,256000) | 1.132 | 0.544 | 0.616 | SUSPECT (quick orcl looped<tc) |
+| jsd(8192,30522)            | 1.196 | 0.844 | 1.009 | SEEDABLE; oracle beats tc (Band-B) |
+| long_sum(16,2097152)       | 0.998 | 0.737 | 0.735 | SOURCE-LIMIT cand (seed=oracle<tc; N>2^20) |
+| softmax(131072,256)        | 1.147 | 0.871 | 0.998 | SEEDABLE-ish (orcl~tc) small-N |
+| welford(16384,768)         | 1.032 | 0.908 | 0.937 | near-tie; orcl wants w1+small apply |
+| welford(32768,8192)        | 1.089 | 0.909 | 0.990 | SEEDABLE; orcl wants bigger apply+w32 |
+| welford(4096,16384)        | 1.146 | 0.875 | 1.002 | SEEDABLE; orcl wants bigger apply tile |
+
+THREE CATEGORIES (treat differently, per the work-order's seed<oracle vs seed≈oracle<tc distinction):
+
+**(1) SEEDABLE, oracle proven > tc — the real wins to claim:** CE persist-boundary (4096,50304 orcl 1.58x
+seed, beats tc), jsd narrow-V (1.20x, beats tc), welford wide-N apply (4096,16384 1.15x, orcl≈tc). These have
+oracle/tc>=~1.0 so a real config beats both seed and tc -> heuristic is leaving perf on the table. FIX HERE.
+
+**(2) SUSPECT — quick oracle LOOPED and LOSES to tc; FALSIFY at full effort.** The 4 widest CE shapes +
+welford(32768,8192) + softmax(131072,256). An oracle that loses to tc is a claim to falsify (brief: quick
+under-exploration), ESPECIALLY when adjacent shapes prove a better strategy exists. For CE the adjacent
+V=49152/50304 PROVE persistent is feasible+faster -> the quick oracle just didn't explore persistent at the
+widest V. Resolving via the CE persist A/B (run3_ce_persist_ab.py, no autotuner) FIRST, then full-effort
+oracle on any that the A/B can't settle.
+
+**(3) SOURCE-LIMIT candidate — seed≈oracle<tc (seed has DONE ITS JOB; residual is a kernel-source signal).**
+long_sum(16,2097152): seed/oracle=0.998, BOTH looped because N=2097152 > 2^20 structural cap (persistent
+can't compile), oracle/tc=0.735. Per the bar this is VICTORY for the SEED (it matches the oracle); the gap to
+tc is a Product-A-via-source-rewrite opportunity (split-K / cross-CTA on a grid-starved 16-row 2M kernel),
+NOT a seed-heuristic failure. welford(16384,768) similar (seed/oracle=1.032 near-tie, orcl/tc=0.937 -- but
+the small orcl gain (w1) is worth checking). MUST still verify these oracles are REAL at full effort before
+recording "source limit" (anti-giving-up discipline). NOTE: these are correctness-only `robustness`-adjacent
+extremes in spirit, but (16,2097152) IS a train shape.
+
+WORKLOAD-PROPERTY HYPOTHESES forming (to test in Phase 2):
+- H-CE-persist: the `MULTILOAD_PERSIST_MAX_BYTES=131072` cap is WRONG for the 2-pass CE re-read pattern.
+  Persistent keeps the row resident & avoids re-streaming it twice; looped re-streams. Likely fix: raise/delete
+  the cap for CE, OR re-key it on the real property (re-read vs distinct-streamed-operands; awaiting
+  code-investigator on whether num_load counts re-reads). The run-2 ce_crossover_tight A/B that justified the
+  cap is suspect -- it may have compared persistent/w32 vs looped/w32 and missed that persistent needs w16+ns.
+- H-welford-apply: `STRUCTURED_APPLY_LOOP_CHUNK_BYTES=8192` (2048 fp32) over-caps the apply tile at wide N;
+  oracle wants 4096 fp32 apply (16KiB). And `_num_warps` ramp is wrong at welford extremes (w1 at N=768, w32
+  at N=8192 wide-M) -- welford's structured-combine warps may need a different ramp than the streamed ramp.
+- H-jsd-bandb: jsd narrow-V (Band-B) seed/oracle=1.20, oracle beats tc -- the BANDB_R_BLOCK_BYTES=16384 cap or
+  the w32 may be wrong at narrow V. Need the field-diff (next: look at jsd oracle cfg).
+- H-softmax-smallN: softmax small-N (131072,256) seed/oracle=1.15 -- warps/M-block/grid-occupancy at small N.
+
+## 2026-06-03 — CE persistent-vs-looped A/B (matched-lever, NO autotuner) — CROSSOVER PINNED
+
+`run3_ce_persist_ab.py` benches seed_looped vs forced-persist (rl=[None], +w16/+ns4 variants) vs tc-default,
+median-of-7, correctness-gated, one process. Spreads ~0.00. THIS REVERSES my "cap is just wrong" hypothesis
+for the WIDEST V and reveals a REAL crossover:
+
+| V (M)        | tc_us | seed(loop16K) | best_persist | seed/bestP | bestP/tc | WINNER |
+|---|---|---|---|---|---|---|
+| 49152 (8192) | 563 | 539 | 527  | 1.02 | 1.07 | persist (marginal) |
+| 50304 (4096) | 303 | 442 | **283**  | **1.56** | 1.07 | PERSIST (beats tc) |
+| 50257 (8192) | 678 | 1042| **620**  | **1.68** | 1.10 | PERSIST (beats tc) |
+| 98304 (4096) | 566 | **955** | 1837 | 0.68 | 0.40 | LOOPED (but seed 1.7x > tc) |
+| 128256(8192) | 1403| **2711**| 5794 | 0.47 | 0.24 | LOOPED (but seed 1.9x > tc) |
+| 256000(2048) | 743 | **1364**| 5011 | 0.27 | 0.15 | LOOPED (but seed 1.8x > tc) |
+
+THE CE STORY SPLITS INTO TWO SEPARATE PROBLEMS (both real, opposite directions):
+
+**(P1) V boundary ~50K: the cap fires TOO EARLY.** Persistent WINS and beats tc up to V~50304 (256KiB row),
+but `MULTILOAD_PERSIST_MAX_BYTES=131072` (128KiB) forces looped from np2(V)*4 > 128KiB, i.e. from V>32768
+(np2 65536 = 256KiB). So V=49152/50257/50304 are wrongly looped. Raising the cap to ~256KiB recovers
+(4096,50304) 1.56x, (8192,50257) 1.68x, no-regression at (8192,49152). The TRUE crossover is between
+V=50257 (persist wins) and V=98304 (looped wins) -- a row-bytes threshold near 256-320KiB.
+  -> resolves the SUSPECT verdict on (8192,50257): NOT a ceiling; persist beats tc (1.095). The quick oracle
+     just failed to find persist there. CONFIRMED seedable.
+
+**(P2) V wide >=98304: looped is the RIGHT family but seed's looped PARAMS are wrong.** At V>=98304 looped
+beats persist (persist spills 2-4x -- the run-2 cap reasoning is CORRECT here). BUT the seed's looped config
+(chunk 16384, w32) is ~2x SLOWER than tc-default (98304: 955 vs 566; 128256: 2711 vs 1403; 256000: 1364 vs
+743). So looped IS correct but the chunk/warps are wrong. The quick oracle also stayed ~2x off tc (under-
+explored). OPEN: what looped config matches tc at wide V? Candidates: different chunk (bigger/smaller than
+16384), different warps, eviction, num_stages, or tc uses a 2-pass/online strategy the standard kernel can't.
+  -> the SUSPECT verdict at V>=98304 is NOT resolved by persist (persist is worse). Need: (a) a looped-chunk
+     /warps A/B sweep, and (b) a FULL-effort oracle to see if ANY Helion config matches tc, or if it's a
+     source ceiling on the 2-pass kernel (would need cross_entropy_online, run-2's variant -- but that's a
+     SOURCE change, separate from the seed). Read tc's generated Triton (TORCH_LOGS=output_code) for strategy.
+
+NET CE PLAN: (P1) is a clean seedable win -- raise/replace the persist cap so the ~50K boundary stays
+persistent. (P2) is a looped-param tuning problem + possible source ceiling -- needs more digging before any
+claim. DO NOT just delete the cap (that regresses P2's wide V by 2-4x).
+
 ### Tried / rejected
-- (none yet — diagnostic pass)
+- **REJECTED: "delete/raise the MULTILOAD cap so all CE goes persistent."** A/B shows forced-persist at
+  V>=98304 is 2-4x SLOWER than the looped seed (98304 persist 1837us vs loop 955us; 256000 persist 5011 vs
+  loop 1364). The cap's looped path is CORRECT at wide V; only the boundary (~50K) is mis-capped. (Matched-
+  lever A/B, median-of-7, run3_ce_persist_ab.json.)
+- **REJECTED (for wide V): "the cap is the whole CE problem."** Two independent problems: cap-too-early at
+  ~50K (seedable, persist wins) AND looped-params-wrong at >=98304 (looped right, but seed 2x off tc).
 
 ### Open hypotheses (to test against the FRESH oracle in Phase 2)
 - H-small-MN: small-M and small-N shapes have a seedable warps/M-block gap (perf-dig hint, reps=1 — confirm).
