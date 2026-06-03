@@ -15,8 +15,13 @@ gated, on PERSISTENT (boundary) AND LOOPED (wide) CE shapes to see where it help
 
 Arms (eviction list built at spec length n; '' = default per slot):
   default            : None (autotuner default)
+  seed_emitted       : the EXACT policy the live seed emits NOW (EDIT#3 provenance —
+                       the SHIPPING policy; the load-bearing arm). For wide CE this is
+                       ['','','last','first','first'] ('last' on logits' first load).
+  pos_slot0          : counterfactual = the run-2 POSITIONAL rule ('last' on slot 0 =
+                       labels, the WRONG buffer). If seed_emitted beats pos_slot0, the
+                       buffer-identity de-hack is the cause (not just "some eviction").
   oracle_exact       : the oracle's ['','','last','first','last'] (truncated/padded to n)
-  reread_rowlast     : 'last' on the row-amax slot(s), 'first' elsewhere (principled)
   all_first          : ['first']*n (stream-everything, the num_load==1 recipe)
   all_last           : ['last']*n
 
@@ -60,22 +65,32 @@ def _bench(fn, n=N_RUNS):
     return s[len(s) // 2], (s[-1] - s[0]) / s[len(s) // 2] if s[len(s) // 2] else None
 
 
-def _evict_arms(n):
+def _evict_arms(n, seed_emitted):
     """Candidate eviction lists at spec length n. Slot 2 = the row's amax (first)
     pass = the load to keep resident ('last') for the re-read; slot 3 = the exp-sum
-    re-read = final use ('first'). Slots 0/1 = scalar gathers (default)."""
+    re-read = final use ('first'). Slots 0/1 = scalar gathers (default).
+
+    ``seed_emitted`` is the EXACT load_eviction_policies the live seed emits NOW (with
+    EDIT#3's provenance routing) -- the SHIPPING policy. This is the load-bearing arm:
+    it validates what the heuristic actually produces, not a hand-coded stand-in. The
+    provenance de-hack sets slot 2 -> 'last' (logits' first load, the amax pass), slots
+    3,4 -> 'first' (logits re-reads); the run-2 POSITIONAL rule would have set slot 0
+    ('last' on labels), which `pos_slot0` reproduces as the wrong-buffer counterfactual."""
     oracle = ["", "", "last", "first", "last"]
-    reread = [""] * n
-    if n >= 4:
-        reread[2] = "last"   # keep the amax-pass row load L2-resident for the re-read
-        reread[3] = "first"  # the re-read (exp-sum) is the row's final use -> stream
-    return {
+    pos_slot0 = [""] * n  # run-2 positional rule: 'last' on slot 0 (= labels, WRONG)
+    if n >= 1:
+        pos_slot0[0] = "last"
+        for i in range(1, min(n, 4)):
+            pos_slot0[i] = "first"
+    arms = {
         "default": None,
+        "seed_emitted": list(seed_emitted) if seed_emitted is not None else None,
+        "pos_slot0": pos_slot0,  # counterfactual: the run-2 positional mis-key
         "oracle_exact": (oracle + [""] * n)[:n],
-        "reread_rowlast": reread,
         "all_first": ["first"] * n,
         "all_last": ["last"] * n,
     }
+    return arms
 
 
 def run_shape(M, N):
@@ -86,6 +101,7 @@ def run_shape(M, N):
             assert a.dtype == torch.float32
     seed = dict(get_seed(fn, args)[0])
     n = helion.kernel(fn.fn).bind(args).env.config_spec.load_eviction_policies.length
+    seed_emitted = seed.get("load_eviction_policies")  # the SHIPPING EDIT#3 policy
 
     torch._dynamo.reset()
     tc = torch.compile(tc_ref)
@@ -94,7 +110,8 @@ def run_shape(M, N):
 
     results = {}
     base_us = None
-    for name, ev in _evict_arms(n).items():
+    print(f"  seed_emitted load_eviction_policies = {seed_emitted}", flush=True)
+    for name, ev in _evict_arms(n, seed_emitted).items():
         cfg = dict(seed)
         if ev is None:
             cfg.pop("load_eviction_policies", None)
