@@ -1259,3 +1259,53 @@ cap is right for it too), close the open.
 GPU SEQUENCING (hub holds token; await GPU-GRANTED): (1) EDIT#3 eviction A/B [highest value, 1.31x ready] ->
 (2) softmax-wide persist-vs-loop A/B + oracle [this new gain] -> (3-later) pid cluster + long_sum-tail
 anti-giving-up. All harnesses ready; no GPU touched.
+
+## 2026-06-03 — fact-integrity PASS on row_reread + EDIT#3 buffer-identity TIGHTENING (hub caveat) + proof
+
+**Hub: fact-integrity PASS on row_reread — FAITHFUL, not a third proxy.** The gate's graph-dump nailed the
+rms_norm acid: the ROLLER materializes the apply pass as a SEPARATE ReductionLoopGraphInfo (n_red_lowerings=0)
+that RE-EMITS the x load -> x in 2 loop graphs -> True for the right structural reason. This OVERTURNS the
+earlier "rms_norm reuses x in-register, no 2nd load" claim: post-roller reality IS a genuine 2nd load (which is
+what spills). Style-independent where num_load failed (softmax_decomposed=True), online-CE correctly False. 9/9.
+
+**Hub caveat (fix BEFORE commit, non-GPU):** `reduction_input_reused` (the persist-CAP gate) is safe with the
+loose loop-graph test (mis-key benign: would cap an already-wide single-pass row to looped). BUT EDIT#3's
+EVICTION consumer EQUATES "the >=2-loop-graph buffer" with "the row to keep L2-resident" — there a coincidental
+re-loaded BROADCAST (not the row) would get the wrong slot marked 'last'. So TIGHTEN reread_buffer_slots: select
+the buffer that is BOTH (a) HBM-re-read (>=2 loop graphs) AND (b) a REDUCTION INPUT (its loaded value feeds the
+ReductionLowering). Keyed on buffer IDENTITY, not "the count>=2 one."
+
+**DONE (device_ir.py `_compute_reread_provenance`, UNCOMMITTED):** added `reduction_input_buffers` as a
+by-product of the SAME consumer-dataflow walk (a load whose value reaches a ReductionLowering(red_block_id) ->
+record its host-buffer name via _fx_trace_tensor_arg_rw_names), then `hbm_reread = {nm : count>=2 AND nm in
+reduction_input_buffers}`. Docstring updated.
+
+**VERIFIED 9/9 production (bind-only, no GPU; `run3_reread_slots_probe.py`):** every kernel's slots point at the
+REDUCTION ROW, broadcasts excluded:
+  sum/long_sum: row_reread=F slots=() evict=['first','first'] (stream)
+  rms_norm(1,131072): T slots=(0,2,3)->x [NOT 1,4=weight] evict=['last','','first','first','']
+  layer_norm(1,131072): T slots=(0,3,4,5)->x [NOT weight/bias] evict=['last','','','first','first','first','','']
+  softmax(512,131072): T slots=(0,1)->x; evict=None (T2 plain path emits no eviction — slots unused, fine)
+  cross_entropy(2048,128256): T slots=(2,3,4)->logits [NOT 0=labels,1=logits_flat] evict=['','','last','first','first']
+  kl_div/jsd: F slots=() evict=None
+  welford(8192,8192): T slots=(0,1)->x [NOT 2,3=weight/bias] evict=['last','first','','']
+ALL match the pre-tightening 9/9 -> the tightening is OUTCOME-NEUTRAL on the whole curriculum (no regression).
+
+**PROOF the tightening is LOAD-BEARING (not dead code) — adversarial kernel `adv3` (temp, deleted):** a pure
+pass-through broadcast `gain` loaded in 2 APPLY passes (NEVER reduced) at slot 0 (BEFORE the row x at slots 1,2):
+  reduction_input_buffers={x}; loop_graph_count={gain:2, x:2}; LOOSE hbm={gain,x}; TIGHT hbm={x}; DROPS=[gain].
+  LOOSE would select 'gain'->slots(0,3) (WRONG: marks a broadcast 'last'); TIGHT selects 'x'->slots(1,2) (RIGHT).
+  Production fact.reread_buffer_slots=(1,2) == TIGHT. So the AND-with-reduction-input bites EXACTLY on the
+  caveat case and is inert on production. (Two earlier adv attempts made bias a reduced operand -> in
+  reduction_input_buffers legitimately -> didn't isolate it; adv3 — bias used ONLY in apply, never summed — is
+  the clean isolation. Lesson: in single-reduction-fact kernels, ANY summed operand is a 'reduction input'; the
+  caveat buffer must be apply-only.)
+
+**Comment cleanups (gate-flagged, triton.py, DONE uncommitted):** the cap-gate note no longer calls row_reread a
+"num_load>=2 placeholder"; it now describes the consumer-dataflow liveness mechanism + the post-roller 2nd-load
+reality. MULTILOAD_PERSIST_MAX_BYTES doc updated to "gated by fact.row_reread."
+
+STATUS: source changes (consumer-trace row_reread + buffer-identity tightening + EDIT#3 routing + comment fixes)
+all UNCOMMITTED, lint+format clean. Holding for hub's version decision (subgraph-membership 91dfd8ef vs land the
+consumer-trace as the committed fact) + GPU-GRANTED for the eviction A/B. DMing the hub the eviction design +
+buffer-identity proof now.
