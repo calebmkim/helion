@@ -382,8 +382,40 @@ re-check warps/eviction/num_stages on the looped path) -- this should close 5734
 (98304/128256/256000) together. Will A/B looped-chunk {16384,32768,65536,131072} x warps on the wide CE shapes
 + read tc's Triton (TORCH_LOGS) to see if tc uses a fundamentally different (2-pass/split) strategy.
 
+## 2026-06-03 — P2 CE looped-chunk A/B (wide V) — looped-chunk is too small + a WIDE-V SOURCE CEILING
+
+`run3_ce_loopchunk_ab.py`: looped chunk {16384,32768,65536,131072} x warps {16,32} + persist control, vs tc,
+median-of-7, correctness-gated. Logs ce_loopchunk_ab.out/json. Findings:
+
+| V | row KiB | best looped | best/tc | seed loop16384_w32 /tc | persist_w32 /tc |
+|---|---|---|---|---|---|
+| 57344  | 224  | loop65536_w16: 610us | **1.064** | 0.891 | 0.965 |
+| 98304  | 384  | loop32768_w32: 876us | 0.646 | 0.592 | 0.299 |
+| 128256 | 501  | loop32768_w16: 2614us| 0.537 | 0.517 | 0.245 |
+| 256000 | 1000 | loop32768_w16: 1321us| 0.561 | 0.543 | 0.148 |
+
+TWO conclusions:
+1. **The fixed LOOPED_CHUNK=16384 is too small.** chunk 32768 is uniformly better at wide V (+3-8% over 16384:
+   98304 0.592->0.646, 128256 0.517->0.537, 256000 0.543->0.561). At the 224KiB edge chunk 65536 (≈whole row,
+   one looped iter) WINS and beats tc (1.064) AND beats persistent (0.965) -- so 57344's true best is looped-
+   65536, not the persistent my cap edit gives (672us; loop65536=610us, 9% better). Too-big chunks at wide V
+   spill catastrophically (131072 at 98304 = 0.233; persist = 0.299).
+2. **WIDE-V (>=384KiB) IS A 2-PASS SOURCE CEILING.** NO Helion config -- persistent OR any looped chunk/warps
+   in the grid -- beats tc at V>=98304; the BEST is ~0.54-0.65 (tc ~1.5-2x faster). The standard 2-pass
+   cross_entropy (amax-pass + exp-sum-pass = reads the row TWICE) is structurally ~2x off tc, which uses a
+   fused/online single-pass logsumexp (= exactly examples/cross_entropy.py::cross_entropy_online, run-2's
+   variant). This is a kernel-SOURCE limit, NOT a seed failure: it caps the oracle too. MUST CONFIRM with a
+   FULL-effort oracle (anti-giving-up: a hand grid isn't exhaustive; the full oracle is the answer key) that
+   oracle also can't beat tc before recording "source ceiling". Full oracle on wide CE LAUNCHING.
+
+PLAN: (a) bump LOOPED_CHUNK 16384->32768 (small uniform wide-V gain; MUST verify no-regression on long_sum's
+looped >2^20 tail which also uses LOOPED_CHUNK). (b) Confirm wide-V source ceiling via full oracle; if
+confirmed, the residual seed/oracle there should be ~1.0 (seed≈oracle<tc) = seed done, source-rewrite is
+separate Product-A scope. (c) 57344 edge: loop65536 wins -- consider whether the persist-cap boundary should
+instead hand the 224KiB edge to a big looped chunk; but don't over-fit one shape -- the EDIT#1 cap is already
+a net win there and 3/4 boundary shapes are at oracle.
+
 ### Current champion
-- Run-2 `TritonReductionHeuristic` + EDIT#1 (CE persist cap 131072->245760, dab1eea8). 3/4 CE boundary shapes
-  at oracle parity, 8 non-CE kernels byte-identical (no-regression), correctness clean. Pending gate pipeline
-  (auditor + results-referee; fact-integrity N/A; anti-giving-up re-litigates run-2 "wide-CE source ceiling").
-  Open: CE(8192,57344) residual + wide-V P2 (looped-chunk scaling) -- next lever.
+- Run-2 `TritonReductionHeuristic` + EDIT#1 (CE persist cap 131072->245760, dab1eea8 + re-measure 8d55a50c).
+  3/4 CE boundary at oracle parity, 8 non-CE kernels byte-identical, correctness clean. Gate pipeline pending.
+  Open: LOOPED_CHUNK bump (EDIT#2 candidate), wide-V source-ceiling confirmation (full oracle), 57344 edge.
