@@ -1700,3 +1700,22 @@ The DECIDING experiment (do_bench, NO autotune -- I have the full answer key alr
 {seed+evict vs +interleaved@32 vs +blocked@4 vs flat} on all 3 wide CE + the interleaved@32 probe on
 softmax(512,131072)/welford(65536,4096)/rms-ln(1,131072). If interleaved@32 net-positive everywhere -> (A); else
 (B). This is the lever-decomp generalization, GPU-needed (do_bench). Bring the hub this + the 98304 decomp (done).
+
+## 2026-06-03 — GPU SESSION step 1: EDIT#3 eviction A/B REPRODUCED (referee evidence)
+
+Re-ran run3_ce_evict_ab.py on the committed tree (Rule B + consumer-trace bool). do_bench median-of-7, fp32.
+Reproduces the shipped seed_emitted = ['first','first','last','first','first'] (Rule B):
+
+| shape         | codegen    | default | seed_emitted | vs_default | pos_slot0 | oracle_exact |
+|---------------|------------|--------:|-------------:|-----------:|----------:|-------------:|
+| (4096,50304)  | persistent |  282.5  | 282.7        | 0.999 NEUT | 0.970     | 1.000        |
+| (4096,98304)  | looped     |  957.5  | 732.2        | **1.308**  | 0.998     | 1.303        |
+| (8192,128256) | looped     | 2715.2  | 2280.5       | **1.191**  | 1.042     | 1.187        |
+| (2048,256000) | looped     | 1365.0  | 1256.0       | **1.087**  | 0.999     | 1.085        |
+
+Confirms (referee-grade): (1) seed_emitted ties/BEATS oracle_exact everywhere (732.2<734.7, 2280.5<2286.7) ->
+Rule B's slot4='first' is marginally FASTER than the oracle's slot4='last' -> slot4 is a passenger AND uniform-
+'first' is the right (slightly better) choice, fully justifying shipping Rule B over the literal oracle config.
+(2) De-hack-attributable: pos_slot0 (run-2 positional, 'last' on labels) only 0.998/1.042, REGRESSES boundary
+0.970. (3) Boundary (50304) NEUTRAL 0.999 (the `not persistent` gate; eviction moot for the register-resident
+persistent row). Identical to the earlier run -> stable, reproducible. Step 1 done; GPU held for step 2 (softmax).
