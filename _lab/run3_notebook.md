@@ -1748,3 +1748,30 @@ matched-lever A/B isolating the eviction contribution (evict-only vs +chunk vs +
 decomp, to find softmax's clean seedable carrier. This SUPERSEDES the "softmax-wide null" (cc7acb26) -- that was
 a quick-oracle artifact. Reporting to hub immediately (this is a found gain, the opposite of giving up).
 Disposition + the softmax lever-decomp A/B go in the next GPU step (I hold the token). step 3 (pid) still queued.
+
+## 2026-06-03 — softmax lever-decomp: REREAD EVICTION is the clean carrier (EDIT#6 candidate)
+
+run3_softmax_decomp_ab.py, do_bench median-of-7, fp32. Each oracle lever added to the seed:
+
+| arm                  | (1024,65536) seed/arm | (512,131072) seed/arm | verdict     |
+|----------------------|----------------------:|----------------------:|-------------|
+| seed (no evict)      | 1.000                 | 1.000                 | floor       |
+| **evict** ['last','first'] | **1.306**       | **1.076**             | **CARRIER** |
+| evict+chunk(32768)   | 1.355                 | 1.067                 | chunk marginal/shape-varies |
+| evict+w16ns4         | 1.287                 | 1.078                 | warps/stages passengers |
+| chunk32768 (alone)   | 1.010                 | 0.998                 | INERT alone |
+
+CLEAN RESULT: the REREAD EVICTION ALONE carries the softmax-wide gain (1.306x/1.076x ~= the full-oracle
+1.359/1.097). chunk is inert alone (1.010/0.998) and only helps marginally+shape-dependently WITH eviction
+(helps 1024,65536 -> 1.355, HURTS 512,131072 -> 1.067); warps/stages are passengers. So the carrier is a SINGLE
+clean lever: the eviction ['last','first'] = EXACTLY what extending EDIT#3's Rule B reread eviction to the T2
+plain path emits (softmax reread_buffer_slots=(0,1), 'last' on x's first load, 'first' rest — already computed by
+the fact, just not consumed by the T2 path).
+
+=> EDIT#6: route the looped-reread eviction to the T2 PLAIN path (the `r_block=extent` return at triton.py end,
+softmax_two_pass) — gated `row_reread and not persistent` like T1/Band-C. The faithful reread_buffer_slots rule
+GENERALIZES from T1 (CE) + Band-C (welford) to T2 (softmax), all off the SAME provenance. A small, principled,
+tc-BEATING win (1.31x/1.08x; oracle/tc 1.39/1.10). NO new fact (reread_buffer_slots exists); NO kernel identity.
+This is the eviction rule applied uniformly to every looped-reread reduction regardless of track. Reporting to hub;
+EDIT#6 is a clean extension of the accepted EDIT#3 eviction. Needs: the seed-emit change + a no-regression check
+(other T2 kernels: kl_div/jsd are row_reread=False -> unaffected; only softmax is T2-AND-row_reread).
