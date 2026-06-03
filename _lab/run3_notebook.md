@@ -1813,3 +1813,34 @@ backed by full oracles + the disposition A/B. The bankable wide-CE seed win is t
 (Contrast EDIT#6 softmax eviction: helps softmax, and the SAME eviction rule already helps CE+welford -- a
 uniform faithful rule that regresses nothing. THAT generalizes; the pid does not. Eviction = ship; pid = decline.)
 GPU session steps 1-3 done. Releasing GPU.
+
+## 2026-06-03 — HUB: EDIT#3 APPROVED + fact-integrity DOES fire (correction) + CE wide-V accounting discipline
+
+Hub approved EDIT#3 (already committed a62e26da+fa11264a, HEAD 769ab5cd). Three points recorded:
+
+1. **CORRECTION — fact-integrity DOES fire on EDIT#3** (I'd said "no new fact, only auditor+referee"; WRONG).
+   `reread_buffer_slots` IS a new provenance-derived fact feeding the seed, and adv3 is precisely its
+   proxy-separating kernel (LOOSE picks the apply-only broadcast, TIGHT=HBM-re-read-AND-reduction-input picks
+   the row). So EDIT#3 gates = fact-integrity (reread_buffer_slots, adv3 evidence) + auditor (de-hack not
+   positional, pos counterfactuals) + referee (CE wins + welford byte-identical + rms/ln not-slower). The
+   row_reread BOOL is unchanged/already-PASSed; fact-integrity only examines the NEW slots fact.
+
+2. **CE wide-V = PROGRESS, NOT closure (track crisply).** EDIT#3 banks the EVICTION lever ONLY. Per-shape
+   accounting on (4096,98304): full oracle = 588us; post-EDIT#3 seed ~= 732us -> **seed/oracle ~= 1.24 STILL**
+   (the pid-cluster residual). The eviction moved 956->732 (good), but 732->588 (~1.24x pid) REMAINS. CE wide-V
+   is NOT at the victory bar (seed/oracle <= ~1.05). STATUS: **CE wide-V = "eviction-banked, pid-residual-open"**
+   — done ONLY when the pid residual is closed (EDIT-PID) OR attributed to autotuner-only (Product-B). Do NOT
+   read the eviction win as "CE wide-V done."
+
+3. softmax-wide null ACCEPTED by hub (oracle'd-not-assumed, refuted own hypothesis, both VICTORY, resolves the
+   240KiB-finer-property open: no finer property, shared cap correct). [NOTE: this refers to the QUICK-oracle
+   null — SUPERSEDED later this session by the FULL softmax oracle which found 1.36x/1.10x, EDIT#6. The hub's
+   "softmax null accepted" message predates my full-oracle reversal; the full oracle is the arbiter -> softmax
+   has a real eviction gain (EDIT#6), NOT a null. Flagged to hub.]
+
+PID RESIDUAL STATUS (the CE wide-V open in point 2): the FULL oracles + lever-decomp + 3x3 disposition the hub
+asks for as "step 3" are ALL DONE this session (58ebff1b full oracles, 0c332375 decomp, 769ab5cd 3x3). Verdict:
+(B) the pid residual is NOT cleanly seedable (interleaved@32 helps CE 1.05-1.24x but REGRESSES welford -3.2%
+under the only faithful gate; oracle-only). So CE wide-V's pid residual is ATTRIBUTED to Product-B/autotuner —
+which is the honest closure of point-2's open: the seedable part (eviction) is banked; the residual is
+autotuner-only (a peer-regressing, oracle-only, CE-specific config). NOT a give-up — measured + full-oracle-backed.
