@@ -2655,3 +2655,11 @@ Full-oracle batch (sum + kl_div extremes) to confirm the quick-parity-suspect sh
 => sum(16384,2048) is a confirmed PARITY shape (VICTORY). kl_div full-confirm = re-attempt needed (report to hub;
 low stakes — kl_div is at quick-parity, this is the PARITY-table formality, not a gap). EDIT#5 remains the
 high-value ready item awaiting the commit-ack.
+
+CORRECTION (diagnosis): the "kl_div autotune crash" was NOT a kl_div code crash — a FOREGROUND-with-timeout
+diagnostic ran kl_div(8192,30522) full-autotune cleanly to 189s (deep in the search, healthy) before my 200s
+timeout cut it. So kl_div autotunes FINE. The two earlier deaths were PREMATURE TERMINATION of my detached
+background GPU runs (the batch died at Gen 5; a bare-background single-shape died at [0s]) — flaky, not
+deterministic. FIX: wrap long background GPU jobs in `timeout <N>` (a clean bounded lifecycle survives) —
+re-running kl_div with timeout 600. HARNESS LESSON: detached run_in_background GPU autotunes can be killed
+mid-run here; the `timeout`-wrapper pattern is the robust way to run them.
