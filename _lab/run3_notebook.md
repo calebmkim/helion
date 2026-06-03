@@ -2526,3 +2526,42 @@ land jsd at seed/oracle ~1.025-1.027 (TIE). Keep warps OUT of EDIT#5 (note it as
 like 256000's blocked@4 for EDIT-PID). The wide-V jsd A/B still confirms World A and that chunk-alone is the
 clean lever wide too. If wide jsd needs warps to NOT regress (World B variant), revisit — but the expectation is
 the chunk cap alone is the whole EDIT#5.
+
+## 2026-06-03 — #15 NON-GPU prep: seed-warp probe CORRECTS a stale note; occupancy hypothesis sharpened
+
+Task #15 (softmax small-N warps) + the "narrow-N cluster" (#15 also lists rms_norm(8192,768)). Probed the ACTUAL
+seed warps + occupancy (grid_rows/num_sm, the EDIT-PID quantity) — NO GPU, compile-only:
+| shape                | track | seed_w | grid_rows | OCC(=gr/132) | rnumel | nro | prior-A/B want |
+|----------------------|-------|-------:|----------:|-------------:|-------:|----:|----------------|
+| softmax(131072,256)  | T2    |   4    | 131072    | 993          | 256    | 2   | w8 (MORE)      |
+| softmax(262144,128)  | T2    |   4    | 262144    | 1986         | 128    | 2   | w8/16 (MORE)   |
+| softmax(16384,512)   | T2    |   4    | 16384     | 124          | 512    | 2   | w4 (STAY)      |
+| rms_norm(8192,768)   | T1    |   4    | 8192      | 62           | 768    | 1   | UNKNOWN*       |
+| rms_norm(16384,768)  | T1    |   4    | 16384     | 124          | 768    | 1   | ?              |
+| layer_norm(8192,768) | T1    |   4    | 8192      | 62           | 768    | 2   | ?              |
+
+CORRECTION (stale note): the earlier entry said "rms_norm(8192,768) oracle wants warps 16->8, OPPOSITE direction
+to softmax". FALSE premise — the rms seed is **w4** (rnumel<=1024->w4), NOT w16. There is no "16->8". The
+"opposite directions" conclusion was built on a garbled datum and is RETRACTED. ALL narrow-N seeds emit w4. The
+open question is which want MORE (and how much) — needs FRESH oracles (cache has none for these).
+
+SHARPENED OCCUPANCY HYPOTHESIS (consistent with all reliable data so far): high grid-occupancy -> wants MORE
+warps; moderate/low occupancy -> w4 stays. softmax(131072,256) OCC=993 -> w8 (✓); softmax(16384,512) OCC=124 ->
+w4 (✓). A monotone "OCC>=threshold -> bump warps" rule, keyed on grid_rows//num_sm (the SAME faithful quantity
+EDIT-PID computes, NO new fact — derivable from m_block_ids+env), TRACK-AGNOSTIC (would adjust _num_warps for
+both T1 and T2). This is the principled occupancy fact the hub asked for.
+
+THE CONFOUND (why GPU data is needed before building): in the prior 3 softmax shapes, OCC is confounded with
+rnumel (the w4 shape (16384,512) also has 2x the rnumel of the w8 shapes). The DISCRIMINATORS (in
+run3_softmax_occ_warps_ab.py, staged): softmax(131072,512) [OCC=993, rnumel=512] and softmax(4096,256) [OCC=31,
+rnumel=256]. If (131072,512) wants w8 AND (4096,256) wants w4 -> OCC is the lever, NOT rnumel -> clean occupancy
+rule. If (131072,512) wants w4 -> rnumel-AND-M, murkier. ALSO need fresh oracles on the T1 rms/ln narrow-N to
+confirm the SAME OCC rule governs T1 (or whether T1 narrow-N is a separate phenomenon). The directions (esp how
+big the win, and whether w16 is ever right vs catastrophic) decide if there's a clean monotone OCC->warps map.
+
+PLAN (LOWER priority than EDIT#5, GPU after): (1) full oracle softmax(131072,256) [confirm the 1.205 gap +
+field-diff]; (2) run3_softmax_occ_warps_ab.py [the OCC-vs-rnumel disambiguation sweep]; (3) fresh oracles on
+rms_norm(8192,768)/(16384,768) + layer_norm(8192,768) [does the OCC rule govern T1?]. THEN design: if a clean
+monotone OCC->warps contour exists across T1+T2 -> a principled occupancy-keyed _num_warps adjustment (real
+EDIT). If only M-runtime-dependent with no clean contour -> the admissible "knowable only at runtime" case, but
+PROVEN (anti-giving-up: the sweep IS the fact-hunt). Staged harness: run3_softmax_occ_warps_ab.py.
