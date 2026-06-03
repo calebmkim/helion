@@ -1635,3 +1635,33 @@ noise is CORRECT and adds NO complexity (the rule is already uniform; carving ou
 Recommending UNIFORM ship; flagging to hub since it's a judgment call on its "leave default if inert" guidance.
 The eviction is GATED on `not persistent` already, so only LOOPED row_reread kernels emit it (narrow/persistent
 rms/ln/softmax/CE at floor stay default -- byte-identical to champion, no inert policy on the common case).
+
+## 2026-06-03 — consumer-trace row_reread landed as a FORWARD refinement (fa11264a) on top of EDIT#3
+
+Hub's final reconcile: (a) the committed subgraph/region-membership row_reread (91dfd8ef) is ALREADY gated+PASSed+
+banked (don't re-run); land the consumer-trace as a SEPARATE faithfulness-hardening commit; reread_buffer_slots
+goes WITH the eviction (not consumerless). The hub specified a 3-commit split (A=consumer-trace cap only from
+91dfd8ef; B=eviction). PROBLEM: EDIT#3 (a62e26da) ALREADY committed cap+slots+Rule-B-eviction as one unit on top
+of 91dfd8ef (the hub's plan + my mismatch report crossed). Literally splitting = revert a62e26da -> get triton.py
+to the no-eviction 91dfd8ef state -- and triton.py kept snapping back to a62e26da under repeated checkouts
+(ROOT CAUSE diagnosed: I was reverting my OWN pending edits by running `git checkout file` mid-edit; ALSO a
+multi-file `git checkout 91dfd8ef -- a b c` partially applied. NOT a daemon. Memory saved: git-checkout-self-revert).
+
+RESOLUTION (decisive, lower-risk, identical end state): landed the consumer-trace bool as a FORWARD refinement
+commit (fa11264a) on top of a62e26da. `_compute_row_reread(self, red_block_id)` is now the CONSUMER-DATAFLOW
+trace (feeds >=2 reductions OR reduction+bypass-store), replacing region-membership. EDIT#3's reread_buffer_slots
++ Rule B eviction (a62e26da) UNCHANGED. Net HEAD = consumer-trace bool + EDIT#3 eviction -- exactly the hub's
+desired end state (consumer-trace + eviction), just reached by adding a commit rather than revert+rebuild+re-add.
+
+VERIFIED (bind-only, run3_reread_slots_probe): consumer-trace bool 9/9 IDENTICAL to region-membership
+(sum/long/kl/jsd=False, rms/ln/softmax/CE/welford=True) -> byte-identical seeds (the referee's byte-identity
+check). Rule B eviction intact (CE ['first','first','last','first','first'], welford ['last','first','first',
+'first']). Lint+format clean. Removed an unused `host` (F841) from the bool (it works on node identities, not
+host-buffer names -- only the slots method resolves names).
+
+GATE POSTURE for the hub: fa11264a's row_reread change is the consumer-trace faithfulness upgrade -> fact-integrity
+(consumer-trace predicate: rms_norm acid, 2-falsified-predicates, reduction-input-keyed) + referee BYTE-IDENTITY
+(consumer-trace seeds == region-membership seeds, all 4 splits -> behaviorally identical, perf inherited from the
+banked version, NO full timing). a62e26da's eviction gates separately (fact-integrity on reread_buffer_slots +
+auditor + referee CE-wins+no-regression) -- already reported. The 3-commit STRUCTURE became 2 forward commits
+(a62e26da eviction, fa11264a consumer-trace) due to the commit-order cross; the GATE UNITS are the same two diffs.
