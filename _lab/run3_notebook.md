@@ -1039,6 +1039,41 @@ support the hub's variant would need per-slot "has-later-read" flags; cheap to a
 NET: row_reread (the cap gate) is DONE + faithful + acid-tested — ready to re-gate as-is. The eviction
 assignment has a faithful-vs-faithful A/B to settle (mine vs hub's), needs GPU. Neither is a proxy.
 
+## 2026-06-03 — fact-integrity REFINEMENT: "reused across reduction boundary" (liveness) vs my region-count
+
+Gate's critical refinement: rms_norm loads x with a SINGLE hl.load in the SOURCE/persistent form — the row is
+reused IN-REGISTER across reduction->apply, NOT a 2nd HBM load. So num_load (1 load of x) AND "read in >=2
+regions" (my framing) could MISS it. The faithful property = REUSE/LIVENESS ACROSS THE REDUCTION BOUNDARY: the
+reduction-input tile is consumed by the reduction AND a downstream apply/store (or >=2 reductions), regardless
+of load mechanism (HBM re-read [CE] or in-register reuse [rms_norm]).
+
+WHAT I FOUND investigating this (graph dumps, non-GPU):
+- In the ROLLED loop graphs (what my fact inspects), rms_norm's apply graph[2] DOES re-load x (n_red=0,
+  n_stores=1, loads={x,weight}). So the roller RE-LOADS the reused input when it rolls -> my region-membership
+  gives rms_norm=True (9/9 still correct). My fact reads the ROLLED form (re-load), the gate reasons about the
+  SOURCE form (in-register). They AGREE for the current curriculum BECAUSE the roller re-loads.
+- I tried two consumer-dataflow predicates to implement the gate's "liveness" definition directly and BOTH are
+  WRONG: (a) "load reaches a store" -> sum=True (false pos: sum's x reaches the store THROUGH the reduction
+  output); (b) "load has an immediate non-reduction user" -> rms/softmax/CE=False (too shallow: x goes through
+  x.to(fp32)/x*x intermediates before the reduction AND before the apply). The correct transitive "live across
+  the boundary" predicate is SUBTLE (must distinguish "reaches store via the reduction output" from "the tile
+  itself reaches a store bypassing the reduction").
+
+THE CRUX (needs code-investigator, NOT a 4th guess): is my region-membership (rolled-form re-load count >=2)
+EQUIVALENT to the gate's "reused across boundary" (liveness)? It is IFF the roller ALWAYS re-loads a reused
+reduction-input in the rolled apply graph. If YES -> region-membership IS the faithful liveness signal
+(expressed via the rolled form) and I keep it (9/9, and faithful-by-construction). If the roller can reuse
+in-register EVEN ROLLED (some apply doesn't re-load) -> region-membership misses it and I need the careful
+transitive consumer-dataflow predicate. The gate's softmax_decomposed example is the posited counterexample —
+NOT in my curriculum, but the faithfulness thesis (TRANSFER) demands getting it right.
+
+DECISION: do NOT guess a 4th predicate. ASK code-investigator the crux (does the roller re-load reused inputs
+in the rolled apply graph?) + the exact transitive "tile live across the boundary" predicate if region-
+membership is insufficient. row_reread stays committed AS-IS (9/9, behaviorally correct) meanwhile; I refine to
+the consumer-based definition ONLY if the investigator shows region-membership can miss in-register-rolled
+reuse. Either way the BEHAVIORAL set is right (gate confirmed) — this is a faithfulness-of-derivation question,
+not a behavioral bug. Also TODO (gate cleanup): delete stale triton.py:494-499 num_reduction_ops comments.
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
