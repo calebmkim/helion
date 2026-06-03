@@ -2245,3 +2245,22 @@ so kl_div does NOT want the smaller chunk -> jsd vs kl_div differ despite both B
 NOT just "Band-B narrow-V"; there's a finer property, OR jsd's gap is jsd-source-specific). CAUTION: this could
 be a (B)-Product-B situation if no clean non-identity key separates jsd-wants-2048 from kl_div-at-parity. The
 full-confirm + decomp + the kl_div contrast decide it. NOT building until that's measured.
+
+## 2026-06-03 — EDIT-PID BANKED (champion advance #4) + EDIT#6 referee-reproduce (clean)
+
+EDIT-PID BANKED (all 3 gates PASS: fact-integrity track-key+sm_mult-physics, referee 5/5 1.231/1.241/1.051,
+auditor no-fence). The 38%/19.5% recovery — the run's signature (anti-giving-up FAILed my decline, I owned the
+missed-branch-structure + skipped-layer_norm error, built T1-scoped w/ physics-derived sm_mult shipping 16 at
+256000 = the demonstrable non-fit). CE wide-V CLOSED to ~1.05 seed/oracle (eviction+pid); residual seed≈oracle<tc
+= source-bound 2-pass logsumexp (cross_entropy_online = separate Product-A-via-source, not this deliverable).
+
+EDIT#6 referee-reproduce (run3_edit6_reproduce.py, do_bench median-7, seed_live=shipping-with-eviction vs
+flat_noevict=eviction-stripped):
+| shape              | flat_noevict | seed_live (ev=['last','first']) | flat/live | vs tc |
+|--------------------|-------------:|--------------------------------:|----------:|-------|
+| softmax(1024,65536)|    264.0     | 202.1                           | **1.307** | beats tc (269.9) |
+| softmax(512,131072)|    276.0     | 256.4                           | **1.076** | beats tc (276.2) |
+| kl_div(1024,4096)  |     31.2     | 31.2 (ev=None)                  | 0.999     | BYTE-ID |
+| jsd(1024,4096)     |     28.3     | 28.3 (ev=None)                  | 0.999     | BYTE-ID |
+=> EDIT#6 reproduces 1.31x/1.08x tc-beating + kl_div/jsd byte-identical (no-regression). Referee answer key.
+The reread-eviction now confirmed across ALL 3 tracks (T1 CE / Band-C welford / T2 softmax), one faithful rule.

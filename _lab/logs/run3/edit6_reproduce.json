@@ -1,0 +1,108 @@
+[
+  {
+    "kernel": "softmax",
+    "shape": [
+      1024,
+      65536
+    ],
+    "fires": true,
+    "tc_us": 269.8880136013031,
+    "flat_noevict": {
+      "us": 263.9999985694885,
+      "spread": 0.0008484630919683869,
+      "correct": true,
+      "codegen": "looped",
+      "ev": null
+    },
+    "seed_live": {
+      "us": 202.06400007009506,
+      "spread": 0.00047506374404875177,
+      "correct": true,
+      "codegen": "looped",
+      "ev": [
+        "last",
+        "first"
+      ]
+    },
+    "win": 1.306516739636492,
+    "verdict": "WIN"
+  },
+  {
+    "kernel": "softmax",
+    "shape": [
+      512,
+      131072
+    ],
+    "fires": true,
+    "tc_us": 276.16000175476074,
+    "flat_noevict": {
+      "us": 275.9679853916168,
+      "spread": 0.0005218171287984416,
+      "correct": true,
+      "codegen": "looped",
+      "ev": null
+    },
+    "seed_live": {
+      "us": 256.3839852809906,
+      "spread": 0.0007488243097989159,
+      "correct": true,
+      "codegen": "looped",
+      "ev": [
+        "last",
+        "first"
+      ]
+    },
+    "win": 1.076385426683974,
+    "verdict": "WIN"
+  },
+  {
+    "kernel": "kl_div",
+    "shape": [
+      1024,
+      4096
+    ],
+    "fires": false,
+    "tc_us": 25.887999683618546,
+    "flat_noevict": {
+      "us": 31.15200065076351,
+      "spread": 0.008731388123233777,
+      "correct": true,
+      "codegen": "persistent",
+      "ev": null
+    },
+    "seed_live": {
+      "us": 31.168000772595406,
+      "spread": 0.0051334494259404045,
+      "correct": true,
+      "codegen": "persistent",
+      "ev": null
+    },
+    "win": 0.9994866490812602,
+    "verdict": "BYTE-ID"
+  },
+  {
+    "kernel": "jsd",
+    "shape": [
+      1024,
+      4096
+    ],
+    "fires": false,
+    "tc_us": 23.520000278949738,
+    "flat_noevict": {
+      "us": 28.28799933195114,
+      "spread": 0.09615385628396489,
+      "correct": true,
+      "codegen": "persistent",
+      "ev": null
+    },
+    "seed_live": {
+      "us": 28.31999957561493,
+      "spread": 0.09604520702985442,
+      "correct": true,
+      "codegen": "persistent",
+      "ev": null
+    },
+    "win": 0.9988700478762951,
+    "verdict": "BYTE-ID"
+  }
+]
