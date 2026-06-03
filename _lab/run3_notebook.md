@@ -355,7 +355,35 @@ the hash moved; for CE the seed changed materially. Re-measuring seed/oracle on 
 (fresh source_hash) to confirm VICTORY (new persistent seed ≈ oracle). Flagging the hash move to the hub
 (ledger-keeper guards staleness).
 
+## 2026-06-03 — EDIT#1 seed/oracle re-measure (fresh source_hash) — 3/4 at oracle PARITY
+
+Re-ran the oracle (quick) on the 4 changed CE shapes with the NEW seed + NEW source_hash (cache updated):
+
+| shape | OLD seed/orcl | NEW seed/orcl | G_floor | orcl/tc | oracle codegen | verdict |
+|---|---|---|---|---|---|---|
+| (8192,49152) | 1.025 | **0.996** | 1.054 | 1.050 | persistent | VICTORY |
+| (4096,50304) | 1.576 | **1.000** | 1.057 | 1.056 | persistent | VICTORY (closed 58%->0) |
+| (8192,50257) | 1.066 | **1.000** | 1.085 | 1.086 | persistent | VICTORY |
+| (8192,57344) | -     | **1.105** | 0.946 | 1.046 | LOOPED [32768] | residual (P2 bleed) |
+
+EDIT#1 is a clean incremental win: 3/4 CE boundary shapes now at EXACT oracle parity (0.996-1.000), oracle
+beats tc on all 4 (1.05-1.09) confirming SEEDABLE not source-ceiling. Headline (4096,50304) closed 1.576->1.000.
+
+REFINED UNDERSTANDING at V=57344 (the 224KiB crossover edge): the oracle there is NOT persistent -- it's
+LOOPED with chunk=32768 (612us) beating my persist seed (676us) AND the old loop-16384 (729us) AND tc (640).
+So the residual at 57344 is the SAME issue as P2: the LOOPED CHUNK (fixed 16384) is too small for wide rows;
+the oracle scales it up (32768 at V=57344). My persist-cap edit still improved 57344 (676 persist < 729
+old-loop16384) and is byte-identical elsewhere, but 57344's TRUE best is a bigger looped chunk. Honest: 57344
+is NOT done (seed/oracle=1.105, G_floor 0.946 just under floor -- net up but not at oracle).
+
+=> P2 sharpened: the looped chunk LOOPED_CHUNK=16384 is a fixed constant; the oracle wants it to SCALE with
+the row (32768 at V=57344, and likely bigger / different at 98304+). NEXT LEVER: scale the looped chunk (and
+re-check warps/eviction/num_stages on the looped path) -- this should close 57344 AND the wide-V P2 shapes
+(98304/128256/256000) together. Will A/B looped-chunk {16384,32768,65536,131072} x warps on the wide CE shapes
++ read tc's Triton (TORCH_LOGS) to see if tc uses a fundamentally different (2-pass/split) strategy.
+
 ### Current champion
-- Run-2 `TritonReductionHeuristic` + EDIT #1 (CE persist cap 131072->245760). Pending gate pipeline (auditor +
-  results-referee; fact-integrity N/A since no ReductionFact changed; anti-giving-up re-litigates the run-2
-  "wide-CE source ceiling"). Phase-2 oracle re-measure on changed CE shapes in flight.
+- Run-2 `TritonReductionHeuristic` + EDIT#1 (CE persist cap 131072->245760, dab1eea8). 3/4 CE boundary shapes
+  at oracle parity, 8 non-CE kernels byte-identical (no-regression), correctness clean. Pending gate pipeline
+  (auditor + results-referee; fact-integrity N/A; anti-giving-up re-litigates run-2 "wide-CE source ceiling").
+  Open: CE(8192,57344) residual + wide-V P2 (looped-chunk scaling) -- next lever.
