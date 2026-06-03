@@ -625,10 +625,45 @@ SOURCE-LIMIT candidates (seed≈oracle<tc): long_sum(16,2097152) seed/oracle=0.9
 split-K source opportunity, NOT seed work) -- verify oracle real at full effort before recording.
 AT ORACLE (victory, from batch1): CE(8192,32000) 0.993.
 
+## 2026-06-03 — jsd Band-B + softmax small-N warps A/B (board-completion; data-gathering)
+
+`run3_warps_ab.py` (median-of-7, correctness-gated):
+
+**jsd narrow-V (Band-B) -- the lever is num_warps 32->16 (NOT R_BLOCK):**
+- (8192,30522): w16 = 1.195x (670us, beats tc 1.012); best rb2048_w16=1.213x. R_BLOCK 1024/2048/4096 barely
+  differ at fixed w16.
+- (8192,32000): w16 = 1.122x (beats tc 1.023). Same.
+- => Band-B jsd wants w16 at narrow V, but the rnumel ramp gives w32 (rnumel>16384). WHY: Band-B carries 2D
+  [M_BLOCK,R_BLOCK] accumulators (register-heavy via num_tiled_accumulators>=1); w32 over-subscribes registers.
+  The warps ramp should be LOWER for Band-B (num_tiled_accumulators>=1). EDIT#5 candidate.
+
+**softmax small-N -- warps lever is M/OCCUPANCY-dependent, NOT a clean rnumel rule (overfitting trap):**
+- (131072,256) HIGH-M: w8=1.213x (best, tc 0.967); seed w4 too FEW.
+- (262144,128) HIGH-M: w16=1.097x, w8=1.088x; seed w4 too few.
+- (16384,512) LOWER-M: w8=0.834x WORSE, w16=0.514x CATASTROPHIC; seed w4 is RIGHT.
+- => NOT "small-N wants more warps". HIGH-M small-N (grid-saturated, each program tiny) wants MORE warps to
+  fill the SM; LOWER-M small-N wants w4. The distinguishing property is GRID OCCUPANCY (M*ceil-rows vs SM
+  count / total programs), NOT rnumel. The current ramp keys on rnumel ALONE -> can't separate (131072,256)
+  [w8] from (16384,512) [w4] (both rnumel<=512->w4). A clean fix needs a grid-occupancy fact -- the SAME
+  "grid-light vs grid-heavy" theme as the CE pid cluster (persistent_interleaved for grid-light). DANGER: a raw
+  M threshold fences shapes = identity-smuggling risk; the principled property is occupancy (programs vs SMs).
+  HARDER lever; needs an occupancy fact + careful generality. Do NOT rush.
+
+BOARD NOW FULLY MAPPED. Lever taxonomy:
+- CLEAN/PRINCIPLED, ready: persist-cap re-key (EDIT#1+2, committed), CE re-read eviction (EDIT#3, pending
+  provenance), welford apply-cap (EDIT#4).
+- COUPLED/HARDER (warps-vs-occupancy, pid -- need fact enrichment + generality care): CE persistent-pid
+  cluster, jsd Band-B warps (num_tiled_accumulators-keyed warps), softmax small-N warps (occupancy fact).
+- SOURCE-LIMIT candidate: long_sum(16,2097152) (verify full oracle).
+- DONE/at-parity: most of the curriculum; welford(16384,768) (quick-oracle gap was noise).
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT#2 (gate num_reduction_ops>=2). 3 CE boundary
-  at oracle parity, all else byte-identical, correctness clean. Ready for combined re-gate.
-- HELD edits (A/B characterized, awaiting CE-gate settle + provenance answers): EDIT#3 CE re-read eviction
-  (1.09-1.31x wide CE, matches oracle; needs per-slot re-read provenance for a faithful fact -- code-investigator
-  query out); EDIT#4 welford apply-cap 8192->16384 (+combine/warps, 1.05-1.10x). Then: CE persistent-PID
-  cluster (rest of wide-CE 1.62x, re-opens run-2 pid='flat'); jsd Band-B; softmax small-N.
+  at oracle parity, all else byte-identical, correctness clean. AWAITING combined re-gate from hub.
+- HELD/characterized edits (A/B done): EDIT#3 CE re-read eviction (1.09-1.31x wide CE, matches oracle; needs
+  faithful per-slot re-read provenance -- code-investigator query out); EDIT#4 welford apply-cap 8192->16384
+  (1.05-1.10x); EDIT#5 jsd Band-B warps 32->16 (num_tiled_accumulators-keyed, 1.12-1.21x). HARDER/deferred:
+  CE persistent-pid cluster (rest of wide-CE 1.62x, re-opens pid='flat'); softmax small-N occupancy-warps.
+- Deliberately NOT committing more edits until (a) hub re-gates EDIT#1+2 and (b) provenance answer lands --
+  to avoid building on unconfirmed foundations + flooding the gate queue. Board fully characterized; ready to
+  execute the edit queue on the hub's cadence.
