@@ -104,17 +104,21 @@ def run_case(kernel, M, N, num_sm):
     for a in args:
         if torch.is_tensor(a) and a.is_floating_point():
             assert a.dtype == torch.float32
+    # base = the LIVE seed = the LITERAL shipping config (post-EDIT-PID this is
+    # persistent_interleaved + derived sm_mult + maxnreg=64 on the firing shapes). The
+    # forced-flat baseline strips the EDIT-PID keys so it's a TRUE flat comparison
+    # (else "flat" would silently be the EDIT-PID config). seed_live tests EXACTLY what
+    # the seed emits per shape (no re-derivation) — closes the derived-vs-tested-32 gap.
     base = dict(get_seed(fn, args)[0])
     derived = _derived_sm_mult(M, num_sm)
-    # maxnreg=64 turned out LOAD-BEARING (the first run without it gave 1.06/1.15/0.999;
-    # the 3x3 WITH it gave 1.23/1.24/1.052). So the SHIPPING config = derived sm_mult +
-    # maxnreg=64. Arms isolate maxnreg's contribution.
+    flat_base = {k: v for k, v in base.items()
+                 if k not in ("num_sm_multiplier", "maxnreg")}
+    flat_base["pid_type"] = "flat"
     arms = {
-        "flat": dict(base),
-        "pid_derived_mnr64": {**base, "pid_type": "persistent_interleaved",
+        "flat": dict(flat_base),
+        "seed_live": dict(base),  # the LITERAL shipping config from get_seed
+        "pid_derived_mnr64": {**flat_base, "pid_type": "persistent_interleaved",
                               "num_sm_multiplier": derived, "maxnreg": 64},
-        "pid_derived_nomnr": {**base, "pid_type": "persistent_interleaved",
-                              "num_sm_multiplier": derived},
     }
     torch._dynamo.reset()
     tc = torch.compile(tc_ref)

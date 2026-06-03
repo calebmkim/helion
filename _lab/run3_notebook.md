@@ -2166,3 +2166,28 @@ Goal: produce the per-shape seed/oracle table -> the PARITY milestone (every mea
 the next worklist of buried gaps. KNOWN going in: jsd narrow-V ~1.20 (likely real EDIT), long_sum 2M source-limit
 (seed≈oracle<tc, flag for anti-giving-up full oracle not self-certify). REQ-GPU when this is the priority (after
 EDIT#6 referee + pid anti-giving-up settle, per hub sequencing).
+
+## 2026-06-03 — EDIT-PID shipping-config A/B (hub's derived-per-shape gap) — CLOSED; CAP=32 stands
+
+Hub flagged: the 3×3 tested flat sm=32 everywhere, but the derived formula emits per-shape sm_mult — test the
+LITERAL shipping config. Ran seed_live (=get_seed, the actual EDIT-PID config post-commit) vs a TRUE forced-flat
+baseline. do_bench median-7.
+
+| shape          | flat   | seed_live (shipping) | sm | derived_mnr64 (re-derived) |
+|----------------|-------:|---------------------:|---:|---------------------------:|
+| CE(4096,98304) |  732.0 | 594.8 (1.231)        | 32 | 594.2 (1.232)              |
+| CE(8192,128256)| 2279.1 | 1830.9 (1.245)       | 32 | 1833.9 (1.243)             |
+| CE(2048,256000)| 1255.8 | 1194.3 (1.052)       | 16 | 1194.4 (1.051)             |
+| rms_norm(1,131072)| 20.9| 20.8 (1.008)         |  1 | 20.7 (1.009)               |
+| layer_norm(1,131072)|26.9| 26.7 (1.008)        |  1 | 26.7 (1.010)               |
+
+GAP CLOSED:
+1. seed_live ≈ derived_mnr64 everywhere -> the seed emits EXACTLY the derived config (no re-derivation gap).
+2. Shipping per-shape sm_mult = 32/32/16/1. CAP=32 CLAMPS 128256's ceil(8192/132)=63->np2=64 DOWN to 32 -> the
+   hub's "untested 64 at 128256" does NOT occur; 128256 ships 32 (tested, 1.245).
+3. The AT-RISK shape CE(2048,256000) derived sm=16 BEATS flat (1.052) -- the exact L2-thrash question the hub
+   raised ("does 16 regress where the oracle wanted 4?"). It does NOT regress -> **CAP=32 stands; the byte-keyed
+   CAP is NOT needed** (don't pre-build it; 256000@16 net-positive confirms the coarse CAP is fine).
+4. rms/ln M=1 -> sm=1 (no over-subscription), tie 1.008 (no regression).
+=> EDIT-PID (94851da9) shipping config (32/32/16/1, CAP=32 const, maxnreg=64) net-positive on every firing
+shape, tested LITERALLY. Fully validated as shipped. The hub's per-shape concern was valid + is now met.

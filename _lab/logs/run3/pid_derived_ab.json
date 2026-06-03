@@ -5,28 +5,28 @@
       4096,
       98304
     ],
-    "tc_us": 566.6239857673645,
+    "tc_us": 565.9199953079224,
     "derived_sm_mult": 32,
     "arms": {
       "flat": {
-        "us": 731.9679856300354,
-        "spread": 0.007125998085564907,
+        "us": 732.0320010185242,
+        "spread": 0.008699088601769546,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "sm_mult": null
       },
-      "pid_derived_mnr64": {
-        "us": 594.5919752120972,
-        "spread": 0.00879932210580258,
+      "seed_live": {
+        "us": 594.8160290718079,
+        "spread": 0.006993737171643423,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "sm_mult": 32
       },
-      "pid_derived_nomnr": {
-        "us": 695.1200067996979,
-        "spread": 0.004258295309062539,
+      "pid_derived_mnr64": {
+        "us": 594.2080020904541,
+        "spread": 0.003608128912818698,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
@@ -40,28 +40,28 @@
       8192,
       128256
     ],
-    "tc_us": 1403.040051460266,
+    "tc_us": 1402.7199745178223,
     "derived_sm_mult": 32,
     "arms": {
       "flat": {
-        "us": 2279.296040534973,
-        "spread": 0.002239264071602894,
+        "us": 2279.103994369507,
+        "spread": 0.002084995117297321,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "sm_mult": null
       },
-      "pid_derived_mnr64": {
-        "us": 1830.560028553009,
-        "spread": 0.0020016149545087065,
+      "seed_live": {
+        "us": 1830.8799862861633,
+        "spread": 0.0029450726565089917,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "sm_mult": 32
       },
-      "pid_derived_nomnr": {
-        "us": 1973.0560183525085,
-        "spread": 0.005157452844714794,
+      "pid_derived_mnr64": {
+        "us": 1833.9040279388428,
+        "spread": 0.004152912570555897,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
@@ -75,28 +75,28 @@
       2048,
       256000
     ],
-    "tc_us": 741.8240010738373,
+    "tc_us": 741.3440048694611,
     "derived_sm_mult": 16,
     "arms": {
       "flat": {
-        "us": 1258.1279873847961,
-        "spread": 0.0026452200208595036,
+        "us": 1255.8079957962036,
+        "spread": 0.002344301537019242,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "sm_mult": null
       },
-      "pid_derived_mnr64": {
-        "us": 1194.1760182380676,
-        "spread": 0.0008440750211043712,
+      "seed_live": {
+        "us": 1194.2880153656006,
+        "spread": 0.0010316004110031787,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "sm_mult": 16
       },
-      "pid_derived_nomnr": {
-        "us": 1258.5920095443726,
-        "spread": 0.0023009925803917186,
+      "pid_derived_mnr64": {
+        "us": 1194.4479942321777,
+        "spread": 0.001058159500091619,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
@@ -110,28 +110,28 @@
       1,
       131072
     ],
-    "tc_us": 23.93599972128868,
+    "tc_us": 21.536000072956085,
     "derived_sm_mult": 1,
     "arms": {
       "flat": {
-        "us": 21.215999498963356,
-        "spread": 0.003016614292939762,
+        "us": 20.927999168634415,
+        "spread": 0.0015290636914659199,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "sm_mult": null
       },
-      "pid_derived_mnr64": {
-        "us": 21.056000143289566,
-        "spread": 0.003039536801483747,
+      "seed_live": {
+        "us": 20.767999812960625,
+        "spread": 0.001540843795839094,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "sm_mult": 1
       },
-      "pid_derived_nomnr": {
-        "us": 21.183999255299568,
-        "spread": 0.0030210832199881244,
+      "pid_derived_mnr64": {
+        "us": 20.735999569296837,
+        "spread": 0.0015432216593585211,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
@@ -145,28 +145,28 @@
       1,
       131072
     ],
-    "tc_us": 35.90400144457817,
+    "tc_us": 32.03200176358223,
     "derived_sm_mult": 1,
     "arms": {
       "flat": {
-        "us": 27.2000003606081,
-        "spread": 0.004705918123461734,
+        "us": 26.91200003027916,
+        "spread": 0.0011890696948492795,
         "codegen": "looped",
         "correct": true,
         "pid": "flat",
         "sm_mult": null
       },
-      "pid_derived_mnr64": {
-        "us": 26.944000273942947,
-        "spread": 0.003562903331731816,
+      "seed_live": {
+        "us": 26.688000187277794,
+        "spread": 0.002398099778119936,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
         "sm_mult": 1
       },
-      "pid_derived_nomnr": {
-        "us": 27.103999629616737,
-        "spread": 0.004722586201458023,
+      "pid_derived_mnr64": {
+        "us": 26.655999943614006,
+        "spread": 0.003601468006994143,
         "codegen": "looped",
         "correct": true,
         "pid": "persistent_interleaved",
