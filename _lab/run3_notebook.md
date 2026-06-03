@@ -1558,3 +1558,43 @@ NOT chase the per-shape oracle pick (which is search noise). The carrier-consist
 multi-kernel A/B will pin: (a) is persist_interleaved consistent across wide CE (early signal: YES -- 8192x128256
 gen-2 best IS persist_interleaved + my Rule B eviction), (b) what sm_mult value to seed, (c) does it generalize
 to softmax/welford/rms-ln wide or is it CE-specific.
+
+## 2026-06-03 — CE-wide FULL oracles (carrier consistency) — pid carrier is NOT cleanly consistent
+
+Full-effort oracles on the 2 remaining wide CE shapes (each ~12-13min autotune), seed = WITH EDIT#3 Rule B
+eviction (so seed/oracle = the PURE pid residual on top of eviction). Cached.
+
+| shape          | seed/oracle | oracle pid_type        | sm_mult | maxnreg | pid residual | oracle/tc |
+|----------------|------------:|------------------------|--------:|--------:|-------------:|----------:|
+| (4096,98304)   | (1.23 decomp)| persistent_interleaved |   32    |   64    | strong       | (1.04 banked)|
+| (8192,128256)  | **1.243**   | persistent_interleaved |   32    |   64    | strong       | 0.798     |
+| (2048,256000)  | **1.070**   | **persistent_blocked** |  **4**  |   64    | WEAK         | 0.623     |
+
+KEY FINDING — the pid carrier is NOT cleanly consistent across the wide-CE regime:
+1. **pid TYPE differs**: (4096,98304)+(8192,128256) -> persistent_INTERLEAVED, sm_mult=32. (2048,256000) ->
+   persistent_BLOCKED, sm_mult=4. Different variant AND different sm_mult at the widest shape.
+2. **Residual SHRINKS with width**: 1.23x -> 1.243x -> 1.070x. The pid gain FADES as N grows; at 256000 it's only
+   1.07x (just outside the 5% tie band). The pid cluster matters LESS at the extreme width.
+3. So seeding a SINGLE pid config (e.g. interleaved+sm_mult32) would be right for 2 of 3 wide shapes and WRONG
+   for the widest (which wants blocked+4) -- though the 1.07x residual there means a slightly-wrong pid is a
+   small miss, possibly still > flat.
+
+HONEST SCOPING (anti-over-claim): the ROBUST, consistent, seedable win is the EVICTION (Rule B / EDIT#3) --
+1.31x/1.19x/1.08x, oracle-matching, de-hack-attributable, validated. The PID cluster is a 1.07-1.24x RESIDUAL
+that is (a) pid-VARIANT-inconsistent (interleaved vs blocked), (b) sm_mult-inconsistent (32 vs 4), (c) fading
+with width. This is NOT a clean single-config workload branch. Two honest dispositions for EDIT-PID:
+  (A) seed persistent_interleaved+sm_mult=32+maxnreg=64 on the looped-reread regime IF a multi-kernel +
+      multi-shape A/B shows it's NET-POSITIVE everywhere it fires (beats flat on all wide CE shapes incl 256000
+      where it's the "wrong" variant, AND on softmax/welford/rms-ln wide) -- a coarse-but-positive rule. Risk:
+      it's the wrong variant for the widest shape; measure whether interleaved@32 still beats flat there.
+  (B) if interleaved@32 LOSES to flat on the widest shape (or on the other looped kernels), the pid gain is
+      genuinely shape/variant-specific autotuner fine-tuning, NOT a seedable workload rule -> EDIT-PID is
+      DECLINED, and the bankable wide-CE win is the eviction alone (which already closes the boundary shapes to
+      parity and gives 1.08-1.31x on the wide ones). That's an honest, defensible stopping point: seed=eviction,
+      the pid residual is a documented oracle-only gap (oracle/tc still <1 -> a SOURCE-level 2-pass-CE limit
+      caps even the oracle below tc, so the residual is NOT a tc-beating opportunity, just oracle fine-tuning).
+
+DECISION GATE (needs GPU): a matched-lever {seed+evict vs seed+evict+interleaved@32 vs seed+evict+blocked@4} A/B
+on ALL THREE wide CE shapes + the same interleaved@32 probe on softmax/welford/rms-ln wide. If interleaved@32 is
+net-positive everywhere -> EDIT-PID (A) with the full gate set. If not -> decline (B), eviction is the win.
+Reporting to hub for the disposition call before building anything.
