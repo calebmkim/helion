@@ -1665,3 +1665,38 @@ GATE POSTURE for the hub: fa11264a's row_reread change is the consumer-trace fai
 banked version, NO full timing). a62e26da's eviction gates separately (fact-integrity on reread_buffer_slots +
 auditor + referee CE-wins+no-regression) -- already reported. The 3-commit STRUCTURE became 2 forward commits
 (a62e26da eviction, fa11264a consumer-trace) due to the commit-order cross; the GATE UNITS are the same two diffs.
+
+## 2026-06-03 — EDIT-PID: the FULL-oracle answer key is ALREADY in hand (NOT quick) — corrects hub framing
+
+Hub's framing correction (right in principle): can't claim pid shape-inconsistency from QUICK oracles that lose
+to tc (they undershoot; #8 "no clean rule" is about evidence not the world); FULL oracles mandatory before any
+"autotuner-only" claim. KEY: I ALREADY RAN the full oracles this session (ce_wide_oracle, committed 58ebff1b) --
+my "shape-inconsistent" was from FULL data, not quick. The full-effort answer key (all 3 FULL, cached):
+
+| shape         | effort | seed/oracle | oracle/tc | oracle pid_type        | sm_mult | maxnreg | rl     | ns |
+|---------------|--------|------------:|----------:|------------------------|--------:|--------:|--------|----|
+| (4096,98304)  | FULL   | 1.624       | 0.947     | persistent_interleaved |   32    |   64    | 4096   | 4  |
+| (8192,128256) | FULL   | 1.243       | 0.798     | persistent_interleaved |   32    |   64    | 16384  | 6  |
+| (2048,256000) | FULL   | 1.070       | 0.623     | persistent_BLOCKED     |  **4**  |   64    | 2048   | 2  |
+
+FULL-oracle findings (supersede the quick-oracle suspicion):
+1. 2 of 3 CONVERGE to the SAME pid config (persistent_interleaved, sm_mult=32, maxnreg=64) at full effort -- so
+   there IS partial consistency (the hub's outcome-1 for these two). The quick-oracle 0.64/0.62 that worried us
+   were indeed under-explored; the FULL oracles for those shapes pick interleaved@32 (128256) -- consistent.
+2. The WIDEST (2048,256000) GENUINELY differs at FULL effort: persistent_BLOCKED, sm_mult=4 (not interleaved@32).
+   This is a converged full oracle, NOT a quick artifact -> a real per-shape divergence at the extreme width.
+3. ALL THREE full oracles LOSE to tc (oracle/tc 0.947/0.798/0.623) -> CE wide is SOURCE-BOUND vs tc; the pid
+   residual is ORACLE-ONLY, never a tc-beating opportunity. (The seed already matches/closes the CE BOUNDARY
+   shapes to parity via EDIT#1; these WIDE shapes are a source ceiling vs tc that even the oracle can't beat.)
+
+So this is NOT "no clean rule from quick oracles" (not an anti-giving-up give-up). It's a NUANCED full-oracle
+result: partial consistency (interleaved@32 on 2 shapes) + genuine divergence at the widest (blocked@4) +
+oracle-never-beats-tc. The (A)/(B) decision, now on FULL evidence:
+- (A) seed interleaved@32 on the looped-reread regime IF it's NET-POSITIVE vs flat EVERYWHERE it fires (all 3
+  wide CE incl 256000 where it's the "wrong" variant, AND softmax/welford/rms-ln wide). Coarse-but-positive.
+- (B) decline: if interleaved@32 loses to flat at 256000 or on the other looped kernels, the pid choice is
+  per-shape fine-tuning -> Product-B not a Product-A seed. Honest null.
+The DECIDING experiment (do_bench, NO autotune -- I have the full answer key already): matched-lever
+{seed+evict vs +interleaved@32 vs +blocked@4 vs flat} on all 3 wide CE + the interleaved@32 probe on
+softmax(512,131072)/welford(65536,4096)/rms-ln(1,131072). If interleaved@32 net-positive everywhere -> (A); else
+(B). This is the lever-decomp generalization, GPU-needed (do_bench). Bring the hub this + the 98304 decomp (done).
