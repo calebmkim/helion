@@ -250,21 +250,52 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # grid-occupied (M=1024) and grid-starved (M=8). Cap at 256 KiB: persistent at
     # the boundary (256 KiB) is still a tie/win, looped only from 288 KiB up.
     #
-    # CAP = 128 KiB. The crossover region (rnumel 32768->65536, i.e. 128->256 KiB
-    # fp32) is where persistent flips from win/tie to loss for num_load>=2:
-    #   - 32768 (128 KiB): nl=2 P/L=0.96, nl=3 P/L=0.98  -> persistent wins (keep)
-    #   - 65536 (256 KiB): nl=2 P/L=0.99 (tie), nl=3 looped ~5% faster AND the
-    #     w32-on-persistent ramp is suboptimal there (cross_entropy (8192,65536)
-    #     persistent/w32 1195us vs looped ~990us = tc) -> send looped.
-    # So cap at 128 KiB: <=128 KiB persistent, >128 KiB looped for multi-load.
+    # CAP = 240 KiB (RUN-3 RE-DERIVATION; was 128 KiB in run-2). The run-2 cap of
+    # 128 KiB was ~1.75x too LOW: it looped EVERY cross_entropy row with actual
+    # bytes > 128 KiB (V > 32768), but a fresh per-shape oracle + a matched-lever
+    # persistent-vs-looped A/B on the REAL cross_entropy kernel at the REAL train
+    # vocabs (NOT the run-2 synthetic ce_crossover proxy) show persistent WINS and
+    # BEATS torch.compile-default well past 128 KiB. The run-2 cap sent the
+    # ~50K-vocab boundary to a looped seed that is ~1.5-1.7x SLOWER than persistent
+    # AND ~2x slower than tc-default (Phase-1 floor sweep: CE V=50257 G=0.65).
     #
-    # In-sample EFFECT: every existing num_load>=2 kernel (rms_norm/layer_norm/
-    # softmax_two_pass) has rnumel <= 16384 (<=64 KiB) << this cap, so all stay
-    # persistent BYTE-IDENTICALLY (no-regression). It fires only for the wide
-    # cross_entropy rows (V=65536 = 256 KiB and V=131072 = 512 KiB go looped).
-    # num_load=1 (sum/long_sum) and the Band-B kernels (kl_div/jsd, whose tighter
-    # 16 KiB R_BLOCK cap already dominates) are unaffected.
-    MULTILOAD_PERSIST_MAX_BYTES = 131072
+    # The crossover (run-3 _lab/harness/run3_ce_persist_ab.py, H100/fp32,
+    # median-of-7, persist[rl=None,w32] / seed_looped[rl=16384,w32], IDENTICAL at
+    # M in {2048,4096,8192} -> a per-PROGRAM working-set property, not M-dependent):
+    #
+    #   V       | actual row KiB | persist/looped | verdict
+    #   50304   |  196           | 1.56           | PERSIST (beats tc 1.07)
+    #   57344   |  224           | 1.08-1.11      | PERSIST (beats tc, all M)
+    #   65536   |  256           | 0.88-0.92      | LOOPED  (persist spills ~10%)
+    #   73728   |  288           | 0.98           | LOOPED  (~tie)
+    #   81920   |  320           | 0.70           | LOOPED  (persist spills 30%)
+    #   98304+  |  384+          | 0.24-0.47      | LOOPED  (persist spills 2-4x)
+    #
+    # The crossover is between 224 KiB (persist wins ~10%) and 256 KiB (looped wins
+    # ~10%): persistent holds the whole valid row resident across the 2-pass
+    # (amax-pass then exp-sum-pass) RE-READ and wins until that resident row + its
+    # working set SPILLS (~256 KiB on sm_90 for this multi-load pattern), at which
+    # point a looped chunk that streams the row wins. So CAP = 240 KiB (245760 B)
+    # sits in the measured dead-zone between the last confirmed persist-win (224
+    # KiB) and the first looped-win (256 KiB): <=240 KiB persistent, >240 KiB
+    # looped for a multi-load reduction. NOTE this caps on the ACTUAL row bytes
+    # (fact.size_hint*itemsize), not next_pow2 — the crossover tracks the real
+    # resident working set, and 50304/57344/65536 all share next_pow2=65536 yet
+    # split across the crossover, so a next_pow2 cap could not separate them.
+    #
+    # In-sample EFFECT: rms_norm/layer_norm/softmax_two_pass (num_load>=2) all have
+    # rnumel <= 16384 (<=64 KiB) << this cap -> stay persistent BYTE-IDENTICALLY
+    # (no-regression). Now fires only for cross_entropy V >= 65536 (256 KiB+), which
+    # genuinely want looped (persist spills there). cross_entropy V in
+    # {49152,50257,50304,57344} (196-229 KiB) FLIP from looped(slow) -> persistent
+    # (recovers 1.08-1.68x). num_load=1 (sum/long_sum) and Band-B (kl_div/jsd, whose
+    # tighter 16 KiB R_BLOCK cap dominates) are unaffected.
+    #
+    # SEPARATE OPEN ISSUE (NOT addressed by this cap — see notebook "P2"): at
+    # V >= 98304 the looped seed (chunk 16384, w32) is itself ~2x slower than
+    # tc-default; the looped PARAMS (chunk/warps) and/or a 2-pass source ceiling are
+    # a distinct Phase-2 lever, independent of WHERE the persist->loop boundary sits.
+    MULTILOAD_PERSIST_MAX_BYTES = 245760
     # Band-C STRUCTURED-COMBINE (welford-like reduce-then-apply) tile caps, in BYTES
     # (per element via itemsize so they generalize across dtypes). RUN-2 RE-DERIVATION:
     # the welford source bug (`Tn=chunk.size(-1)` counted the padded tile width, not

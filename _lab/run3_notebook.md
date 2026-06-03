@@ -286,6 +286,37 @@ NET CE PLAN: (P1) is a clean seedable win -- raise/replace the persist cap so th
 persistent. (P2) is a looped-param tuning problem + possible source ceiling -- needs more digging before any
 claim. DO NOT just delete the cap (that regresses P2's wide V by 2-4x).
 
+## 2026-06-03 — CE crossover PINNED + M-invariant (finer sweep) -> the P1 edit
+
+Fine V-sweep at M∈{2048,4096,8192} (run3_ce_persist_ab.py, no autotuner, median-of-7, spreads ~0.00-0.03;
+logs ce_crossover_fine.out + ce_crossover_M.out). persist(rl=[None],w32) / seed_looped(rl=[16384],w32):
+
+| V | actual row KiB | M=2048 | M=4096 | M=8192 | verdict |
+|---|---|---|---|---|---|
+| 50304 | 196 |  -    | 1.56 |  -   | PERSIST |
+| 57344 | 224 | 1.11 | 1.09 | 1.08 | PERSIST (all M) |
+| 65536 | 256 | 0.92 | 0.89 | 0.88 | LOOPED (all M) |
+| 73728 | 288 |  -   | 0.98 | 0.98 | ~tie (looped marginal) |
+| 81920 | 320 |  -   | 0.70 |  -   | LOOPED |
+
+CROSSOVER is between 224KiB (persist wins ~9-11%) and 256KiB (looped wins ~9-12%), IDENTICAL at M=2048/4096/
+8192 -> a PER-PROGRAM working-set property (one row per program; M only scales the grid), NOT M-dependent.
+Physical WHY: persistent holds the whole valid row resident across the 2-pass (amax then exp-sum) re-read;
+it wins until the resident row + working set spills (~256KiB), then a looped chunk that streams wins. The
+current cap `MULTILOAD_PERSIST_MAX_BYTES=131072` (128KiB, keyed on fact.size_hint*itemsize = ACTUAL row
+bytes, triton.py:463-465) is ~1.75x too LOW -> it loops V>=32769 (incl. 49152/50304/57344 where persist wins).
+
+THE P1 EDIT (planned): raise MULTILOAD_PERSIST_MAX_BYTES 131072 -> 229376 (224KiB, the last confirmed
+persist-win row size; conservative -- below the 256KiB looped-win so no wide-V regression). Keeps persist for
+actual row <=224KiB, loops above. Recovers CE (4096,50304) 1.56x, (8192,50257) 1.68x, (8192,57344) 1.08x,
+(2048,57344) 1.11x; no-regression at V>=65536 (stays looped) and at rms_norm/layer_norm (rnumel<=64KiB <<
+224KiB, byte-identical). The warps are ALREADY correct (seed picks w32 at rnumel>16384; persist w32 beat w16
+at 50304: 283 vs 310). So the ONLY lever is the cap value -- a single principled constant, matched-lever clean.
+OPEN before commit: (a) code-investigator on whether num_load>=2 is a hacky re-read-count proxy (may re-key
+the cap on a re-read/distinct-operand fact instead -- fact-integrity); (b) the threshold's generality is
+CE-only so far -- the held-out CE shapes + transfer kernels will test it; (c) P2 (wide-V looped params) is
+SEPARATE and unresolved -- this edit does NOT touch it.
+
 ### Tried / rejected
 - **REJECTED: "delete/raise the MULTILOAD cap so all CE goes persistent."** A/B shows forced-persist at
   V>=98304 is 2-4x SLOWER than the looped seed (98304 persist 1837us vs loop 955us; 256000 persist 5011 vs
@@ -302,5 +333,29 @@ claim. DO NOT just delete the cap (that regresses P2's wide V by 2-4x).
   tiny-M-large-M variation rows — check what train actually covers.)
 - H-welford-wideN: welford wide-N looped-apply ceiling claim — re-litigate vs fresh oracle (was OOM, suspect).
 
+## 2026-06-03 — EDIT #1: CE persist cap MULTILOAD_PERSIST_MAX_BYTES 131072 -> 245760 (240KiB)
+
+CHANGE: `helion/_compiler/autotuner_heuristics/triton.py` constant only (NOT a ReductionFact change; the
+`num_load>=2` gate is unchanged). Rewrote the justifying comment with the run-3 A/B grid.
+
+VERIFIED (HELION_AUTOTUNE_EFFORT=none, median-of-7, correctness-gated):
+- CE seed codegen now: V in {32000,49152,50257,50304,57344} -> PERSISTENT; V in {65536,98304,128256} -> LOOPED.
+- Floor recoveries (G=tc/seed): (4096,50304) 0.682->1.075; (8192,50257) 0.651->1.092; (8192,49152) 1.032->
+  1.074; (8192,57344) (was looped ~0.89-equiv) -> persistent G=0.962 (PASSES floor >=0.95, net improvement).
+- Wide V UNCHANGED: (8192,65536) G=0.907, (4096,98304) 0.593, (8192,128256) 0.518 (P2 untouched, as intended).
+- Correctness: maxerr <= 9.5e-7 on every checked shape.
+- NO-REGRESSION (structural): ALL 8 non-CE kernels (rms/ln/softmax/welford/sum/long_sum/kl/jsd) byte-IDENTICAL
+  codegen across their full train splits (verified by re-emitting every seed and diffing codegen vs the
+  committed floor_sweep_merged.json -> zero changes). The cap only fires for num_load>=2 AND row>240KiB; the
+  only num_load>=2 kernel with rows in the 128-240KiB flip-zone is cross_entropy.
+
+STALENESS: this edits triton.py -> source_hash changes for ALL kernels -> the quick oracle cache (batch1) is
+now STALE. For the 8 non-CE kernels the SEED is byte-identical so their oracle is effectively unchanged, but
+the hash moved; for CE the seed changed materially. Re-measuring seed/oracle on the changed CE shapes next
+(fresh source_hash) to confirm VICTORY (new persistent seed ≈ oracle). Flagging the hash move to the hub
+(ledger-keeper guards staleness).
+
 ### Current champion
-- Inherited run-2 `TritonReductionHeuristic` (unmodified). No run-3 heuristic edits yet.
+- Run-2 `TritonReductionHeuristic` + EDIT #1 (CE persist cap 131072->245760). Pending gate pipeline (auditor +
+  results-referee; fact-integrity N/A since no ReductionFact changed; anti-giving-up re-litigates the run-2
+  "wide-CE source ceiling"). Phase-2 oracle re-measure on changed CE shapes in flight.
