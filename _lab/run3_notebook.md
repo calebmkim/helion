@@ -1509,3 +1509,32 @@ the LOOPED regime (row_reread AND not persistent AND wide) -- a persistent grid 
 re-read passes' launch/occupancy. NOT grid-occupancy alone (progs/SM didn't separate). Need: the fact that keys
 sm_multiplier/maxnreg too (they require pid_type != flat). Reporting to hub; EDIT-PID needs the workload fact +
 full gate set (fact-integrity on the grid fact + auditor + narrow-forward no-regression that flat is undisturbed).
+
+## 2026-06-03 — EDIT-PID fact-design CONSTRAINT (non-GPU prep, while CE-wide full oracles run)
+
+Before designing the EDIT-PID workload fact, the KEY constraint (the over-generalization risk the auditor +
+narrow-forward no-regression gate guard): the decomp proved persist_interleaved+sm_mult+maxnreg helps CE(4096,
+98304) by 1.12x. But the carrier must NOT be keyed so broadly that it flips OTHER kernels to persist_interleaved
+WITHOUT evidence. The shapes that are `row_reread AND looped` (the naive key) include: CE wide, softmax wide
+(>240KiB), rms/ln wide robustness (>240KiB), welford wide (Band-C looped apply). I have decomp evidence ONLY for
+CE. A `row_reread AND not persistent` gate would ALSO flip softmax/welford/rms-ln wide -> persist_interleaved,
+which is UNMEASURED and could regress them (run-1 found flat dominant 1.5-4x on narrow-forward; the wide-looped
+behavior of the non-CE re-read kernels is unknown).
+
+=> EDIT-PID fact must be validated on softmax-wide + welford-wide + rms/ln-wide BEFORE shipping (does
+persist_interleaved help, hurt, or no-op them?). Two outcomes:
+  (a) persist_interleaved helps ALL wide-looped re-read kernels -> the fact IS `row_reread AND looped AND wide`
+      (a clean workload regime, generalizes).
+  (b) it helps ONLY CE -> the fact needs a FINER property distinguishing CE (e.g. num_load>=3 / the multi-input
+      structure / a scalar gather present) -- and I must be careful that's not kernel-identity-smuggling. The
+      principled CE-specific property would have to be a real workload feature (the multi-pass multi-load with a
+      gather), justified physically, not "CE has 3 loads so fence it."
+This is the SAME discipline as the cap gate (row_reread, not num_load). DON'T design the fact until the
+multi-kernel persist_interleaved A/B says (a) or (b). GPU queue after CE-consistency oracles: persist_interleaved
+A/B on softmax(512,131072)/(1024,65536) + welford(65536,4096)/(32768,8192) + rms/ln(1,131072), each
+matched-lever {seed vs seed+pid-cluster}, do_bench. Then the fact is evidence-based.
+
+Also: sm_multiplier=32/maxnreg=64 are CONSTANTS in the oracle bundle -- are they shape-portable or do they need
+their own derivation? The decomp used the CE(4096,98304) values; the CE-consistency full oracles (running) will
+show if 8192x128256 + 2048x256000 pick the SAME sm_mult/maxnreg or different (-> whether they're constants or
+need a workload key). If they vary, the seed needs a principled rule for them, not the single observed value.
