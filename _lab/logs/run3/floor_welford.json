@@ -1,0 +1,742 @@
+{
+  "gpu": "0",
+  "kernel": "welford",
+  "geomean_G": 0.9455741895990545,
+  "results": [
+    {
+      "kernel": "welford",
+      "shape": [
+        16384,
+        768
+      ],
+      "band": "b0",
+      "G": 0.9078633323001744,
+      "seed_us": 40.28800129890442,
+      "tc_us": 36.57599911093712,
+      "seed_spread": 0.004765723187860111,
+      "tc_spread": 0.006999178574284028,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.5497207641601562e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          1024,
+          1024
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          1024,
+          1024
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        16384,
+        1024
+      ],
+      "band": "b0",
+      "G": 0.9419516759897548,
+      "seed_us": 50.992000848054886,
+      "tc_us": 48.0320006608963,
+      "seed_spread": 0.0018826625626522267,
+      "tc_spread": 0.0013324551642022193,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.430511474609375e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          1024,
+          1024
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          1024,
+          1024
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        16384,
+        1536
+      ],
+      "band": "b0",
+      "G": 0.9580008130004184,
+      "seed_us": 76.19199901819229,
+      "tc_us": 72.9919970035553,
+      "seed_spread": 0.0008399896072065827,
+      "tc_spread": 0.0008768151298074273,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.430511474609375e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        16384,
+        2048
+      ],
+      "band": "b0",
+      "G": 1.002360894880066,
+      "seed_us": 94.87999975681305,
+      "tc_us": 95.10400146245956,
+      "seed_spread": 0.0023608948800659117,
+      "tc_spread": 0.0003364763119501266,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.5497207641601562e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        16384,
+        2560
+      ],
+      "band": "b1",
+      "G": 0.9545926478679987,
+      "seed_us": 123.32800030708313,
+      "tc_us": 117.72800236940384,
+      "seed_spread": 0.0009081542921670552,
+      "tc_spread": 0.0005436301138174131,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.3113021850585938e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          4096,
+          4096
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          4096,
+          4096
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        8192,
+        3072
+      ],
+      "band": "b1",
+      "G": 0.9785774866142336,
+      "seed_us": 74.68800246715546,
+      "tc_us": 73.08799773454666,
+      "seed_spread": 0.0008569045256729195,
+      "tc_spread": 0.0008756634373816542,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.3113021850585938e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          4096,
+          4096
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          4096,
+          4096
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        16384,
+        4096
+      ],
+      "band": "b1",
+      "G": 0.9778465016265357,
+      "seed_us": 186.3359957933426,
+      "tc_us": 182.20800161361694,
+      "seed_spread": 0.0008587104612733817,
+      "tc_spread": 0.0005268335065455915,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 1.4901161193847656e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          4096,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          4096,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        8192,
+        5120
+      ],
+      "band": "b2",
+      "G": 0.9473821532122715,
+      "seed_us": 122.84799665212631,
+      "tc_us": 116.38399958610535,
+      "seed_spread": 0.0005209123346812928,
+      "tc_spread": 0.0005499079560350189,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 1.3113021850585938e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        8192,
+        7168
+      ],
+      "band": "b2",
+      "G": 0.9597251434070531,
+      "seed_us": 167.64800250530243,
+      "tc_us": 160.89600324630737,
+      "seed_spread": 0.002004192284777427,
+      "tc_spread": 0.0016905227001537757,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 1.3113021850585938e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        8192,
+        8192
+      ],
+      "band": "b2",
+      "G": 0.9680977368766367,
+      "seed_us": 188.57599794864655,
+      "tc_us": 182.559996843338,
+      "seed_spread": 0.0015272868588139142,
+      "tc_spread": 0.0003505723511953007,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 1.430511474609375e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        8192,
+        12288
+      ],
+      "band": "b3",
+      "G": 0.9511551525038183,
+      "seed_us": 290.8799946308136,
+      "tc_us": 276.67200565338135,
+      "seed_spread": 0.001650151998199238,
+      "tc_spread": 0.00034695696871850617,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 1.0728836059570312e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        4096,
+        16384
+      ],
+      "band": "b3",
+      "G": 0.8621309688281176,
+      "seed_us": 213.53599429130554,
+      "tc_us": 184.09599363803864,
+      "seed_spread": 0.0023977404854852264,
+      "tc_spread": 0.000521430578220536,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 9.5367431640625e-07,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        262144,
+        2048
+      ],
+      "band": "b0",
+      "G": 0.980861152863273,
+      "seed_us": 1432.8960180282593,
+      "tc_us": 1405.4720401763916,
+      "seed_spread": 0.0017195503195797871,
+      "tc_spread": 0.00031874594252021677,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.6689300537109375e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          16,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          16,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        65536,
+        4096
+      ],
+      "band": "b1",
+      "G": 0.9159674109850563,
+      "seed_us": 772.2720205783844,
+      "tc_us": 707.3760032653809,
+      "seed_spread": 0.001325967754825938,
+      "tc_spread": 0.0002714066634085509,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 1.5497207641601562e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          4,
+          4096,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          4,
+          4096,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "welford",
+      "shape": [
+        32768,
+        8192
+      ],
+      "band": "b2",
+      "G": 0.8879890494265531,
+      "seed_us": 794.2079901695251,
+      "tc_us": 705.2479982376099,
+      "seed_spread": 0.001108063364608571,
+      "tc_spread": 0.0002949181117330164,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 1.6689300537109375e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          2,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          2,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    }
+  ]
+}

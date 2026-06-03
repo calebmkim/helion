@@ -1,0 +1,631 @@
+{
+  "gpu": "0",
+  "kernel": "layer_norm",
+  "geomean_G": 0.9929421401185649,
+  "results": [
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        8192,
+        768
+      ],
+      "band": "b0",
+      "G": 0.9798927636951473,
+      "seed_us": 23.871999233961105,
+      "tc_us": 23.391999304294586,
+      "seed_spread": 0.0026809076213181117,
+      "tc_spread": 0.002735919399188628,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.384185791015625e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        8192,
+        1024
+      ],
+      "band": "b0",
+      "G": 0.9687163025841375,
+      "seed_us": 29.664000496268272,
+      "tc_us": 28.736000880599022,
+      "seed_spread": 0.002157450903848167,
+      "tc_spread": 0.002227123563516969,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.86102294921875e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        8192,
+        1536
+      ],
+      "band": "b0",
+      "G": 1.0060729208623709,
+      "seed_us": 39.51999917626381,
+      "tc_us": 39.76000100374222,
+      "seed_spread": 0.0008097227816494383,
+      "tc_spread": 0.0024145052456695845,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        8192,
+        2048
+      ],
+      "band": "b0",
+      "G": 0.9808168292759183,
+      "seed_us": 51.711998879909515,
+      "tc_us": 50.71999877691269,
+      "seed_spread": 0.001856449819592267,
+      "tc_spread": 0.001892758937428489,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        4096,
+        2560
+      ],
+      "band": "b1",
+      "G": 1.0515267792466574,
+      "seed_us": 33.535998314619064,
+      "tc_us": 35.26400029659271,
+      "seed_spread": 0.0019083004906217346,
+      "tc_spread": 0.002722343755215977,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        8192,
+        3072
+      ],
+      "band": "b1",
+      "G": 0.9827882651752682,
+      "seed_us": 74.36800003051758,
+      "tc_us": 73.08799773454666,
+      "seed_spread": 0.001290887625752592,
+      "tc_spread": 0.0008756634373816542,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.86102294921875e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        8192,
+        3584
+      ],
+      "band": "b1",
+      "G": 0.9853107100869953,
+      "seed_us": 84.95999872684479,
+      "tc_us": 83.71199667453766,
+      "seed_spread": 0.003013205663213056,
+      "tc_spread": 0.0007645318457329599,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.86102294921875e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        4096,
+        4096
+      ],
+      "band": "b1",
+      "G": 0.9839109123085721,
+      "seed_us": 51.711998879909515,
+      "tc_us": 50.87999999523163,
+      "seed_spread": 0.001856449819592267,
+      "tc_spread": 0.0018868068199756392,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        4096,
+        5120
+      ],
+      "band": "b2",
+      "G": 0.9753272788768325,
+      "seed_us": 63.551999628543854,
+      "tc_us": 61.983998864889145,
+      "seed_spread": 0.0020141140389493078,
+      "tc_spread": 0.0010325324035172694,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.86102294921875e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        4096,
+        7168
+      ],
+      "band": "b2",
+      "G": 0.9872897104178783,
+      "seed_us": 85.60000360012054,
+      "tc_us": 84.51200276613235,
+      "seed_spread": 0.00037383460651796955,
+      "tc_spread": 0.00302917858920856,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        4096,
+        8192
+      ],
+      "band": "b2",
+      "G": 0.9873838561935234,
+      "seed_us": 96.38399630784988,
+      "tc_us": 95.16800194978714,
+      "seed_spread": 0.000995946257552599,
+      "tc_spread": 0.001345000126436275,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.86102294921875e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        2048,
+        12288
+      ],
+      "band": "b3",
+      "G": 1.0217299347002784,
+      "seed_us": 75.1039981842041,
+      "tc_us": 76.73600316047668,
+      "seed_spread": 0.0012782372884584249,
+      "tc_spread": 0.003336041599591119,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        2048,
+        14336
+      ],
+      "band": "b3",
+      "G": 1.0361357117659578,
+      "seed_us": 86.7839977145195,
+      "tc_us": 89.91999924182892,
+      "seed_spread": 0.001474937523346381,
+      "tc_spread": 0.00142349839562285,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.86102294921875e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        2048,
+        16384
+      ],
+      "band": "b3",
+      "G": 0.9731885824850275,
+      "seed_us": 100.25600343942642,
+      "tc_us": 97.56799787282944,
+      "seed_spread": 0.0009574816182331135,
+      "tc_spread": 0.0022958522315737143,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        16384,
+        2048
+      ],
+      "band": "b0",
+      "G": 0.9867109400695491,
+      "seed_us": 96.3200032711029,
+      "tc_us": 95.04000097513199,
+      "seed_spread": 0.0026577501041936433,
+      "tc_spread": 0.00067340579409634,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.86102294921875e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        32768,
+        1024
+      ],
+      "band": "b0",
+      "G": 0.9843749588792301,
+      "seed_us": 96.25600278377533,
+      "tc_us": 94.7519987821579,
+      "seed_spread": 0.000997347990930132,
+      "tc_spread": 0.0006754526358300652,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-06,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    }
+  ]
+}

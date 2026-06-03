@@ -1,0 +1,665 @@
+{
+  "gpu": "0",
+  "kernel": "sum",
+  "geomean_G": 1.0108478366139546,
+  "results": [
+    {
+      "kernel": "sum",
+      "shape": [
+        16384,
+        1024
+      ],
+      "band": "b0",
+      "G": 1.174242429492033,
+      "seed_us": 29.56799976527691,
+      "tc_us": 34.71999987959862,
+      "seed_spread": 0.0021645186632723956,
+      "tc_spread": 0.0018433320146749828,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 1.9073486328125e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        16384,
+        2048
+      ],
+      "band": "b0",
+      "G": 0.9962871724000013,
+      "seed_us": 51.711998879909515,
+      "tc_us": 51.52000114321709,
+      "seed_spread": 0.0024752664261230226,
+      "tc_spread": 0.0018633681844163273,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 3.0517578125e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        16384,
+        2560
+      ],
+      "band": "b1",
+      "G": 0.9658634282324683,
+      "seed_us": 63.74400109052658,
+      "tc_us": 61.5679994225502,
+      "seed_spread": 0.0015060355382309197,
+      "tc_spread": 0.0015592634467866406,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 3.0517578125e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        8192,
+        3072
+      ],
+      "band": "b1",
+      "G": 0.9804074663821121,
+      "seed_us": 40.832001715898514,
+      "tc_us": 40.031999349594116,
+      "seed_spread": 0.0007836137595240913,
+      "tc_spread": 0.001598733222606944,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 4.57763671875e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        8192,
+        4096
+      ],
+      "band": "b1",
+      "G": 0.9828955527000496,
+      "seed_us": 52.38400027155876,
+      "tc_us": 51.4880008995533,
+      "seed_spread": 0.001221756395002234,
+      "tc_spread": 0.00217528066474667,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 4.57763671875e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        8192,
+        5120
+      ],
+      "band": "b2",
+      "G": 1.0005045447203418,
+      "seed_us": 63.4239986538887,
+      "tc_us": 63.45599889755249,
+      "seed_spread": 0.0010090894406836904,
+      "tc_spread": 0.0020171611333674616,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 4.9591064453125e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        8192,
+        8192
+      ],
+      "band": "b2",
+      "G": 1.0016404324783479,
+      "seed_us": 97.53599762916565,
+      "tc_us": 97.69599884748459,
+      "seed_spread": 0.0013123459826782553,
+      "tc_spread": 0.0009826475201019482,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 6.103515625e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        4096,
+        11008
+      ],
+      "band": "b3",
+      "G": 0.9986046405853037,
+      "seed_us": 68.80000233650208,
+      "tc_us": 68.70400160551071,
+      "seed_spread": 0.0018604792195950264,
+      "tc_spread": 0.004191927489577115,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 6.103515625e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        4096,
+        14336
+      ],
+      "band": "b3",
+      "G": 0.99706419785871,
+      "seed_us": 87.20000088214874,
+      "tc_us": 86.94399893283844,
+      "seed_spread": 0.001284413436814378,
+      "tc_spread": 0.0007361116133732714,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 9.1552734375e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        4096,
+        16384
+      ],
+      "band": "b3",
+      "G": 0.9938271889768682,
+      "seed_us": 98.49599748849869,
+      "tc_us": 97.88800030946732,
+      "seed_spread": 0.0006497775438545001,
+      "tc_spread": 0.0009807201157226904,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 9.1552734375e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        4096,
+        28672
+      ],
+      "band": "b4",
+      "G": 1.0030030032739286,
+      "seed_us": 165.16800224781036,
+      "tc_us": 165.66400229930878,
+      "seed_spread": 0.00135625032196623,
+      "tc_spread": 0.001835076032673825,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.0001220703125,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        2048,
+        18944
+      ],
+      "band": "b4",
+      "G": 0.9968271129627571,
+      "seed_us": 60.5119988322258,
+      "tc_us": 60.32000109553337,
+      "seed_spread": 0.0042305365706027855,
+      "tc_spread": 0.0026525400433188508,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 6.866455078125e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        32768,
+        1024
+      ],
+      "band": "b0",
+      "G": 1.101109720794145,
+      "seed_us": 51.90400034189224,
+      "tc_us": 57.151999324560165,
+      "seed_spread": 0.0024661100071672218,
+      "tc_spread": 0.0022396587375403502,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 2.288818359375e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        16384,
+        4096
+      ],
+      "band": "b1",
+      "G": 0.9784031291951039,
+      "seed_us": 97.79199957847595,
+      "tc_us": 95.67999839782715,
+      "seed_spread": 0.0006544552479082574,
+      "tc_spread": 0.0010033521383665037,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 4.57763671875e-05,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    }
+  ]
+}

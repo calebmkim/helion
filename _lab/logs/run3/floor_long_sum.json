@@ -1,0 +1,571 @@
+{
+  "gpu": "0",
+  "kernel": "long_sum",
+  "geomean_G": 1.086047510723754,
+  "results": [
+    {
+      "kernel": "long_sum",
+      "shape": [
+        256,
+        65536
+      ],
+      "band": "b0",
+      "G": 1.0469727915646285,
+      "seed_us": 30.6560005992651,
+      "tc_us": 32.09599852561951,
+      "seed_spread": 0.0015657738960519348,
+      "tc_spread": 0.008973033428260767,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.00018310546875,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        256,
+        98304
+      ],
+      "band": "b0",
+      "G": 1.052870143364067,
+      "seed_us": 42.367998510599136,
+      "tc_us": 44.60800066590309,
+      "seed_spread": 0.0015105855734857236,
+      "tc_spread": 0.0014347311328054113,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.0003204345703125,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        256,
+        131072
+      ],
+      "band": "b0",
+      "G": 1.1862109378403236,
+      "seed_us": 54.30399999022484,
+      "tc_us": 64.41599875688553,
+      "seed_spread": 0.002651758553936481,
+      "tc_spread": 0.0009935495616410755,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.00030517578125,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        128,
+        131072
+      ],
+      "band": "b0",
+      "G": 1.0517062187811015,
+      "seed_us": 30.94400092959404,
+      "tc_us": 32.54399821162224,
+      "seed_spread": 0.007238877852641803,
+      "tc_spread": 0.004916344082501265,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.0002288818359375,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        128,
+        196608
+      ],
+      "band": "b1",
+      "G": 1.0473684316484069,
+      "seed_us": 42.55999997258186,
+      "tc_us": 44.576000422239304,
+      "seed_spread": 0.0015037708498309747,
+      "tc_spread": 0.0014357610983789688,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.0003662109375,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        128,
+        262144
+      ],
+      "band": "b1",
+      "G": 1.3500876142669802,
+      "seed_us": 54.75199967622757,
+      "tc_us": 73.91999661922455,
+      "seed_spread": 0.0017533739691528653,
+      "tc_spread": 0.009740233560391937,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.00042724609375,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        64,
+        262144
+      ],
+      "band": "b1",
+      "G": 1.035641462631631,
+      "seed_us": 31.42400085926056,
+      "tc_us": 32.54399821162224,
+      "seed_spread": 0.006109907441523234,
+      "tc_spread": 0.006883041972590772,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.000396728515625,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        96,
+        393216
+      ],
+      "band": "b1",
+      "G": 1.0107969373852568,
+      "seed_us": 62.24000081419945,
+      "tc_us": 62.912002205848694,
+      "seed_spread": 0.002570713628307609,
+      "tc_spread": 0.0005086508542373636,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.00054931640625,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        64,
+        524288
+      ],
+      "band": "b1",
+      "G": 1.0028360303762764,
+      "seed_us": 56.41600117087364,
+      "tc_us": 56.57599866390228,
+      "seed_spread": 0.001134438563515518,
+      "tc_spread": 0.003959240413711618,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.00096893310546875,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        64,
+        786432
+      ],
+      "band": "b2",
+      "G": 1.2001604878441945,
+      "seed_us": 79.77599650621414,
+      "tc_us": 95.74399888515472,
+      "seed_spread": 0.0020055376898473415,
+      "tc_spread": 0.00033422714777322235,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.0012054443359375,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        64,
+        1048576
+      ],
+      "band": "b2",
+      "G": 1.4967701284092123,
+      "seed_us": 104.032002389431,
+      "tc_us": 155.71199357509613,
+      "seed_spread": 0.002153128363591648,
+      "tc_spread": 0.004110183541944686,
+      "reran_highspread": false,
+      "seed_codegen": "persistent",
+      "correct": true,
+      "maxerr": 0.00189208984375,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        16,
+        2097152
+      ],
+      "band": "b2",
+      "G": 0.7342774336767189,
+      "seed_us": 76.83199644088745,
+      "tc_us": 56.41600117087364,
+      "seed_spread": 0.0029153772574197438,
+      "tc_spread": 0.000567219281757759,
+      "reran_highspread": false,
+      "seed_codegen": "looped",
+      "correct": true,
+      "maxerr": 0.00091552734375,
+      "seed_cfg_raw": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_cfg_norm": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      }
+    }
+  ]
+}

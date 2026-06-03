@@ -41,8 +41,17 @@ import torch
 
 import helion
 
-WT = "/home/calebkim/helion-new-heuristics/wt-reduction-2/"
-assert helion.__file__.startswith(WT), helion.__file__
+# Machine-portable wiring assert: helion must resolve to a worktree whose tree
+# contains THIS harness file (i.e. PYTHONPATH points at the checkout we live in),
+# not to some unrelated install. We derive the expected package root from this
+# file's location rather than hardcoding a per-machine absolute path.
+_WT_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)  # .../<worktree> (parent of _lab)
+assert os.path.abspath(helion.__file__).startswith(_WT_ROOT + os.sep), (
+    f"helion ({helion.__file__}) not under harness worktree ({_WT_ROOT}); "
+    "set PYTHONPATH to this worktree (no sys.path.insert)."
+)
 
 from triton.testing import do_bench  # noqa: E402
 
