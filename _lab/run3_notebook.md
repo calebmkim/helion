@@ -1343,3 +1343,36 @@ off the same resolver. Hub: EDIT-GATE-v2 fact-integrity PASS ✓, awaiting resul
 no-regression, on GPU). On its PASS, EDIT#1(value)+EDIT-GATE-v2(bool) ship as the accepted champion advance.
 Comment cleanups = trivial follow-up commit (no gate). Source all UNCOMMITTED, awaiting hub commit go-ahead +
 GPU-GRANTED for the EDIT#3 A/B.
+
+## 2026-06-03 — EDIT#3 EVICTION A/B RECEIPTS (GPU-GRANTED, do_bench median-of-7) — WIN + de-hack-attributable
+
+EDIT#1+EDIT-GATE-v2 ACCEPTED (referee PASS 5/5: byte-identical 18/18, rms/ln 512KiB looped, CE boundary
+oracle-parity, 9/9 row_reread, correctness). Substrate faithful + banked. Ran GPU-step-1: CE eviction A/B
+(run3_ce_evict_ab.py, fp32, do_bench median-of-7, correctness-gated, one process). GPU released after.
+
+| shape           | codegen    | default us | seed_emitted us | seed/default | pos_slot0 | oracle_exact |
+|-----------------|------------|-----------:|----------------:|-------------:|----------:|-------------:|
+| (4096,50304)    | persistent |     282.5  |          282.5  | **1.000** ✓  |   0.970   |     1.000    |
+| (4096,98304)    | looped     |     956.7  |          731.9  | **1.307**    |   0.997   |     1.308    |
+| (8192,128256)   | looped     |    2715.0  |         2287.1  | **1.187**    |   1.042   |     1.188    |
+| (2048,256000)   | looped     |    1362.8  |         1257.4  | **1.084**    |   0.998   |     1.084    |
+
+seed_emitted policy (EDIT#3, from provenance) = ['','','last','first','first'] (wide looped); None (persistent
+boundary). Findings:
+1. **seed_emitted == oracle_exact** at EVERY shape (731.9 vs 731.6; 2287.1 vs 2286.1; 1257.4 vs 1257.6). My
+   de-hacked policy matches the oracle's ['','','last','first','last'] in perf; the lone diff (slot-4 first vs
+   last) is perf-neutral. => the SEED EMITS THE ORACLE-OPTIMAL eviction. This is a true seed/oracle=1.00 win.
+2. **De-hack-ATTRIBUTABLE** (defeats the auditor's "positional refit in disguise"): pos_slot0 = the run-2
+   POSITIONAL rule ['last','first','first','first',''] gives 0.997/1.042/0.998 — barely above default — and at
+   the persistent boundary REGRESSES to 0.970. The win comes specifically from putting 'last' on LOGITS (slot 2,
+   the reduction row's first load), which only the buffer-identity provenance finds. Positional slot-0='last'
+   marks LABELS (a scalar gather) -> no win. So the gain is the de-hack, not "some eviction."
+3. **Persistent boundary (50304) NEUTRAL**: seed_emitted=default=1.000 (the `not persistent` gate emits None).
+   pos_slot0 would REGRESS it 0.970 -> confirms gating eviction to `not persistent` is correct (persistent row
+   held in regs/SMEM, no HBM re-stream, eviction moot).
+4. all_first/all_last inert-or-worse -> the principled per-slot policy beats blanket policies.
+
+CONCLUSION: EDIT#3 is a clean seedable win, matches the oracle, attributable to the buffer-identity de-hack, no
+boundary regression. Reporting receipts to hub BEFORE committing (per hub directive). Welford no-regression A/B
+(run3_reread_noregress_ab.py) still to run (next GPU grant) to confirm the welford de-hack reproduces its run-2
+eviction win + rms/ln(1,131072) robustness canary -- THEN commit EDIT#3 (fires auditor+referee, no fact-integrity).

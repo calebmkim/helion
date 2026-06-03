@@ -4,26 +4,48 @@
       4096,
       50304
     ],
-    "tc_us": 303.48798632621765,
+    "tc_us": 303.23201417922974,
     "n_slots": 5,
     "reduction_loops": [
       null
     ],
     "arms": {
       "default": {
-        "us": 282.4319899082184,
-        "spread": 0.01065037995239977,
+        "us": 282.52801299095154,
+        "spread": 0.010873340874067662,
         "codegen": "persistent",
         "correct": true,
-        "maxerr": 0.0,
+        "maxerr": 9.5367431640625e-07,
         "ev_norm": null
       },
-      "oracle_exact": {
-        "us": 282.20799565315247,
-        "spread": 0.011792704636199672,
+      "seed_emitted": {
+        "us": 282.49600529670715,
+        "spread": 0.010138207718900099,
         "codegen": "persistent",
         "correct": true,
-        "maxerr": 0.0,
+        "maxerr": 9.5367431640625e-07,
+        "ev_norm": null
+      },
+      "pos_slot0": {
+        "us": 291.23198986053467,
+        "spread": 0.01043836529294962,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first",
+          ""
+        ]
+      },
+      "oracle_exact": {
+        "us": 282.4000120162964,
+        "spread": 0.011331425027955505,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
         "ev_norm": [
           "",
           "",
@@ -32,26 +54,12 @@
           "last"
         ]
       },
-      "reread_rowlast": {
-        "us": 282.1759879589081,
-        "spread": 0.011794147918491845,
-        "codegen": "persistent",
-        "correct": true,
-        "maxerr": 0.0,
-        "ev_norm": [
-          "",
-          "",
-          "last",
-          "first",
-          ""
-        ]
-      },
       "all_first": {
         "us": 284.31999683380127,
-        "spread": 0.0006752481814839024,
+        "spread": 0.0013506011826172125,
         "codegen": "persistent",
         "correct": true,
-        "maxerr": 0.0,
+        "maxerr": 9.5367431640625e-07,
         "ev_norm": [
           "first",
           "first",
@@ -61,11 +69,11 @@
         ]
       },
       "all_last": {
-        "us": 282.24000334739685,
-        "spread": 0.011507958003476726,
+        "us": 282.20799565315247,
+        "spread": 0.011452553818755267,
         "codegen": "persistent",
         "correct": true,
-        "maxerr": 0.0,
+        "maxerr": 9.5367431640625e-07,
         "ev_norm": [
           "last",
           "last",
@@ -81,7 +89,7 @@
       4096,
       98304
     ],
-    "tc_us": 565.6960010528564,
+    "tc_us": 565.2320086956024,
     "n_slots": 5,
     "reduction_loops": [
       16384
@@ -89,15 +97,43 @@
     "arms": {
       "default": {
         "us": 956.6720128059387,
-        "spread": 0.0033783495416563423,
+        "spread": 0.0028264593051354264,
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
         "ev_norm": null
       },
+      "seed_emitted": {
+        "us": 731.9039702415466,
+        "spread": 0.0068860948305650045,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "ev_norm": [
+          "",
+          "",
+          "last",
+          "first",
+          "first"
+        ]
+      },
+      "pos_slot0": {
+        "us": 959.3600034713745,
+        "spread": 0.003168795537107209,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first",
+          ""
+        ]
+      },
       "oracle_exact": {
-        "us": 732.6080203056335,
-        "spread": 0.007054237436237519,
+        "us": 731.552004814148,
+        "spread": 0.006473916042539455,
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
@@ -109,23 +145,9 @@
           "last"
         ]
       },
-      "reread_rowlast": {
-        "us": 732.3840260505676,
-        "spread": 0.005439774923264671,
-        "codegen": "looped",
-        "correct": true,
-        "maxerr": 0.0,
-        "ev_norm": [
-          "",
-          "",
-          "last",
-          "first",
-          ""
-        ]
-      },
       "all_first": {
-        "us": 959.5839977264404,
-        "spread": 0.0002667843043619451,
+        "us": 959.007978439331,
+        "spread": 0.0003003203831769869,
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
@@ -138,8 +160,8 @@
         ]
       },
       "all_last": {
-        "us": 976.3200283050537,
-        "spread": 0.0007374572739374009,
+        "us": 975.9039878845215,
+        "spread": 0.001672300755538769,
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
@@ -158,23 +180,51 @@
       8192,
       128256
     ],
-    "tc_us": 1403.1360149383545,
+    "tc_us": 1401.9520282745361,
     "n_slots": 5,
     "reduction_loops": [
       16384
     ],
     "arms": {
       "default": {
-        "us": 2714.7200107574463,
-        "spread": 0.0019802639315581157,
+        "us": 2715.0399684906006,
+        "spread": 0.0016382583915298809,
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
         "ev_norm": null
       },
+      "seed_emitted": {
+        "us": 2287.087917327881,
+        "spread": 0.001623050010101387,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "ev_norm": [
+          "",
+          "",
+          "last",
+          "first",
+          "first"
+        ]
+      },
+      "pos_slot0": {
+        "us": 2606.623888015747,
+        "spread": 0.0014977627768768844,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first",
+          ""
+        ]
+      },
       "oracle_exact": {
-        "us": 2284.3680381774902,
-        "spread": 0.0023183619316475136,
+        "us": 2286.064028739929,
+        "spread": 0.002372646875315321,
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
@@ -186,23 +236,9 @@
           "last"
         ]
       },
-      "reread_rowlast": {
-        "us": 2284.9440574645996,
-        "spread": 0.0020867092735098475,
-        "codegen": "looped",
-        "correct": true,
-        "maxerr": 0.0,
-        "ev_norm": [
-          "",
-          "",
-          "last",
-          "first",
-          ""
-        ]
-      },
       "all_first": {
-        "us": 2608.6719036102295,
-        "spread": 0.001594653341574691,
+        "us": 2608.5760593414307,
+        "spread": 0.0006624525495968846,
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
@@ -215,8 +251,8 @@
         ]
       },
       "all_last": {
-        "us": 2703.3920288085938,
-        "spread": 0.001550598438218768,
+        "us": 2702.7840614318848,
+        "spread": 0.001965368235732688,
         "codegen": "looped",
         "correct": true,
         "maxerr": 0.0,
@@ -235,26 +271,54 @@
       2048,
       256000
     ],
-    "tc_us": 741.6639924049377,
+    "tc_us": 741.9520020484924,
     "n_slots": 5,
     "reduction_loops": [
       16384
     ],
     "arms": {
       "default": {
-        "us": 1364.799976348877,
-        "spread": 0.0022274878039321598,
+        "us": 1362.7519607543945,
+        "spread": 0.0019020097988101746,
         "codegen": "looped",
         "correct": true,
-        "maxerr": 0.0,
+        "maxerr": 1.9073486328125e-06,
         "ev_norm": null
       },
-      "oracle_exact": {
-        "us": 1256.8639516830444,
-        "spread": 0.0022532235755674743,
+      "seed_emitted": {
+        "us": 1257.4400305747986,
+        "spread": 0.0025066429759887767,
         "codegen": "looped",
         "correct": true,
-        "maxerr": 0.0,
+        "maxerr": 1.9073486328125e-06,
+        "ev_norm": [
+          "",
+          "",
+          "last",
+          "first",
+          "first"
+        ]
+      },
+      "pos_slot0": {
+        "us": 1365.9199476242065,
+        "spread": 0.0004568357225025608,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 1.9073486328125e-06,
+        "ev_norm": [
+          "last",
+          "first",
+          "first",
+          "first",
+          ""
+        ]
+      },
+      "oracle_exact": {
+        "us": 1257.64799118042,
+        "spread": 0.0023663695521367184,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 1.9073486328125e-06,
         "ev_norm": [
           "",
           "",
@@ -263,26 +327,12 @@
           "last"
         ]
       },
-      "reread_rowlast": {
-        "us": 1257.215976715088,
-        "spread": 0.0025071371056291634,
-        "codegen": "looped",
-        "correct": true,
-        "maxerr": 0.0,
-        "ev_norm": [
-          "",
-          "",
-          "last",
-          "first",
-          ""
-        ]
-      },
       "all_first": {
-        "us": 1367.2959804534912,
-        "spread": 0.002082964608521052,
+        "us": 1367.6799535751343,
+        "spread": 0.0020121275025536197,
         "codegen": "looped",
         "correct": true,
-        "maxerr": 0.0,
+        "maxerr": 1.9073486328125e-06,
         "ev_norm": [
           "first",
           "first",
@@ -292,11 +342,11 @@
         ]
       },
       "all_last": {
-        "us": 1372.7999925613403,
-        "spread": 0.002261094917531711,
+        "us": 1372.879981994629,
+        "spread": 0.0021327564013951398,
         "codegen": "looped",
         "correct": true,
-        "maxerr": 0.0,
+        "maxerr": 1.9073486328125e-06,
         "ev_norm": [
           "last",
           "last",
