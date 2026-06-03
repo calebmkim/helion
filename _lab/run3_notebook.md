@@ -2504,3 +2504,25 @@ apply only pays WITH a coupled bigger combine + M_block, and must be GATED so ap
 GAP-LIST UPDATE (post-revert): welford wide-N apply gain is BACK ON THE TABLE but ONLY via a COUPLED+GATED
 EDIT#4b (combine+M_block+apply together, gated off large-M/N=5120) — the standalone apply cap is dead. EDIT#5
 (jsd nro-footprint) is the active worklist; narrow-N cluster (#15) + long_sum-2M (#flag) remain.
+
+## 2026-06-03 — EDIT#5 REFINEMENT: chunk-ALONE likely hits the bar (drop the contentious warps lever)
+
+Before building, re-examined whether EDIT#5 needs the warps lever (warps32->16). Two reasons to DROP it and ship
+the footprint CHUNK cap ALONE:
+1. ARITHMETIC: the decomp's chunk2048-ALONE seed/arm = 1.182 (30522) / 1.099 (32000); the full-oracle gaps were
+   seed/oracle = 1.214 / 1.127. So chunk-alone lands seed/oracle at 1.214/1.182 = **1.027** (30522) and
+   1.127/1.099 = **1.025** (32000) — BOTH inside the 3% TIE bar. The warps lever is NOT needed to reach parity;
+   it's the last ~2% of a gap that's already a tie after the chunk cap.
+2. DISCIPLINE: _num_warps (triton.py:358) is keyed on rnumel ONLY, and its docstring is emphatic that a prior
+   num_load warp-fence was DELETED as "a curriculum-split fence dressed as physics" (matched-pair A/B: warps
+   track rnumel for both num_load 1 and 2). Adding a num_reduction_ops>=2 -> warps//2 rule re-introduces a 2nd
+   axis to that deliberately-rnumel-only ramp. jsd-w16-vs-kl_div-w32 at the SAME rnumel IS a controlled
+   difference the prior A/B didn't test (it used num_load + synthetic single-reduction structure, not nro), so
+   the warps lever is DEFENSIBLE physics (2 accumulators -> more regs/thread -> fewer warps) — but it's a HARDER
+   fact-integrity argument resting on the same 2-point nro difference, for only the last 2% of an already-closed
+   gap. NOT worth the gate risk.
+=> EDIT#5 PLAN REFINED: ship the footprint CHUNK cap ALONE (bandb_cap // max(1,nro)); the chunk-alone arm should
+land jsd at seed/oracle ~1.025-1.027 (TIE). Keep warps OUT of EDIT#5 (note it as a documented sub-2% residual,
+like 256000's blocked@4 for EDIT-PID). The wide-V jsd A/B still confirms World A and that chunk-alone is the
+clean lever wide too. If wide jsd needs warps to NOT regress (World B variant), revisit — but the expectation is
+the chunk cap alone is the whole EDIT#5.
