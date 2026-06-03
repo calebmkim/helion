@@ -549,9 +549,46 @@ EDIT#2 makes the cap principled: gates on the real re-read-pass property; long_s
 nro=1 (not a byte coincidence); CE/softmax capped because they genuinely re-read. num_reduction_ops is ALSO
 the right signal for the re-read EVICTION (next), so one faithful fact does double duty.
 
+## 2026-06-03 — CE RE-READ EVICTION A/B — principled policy MATCHES the oracle, 1.09-1.31x on wide looped CE
+
+`run3_ce_evict_ab.py` (median-of-7, correctness-gated). The looped CE seed's loads (generated Triton):
+[0] labels_tile, [1] logits_at_target (scalar gather), [2] logits_rows (amax pass), [3] logits_rows_1
+(exp-sum pass = the RE-READ of the row). Eviction list length=5 (a 5th codegen slot beyond the 4 tl.load).
+
+| shape | codegen | default | reread_rowlast ['','','last','first',''] | vs_default | arm/tc | all_first | all_last |
+|---|---|---|---|---|---|---|---|
+| (4096,50304) | persistent | 282.4 | 282.2 | 1.001 | 1.076 | 284.3 | 282.2 |
+| (4096,98304) | looped | 956.7 | **732.4** | **1.306** | 0.772 | 959.6 | 976.3 |
+| (8192,128256)| looped | 2714.7| **2284.9**| **1.188** | 0.614 | 2608.7 | 2703.4 |
+| (2048,256000)| looped | 1364.8| **1257.2**| **1.086** | 0.590 | 1367.3 | 1372.8 |
+
+FINDINGS:
+- The PRINCIPLED policy `reread_rowlast = ['','','last','first','']` (keep the amax-pass row load slot[2]
+  L2-resident 'last' for the re-read; stream the exp-sum re-read slot[3] final-use 'first'; default elsewhere)
+  MATCHES the oracle's `['','','last','first','last']` to within noise (732.4 vs 732.6). The oracle's slot[4]
+  'last' is a PASSENGER (no effect). So the win is specifically slot[2]='last' + slot[3]='first' = the welford
+  "reread" logic applied to CE's re-read row.
+- Eviction is a CLEAN WIN on the LOOPED wide-V shapes: 1.306x@98304, 1.188x@128256, 1.086x@256000 (monotone
+  down with V). NEUTRAL on the PERSISTENT boundary (50304: 1.001 — persistent holds the row in registers, no
+  HBM re-read to optimize). So eviction targets exactly the looped wide regime = the remaining floor losses.
+- all_first / all_last do NOT help (confirms it's the specific re-read slot policy, not a blanket).
+- Eviction (1.09-1.31x) closes PART of the wide-V gap (looped seed+evict reaches arm/tc 0.59-0.77, still below
+  tc); the REST to the full oracle (588us@98304) is the persistent-PID cluster. evict + pid ~= the 1.62x oracle.
+- This OVERTURNS run-2's "cross_entropy eviction-neutral" claim (run2_notebook L126): at WIDE V (looped),
+  CE re-read eviction is 1.1-1.3x. run-2 measured CE eviction only at NARROW V where the row fits / re-read is
+  cheap. CONFIRMS: CE is a re-read kernel (nro=2), and the re-read eviction matters once the row is looped.
+
+EDIT#3 (planned): apply a RE-READ eviction policy to nro>=2 T1 reductions. DESIGN ISSUE: the re-read row is
+slots[2,3] for CE (NOT slot[0] like welford's combine). The existing `_eviction_policies(env,"reread")` =
+`['last']+['first']*(n-1)` hardcodes slot[0]='last' — wrong for CE. A FAITHFUL policy must put 'last' on the
+load that is RE-READ (the row's first pass) — which needs per-slot re-read PROVENANCE (which loads resolve to
+the same host buffer across passes — `_reduction_fx_inter_loop_rw_names`). ASKING code-investigator whether
+per-slot re-read provenance is available, so the eviction fact is faithful (not a hardcoded slot index =
+another proxy/style-dependent hack the fact-integrity gate would reject). HOLDING EDIT#3 until that answer.
+
 ### Current champion
-- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap value 240KiB) + EDIT#2 (gate -> num_reduction_ops>=2). 3 CE
-  boundary shapes at oracle parity (0.996-1.00), all else byte-identical, correctness clean. Ready for combined
-  re-gate (fact-integrity + referee). Open (re-scoped): CE wide-V is SEEDABLE 1.62x via re-read eviction
-  (1.31x alone) + persistent-pid cluster (the next edits, gated on nro>=2 = re-read); welford apply-tile +
-  warps; jsd Band-B; softmax small-N.
+- Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB) + EDIT#2 (gate num_reduction_ops>=2). 3 CE boundary
+  at oracle parity, all else byte-identical, correctness clean. Ready for combined re-gate. Open: EDIT#3 CE
+  re-read eviction (1.09-1.31x on wide looped CE, PRINCIPLED, matches oracle — but needs per-slot re-read
+  provenance for a faithful fact; code-investigator query out); then the persistent-PID cluster (the rest of
+  the wide-CE 1.62x; re-opens run-2 pid='flat'); welford apply-tile + warps; jsd Band-B; softmax small-N.
