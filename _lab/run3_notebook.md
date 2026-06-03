@@ -1878,3 +1878,28 @@ DATA-DRIVEN disposition: **(B) Product-B** — interleaved@32 is not net-positiv
 anti-giving-up briefing (hub firing it): 3-shape FULL oracles (1.62/1.24/1.07, variant interleaved@32 x2 +
 blocked@4 x1) + this 3x3 + source ceiling (oracle/tc 0.62-0.95) + the falsified grid-occupancy finer-key. If
 anti-giving-up names a specific NON-falsified finer-fact probe, I'll run it; else (B) stands on the data.
+
+## 2026-06-03 — EDIT-PID: (B) OVERTURNED by anti-giving-up — the finer key is the TRACK (T1 vs Band-C). BUILD it.
+
+My (B) was a PREMATURE #8 give-up: I claimed "no non-identity gate isolates CE from welford" — but I MISSED the
+heuristic's OWN branch structure. **welford is Band-C (is_structured_combine); it is STRUCTURALLY UNREACHABLE by
+a T1-scoped pid override.** The TRACK (T1 rollable vs Band-C structured vs T2 user-tiled) IS a faithful
+non-identity discriminator — CE's pid gain lives in the T1 LOOPED path, which welford (Band-C branch) and softmax
+(T2 branch) never traverse. So scoping the pid override to the T1 branch fires on CE-wide (+5-24%) + rms/ln
+wide-robustness (tie) and CANNOT touch welford/softmax. anti-giving-up ran the skipped layer_norm(1,131072)=1.007
+tie -> the complete T1-override set regresses NOTHING. (This is exactly why #8 says don't conclude "no rule" — I
+had the falsified grid-occupancy finer-key but missed the STRUCTURAL track key sitting in the branch dispatch.)
+
+=> EDIT-PID (A), T1-SCOPED. BUILD: seed {pid_type='persistent_interleaved', num_sm_multiplier=<PHYSICS>,
+maxnreg=<PHYSICS>} in the T1 branch ONLY, gated `fact.row_reread and not persistent` (the SAME gate as EDIT#3
+eviction, triton.py:637). Fires on CE-wide-looped + rms/ln >240KiB-robustness ONLY (their wide looped rows);
+narrow/persistent T1 stays pid='flat' byte-identical. welford(Band-C)/softmax(T2)/kl/jsd(T2)/sum/long_sum
+byte-identical (different branches or num_load==1).
+
+P-HACKING GUARD (critical): sm_mult/maxnreg MUST be PHYSICS-derived, NOT fit to the oracle's 32. The oracle said
+sm_mult=32 on (98304/128256) but BLOCKED@4 on (256000) -> 32 is NOT universally oracle-blessed, so a fit-to-32
+seed would be p-hacking AND wrong on the widest. Derive from the regime physics (grid-light rows: CE M=2048-8192
+<< machine; a persistent grid with sm_mult>1 fills the SMs the under-filling M-grid leaves idle). Need: the
+principled num_sm_multiplier formula + maxnreg rationale (investigate the codegen + SM count). 256000
+interleaved@32=1.052 ~= blocked@4=1.048 -> the variant/sm_mult choice is perf-immaterial there -> a single
+principled coarse value is fine (coarse-but-positive (A), not per-shape tuning).
