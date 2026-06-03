@@ -966,6 +966,49 @@ property). HELD: do NOT commit until (a) hub reviews the design (esp. welford-di
 A/B passes. Lint+pyrefly clean; seeds emit (no crash). Folding this A/B into the same GPU session as the pid
 decomposition (REQ-GPU pending).
 
+## 2026-06-03 — EDIT#3 EVICTION FLIP-SET (4-split) — BROAD blast radius -> NARROW scope to CE+welford
+
+Computed the EDIT#3 eviction flip-set across ALL 4 splits (codegen-only, no do_bench). NEW faithful reread vs
+OLD champion eviction. RESULT: the `elif fact.row_reread -> reread` routing flips eviction on:
+- **cross_entropy: all shapes** (None -> ['','','last','first','first']) — the INTENDED 1.31x win. ✓
+- **welford: all shapes** (positional ['last','first','first','first'] -> faithful ['last','first','','']) — the
+  INTENDED de-hack (differs at weight/bias slots). Needs welford no-regression A/B.
+- **rms_norm: ALL 40 shapes (train+val+test+robustness)** None -> ['last','','first','first','']. UNINTENDED-broad.
+- **layer_norm: ALL shapes** None -> ['last','','first','first','first','','']. UNINTENDED-broad.
+- sum/long_sum/kl_div/jsd/softmax: NO flip (correct).
+
+KEY REALIZATION: row_reread routing applies reread-eviction to rms_norm + layer_norm on EVERY shape — a BROAD
+change to two kernels currently AT FLOOR/parity with DEFAULT eviction, which I have NOT measured. This is bigger
+than the hub's scoped intent (CE win + welford de-hack). run-2 found rms/ln eviction = "no clean rule" (with the
+POSITIONAL rule); the faithful rule MIGHT be neutral (rms/ln rows <=16KB fit cache -> eviction likely moot) or
+help or regress — UNMEASURED. Shipping a blanket eviction change to 2 at-floor kernels without measuring is the
+"assume don't measure" failure.
+
+DECISION: NARROW EDIT#3 to the PROVEN targets — CE (the 1.31x win) + welford (the de-hack) — and treat rms/ln
+reread-eviction as a SEPARATE measured edit (re-litigating run-2's "no rule"; needs its own A/B). The clean
+narrowing: the reread eviction MATTERS (measurable win) only when the re-read row is WIDE enough to spill L2 —
+CE's win was on LOOPED wide-V; rms/ln at floor are PERSISTENT small rows (row fits cache, eviction moot). So
+gate the T1 reread-eviction on `row_reread AND not persistent` (i.e. the looped wide regime) — OR keep
+`row_reread` but require the rms/ln no-regression A/B to PASS before shipping the broad version. ASKED hub the
+scope question; will narrow per its answer + the A/B. (welford is Band-C, separate routing — unaffected by the
+T1 narrowing; its de-hack stands, pending its no-regression A/B.)
+
+This is the task #8 "predict FULL 4-split flip-set, DM design before commit" deliverable — and it CAUGHT the
+broad blast radius before commit (exactly why the flip-set-before-commit discipline exists). EDIT#3 stays
+UNCOMMITTED until scope is settled + A/B passes.
+
+NARROWED (option A, implemented + verified): gate the T1 reread-eviction on `row_reread AND not persistent`.
+PRINCIPLED WHY: eviction policy only affects HBM-STREAMED loads; a PERSISTENT row is held in registers/SMEM
+across the passes (no HBM re-stream) so its load eviction is MOOT (A/B: CE persist boundary 50304 eviction
+neutral 1.001). So reread-eviction applies ONLY in the looped re-read regime (where the win is). New flip-set
+(verified): CE looped wide-V -> reread (the 1.31x/1.19x win); CE persist-boundary + ALL rms/ln/softmax at-floor
+train/val/test -> None = BYTE-IDENTICAL to champion (blanket blast radius ELIMINATED); rms/ln(1,131072) looped
+ROBUSTNESS (2 shapes, >240KiB) -> reread (same wide-row physics as CE; correctness canaries, plausibly-helpful
+direction); welford (Band-C, separate) -> faithful de-hack. So EDIT#3 now touches only the PROVEN win (CE
+looped) + welford de-hack + 2 wide robustness canaries — no unmeasured change to any at-floor perf shape.
+A/B still required: CE looped wins reproduced + welford no-regression (faithful vs positional) + rms/ln(1,131072)
+robustness not-catastrophically-slow. Lint+pyrefly clean.
+
 ### Current champion
 - Run-2 `TritonReductionHeuristic` + EDIT#1 (cap 240KiB, VALUE BANKED) + EDIT-GATE-v2 (persist-cap gate = fact.row_reread,
   the faithful re-read property; replaces the rejected num_load/nro proxies). Seed-byte-identical to the
