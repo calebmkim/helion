@@ -1,0 +1,1 @@
+jsd Band-B | EDIT#5 RESHAPED to triton.py-only per hub -> SHA 46e58c73 (d2ff878a orphaned). Flip-set GREEN, correctness PASS, fact-integrity pre-defense ready. Re-DM'd corrected SHA. Awaiting hub gates + GPU-GRANTED for task#2 status-table | tick 7
