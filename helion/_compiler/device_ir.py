@@ -1017,9 +1017,8 @@ class DeviceIR:
             num_load,
             num_store,
             num_reduction_ops,
-            dtype,
             itemsize,
-            num_tiled_accumulators,
+            num_reduction_tiles,
         ) = self._count_reduction_workload(all_graph_ids, red_block_id, size_hint)
         spec.reduction_facts.append(
             ReductionFact(
@@ -1027,12 +1026,11 @@ class DeviceIR:
                 size_hint=size_hint,
                 m_block_ids=m_block_ids,
                 static_rnumel=static_rnumel,
-                dtype=dtype,
                 itemsize=itemsize,
                 num_load=num_load,
                 num_store=num_store,
                 num_reduction_ops=num_reduction_ops,
-                num_tiled_accumulators=num_tiled_accumulators,
+                num_reduction_tiles=num_reduction_tiles,
                 num_carried_accumulators=self._count_carried_tiled_accumulators(
                     red_block_id, size_hint
                 ),
@@ -1094,16 +1092,22 @@ class DeviceIR:
 
     def _count_reduction_workload(
         self, graph_ids: set[int], red_block_id: int, size_hint: int
-    ) -> tuple[int, int, int, torch.dtype, int, int]:
+    ) -> tuple[int, int, int, int, int]:
         """Count device loads / stores / reductions over ``red_block_id``.
 
         Shared by the T1 (``_build_reduction_fact``) and T2
         (``register_user_tiled_reductions``) fact builders so both digest the
         SAME workload properties (num_load / num_store / num_reduction_ops /
-        dtype / itemsize / num_tiled_accumulators) the same way — only the set of
-        graphs and the axis differ. Returns ``(num_load, num_store,
-        num_reduction_ops, dtype, itemsize, num_tiled_accumulators)``; dtype falls
-        back to fp32/4 if no tensor is found.
+        itemsize / num_reduction_tiles) the same way — only the set of graphs and
+        the axis differ. Returns ``(num_load, num_store, num_reduction_ops,
+        itemsize, num_reduction_tiles)``.
+
+        ``itemsize`` (bytes per element of the resident reduction tile — the byte
+        caps key on ``size_hint * itemsize``) is read from the tensor being
+        reduced over ``red_block_id`` (the input of a ``ReductionLowering``).
+        That tensor is GUARANTEED present — ``red_block_id`` was derived from such
+        a node — so there is no "no tensor found" case to fall back on; we read
+        the real reduced element size rather than fabricating one.
         """
 
         from ..language import _MEMORY_OPS
@@ -1127,29 +1131,19 @@ class DeviceIR:
         # is an accumulator carried across the manual inner loop.
         _accum_create_targets = (_full_op, _zeros_op)
 
-        def _is_reduction_extent(last: object) -> bool:
-            """True if a tile dim IS the reduction axis ``red_block_id``.
-
-            Delegates to ``_extent_is_reduction_axis`` (block-id provenance, not
-            an int-equality proxy — see that method). Kept as a thin local so the
-            two call sites below read clearly.
-            """
-            return self._extent_is_reduction_axis(
-                last, red_block_id, size_hint, red_symbol
-            )
-
         def _last_dim_is_reduction(val: object) -> bool:
             return (
                 isinstance(val, torch.Tensor)
                 and val.ndim >= 2
-                and _is_reduction_extent(val.shape[-1])
+                and self._extent_is_reduction_axis(
+                    val.shape[-1], red_block_id, size_hint, red_symbol
+                )
             )
 
         num_load = 0
         num_store = 0
         num_reduction_ops = 0
-        num_tiled_accumulators = 0
-        dtype: torch.dtype | None = None
+        num_reduction_tiles = 0
         itemsize = 0
         for graph_id in sorted(graph_ids):
             graph = self.graphs[graph_id].graph
@@ -1167,47 +1161,31 @@ class DeviceIR:
                     and getattr(lowering, "block_index", None) == red_block_id
                 ):
                     num_reduction_ops += 1
+                    # itemsize = bytes per element of the tensor being REDUCED (the
+                    # resident reduction tile the byte caps size). Read from the
+                    # reduction node's INPUT — the node's own meta['val'] is the
+                    # reduced OUTPUT (rdim removed; for a type-changing reduction
+                    # like argmax it is even a different dtype), so we read the
+                    # input value, mirroring ReductionLowering.add_input_mask. The
+                    # faithful reduced-element size, dtype-agnostic. (All reductions
+                    # over one rdim share an input element size; the last wins.)
+                    for inp in node.all_input_nodes:
+                        in_val = inp.meta.get("val")
+                        if isinstance(in_val, torch.Tensor):
+                            itemsize = in_val.element_size()
+                            break
                 # Count 2D [M, R] accumulator buffers (live state scaling with
                 # R_BLOCK) — the Band-B vs Band-A T2 distinction.
                 if target in _accum_create_targets and _last_dim_is_reduction(
                     node.meta.get("val")
                 ):
-                    num_tiled_accumulators += 1
-                if dtype is None:
-                    val = node.meta.get("val")
-                    # Read the dtype/itemsize off a tensor whose last dim is the
-                    # reduction extent. Uses the SAME _is_reduction_extent test as
-                    # the accumulator site (symmetry): static int-equality OR the
-                    # symbolic-symbol fallback (so a dynamic reduction dim resolves
-                    # its dtype here rather than only via the any-tensor fallback
-                    # below). Same int-equality caveat as documented above.
-                    if (
-                        isinstance(val, torch.Tensor)
-                        and val.ndim >= 1
-                        and _is_reduction_extent(val.shape[-1])
-                    ):
-                        dtype = val.dtype
-                        itemsize = val.element_size()
-        if dtype is None:
-            for graph_id in sorted(graph_ids):
-                for node in self.graphs[graph_id].graph.nodes:
-                    val = node.meta.get("val")
-                    if isinstance(val, torch.Tensor):
-                        dtype = val.dtype
-                        itemsize = val.element_size()
-                        break
-                if dtype is not None:
-                    break
-        if dtype is None:
-            dtype = torch.float32
-            itemsize = 4
+                    num_reduction_tiles += 1
         return (
             num_load,
             num_store,
             num_reduction_ops,
-            dtype,
             itemsize,
-            num_tiled_accumulators,
+            num_reduction_tiles,
         )
 
     def _count_carried_tiled_accumulators(
@@ -1224,7 +1202,7 @@ class DeviceIR:
         is therefore a ``node_arg`` whose value is a 2D tile with last dim == the
         reduction extent. This EXCLUDES in-loop SCRATCH (a ``[M,R]`` buffer created
         INSIDE the loop body that dies each iteration is NOT in the carry set —
-        kl_div's ``kl_loss``), which ``num_tiled_accumulators`` (any [M,R] create,
+        kl_div's ``kl_loss``), which ``num_reduction_tiles`` (any [M,R] create,
         anywhere) over-counts; and it tracks the CARRIED-TILE count, not the
         ReductionLowering count that ``num_reduction_ops`` gives (the two coincide
         only under a 1:1 reduction<->accumulator structure).
@@ -1438,9 +1416,9 @@ class DeviceIR:
         """Digest workload facts for a single rollable reduction dim.
 
         Walks the ORIGINAL graphs that use ``rdim`` and counts device loads,
-        stores, and reductions over this rdim, and reads the dtype of the
-        reduction-source tensor. These feed the seed heuristic's
-        workload-property branching (NOT kernel identity).
+        stores, and reductions over this rdim, and reads the element size of the
+        reduced tensor. These feed the seed heuristic's workload-property
+        branching (NOT kernel identity).
         """
         env = CompileEnvironment.current()
         m_block_ids = tuple(bs.block_id for bs in env.block_sizes if not bs.reduction)
@@ -1453,9 +1431,8 @@ class DeviceIR:
             num_load,
             num_store,
             num_reduction_ops,
-            dtype,
             itemsize,
-            num_tiled_accumulators,
+            num_reduction_tiles,
         ) = self._count_reduction_workload(used_graphs, rdim.block_id, size_hint)
 
         return ReductionFact(
@@ -1463,12 +1440,11 @@ class DeviceIR:
             size_hint=size_hint,
             m_block_ids=m_block_ids,
             static_rnumel=static_rnumel,
-            dtype=dtype,
             itemsize=itemsize,
             num_load=num_load,
             num_store=num_store,
             num_reduction_ops=num_reduction_ops,
-            num_tiled_accumulators=num_tiled_accumulators,
+            num_reduction_tiles=num_reduction_tiles,
             row_reread=self._compute_row_reread(rdim.block_id),
             reread_buffer_slots=self._compute_reread_buffer_slots(rdim.block_id),
         )

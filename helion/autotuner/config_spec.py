@@ -100,24 +100,29 @@ class ReductionFact(NamedTuple):
       ``size_hint`` drives persistent-vs-looped (the first lever).
     - ``m_block_ids``: the non-reduction (kept) tile block_ids (the "rows").
     - ``static_rnumel``: the reduction extent if statically known, else None.
-    - ``dtype`` / ``itemsize``: dtype of the reduction-source tensor.  Read as a
-      fact so the heuristic generalizes to bf16/fp16 (precision is fixed fp32
-      for now but the heuristic must NOT hardcode it).
+    - ``itemsize``: bytes per element of the tensor being reduced (read from the
+      reduction's input, not a hardcoded fp32).  The byte caps key on
+      ``size_hint * itemsize``, so this keeps them dtype-general (bf16/fp16) even
+      though precision is fixed fp32 for now.
     - ``num_load`` / ``num_store``: count of device memory loads / stores in the
       rolling-candidate graphs (arithmetic-intensity / live-state proxy →
       Band A vs Band B).
     - ``num_reduction_ops``: count of reduction lowerings over this rdim
       (number of accumulators, e.g. welford-like multi-accumulator combines).
-    - ``num_tiled_accumulators``: count of ALL ``[M_BLOCK, R_BLOCK]`` 2D buffers
-      (``zeros``/``full``/``empty``) whose last dim is the reduction extent,
-      created ANYWHERE in the device graphs (root OR inner-loop body). Used ONLY
-      as the Band-A-vs-Band-B ROUTING signal: ``>=1`` => a [M,R]-tile reduction
+    - ``num_reduction_tiles``: count of ALL ``[M_BLOCK, R_BLOCK]`` 2D tiles
+      (``zeros``/``full``/``empty``) whose last dim spans the reduction axis,
+      materialized ANYWHERE in the device graphs (root OR inner-loop body). Named
+      for what it counts — 2D tiles that are PART OF the reduction — NOT
+      "accumulators": a tile created inside the inner loop lives only for that
+      iteration and is not necessarily a live/carried accumulator (that faithful
+      live-footprint count is ``num_carried_accumulators`` below). Used ONLY as the
+      Band-A-vs-Band-B ROUTING signal: ``>=1`` => an ``[M,R]``-tile reduction
       exists => Band B. ``0`` for a scalar/row-accumulator (Band-A) reduction (T1,
       or a T2 like softmax_two_pass that carries only ``[M_BLOCK]`` row state) —
       those stay persistent to the structural cap. CAVEAT: this count is NOT the
       carried-footprint count — it OVER-counts in-loop SCRATCH (kl_div allocates a
       ``[M,R]`` ``kl_loss`` INSIDE the inner loop that dies each iteration -> not
-      carried, yet counted here: kl_div num_tiled_accumulators==2). Over-counting
+      carried, yet counted here: kl_div num_reduction_tiles==2). Over-counting
       is BENIGN for routing (``>=1`` still routes to Band B), but it must NOT be
       used to SIZE the R_BLOCK cap (that needs the carried count below). A WORKLOAD
       property (a [M,R]-tile reduction exists), NOT kernel identity.
@@ -128,7 +133,7 @@ class ReductionFact(NamedTuple):
       live-resident-footprint count the Band-B R_BLOCK cap divides by: the inner
       loop holds ``num_carried_accumulators`` such tiles resident simultaneously,
       so footprint = ``R_BLOCK * itemsize * num_carried_accumulators``. UNLIKE
-      ``num_tiled_accumulators`` it EXCLUDES in-loop scratch (kl_div's ``kl_loss``
+      ``num_reduction_tiles`` it EXCLUDES in-loop scratch (kl_div's ``kl_loss``
       is created inside the loop body, is NOT in the loop carry set -> excluded:
       kl_div num_carried_accumulators==1; jsd carries ``intermediate_loss`` +
       ``intermediate_dX`` -> ==2). UNLIKE ``num_reduction_ops`` (a count of
@@ -184,12 +189,11 @@ class ReductionFact(NamedTuple):
     size_hint: int
     m_block_ids: tuple[int, ...]
     static_rnumel: int | None
-    dtype: torch.dtype
     itemsize: int
     num_load: int
     num_store: int
     num_reduction_ops: int
-    num_tiled_accumulators: int = 0
+    num_reduction_tiles: int = 0
     num_carried_accumulators: int = 0
     is_structured_combine: bool = False
     apply_block_ids: tuple[int, ...] = ()

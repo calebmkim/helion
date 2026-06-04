@@ -217,7 +217,7 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # (= 4096 fp32 elems) is best-or-tied at EVERY in-sample Band-B row (narrow
     # rows: persist/cap=0.996–1.017, i.e. no regression; wide rows: recovers the
     # spill). Expressed in BYTES (via itemsize) so it generalizes across dtypes.
-    # Scalar-accumulator reductions (num_tiled_accumulators==0: every T1 kernel +
+    # Scalar-accumulator reductions (num_reduction_tiles==0: every T1 kernel +
     # softmax_two_pass, which carries only a [M_BLOCK] row state) are UNAFFECTED —
     # they stay persistent to the structural cap. EVIDENCE:
     # _lab/harness/t2_bandb_chunk_sweep.py + t2_bandb_narrow_check.py.
@@ -769,7 +769,7 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         # (the inner loop carries [M_BLOCK, R_BLOCK] live accumulators; a full-N
         # R_BLOCK only survives at M_BLOCK=1).
         r_block = extent
-        if fact.num_tiled_accumulators >= 1:
+        if fact.num_reduction_tiles >= 1:
             # BAND B: this T2 reduction carries one-or-more [M_BLOCK, R_BLOCK] 2D
             # accumulators across the inner loop (kl_div: loss_sum; jsd:
             # intermediate_loss + intermediate_dX). A full-N persistent R_BLOCK
@@ -793,13 +793,13 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             # num_reduction_ops (a ReductionLowering count that equals the carried
             # count only under a 1:1 reduction<->accumulator structure; it mis-sizes
             # N reductions on ONE carried tile [under-sizes] or M tiles reduced fewer
-            # times [over-sizes -> spill]) and NOT num_tiled_accumulators (over-counts
+            # times [over-sizes -> spill]) and NOT num_reduction_tiles (over-counts
             # in-loop scratch like kl_loss -> would over-divide). Gated on the WORKLOAD
-            # properties num_tiled_accumulators>=1 (Band-B routing) + carried-count
+            # properties num_reduction_tiles>=1 (Band-B routing) + carried-count
             # divisor, NOT kernel identity — any Band-B reduction's chunk scales as
             # 1/n_carried (the TRANSFER tv_distance probe carries 1 -> stays 4096 like
             # kl_div). jsd is the sole firer by curriculum incidence, not a fence.
-            # Scalar-/row-accumulator T2 (softmax_two_pass, num_tiled_accumulators==0)
+            # Scalar-/row-accumulator T2 (softmax_two_pass, num_reduction_tiles==0)
             # stays persistent to the structural cap.
             bandb_cap = max(
                 1,
