@@ -1,0 +1,236 @@
+[
+  {
+    "kernel": "jsd",
+    "shape": [
+      8192,
+      30522
+    ],
+    "nro": 2,
+    "n_acc": 2,
+    "is_bandb": true,
+    "nro_cap": 2048,
+    "seed_R": 4096,
+    "new_R": 2048,
+    "tc_us": 678.7199974060059,
+    "arms": {
+      "seed": {
+        "us": 803.6479949951172,
+        "spread": 0.0018515571043069424,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32
+      },
+      "nro_chunk": {
+        "us": 675.3280162811279,
+        "spread": 0.017769178872181806,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 32
+      },
+      "nro_warps": {
+        "us": 672.5760102272034,
+        "spread": 0.0070177977522593365,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 16
+      },
+      "nro_both": {
+        "us": 662.6880168914795,
+        "spread": 0.009512810688195603,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16
+      }
+    }
+  },
+  {
+    "kernel": "jsd",
+    "shape": [
+      8192,
+      32000
+    ],
+    "nro": 2,
+    "n_acc": 2,
+    "is_bandb": true,
+    "nro_cap": 2048,
+    "seed_R": 4096,
+    "new_R": 2048,
+    "tc_us": 699.9040246009827,
+    "arms": {
+      "seed": {
+        "us": 767.1679854393005,
+        "spread": 0.0004171411527500355,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32
+      },
+      "nro_chunk": {
+        "us": 698.6240148544312,
+        "spread": 0.13438986172300132,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 32
+      },
+      "nro_warps": {
+        "us": 683.9680075645447,
+        "spread": 0.004514870878013127,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 16
+      },
+      "nro_both": {
+        "us": 678.5280108451843,
+        "spread": 0.004385965297561599,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16
+      }
+    }
+  },
+  {
+    "kernel": "jsd",
+    "shape": [
+      2048,
+      256000
+    ],
+    "nro": 2,
+    "n_acc": 2,
+    "is_bandb": true,
+    "nro_cap": 2048,
+    "seed_R": 4096,
+    "new_R": 2048,
+    "tc_us": 1395.0400352478027,
+    "arms": {
+      "seed": {
+        "us": 1388.5760307312012,
+        "spread": 0.02576445156427334,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32
+      },
+      "nro_chunk": {
+        "us": 1356.5759658813477,
+        "spread": 0.12261454171713629,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 32
+      },
+      "nro_warps": {
+        "us": 1352.895975112915,
+        "spread": 0.06022047572128928,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 16
+      },
+      "nro_both": {
+        "us": 1359.071969985962,
+        "spread": 0.05069336836737182,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2048,
+          1
+        ],
+        "w": 16
+      }
+    }
+  },
+  {
+    "kernel": "kl_div",
+    "shape": [
+      8192,
+      30522
+    ],
+    "nro": 1,
+    "n_acc": 2,
+    "is_bandb": true,
+    "nro_cap": 4096,
+    "seed_R": 4096,
+    "new_R": 4096,
+    "tc_us": 723.9200174808502,
+    "arms": {
+      "seed": {
+        "us": 652.0640254020691,
+        "spread": 0.0004907759442820763,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32
+      }
+    }
+  },
+  {
+    "kernel": "kl_div",
+    "shape": [
+      1024,
+      256000
+    ],
+    "nro": 1,
+    "n_acc": 2,
+    "is_bandb": true,
+    "nro_cap": 4096,
+    "seed_R": 4096,
+    "new_R": 4096,
+    "tc_us": 716.3199782371521,
+    "arms": {
+      "seed": {
+        "us": 684.7200095653534,
+        "spread": 0.0015188424867285176,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          4096,
+          1
+        ],
+        "w": 32
+      }
+    }
+  }
+]

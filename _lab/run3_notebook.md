@@ -2983,3 +2983,288 @@ git-diff contamination is pre-existing non-mine cache drift. Reporting the cache
 
 GUARDRAIL reaffirmed (hub): nothing banks off the cache; every parity/ceiling claim re-validates against a FRESH
 FULL oracle. The deterministic key is only for the cheap iterating picture (task#2 status-table).
+
+## 2026-06-04 — TASK#2: LIVE seed/oracle picture rebuilt on the 6bcfeed1 champion (status-table, GPU-granted)
+
+EDIT#5-v2 BANKED = champion advance #6 (6bcfeed1, 3/3 gates). GPU-granted; ran run3_status_table.py (live seed
+vs deterministic-keyed cached oracle, 8 in-scope kernels, welford-filtered + per-shape idle-gated, all corr=True).
+status_table_fresh.json. The cached seed_us palimpsest is gone — this is the CURRENT picture post EDIT-PID/EDIT#6/
+EDIT#5-v2. seed/oracle WORST-first:
+
+| shape | s/orac | G | orac/tc | codegen | effort | note |
+|---|---|---|---|---|---|---|
+| rms_norm(8192,768)     | 1.170 | 0.961 | 0.889 | persistent | quick | NARROW-N cluster (biggest gap) |
+| softmax(131072,256)    | 1.113 | 0.897 | 1.002 | persistent | quick | NARROW-N cluster |
+| cross_entropy(8192,57344)| 1.102 | 0.963 | 0.942 | persistent | quick | 224KiB boundary edge (oracle wants bigger looped chunk — old note) |
+| softmax(4096,4096)     | 1.079 | 1.035 | 0.895 | persistent | quick | mild mid-N |
+| layer_norm(8192,768)   | 1.056 | 0.956 | 0.990 | persistent | quick | NARROW-N cluster |
+| layer_norm(2048,16384) | 1.046 | 0.986 | 0.970 | persistent | quick | mild |
+| (everything else)      | <=1.04 |  |  |  |  | at-or-near oracle |
+
+VICTORIES confirmed by the live re-bench (the banked edits ARE working):
+- jsd 1.022/1.025/1.007 (EDIT#5-v2 — narrow+wide at tie). kl_div 1.000/1.004.
+- softmax-wide 1.039 (1024,65536) / 1.019 (512,131072) (EDIT#6 eviction). CE-wide 0.99-1.018 (EDIT-PID+evict;
+  the boundary 49152/50257/50304/32000 all 0.99-1.07 G beating tc, seed≈oracle).
+- CE wide-V (98304/128256/256000) seed/oracle 0.999-1.018 — at oracle (the residual vs tc is the source ceiling,
+  oracle/tc 1.3-1.6 means... wait orac/tc>1 there = oracle SLOWER than tc? No: oracle_vs_tc=oracle/tc, and for
+  128256 it's 1.311 = oracle 1.31x tc = oracle LOSES to tc => source-bound, as established; seed≈oracle is the bar).
+- sum/long_sum/most rms/ln at parity.
+
+THE WORKLIST (real GAPs, seed/oracle>1.05) — quick-oracle so FULL-confirm before counting (quick-undershoot: the
+softmax(1024,65536) quick=1.000 -> full=1.338 reversal is the cautionary tale; a quick GAP is real+only-widens,
+a quick PARITY is suspect):
+1. NARROW-N cluster (DOMINANT theme): rms_norm(8192,768)=1.170, softmax(131072,256)=1.113, layer_norm(8192,768)=
+   1.056. All persistent narrow rows. The occupancy-vs-rnumel question is VETTED-OPEN (code-investigator: not
+   falsified; OCC genuinely varies 31..1986; the staged run3_softmax_occ_warps_ab.py discriminators isolate it).
+   Field-diff (cached): rms(8192,768) oracle wants warps tweak; softmax(131072,256) wants num_warps 4->8.
+2. cross_entropy(8192,57344)=1.102: the 224KiB persist-boundary edge (notebook ~line 396: oracle here is LOOPED
+   chunk=32768/65536 beating my persist seed; a documented edge — the cap hands it persistent but its true best is
+   a bigger looped chunk). Re-examine: is this seedable without regressing the 49152/50257/50304 persist wins?
+3. softmax(4096,4096)=1.079 + layer_norm(2048,16384)=1.046: mild mid-N, lower priority.
+
+NEXT (GPU, this session): full-confirm the narrow-N cluster oracles + run the occupancy-vs-rnumel A/B
+(run3_softmax_occ_warps_ab.py) + fresh oracles on rms/ln(8192,768). long_sum(16,2097152)=0.998 seed≈oracle<tc
+(orac/tc 1.363 = oracle loses to tc) -> FLAG anti-giving-up (source-limit candidate, don't self-certify). kl_div
+full-confirm still owed (quick-parity 1.000/1.004). All NEED full oracles before counting toward PARITY.
+
+## 2026-06-04 — narrow-N OCCUPANCY A/B: OCC governs softmax warps (NOT rnumel) — clean monotone contour; rms tension
+
+run3_softmax_occ_warps_ab.py (do_bench median-7, GPU-granted, per-shape idle-gated). The DISCRIMINATORS settle
+the OCC-vs-rnumel question the code-investigator vetted-open — **OCC (grid_rows//num_sm) governs, NOT rnumel**:
+| shape | OCC | rnumel | best_w | seedw/best |
+|---|---|---|---|---|
+| loOcc_tinyN (4096,256)   | 31   | 256 | w4  | 1.000 |
+| loOcc_smallN (16384,512) | 124  | 512 | w4  | 1.000 (w16=0.519 CATASTROPHIC) |
+| midOcc_tinyN (32768,256) | 248  | 256 | w4  | 1.000 (w16=0.523) |
+| hiOcc_tinyN (131072,256) | 993  | 256 | **w8**  | 1.107 |
+| hiOcc_smallN (131072,512)| 993  | 512 | **w16** | 1.291 |
+| hiOcc_tinierN (262144,128)| 1986| 128 | **w16** | 1.049 |
+TWO clean contrasts (same rnumel, diff OCC -> diff warps => OCC is the lever):
+- rnumel=256: OCC=31 -> w4 BUT OCC=993 -> w8. rnumel held fixed, OCC flips the answer.
+- rnumel=512: OCC=124 -> w4 BUT OCC=993 -> w16. Same.
+CONTOUR: OCC<=~248 -> w4 (and MORE warps is CATASTROPHIC at low OCC: w16 ~0.5x); OCC~993 -> w8-w16; OCC~1986 ->
+w16. At HIGH OCC the warp count ALSO scales with rnumel (993&256->w8 vs 993&512->w16) -> "high OCC -> scale warps
+up with row width; low OCC -> keep w4". Keyed on grid_rows//num_sm = the EXACT EDIT-PID quantity -> NO new fact,
+track-agnostic-capable. This is the principled occupancy rule (the run-2 "overfitting trap" RESOLVED: it's not
+rnumel, it's occupancy).
+
+**TENSION (must resolve before building): rms_norm(8192,768) has the BIGGEST gap (s/orac 1.170) but OCC=62 (LOW)**
+-> the softmax occupancy rule (low OCC -> keep w4) would NOT help rms(8192,768). Either (a) rms narrow-N is a
+DIFFERENT lever than softmax warps (its oracle wants something else — M_block? a different warp behavior on the
+T1 persistent path?), or (b) the OCC threshold differs for T1. The softmax A/B is T2-only. MUST field-diff
+rms_norm(8192,768)'s FULL oracle (+ layer_norm(8192,768)) before generalizing — the cluster may be 2 phenomena
+(T2-softmax-occupancy-warps + T1-rms/ln-narrow-something), not one rule. DON'T assume the softmax rule transfers
+to T1.
+
+NEXT (GPU, this session): FULL oracles on softmax(131072,256) [confirm w8 gain + field-diff], rms_norm(8192,768)
++ layer_norm(8192,768) [what do the T1 narrow-N oracles want? does OCC govern T1 or is it a different lever?].
+Full-confirm before any build (quick-undershoot rule). The softmax-256 occupancy gain looks clean+real; the rms/ln
+narrow-N needs its own field-diff.
+
+## 2026-06-04 — narrow-N FULL oracle #1: softmax(131072,256) — gap CONFIRMED 1.170, oracle wants a w16+Mblock BUNDLE
+
+(Resumed after the 13h stall; the dead bg oracle bromwg7tb produced nothing. HARD RULE now: NO detached bg GPU
+jobs — full oracles run FOREGROUND under the token, one shape/file at a time, beacon per shape. The foreground
+590s-timeout approach WORKS: softmax landed at 570s exit-0 + notified. The per-config 60s-compile/30s-bench
+timeouts are NORMAL skip-and-continue, not job death.)
+
+softmax(131072,256) FULL oracle (run3_oracle.py --kernel softmax --M 131072 --N 256, effort=full, converged at
+gen14 "no active search path", 570s, cached):
+  **seed/oracle = 1.170** (full; quick was 1.113 -> full WIDENED, confirms a REAL gap, per quick-undershoot).
+  seed_us=111.4 (persistent) oracle_us=95.2 (persistent) tc_us=93.6 -> oracle/tc=0.984 (oracle ~= tc).
+FIELD-DIFF (seed vs oracle):
+  num_warps: 4 -> **16**;  block_sizes: [8,256] -> **[16,256]** (M_BLOCK 8->16);  num_stages: 1 -> 5;
+  load_eviction_policies: None -> ['','first'];  range_* mild pipelining.
+=> NOT a pure "occupancy->warps" rule — it's a COUPLED BUNDLE (warps 16 + M_BLOCK 16 + ns5 + eviction). The
+occupancy A/B (warps-only, seed M_BLOCK) found w8 best at this shape (w16=1.052); the full oracle picks w16 WITH
+M_BLOCK=16 (a coupled choice — bigger M_BLOCK changes occupancy + per-program work, making w16 pay). So the
+narrow-N softmax fix may need warps AND M_block together, not warps alone. NEXT: lever-decomp A/B (re-bench the
+oracle's FULL VERBATIM config as baseline; ladder: oracle block_sizes alone -> +warps -> +stages) to find the
+carrier(s). But FIRST get the rms/ln(8192,768) full oracles to see if the T1 narrow-N gap is the same bundle or
+a different lever (the rms-tension: OCC=62 low). Recorded; launching rms(8192,768) full oracle foreground.
+
+## 2026-06-04 — narrow-N QUICK triage (rms+ln 8192x768) — the cluster is 3 DIFFERENT stories, NOT one warp rule
+
+(rms full oracle was flaky-to-complete — search converged at 259s then proc died before cache-write, no traceback,
+not the timeout; hub finding logged. Switched to QUICK triage per hub — completes reliably, readable config to
+field-diff. quick=iterating; PARITY needs FULL-confirm of whatever we bank.)
+
+run3_oracle.py quick, FOREGROUND, exit-0, cached:
+- **rms_norm(8192,768) [GAP] seed/oracle=1.136** (quick). FIELD-DIFF: num_warps 4->**1** (FEWER!); reduction_loops
+  [None]->**[256]** (LOOPED, not persistent!); range_num_stages [0]. So rms narrow-N wants FEWER warps + to LOOP the
+  768 row. (Partial full-oracle agreed direction: it explored num_warps=2 + persistent_interleaved.)
+- **layer_norm(8192,768) [VICTORY] seed/oracle=0.939** (quick) — seed BEATS the quick oracle. FIELD-DIFF: block_sizes
+  [1]->[8] (M_block). Likely NOT a real gap (the status-table 1.056 was quick-noise / different run); seed-beats-
+  quick is a strong not-a-gap signal. Full-confirm to be sure, but low priority.
+
+DECISIVE SYNTHESIS — the narrow-N cluster is THREE DIFFERENT phenomena, NOT one "narrow-N warp rule":
+1. softmax(131072,256) HIGH-OCC (993): wants MORE warps (4->16) + M_BLOCK 8->16 + ns + evict. FULL 1.170. (occupancy
+   A/B: high OCC -> more warps, confirmed.)
+2. rms_norm(8192,768) LOW-OCC (62): wants FEWER warps (4->1) + LOOPED reduction ([None]->[256]). quick 1.136.
+3. layer_norm(8192,768) LOW-OCC (62): seed≈oracle (0.939, seed beats quick) — likely a NON-GAP.
+=> The old "opposite directions" tension is REAL after all (I'd retracted it on a garbled w16 datum; the true
+   story: softmax-smallN wants MORE warps b/c HIGH occupancy, rms-narrowN wants FEWER b/c LOW occupancy). This is
+   CONSISTENT with the occupancy contour (low OCC -> don't add warps; high OCC -> add warps) — softmax & rms are
+   on OPPOSITE ends of the OCC axis, so they move opposite. BUT rms ALSO wants to LOOP the row (a 2nd lever), and
+   ln is a non-gap. So there is NO single clean edit for "narrow-N"; each is its own analysis:
+   - softmax small-N: occupancy-keyed warps + M_block bundle — the cleanest candidate (full 1.170), but it's a
+     BUNDLE (needs lever-decomp: which of w16/Mblock16/ns5/evict carries it). And the occupancy key (grid_rows//
+     num_sm, EDIT-PID quantity, no new fact) is principled.
+   - rms narrow-N: FEWER warps + loop a 768-row. w1 on a 768 reduction is unusual; looping a row that fits
+     persistent is counter-intuitive — needs a careful field-diff + decomp + WHY before trusting (low-OCC means
+     few programs, so looping may help fill... but it's quick + a 22us shape near the noise floor). Risk: 22us
+     shape, do_bench jitter — the 1.136 may be partly noise. LOWER priority / careful.
+   - ln narrow-N: non-gap, drop.
+
+DISPOSITION (reporting to hub): the highest-value, cleanest narrow-N target is softmax small-N (1.170 full,
+occupancy-keyed). rms/ln narrow-N are smaller/noisier/non-gap. NEXT (after hub): lever-decomp the softmax
+bundle (re-bench oracle's full verbatim config; ladder block_sizes->+warps->+stages) to find the seedable carrier
++ confirm the occupancy key. The full-oracle-completion flakiness on narrow shapes is an OPEN infra issue (hub
+aware) — for softmax the full DID complete (1.170 in hand); for any narrow-N bank I'll need a reliable full-confirm.
+
+## 2026-06-04 — softmax(131072,256) BUNDLE lever-decomp — carrier = COUPLED {M_BLOCK 16, warps 16}; ns/evict passengers
+
+run3_softmax_smalln_decomp.py (do_bench median-7, foreground, correctness-gated). seed=106.0us,
+oracle_verbatim=95.5us (=1.110), tc=93.8us:
+| arm | seed/arm | note |
+|---|---|---|
+| +Mblock16 ALONE       | 1.043 | partial |
+| +warps16 ALONE        | 1.048 | partial |
+| **+Mblock16+warps16** | **1.107** | = ORACLE (the carrier, super-additive: 1.043x1.048=1.093 < 1.107) |
+| +Mblock16+warps16+ns5 | 1.107 | ns5 INERT |
+| +evict ALONE          | 1.089 | minor; adds nothing on top of the pair |
+| +Mblock16+warps16+evict| 1.110 | = oracle (evict passenger) |
+
+CARRIER = the COUPLED pair {M_BLOCK 8->16, num_warps 4->16} — captures the full 1.107 (oracle 1.110). Each
+alone only ~1.04-1.05; together super-additive. num_stages=5 INERT, eviction a minor passenger. Both carrier
+levers are seedable scalar/block knobs. WHY coupled: doubling M_BLOCK (8->16) doubles the per-program work
+(2 rows' worth), which makes 16 warps pay (more parallel work to fill them); at M_BLOCK=8 the row is too small
+for 16 warps (warps16-alone only 1.048). So it's M_BLOCK-and-warps scaled TOGETHER, occupancy-permitting.
+
+PRINCIPLED KEY (the rule, not a 1-shape fit): this shape is OCC=993 (HIGH, grid_rows//num_sm — the EDIT-PID
+quantity, NO new fact). The occupancy A/B already showed HIGH-OCC small-N wants more warps; the decomp adds that
+it wants M_BLOCK scaled too. Candidate rule: HIGH grid-occupancy + small rnumel (the row underfills a program) ->
+bump M_BLOCK + warps together so each program does more work + has the warps to run it. LOW OCC (rms 62) does
+NOT (rms wanted FEWER warps) — consistent, opposite ends of the OCC axis.
+
+BUT THIS IS ONE SHAPE. A clean seedable rule needs the occupancy->{M_BLOCK,warps} CONTOUR confirmed across
+multiple high-OCC small-N shapes (does the coupling + the exact M_BLOCK/warps scaling generalize, or is
+(131072,256)->M16,w16 a fit?). This is the run-2 occupancy-OVERFITTING-TRAP territory — must not hardcode one
+shape's bundle. NEEDS a multi-shape generality A/B (high-OCC small-N: e.g. (262144,128) OCC=1986, (131072,512)
+OCC=993, + the LOW-OCC controls that must stay w4 (16384,512)/(4096,256)) sweeping M_BLOCK x warps, to find the
+occupancy-keyed contour before building. softmax small-N gap is REAL + full-confirmed (1.170) + the carrier is
+clean (M_block+warps), but the RULE generality is the open question.
+
+DISPOSITION to hub: softmax small-N carrier identified (coupled M_block+warps, occupancy-keyed). Build needs a
+generality A/B (the occupancy contour) to avoid a 1-shape fit. rms narrow-N (FEWER warps + loop, 22us noisy) +
+ln (non-gap) are separate/lower. Reporting; the generality A/B is the next GPU step if hub agrees softmax small-N
+is worth the rule.
+
+## 2026-06-04 — small-N occupancy CONTOUR A/B — CLEAN generalizing rule: HIGH-OCC small-N -> M_BLOCK x2 + warps16
+
+run3_smalln_occ_contour_ab.py (do_bench median-7, foreground). Coupled {M_BLOCK xMult, warps} swept across
+high-OCC small-N + low-OCC controls. seed/arm (BEST starred):
+| OCC | shape | seed_M | M x2+w8 | Mx2+w16 | Mx4+w8 | Mx4+w16 | BEST |
+|---|---|---|---|---|---|---|---|
+| 31 (lo)  | (4096,256)   | 1 | 0.963 | 0.765 | 1.054 | 0.929 | Mx4+w8 (1.054, 10us=NOISE; w16 HURTS 0.765) |
+| 124 (lo) | (16384,512)  | 1 | 0.980 | 0.785 | 0.999 | 0.940 | **seed** (bump HURTS, w16=0.785 catastrophic) |
+| 993 (hi) | (131072,256) | 8 | 1.094 | **1.108** | 1.048 | 1.089 | **Mx2+w16** |
+| 993 (hi) | (131072,512) | 8 | 1.239 | **1.265** | 1.093 | 0.958 | **Mx2+w16** |
+| 1986(hi) | (262144,128) | 16| 1.029 | **1.034** | 0.995 | 1.033 | **Mx2+w16** |
+
+CLEAN GENERALIZING RULE (not a 1-shape fit — the run-2 occupancy-trap CLEARED):
+- ALL 3 high-OCC small-N shapes want the SAME coupled bump = **M_BLOCK x2 + num_warps 16** (1.034-1.265). M x4
+  over-bumps (worse than x2 everywhere). So the carrier is a single coupled lever: double M_BLOCK + warps->16.
+- LOW-OCC controls CONFIRM the gate: (16384,512) OCC=124 -> seed best, the bump HURTS (w16=0.785); (4096,256)
+  OCC=31 -> the dangerous w16 hurts (0.765), Mx4+w8 marginal 1.054 on a 10us noise shape. So at LOW OCC the bump
+  must NOT fire (it regresses).
+- THRESHOLD: clean separation between OCC=124 (don't bump) and OCC=993 (bump). Keyed on grid_rows//num_sm (the
+  EDIT-PID quantity — NO new fact). High OCC = many programs already fill the SMs, so each can afford 2 rows +
+  16 warps; low OCC = few programs, bumping over-subscribes/serializes -> hurts. PHYSICAL why, not a fit.
+
+=> GATE-READY CANDIDATE (EDIT#7?): a T2 occupancy-keyed branch — when grid_rows//num_sm >= ~THRESH (between 124
+and 993; pick a principled value, e.g. >= ~256 or a multiple of num_sm) AND the reduction is small/persistent
+small-N (rnumel small), set M_BLOCK = 2*floor + num_warps = 16. Captures softmax small-N 1.03-1.27x; full oracle
+on (131072,256) confirms 1.170. NEXT (per the brief, before building): (a) FULL-confirm the gain on >=1 more
+high-OCC shape (131072,512 quick->full); (b) full 4-split FLIP-SET — does the OCC>=THRESH gate fire on any OTHER
+curriculum shape (rms/ln/sum/CE/jsd/kl high-M)? must NOT regress them — the overfit/identity guard; (c) pin the
+THRESHOLD + the "small-N" co-condition principledly (not fit to softmax); (d) design + DM hub. The rule is T2;
+does it generalize to T1 high-M small-N (rms/ln high-M narrow)? — check in the flip-set. This is occupancy-keyed
+like EDIT-PID's sm_mult; fact-integrity will scrutinize the OCC threshold + the small-N co-key.
+RELEASING GPU after this (build + flip-set are non-GPU; full-confirm is the next GPU step). DM hub the candidate.
+
+## 2026-06-04 — EDIT#7 4-split FLIP-SET scope (non-GPU, shape-level) — T2-scope makes it clean
+
+Scanned the candidate gate (OCC=grid_rows//num_sm >= 256 AND rnumel <= 1024) across ALL 4 splits (shape-level
+M/132 upper-bound on OCC, so OVER-includes; anything not listed definitely doesn't fire). Firers:
+  softmax: (262144,128)train, (131072,256)train, (262144,256)val, (131072,128)test, (262144,257)robust — intended.
+  NON-softmax (ALL robustness, ALL T1): rms_norm(262144,256), layer_norm(262144,256), sum(262144,256).
+KEY: the only non-softmax firers are rms/ln/sum at the extreme (262144,256) robustness corner — and they are
+**T1** (rollable row-reductions), while softmax is **T2** (user-tiled). So:
+  => SCOPE EDIT#7 TO THE T2 PATH (like EDIT-PID is T1-scoped). Then rms/ln/sum(262144,256) are STRUCTURALLY
+     EXCLUDED (never reach the T2 branch) -> no regression risk on those robustness shapes. Within T2, EVERY
+     firer is softmax (kl/jsd are T2 but huge-vocab N >> 1024 -> excluded by rnumel<=1024). So "only softmax
+     fires" is by CURRICULUM INCIDENCE (softmax is the ONLY T2 kernel in the high-OCC small-N regime), NOT an
+     identity fence — exactly the jsd-for-EDIT#5 situation. Auditor defense: the gate is a workload property
+     (T2 + high grid-occupancy + small rnumel); a hypothetical T2 small-N high-M kernel would correctly get the
+     bump; the low-OCC controls proved it regresses off-gate so it's not a blanket.
+This RESOLVES plan-step-(b) (identity/overfit guard) + the regression risk: T2-scope + incidence. The THRESH
+(between OCC 124 and 993; pick ~256, = ~2x num_sm, principled "comfortably grid-saturated") + rnumel<=1024
+co-key + the T2-scope are the design. STILL NEED (GPU): full-confirm a 2nd high-OCC shape (131072,512 was 1.265
+quick-bundle; (262144,128) 1.034) before banking; the (131072,256) full=1.170 is in hand. And M_BLOCK=2*floor +
+warps=16 is the bump (Mx2 beat Mx4 in the contour).
+NOTE the robustness softmax firers (262144,257 non-pow2, 131072,128) — EDIT#7 would bump them too; correctness-
+canary them (masked, should be fine) + not-catastrophically-slow. (262144,257) is non-pow2 N -> the persist
+R_BLOCK=np2(257)=512; M_block x2 + w16 should be fine but VERIFY in the correctness gate.
+
+## 2026-06-04 16:56 — *** RUN STOPPED BY HUMAN *** (clean resume point)
+
+Hub sent shutdown (human requested full stop). State flushed; GPU released (0 MiB, no orphans); champion intact.
+
+CHAMPION (banked, trustworthy): HEAD 12f341ef. 6 champion_advances / 24 gate_verdicts in ledger.run3.
+  #1 row_reread fact; #2 EDIT#1 CE persist-cap 240KiB; #3 EDIT#3 reread-eviction; #4 EDIT-PID T1 persist_interleaved;
+  #5 EDIT#6 softmax T2 reread-eviction; #6 EDIT#5-v2 jsd Band-B num_carried_accumulators divisor (6bcfeed1).
+  Plus oracle-cache recipe determinism fix (12f341ef, _lab). oracle_cache.json re-stamped in working tree
+  (UNCOMMITTED by design — carries non-mine welford latency drift; recoverable via run3_restamp_oracle_hashes.py).
+
+=== RESUME HERE (next worker): build + gate EDIT#7 (high-OCC small-N softmax) — analysis DONE, NOT built ===
+EDIT#7 is a GATE-READY candidate, fully analyzed this session, NOT yet built/committed/gated:
+- WHAT: T2 path. When grid_rows//num_sm >= THRESH AND rnumel small/persistent -> M_BLOCK = 2*floor + num_warps = 16.
+  Keyed on grid_rows//num_sm (the EDIT-PID quantity; NO new fact).
+- EVIDENCE: softmax(131072,256) FULL oracle 1.170; decomp carrier = COUPLED {M_BLOCK x2, warps16} (=1.107=oracle;
+  ns5 inert, evict passenger; each lever alone ~1.04-1.05, together super-additive). Generality contour A/B
+  (run3_smalln_occ_contour_ab.py): all 3 hi-OCC small-N want M_BLOCK x2+w16 (1.034-1.265); M x4 over-bumps; LOW-OCC
+  controls confirm bump HURTS off-gate (w16 0.765-0.785). Clean OCC threshold between 124 (don't) and 993 (do).
+- FLIP-SET (4-split, DONE, non-GPU): gate (OCC>=256 & rnumel<=1024) fires on softmax train+val+test+robust ONLY;
+  the sole non-softmax firers (rms/ln/sum @ 262144,256 robustness) are T1 -> T2-SCOPE excludes them structurally
+  (zero regression). "Only softmax fires" = curriculum incidence not fence (jsd/EDIT#5 pattern). Identity guard RESOLVED.
+- HUB LIGHT-STEER (resume, not a build-authorization): THRESH = 2*num_sm (=264 on H100, "fills grid twice", in the
+  proven gap) over a round 256; rnumel<=1024 co-key is data-justified but COMMENT it "conservative bound, untested
+  above 1024 at high OCC" (a future hi-OCC mid-N shape may want it raised), NOT a law.
+- BUILD STEPS (resume worklist): (a) build the T2 rule in triton.py (the get_seed_config T2 plain-path return, ~line
+  796-818 area where pid/warps/block_sizes are set); (b) emission-verify the 5 firing softmax shapes get M_block x2
+  + w16, all non-firers byte-identical (re-run the 4-split flip-set harness logic); (c) correctness-gate the firers
+  incl (262144,257) non-pow2 robustness; (d) GPU full-confirm >=1 more hi-OCC shape (131072,512: quick-bundle 1.265
+  -> full) before it counts toward parity; (e) commit T2-only (scope hygiene) + DM hub the SHA -> gates: auditor
+  (no-fence/incidence + low-OCC-control regression evidence) + results-referee (full flip-set no-regress) +
+  fact-integrity (only if a new fact; the OCC quantity already exists via EDIT-PID, so likely auditor+referee only —
+  but the THRESHOLD is a constant fact-integrity may scrutinize as a magic number; defend via the contour: 124-vs-993
+  proven gap + the low-OCC-hurts controls).
+- INFRA BLOCKER for the full-confirm: full oracles DIE post-convergence on NARROW shapes (search finishes ~259s then
+  proc dies before cache-write; happened on rms(8192,768)). softmax(131072,256) full DID complete (1.170 cached). For
+  (131072,512) full-confirm: try foreground again; if it dies post-search, CHECK the .out log for the converged
+  winner config + fair-re-bench it manually (the search result is in the log even if cache-write crashes). Quick
+  iterates but PARITY needs a real full. FOREGROUND ONLY — never detached bg GPU (caused the 13h stall).
+
+LOWER-PRIORITY / PARKED:
+- rms_norm(8192,768) low-OCC narrow: quick 1.136, oracle wants FEWER warps (4->1) + LOOP the 768-row. 22us NOISE-FLOOR
+  risk + counter-intuitive levers. If revisited: use seed/oracle RATIO (not raw us), lift M off floor, perf-investigator
+  must explain the mechanism BEFORE banking; anti-giving-up will demand a noise-robust re-measure.
+- layer_norm(8192,768): NON-GAP (quick 0.939, seed beats oracle). Dropped.
+- long_sum(16,2097152) 2M tail: source-limit CANDIDATE (seed/oracle 0.998, oracle/tc 1.363 = oracle loses to tc =
+  N>2^20 structural-looped). Worker FLAGS, does NOT self-certify -> hub fires anti-giving-up with a FULL oracle (must
+  show seed~=oracle AND oracle<tc). Confirmed structural-looped compile-only (N=2097152 > 2^20 max_tensor_numel).
+- kl_div full-confirm owed (quick-parity 1.000/1.004; full needed before counting toward PARITY).
+
+PARITY STATUS: most of the 8 in-scope kernels at-or-near oracle (live status_table_fresh.json on 6bcfeed1). Real
+remaining gaps = EDIT#7 softmax small-N (the active candidate) + the parked items above. NOT at === PARITY === yet.

@@ -1,0 +1,18 @@
+diff --git a/tritonbench/operators/welford/operator.py b/tritonbench/operators/welford/operator.py
+index 3c4fbe3..1f48851 100644
+--- a/tritonbench/operators/welford/operator.py
++++ b/tritonbench/operators/welford/operator.py
+@@ -116,6 +116,13 @@ class Operator(BenchmarkOperator):
+             mode="max-autotune-no-cudagraphs",
+         )
+ 
++    @register_benchmark()
++    def torch_compile_welford_default(self, p1, p2, p3) -> Callable:
++        # Product-A baseline-to-beat: torch.compile DEFAULT mode (no
++        # max-autotune). Cloned from torch_compile_welford with no `mode=` so
++        # Inductor uses its default codegen path. See _lab harness patches.
++        return torch.compile(self.eager_welford(p1, p2, p3))
++
+     def get_x_val(self, example_inputs) -> float:
+         p1, p2, p3 = example_inputs
+         s, d = p3.size()

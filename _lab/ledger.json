@@ -2665,5 +2665,554 @@
       "diff": "git diff 25561778 -- helion/ examples/ test/ = 8 files +527/-123 (shippable)",
       "status": "PR-READY / MERGEABLE (never pushed)"
     }
+  },
+  "run3": {
+    "gate_verdicts": [
+      {
+        "edit": "EDIT#1 (MULTILOAD_PERSIST_MAX_BYTES 131072->245760)",
+        "gate": "fact-integrity",
+        "verdict": "FAIL",
+        "date": "2026-06-03",
+        "claim_audited": "num_load>=2 gate (which EDIT#1's cap sits behind) faithfully encodes the resident-byte/re-read property",
+        "finding": "num_load is a syntactic op-count of hl.load FX nodes (device_ir.py:1108-1121), NOT distinct-operand or resident-byte or reduction-pass count. Proxy-separating kernels: CE (1 big row + scalar gather + 2 reduction passes -> num_load~3, over-counts), rms_norm (x + broadcast weight -> num_load=2 but ~1 resident row), cross_entropy_online (same workload, different load-node count = style-dependent #12).",
+        "endorsed": "the cap VALUE move 128->240KiB is in the right direction on the byte axis, re-derived vs real CE kernel; the FAIL is the GATE, not the value.",
+        "faithful_property": "reduction-pass count (num_reduction_ops, already computed device_ir.py:1124-1129: CE=2, long_sum=1) and/or distinct-large-host-read-operand bytes via _fx_trace_tensor_arg_rw_names resolver (device_ir.py:608-703).",
+        "options": "(1) drop num_load prefix, gate on bytes alone; (2) re-key onto num_reduction_ops / resident-operand-bytes.",
+        "consumers": "triton.py:493 (multiload cap) + triton.py:435/554 (eviction num_load==1)",
+        "hub_note": "OPTION 1 REJECTED by hub: bytes-alone forces 11/12 long_sum train rows (>240KiB, persistent, num_load=1, currently 1.0-1.5) -> LOOPED = regression. Direction = option 2 (faithful property). Worker to design re-key (EDIT#2) + verify flip-set empirically (softmax wide rows are the prime regression risk: 2-pass, 512KiB train row, currently persistent & fine) before re-gating fact-integrity + referee.",
+        "disposition": "EDIT#1 NOT accepted standalone; perf direction endorsed but must fold in EDIT#2 gate re-key, then combined re-gate."
+      },
+      {
+        "edit": "EDIT#1 (MULTILOAD_PERSIST_MAX_BYTES 131072->245760)",
+        "gate": "adversarial-auditor",
+        "verdict": "PASS-with-flag",
+        "date": "2026-06-03",
+        "verified": [
+          "diff is exactly as claimed (cap 131072->245760, num_load>=2 gate unchanged, no ReductionFact/device_ir change)",
+          "3 CE boundary seeds now emit genuine PERSISTENT; oracle parity measured vs FULL VERBATIM oracle config; seed/oracle 0.996/1.000/1.000, oracle/tc 1.050/1.086/1.056 (>1 => seedable, NOT source ceiling)",
+          "tolerance not loosened (shared check_correct rtol1e-3/atol1e-4), no shapes dropped, budget not blown",
+          "240KiB is PHYSICAL not a CE fence: crossover pinned by M-invariant A/B (persist beats tc at 224KiB, loses at 256KiB); NO num_load>=2 curriculum shape lands in (196.5KiB,256KiB) except dev-only 57344 => any cap value in that window gives identical curriculum codegen (signature of a physical threshold, not a tuned fence)",
+          "kl_div/jsd protected by BANDB_R_BLOCK_BYTES independent of the cap (inert) - confirmed structurally",
+          "ZERO codegen flips on any non-CE TRAIN shape (no-regression on train exactly true)",
+          "4th boundary (8192,57344)=1.105 honestly disclosed as residual, not over-claimed"
+        ],
+        "flag": "The cap branch is SHARED with softmax/rms_norm/layer_norm, NOT CE-exclusive (commit wording imprecise). EDIT#1 makes 2 REAL looped->persistent flips on HELD-OUT softmax: val(2048,49152)=192KiB, test(2048,40960)=160KiB. Physics predicts beneficial (below the nl=2 256-288KiB spill; softmax 128KiB persistent already G=1.215) - the OPPOSITE of an overfit fence - but UNMEASURED out-of-sample.",
+        "auditor_requested_rerun": "matched-lever A/B (median-7, correctness-gated) softmax 2048x49152 + 2048x40960: persistent-seed vs old-looped vs tc; pass if persistent>=looped within eps at 160KiB+192KiB.",
+        "hub_note": "PASS endorses the perf direction + that 240KiB is physical not a fence. HUB RESOLUTION of the softmax flag WITHOUT breaching firewall: softmax TRAIN brackets the 128-240KiB flip-zone ((2048,32768)=128KiB persistent + (1024,65536)=256KiB looped are BOTH train) -> derive softmax's persist/loop crossover from TRAIN; the val/test flips at 160/192KiB are then validated by INTERPOLATION within the trained envelope (curriculum design guarantee), no val/test perf-tuning needed. Folds into the EDIT#2 re-gate.",
+        "disposition": "perf direction ACCEPTED; final acceptance deferred to combined EDIT#1+EDIT#2 (faithful-gate) re-gate with softmax train-crossover + full flip-set verified."
+      },
+      {
+        "edit": "EDIT#1 (MULTILOAD_PERSIST_MAX_BYTES 131072->245760)",
+        "gate": "results-referee",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "reproduced": {
+          "seed_oracle_parity": {
+            "ce(4096,50304)": 1.0016,
+            "ce(8192,50257)": 1.0003,
+            "ce(8192,49152)": 1.0003,
+            "rule": "<=1.05, oracle was full VERBATIM cached config (cfg_equal=False) not same-config twice"
+          },
+          "floor_G": {
+            "ce(4096,50304)": 1.0557,
+            "ce(8192,50257)": 1.0936,
+            "ce(8192,49152)": 1.0556,
+            "all_clear_noise": true
+          },
+          "no_regression": "8 non-CE widest shapes config-identical to pre-change; counterfactual byte-identity SHA256 match (cap 245760 vs 131072) for softmax/welford/long_sum/sum -> cap provably inert for non-CE",
+          "correctness": "seed maxerr <=9.54e-7 all 3, allclose rtol1e-3/atol1e-4 TRUE",
+          "causal": "monkeypatch cap 245760->131072 flips all 3 CE seeds persistent->looped (back to floor-loser) -> the raise is the sole cause"
+        },
+        "gpu_discipline": "referee BLOCKED ~9min for the worker's run3_oracle.py (PID 92659) to exit, confirmed 0%/0MiB before+after, all arms same-process -> uncorrupted. BUT flags a near-collision on the one-GPU queue.",
+        "hygiene_note": "stale /home/calebkim/ paths in harness docstrings + run2_measure_g.py startswith() portability assert (matches portable-lab-state memory) -- non-blocking here (_WT_ROOT derived from __file__).",
+        "env": "helion.__file__=worktree, cap=245760 confirmed, CUDA_VISIBLE_DEVICES=0, seed=1234, N=9 do_bench medians/arm",
+        "disposition": "EDIT#1 cap VALUE fully validated by referee+auditor (perf real, no-regression, physical threshold). Provisionally BANKED on value; the num_load GATE under it still carries the fact-integrity FAIL -> refix in EDIT#2 (read-pass-count) before final freeze."
+      },
+      {
+        "edit": "EDIT#2 (re-key cap gate num_load>=2 -> num_reduction_ops>=2)",
+        "commit": "82a0de72",
+        "gate": "hub-prescreen + fact-integrity (firing)",
+        "verdict": "REJECT (hub) / fact-integrity in flight",
+        "date": "2026-06-03",
+        "finding": "num_reduction_ops is ALSO a proxy \u2014 UNDER-counts (mirror of num_load's over-count). The cap's faithful property = 'reduction-input row is REUSED so persistent spills at wide N'. rms_norm/layer_norm reuse the row via reduce-THEN-apply (read x for sum(x^2), RE-READ whole row x in normalize y=x*rstd*w) -> spill at wide N (run-2's OWN committed P/L table: rms_norm P/L=2.91 @512KiB). But num_reduction_ops=1 for rms_norm (apply pass is not a ReductionLowering) -> nro>=2 EXEMPTS wide rms_norm -> persistent -> 2.9x regression.",
+        "hub_verification": "scanned ALL splits (not just train): rms_norm + layer_norm ROBUSTNESS (1,131072)=512KiB flip looped->persistent under nro>=2 (were correctly looped under num_load>=2). Worker's 'EXACTLY 3 CE flips, no other kernel' was TRAIN-ONLY (rms train maxes 64KiB<cap) -> missed the robustness wide rows.",
+        "behavioral_set": "num_load>=2 fired for {rms,ln,softmax,CE} (right set, by luck of over-count); nro>=2 = {CE,softmax,ln,jsd} EXEMPTS rms_norm (wrong set). Neither is faithful.",
+        "faithful_fact": "row_reread boolean: is the reduction-input HOST BUFFER read in >1 distinct pass/region (2nd reduction pass OR post-reduction apply re-read)? From _fx_trace_tensor_arg_rw_names / _reduction_fx_inter_loop_rw_names (device_ir.py ~608-703). Right set: sum/long_sum=False(exempt,persist); rms/ln/softmax/CE=True(governed); welford Band-C + kl/jsd Band-B own caps dominate. Small targeted fact, NOT a general framework.",
+        "bonus": "same row_reread fact ALSO generalizes the reread load-eviction (currently is_structured_combine-only) to CE \u2014 one faithful fact, double duty.",
+        "lesson_logged": "flip-set scans MUST cover train+val+test+robustness (cap fires on byte-width; widest rows live in robustness).",
+        "disposition": "EDIT#2 num_reduction_ops re-key REJECTED. Worker directed to row_reread provenance fact (EDIT-GATE-v2). EDIT#1 cap VALUE remains banked; gate stays num_load (the less-wrong proxy) until row_reread lands. fact-integrity verdict pending (independent confirm)."
+      },
+      {
+        "edit": "EDIT#2 (num_reduction_ops re-key)",
+        "gate": "fact-integrity (independent)",
+        "verdict": "FAIL",
+        "date": "2026-06-03",
+        "confirms": "hub prescreen reject. nro counts ONLY ReductionLowering nodes over the axis, NOT the post-reduction apply re-read -> rms_norm nro=1 (single torch.mean; y=x*rstd*w apply is not a reduction) -> nro>=2 EXEMPTS rms_norm robustness (1,131072)=512KiB -> persistent -> ~2.9x spill (run-2 P/L 2.75-2.91 @>=288KiB). Strictly worse set than num_load.",
+        "CRITICAL_refinement": "CODEGEN-CONFIRMED: rms_norm loads x with a SINGLE hl.load (num_load=2 = x + weight); the row is reused IN-REGISTER across reduction->apply, NOT via a 2nd HBM load. So even a 'host buffer in >1 distinct LOAD node' OR '>1 read-region' test MISSES rms_norm. The faithful property is REUSE/LIVENESS ACROSS THE REDUCTION BOUNDARY: the reduction-input tile (resolved to host buffer via _fx_trace_tensor_arg_rw_names ~608-644) is consumed by BOTH a ReductionLowering(red_block_id) AND a downstream store/apply (or >=2 reduction lowerings). NOT a load-node count, NOT a region-read-count.",
+        "num_load_also_unfaithful": "softmax_decomposed/nnf-softmax = num_load=1 for the same 2-pass re-read math -> num_load>=2 would wrongly EXEMPT it. num_load is correct on the operative curriculum kernels only by luck of over-counting = 'less-wrong placeholder', not faithful.",
+        "faithful_fact_spec": "reduction-input reuse-across-boundary flag: tile value consumed by a ReductionLowering AND a downstream apply/store. Compute in _build_reduction_fact/_count_reduction_workload (already walks these graphs + imports ReductionLowering); roller _reduction_fx_inter_loop_rw_names for buffer-identity half. Right set: sum/long_sum=False; rms/ln/softmax(all variants)/CE=True. Style-independent across softmax+CE variants.",
+        "cleanup_needed": "stale comments triton.py:494-499 still assert 'GATE = num_reduction_ops>=2' (from reverted EDIT#2) \u2014 contradict operative code (gate is num_load>=2 at :523) + dominant note :502-522. Delete (comment-only).",
+        "disposition": "confirms EDIT#2 reject (already reverted commit 1cb50a6a). Worker building faithful reuse-across-boundary fact (task#8); hub must correct its own 'region-membership' framing -> 'consumed-by-reduction-AND-apply' (in-register reuse, not 2 load regions)."
+      },
+      {
+        "edit": "EDIT-GATE-v2 (row_reread faithful fact + cap re-key)",
+        "commit": "91dfd8ef",
+        "gate": "fact-integrity",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "computes": "per host buffer, # of distinct LOOP graphs (ReductionLoopGraphInfo T1 / ForLoopGraphInfo T2; Root excluded) containing an hl.load resolving to it (via _fx_trace_tensor_arg_rw_names); any(count>=2). Post-roller kernel-global dataflow, NOT load-op count, NOT region-read count.",
+        "acid_rms_norm": "GRAPH-DUMP PROOF: g0 Root(excl) loads x,weight; g1 ReductionLoop n_red=1 loads x (SUM); g2 ReductionLoop n_red=0 loads x,weight (APPLY) -> x in 2 loop graphs -> True for the RIGHT reason (genuine apply-subgraph re-load of the row, not weight). OVERTURNS the EDIT#2-pass 'in-register, no 2nd load' claim: the ROLLER materializes the apply pass as a separate loop graph that RE-EMITS the x load. row_reread measures the post-roller reality that executes+spills = physically faithful. Confirmed with reduce_then_apply_inreg (single source load -> still splits into 2 loop graphs -> True).",
+        "divergence_9of9": "sum/long_sum {x:1}=False; rms_norm {x:2,weight:1}=True; layer_norm {x:3}=True; softmax_two_pass {x:2}=True; CE {logits:2}=True (label gather is ROOT-only -> nl=3 over-count structurally avoided); kl_div/jsd {2 distinct inputs x1}=False; welford {x:2}=True. ALL right reason.",
+        "robustness_fix": "rms/ln (1,131072)=512KiB -> True -> governed -> LOOPED (the EXACT shape nro>=2 would have exempted -> 2.9x spill). Fix lands at the failing shape. sum(1,131072)/long_sum(16,2097152) -> False -> persistent (no regression).",
+        "style_independence": "softmax_two_pass / softmax wrapper / softmax_decomposed ALL True (num_load>=2 would have WRONGLY exempted softmax_decomposed nl=1). cross_entropy_online=False (genuinely 1-pass flash -> correctly NOT capped; tracks dataflow not syntax).",
+        "nonblocking_miskey": "computation tests 'SOME buffer in >=2 loop graphs', not 'the REDUCTION-INPUT buffer'. Adversarial adv_apply_bcast (row single-pass, broadcast b reused across a pass) false-positives on b. CANNOT fire on any real kernel; harm bounded+benign (caps an already-wide >240KiB single-pass row to looped = minor pessimization, never correctness); dangerous false-NEGATIVE direction closed by roller pass-splitting. **CAVEAT FOR EDIT#3: the reread-eviction consumer equates '>=2-loop-graph buffer'=='the re-read row' -> MUST tighten to the reduction-input buffer there.**",
+        "cleanup": "triton.py:225-226 + 532 still say 'num_load placeholder' (operative gate is fact.row_reread:512). Comment-only.",
+        "consumer_overeng": "PASS. 1 live consumer (persist cap); 2nd (eviction) designed+HELD (good discipline). ~30-line method reusing existing _fx_trace_tensor_arg_rw_names resolver, no new framework. kl/jsd MOOT double-confirmed (Band-B R_BLOCK=4096 dominates).",
+        "disposition": "row_reread is FAITHFUL (not a 3rd proxy). EDIT-GATE-v2 PASSES fact-integrity. Awaiting results-referee (byte-identity + no-regression timing) for combined accept. EDIT#3 eviction must tighten the buffer-identity to reduction-input (gate caveat)."
+      },
+      {
+        "edit": "EDIT-GATE-v2 (row_reread bool gate)",
+        "commit": "91dfd8ef (HEAD 360b60d3 = notebook only)",
+        "gate": "results-referee",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "claims_reproduced": {
+          "byte_identical_curriculum_wide": "18 shapes all-splits: HEAD seed == monkeypatched num_load-gate seed, byte-identical normalized Config. Only gate-flips = 4 kl/jsd wide (Band-B R_BLOCK=4096 clamps regardless -> identical seed). PURE-FAITHFULNESS FIX, provably ZERO perf change curriculum-wide.",
+          "no_regression": "rms_norm(1,131072)=512KiB LOOPED 3/3 (rl=[16384]) G1.16 correct; layer_norm same G1.33 correct. nro's 2.9x persistent spill AVOIDED.",
+          "CE_parity_preserved": "3 boundary shapes persistent 3/3, seed/oracle 0.9955/1.0004/0.9999 (<=1.05) vs cached verbatim oracle, G 1.07/1.09/1.07.",
+          "correctness": "all timed shapes pass fp32 tol; CE maxerr<=9.5e-7, rms 512KiB maxerr 0.",
+          "row_reread_9of9": "production fact + probe agree: sum/long_sum/kl/jsd=F, rms/ln/softmax/CE/welford=T."
+        },
+        "method": "monkeypatch row_reread:=num_load>=2 reproduces parent 0d77800d gate, cap value 245760 both sides -> isolates the gate predicate. GPU idle/serial/CUDA_VISIBLE_DEVICES=0, >=3 launches, accuracy ON.",
+        "disposition": "EDIT-GATE-v2 ACCEPTED. With fact-integrity PASS + EDIT#1 (referee+auditor PASS), EDIT#1(cap value)+EDIT-GATE-v2(faithful gate) = ACCEPTED CHAMPION ADVANCE. Substrate faithful + banked. CE boundary (3 shapes) at oracle parity. No regression. Zero perf risk (byte-identical)."
+      },
+      {
+        "edit": "EDIT-PID decline (pid residual on wide CE)",
+        "gate": "anti-giving-up",
+        "verdict": "FAIL the decline (give-up via #8 + unmeasured under-claim)",
+        "date": "2026-06-03",
+        "verified_real": "seed/oracle 1.23/1.243/1.070 exact; oracle pids interleaved@32/interleaved@32/blocked@4, maxnreg64; source ceiling REAL (oracle/tc 0.947/0.798/0.623 full-effort correct) \u2014 cross_entropy.py loads logits then reduces it TWICE (amax L70 + sum L73) = 2-pass re-read; tc fuses online single-pass. So seed\u2248oracle<tc legit source-limit; cross_entropy_online = separate Product-A-via-source opportunity.",
+        "why_decline_fails": {
+          "1_no_rule_is_#8_trap": "3 distinct properties EACH separate interleaved-from-blocked: M/SM grid-fill (31,62 vs 15.5), row-bytes (512KiB,512KiB vs 1MiB), chunk-count ceil(N/16384) (6,8 vs 16). 3 correlated points can't disambiguate = MISSING-DATA, not no-rule. Worker's notebook L1200 discarded grid hypo on a FALSE test (checked progs/SM for flat-vs-persistent; the real Q is interleaved-vs-blocked WITHIN persistent \u2014 never tested).",
+          "2_disposition_A_UNMEASURED": "the 1.124x pid-cluster decomp ran ONLY on (4096,98304); ZERO interleaved@32-vs-flat data on 128256/256000. Worker's decline-trigger ('if interleaved@32 loses to flat at widest') is a GUESS not a finding. Residual non-monotone (1.23->1.243->1.070), peaks at 128256, drops where pid flips to blocked = tracks the VARIANT not width (contradicts 'fades with width').",
+          "3_large_gains": "absolute seed->oracle gap: 367us(38%)@98304, 445us(19.5%)@128256, 82us(6.5%)@256000. Two interleaved shapes leave 19-38% on the table.",
+          "4_source_ceiling_no_license": "oracle/tc<1 caps seed-vs-TC never seed-vs-ORACLE. seed/oracle 1.07-1.24 is a real miss toward the bar regardless."
+        },
+        "worker_was_right_about": "blocked@4 at 256000 is STABLE real optimum (6 consec gens 6-11, search tried interleaved@8 gen3 and rejected) NOT noise; sm_mult exact values partly search-noise (128256 wandered 1->64->8->32). Neither establishes interleaved@32 is net-NEGATIVE at 256000 (the only thing justifying decline).",
+        "experiment_required": "matched-lever (no autotuner, median-7, correctness-gated, from seed+EDIT#3-evict) on ALL 3 wide CE: arms {flat baseline, interleaved@sm32+maxnreg64, blocked@sm4+maxnreg64}. RULE: interleaved@32 beats flat on all 3 -> valid COARSE seed rule -> EDIT-PID(A) keyed on looped-reread-wide regime (256000 sub-optimality = small documented miss not fence). interleaved@32 LOSES to flat at 256000 -> add 2-4 wide-CE shapes M{2048,4096,8192}xN{128K-256K} to DE-CORRELATE M/SM vs np2(N) vs chunk-count, re-key pid on whichever survives (gate prior: row-bytes>=~1MiB->blocked else interleaved). Decline ONLY if interleaved net-negative AND de-correlated shapes show no predicting property.",
+        "if_decline_stands": "PASS only if interleaved@32 net-negative somewhere it fires AND de-correlated shapes show no predicting property. THEN ledger MUST record wide-CE as 'seed<oracle, pid-residual=autotuner/Product-B, NOT at seed victory bar' (not done) + separately 'source-limited seed\u2248oracle<tc, cross_entropy_online = distinct opportunity'. Do NOT retire a 1.2-1.6x seed<oracle gap as unreachable on current evidence.",
+        "hub_disposition": "ACCEPT the FAIL. EDIT-PID decline is BLOCKED. Worker must run the EXTENDED A/B (3 wide shapes, 3 arms) before any disposition. This is the run's thesis working: separated context caught producer+hub about to retire a real seed<oracle gap on a false 'no rule'."
+      },
+      {
+        "edit": "EDIT#3 (reread_buffer_slots eviction)",
+        "gate": "fact-integrity",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "key": "gated immutable a62e26da via git archive (defended vs working-tree churn). AND-condition (>=2 loop-graph AND reduction-input) PROVEN load-bearing via own separating kernel adv_sep + negative control (make gain feed reduction -> admitted). De-hack confirmed at GENERATED-TRITON level: CE evict_last on logits(slot2) not labels(slot0). Style-sound (buffer-identity first, then slots). Live consumer. Not over-engineered (reuses _fx_trace_tensor_arg_rw_names). 9/9."
+      },
+      {
+        "edit": "EDIT#3 (reread_buffer_slots eviction)",
+        "gate": "adversarial-auditor",
+        "verdict": "PASS-WITH-FLAGS",
+        "date": "2026-06-03",
+        "cleared": "positional-refit REFUTED (CE buf-id 'last' on logits/slot2 = 1.31/1.19/1.08x; positional slot0=labels = 0.997/0.96/1.002 + regresses boundary 0.970 \u2014 30% gap proves slot-2 placement is the win). welford byte-identical=layout coincidence not positional. uniform rule no identity fence (9/9 dataflow-gated, ln gets rule = proof). slot4 real passenger (\u00b10.02%). no metric gaming (tol not loosened, 0 autotune budget).",
+        "FLAGS_must_hedge": {
+          "rms_norm_1.071x": "OVER-CLAIMED. sub-noise-floor (1.5us on 22us kernel, jitter 5-10%); ALL evict variants tie (~21us, placement discriminates +1.8% vs +30% on CE) = win is 'any non-default eviction' NOT buffer-identity. Does NOT overturn run-2 'rms no clean rule': run-2 rejected rms eviction for regressing LARGER-M shapes; EDIT#3's not-persistent gate SILENTLY EXCLUDES those (rms(2048,16384)<240KiB->persistent->no eviction). Ship as 'robustness canary not-slower within noise' NOT a headline win. Referee: re-time lifted-M to confirm.",
+          "layer_norm_tie": "leans slightly NEGATIVE (seed 26.69 is SLOWEST arm vs default 26.50 = 0.993); within noise (0.19us<<1.32us floor) so defensible tie, shipped uniform to avoid identity fence. Reframe 'within-noise leans slightly neg, uniform to avoid carve-out' not clean tie."
+        },
+        "hygiene": "staged INDEX holds half-reverted pre-EDIT#3 triton.py (MM) \u2014 Python imports working-tree .py (timing OK) but risks accidental revert-commit; worker must reset index; referee should time from clean a62e26da checkout + rm __pycache__ (auditor hit a stale-pyc transient showing CE->None at session start)."
+      },
+      {
+        "edit": "EDIT#3 (reread_buffer_slots eviction)",
+        "gate": "results-referee",
+        "verdict": "PASS (magnitude corrections, no veto)",
+        "date": "2026-06-03",
+        "robust_to_contamination": "referee DETECTED the Frankenstein worktree (triton.py reverted to pre-EDIT#3 58ebff1b, staged; device_ir/config_spec at HEAD) \u2014 RESTORED a62e26da itself, timed THAT, restored as-found. Verdict is for the committed change. 3rd separated context to catch+route around the tree drift.",
+        "reproduced": {
+          "CE_wins": "(4096,98304) G=1.308; (8192,128256) 1.190; (2048,256000) 1.085 \u2014 same-process A/B (drop only load_eviction_policies, same_base=True), spreads<1%, DISJOINT intervals. 'last' on logits@slot2 (provenance) not positional slot0. accuracy<=9.5e-7.",
+          "welford": "byte-identical to pre-EDIT#3 champion (row x@slot0 \u2192 provenance==positional); re-timed 1.283/1.290 vs default. no regression.",
+          "non_firing_byte_identical": "CE boundary persistent None=None; at-floor rms/ln/softmax None; kl/jsd row_reread=False None; sum/long_sum ['first','first'] unchanged. eviction fires ONLY row_reread AND looped (+structured-combine welford).",
+          "correctness": "all firing arms correct vs fp32 (CE<=9.5e-7, welford<=1.7e-6, rms 0, ln 2.4e-7)."
+        },
+        "MAGNITUDE_CORRECTIONS_sharpen_auditor_hedges": {
+          "rms_norm": "REAL but ~1.02x SAME-PROCESS (not 1.07x \u2014 the 7% was cross-process baseline jitter, ~1us on 22us). disjoint intervals so directionally real, but restate headline as ~2% in-process, sub-noise-floor absolute.",
+          "layer_norm": "~1.4% in-process REGRESSION (0.986, seed consistently slower, disjoint) \u2014 NOT a clean tie. sub-0.4us on 27us = within cross-process spread, immaterial to ship, uniform-rule rationale holds, but 'tie' framing was generous."
+        },
+        "caveat": "the worker's LIVE worktree still had triton.py reverted to pre-EDIT#3 (staged) at referee session end \u2014 anyone benching the live worktree measures pre-EDIT#3 positional, NOT EDIT#3. The COMMIT a62e26da is sound. Worker must hard-reset the tree."
+      },
+      {
+        "edit": "fa11264a (consumer-trace row_reread refinement)",
+        "gate": "fact-integrity (completion after watchdog-stall of the full run)",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "4_points_confirmed_via_FX_graph": {
+          "9of9_banked": "shipped==reemit==banked all 9 (sum/long/kl/jsd=F, rms/ln/softmax/CE/welford=T) -> seeds UNCHANGED -> EDIT#3 perf carries forward",
+          "rms_norm_acid_disjunctB": "True for RIGHT reason \u2014 load[x] feeds_reduction(n=1) AND reaches a bypass-store (store_reachable_WITHcut=True, the x*rstd*w apply); broadcast weight feeds_n_reductions=0 skipped. num_load over-count + nro under-count both immaterial.",
+          "kl_div_jsd_False_coherent": "loaded inputs live in ForLoopGraphInfo (hl.tile(V)) with 0 rbid-reductions; reduction in separate RootGraphInfo consumes a _phi loop-carried ACCUMULATOR not the loaded tile. NOT a masking artifact \u2014 softmax control (load+reduction co-resident) returns True, proving the predicate detects genuine reduction-feeding loads. The row is neither reduction-feeding nor live-across-boundary.",
+          "BFS_cut_real": "sum: load[x] feeds_reduction AND store_reachable_NOcut=True BUT store_reachable_WITHcut(bypass)=False (store reached ONLY through the reduction output) -> not-a-bypass-store -> sum=False. The cut-at-reduction works."
+        },
+        "note": "prior full run did the analysis but was killed by the 600s stall watchdog at the final attribution check (had already converged); this focused completion verified the 4 points + rendered the verdict. probe run3_row_reread_probe.py implements the OLD region-membership algo, so the agent emitted the NEW committed predicate directly against FX graphs.",
+        "disposition": "fa11264a PASS \u2014 behaviorally-identical faithfulness hardening (closes the 'any >=2-graph buffer' loophole via reduction-input dataflow specificity). row_reread workstream FULLY CLOSED + banked."
+      },
+      {
+        "edit": "EDIT-PID (B) decline",
+        "gate": "anti-giving-up (ratification of the evidenced decline)",
+        "verdict": "FAIL the decline \u2014 PREMATURE (#8)",
+        "date": "2026-06-03",
+        "falsified_premise": "worker declined because 'the only non-identity gate row_reread AND looped ALSO fires on welford (-3.2%) \u2192 separating CE from welford needs kernel identity.' FALSE: conflates an ABSTRACT predicate with the heuristic's ACTUAL branches. get_seed_config has 3 DISJOINT branches: T1 (is_t1: CE/rms/ln), Band-C (is_structured_combine: welford ONLY), T2-plain (softmax/kl/jsd). A T1-scoped pid override is STRUCTURALLY UNREACHABLE by welford (Band-C) and softmax (T2).",
+        "missing_experiment_gate_ran": "worker measured rms_norm but NEVER layer_norm(1,131072) \u2014 the one untested T1-row_reread-looped shape the override fires on. Gate ran it: 1.0071 = sub-noise tie (27us, spread 0.6-0.8%). So the COMPLETE T1-override set = {CE +5-24%, rms_norm tie, layer_norm tie} \u2014 NOTHING regresses. welford -3.2% reproduced (real, 15.8x outside noise) but IRRELEVANT (different branch, unreachable).",
+        "finer_fact_exists": "the brief's hypothesis 'interleaved pid helps scalar-accumulator multi-pass but hurts structured-combine recurrence' maps EXACTLY onto is_structured_combine (welford=sole True regressor; CE=False). Already fact-integrity-PASSED + proven non-identity in ledger (softmax_two_pass control vs welford). NOT a kernel fence \u2014 the heuristic already branches on it for tile sizing.",
+        "scoped_EDIT_PID": "seed {pid_type='persistent_interleaved', num_sm_multiplier=32, maxnreg=64} in the T1 branch ONLY, gated fact.row_reread AND not persistent (same gate EDIT#3 eviction uses, triton.py:637). Fires on {CE-wide, rms/ln wide-robustness} \u2014 all net-positive-or-tie. Does NOT touch welford(Band-C)/softmax(T2). 256000 wants blocked@4 but interleaved@32 1.052\u2248blocked 1.048 = perf-immaterial \u2192 coarse-but-positive = outcome (A).",
+        "required_gate_work": "full 4-split flip-set (only CE-wide+rms/ln-wide-robustness fire; welford/softmax/kl/jsd byte-identical = different branch); num_sm_multiplier=32/maxnreg=64 survive normalize (5a passed); no-regression canary rms/ln (sub-noise ties); record honestly.",
+        "ledger_bookkeeping": "wide-CE = seed<oracle (1.05-1.24 pid residual on top of shipped eviction), NOT at victory bar, SEEDABLE via T1-scoped EDIT-PID (NOT Product-B as the decline claimed). Separately seed\u2248oracle<tc source-bound (2-pass logsumexp) \u2192 cross_entropy_online = distinct Product-A-via-source opportunity.",
+        "hub_disposition": "ACCEPT the FAIL. EDIT-PID decline OVERTURNED. The pid gain is REAL + SEEDABLE (T1-scoped). Worker must BUILD the T1-scoped EDIT-PID (not decline). The run's thesis again: separated gate caught producer+hub about to retire a 38%/19.5% gain on a #8 false-no-rule (worker skipped the layer_norm measurement + missed its own branch structure)."
+      },
+      {
+        "edit": "EDIT-PID (94851da9)",
+        "gate": "fact-integrity",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "track_scoping_structural": "T1/T2 MUTUALLY EXCLUSIVE (register_user_tiled_reductions runs only if not reduction_facts, device_ir:2818). welford(Band-C)/softmax/kl/jsd are T2 \u2192 no ReductionLoopSpec \u2192 reduction_loops.valid_block_ids() empty \u2192 is_t1=False \u2192 EDIT-PID block STRUCTURALLY UNREACHABLE. NO leak path. welford -3.2% pid regression is structurally IMPOSSIBLE. is_t1 = faithful established fact, NOT identity. 21-case static emit: firing set EXACTLY {3 CE-wide + rms/ln(1,131072)}; 16 non-firing byte-identical pid=flat.",
+        "sm_mult_NOT_oracle_fit": "clamp(np2(ceil(grid_rows/get_num_sm)),1,32) re-derived independently (M=4096\u219232, 8192\u219232capped, 2048\u219216, 1\u21921) matches emitted. NON-FIT TELL stronger than framed: oracle's picks shape-INCONSISTENT (32/1/1 or 32/32/4) \u2192 single fit-value IMPOSSIBLE; seed ships derived-16 at 256000 where oracle picked 1-or-4 \u2192 formula matches NONE of the oracle's 3 picks \u2192 demonstrably not parroting. p-hacking guard PASSES.",
+        "maxnreg": "=64 constant the oracle also used, BUT defensible high-occupancy register cap (convergent physics ~2x occupancy) + ablation-load-bearing (isolation A/B: gain halves without it, 256000 ties flat 1.000 vs 1.054). Same standard as banked EDIT#1 cap value. p-hacking guard rides on sm_mult (clearly passes).",
+        "clean": "1-file surgical diff (+53/-10 triton.py only, no config_spec/device_ir change), no new ReductionFact field, reuses fact.row_reread+m_block_ids+get_num_sm, portable (get_num_sm not hardcoded 132), circular-import broken w/ local import, ruff clean, ZERO tree drift (verified vs immutable commit).",
+        "minor_nonblocking": "maxnreg=64 constant (defensible+ablation-validated); commit-msg oracle '32/32/4' vs notebook '32/1/1' (quick-oracle-noisy widest value, but either disagrees with shipped derived-16 \u2192 non-fit unaffected).",
+        "status": "1 of 3 EDIT-PID gates PASS. Awaiting auditor + referee."
+      },
+      {
+        "edit": "EDIT-PID (94851da9)",
+        "gate": "results-referee",
+        "verdict": "PASS (5/5)",
+        "date": "2026-06-03",
+        "tree_integrity": "helion/ clean == commit (git diff 94851da9 HEAD -- helion/ empty); HEAD advanced 66a995f2->e73ba2ea but only _lab notebook touched, helion/ untouched; __pycache__ cleared. Referee honored isolation: BLOCKED on worker's concurrent run3_pid_disposition_ab.py (PID 180818, 99% util) until it exited, archived parent tree for byte-identity.",
+        "CE_pid_wins": "isolation clean (flat vs pid differ ONLY in pid_type/num_sm_multiplier/maxnreg; eviction/rl/warps/bs byte-identical). 5 launches, spreads<=0.86%: (4096,98304) 1.231 (\u0394137us); (8192,128256) 1.241 (\u0394442us); (2048,256000) 1.051 (\u039460us vs 3us spread = clears 16x). All >=1.03 decisively.",
+        "config_shipped": "16/16 emission: 4 PID targets emit persistent_interleaved + DERIVED per-M sm_mult (32/32/16/1, NOT flat 32) + maxnreg64. seed NOT silently dropped (env-bug fixed). sm16/sm1 prove derived formula not const-32.",
+        "maxnreg_loadbearing": "CONFIRMED on (4096,98304): pid-without-maxnreg 1.053, with-maxnreg64 1.231 \u2014 maxnreg contributes 1.1685x marginal (>2x the gain). shipped config correctly includes it.",
+        "no_regression": "12-shape normalized-config + Triton-sha diff vs parent ef3c93fa (clean git archive): welford/softmax(incl wide 512,131072)/sum/kl/jsd/at-floor-rms-ln/CE-boundary(50304)/CE-narrow ALL pid=flat byte-identical incl Triton sha. 5 PID targets differ ONLY in 3 pid keys. (long_sum false-positive traced to uncommitted examples/long_sum.py comment-line-shift, NOT EDIT-PID \u2014 codegen byte-identical after normalizing comments.)",
+        "correctness": "both arms allclose vs fp32 torch.cross_entropy ref on all 3 CE pid shapes; maxerr<=9.54e-7 (256000=0.00, real ref not degenerate).",
+        "status": "2 of 3 EDIT-PID gates PASS (fact-integrity + referee). AWAITING adversarial-auditor (anti-over-claim / no-fence \u2014 load-bearing since EDIT-PID reverses run-2's deliberate flat lock). NOT banking until auditor in."
+      },
+      {
+        "edit": "EDIT-PID (94851da9)",
+        "gate": "adversarial-auditor",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "not_a_fence": "3-property gate is a genuine regime. is_t1 STRUCTURALLY excludes welford(Band-C)/softmax(T2) (register_user_tiled_reductions guarded if not reduction_facts \u2192 T2 never in reduction_loops \u2192 is_t1=False \u2192 returns before Band-C/T2 branches). row_reread load-bearing IN-CURRICULUM: long_sum real 8MiB (16,2097152) would fire a naive T1-AND-wide gate but row_reread=False keeps it flat. rms/ln firing = ANTI-fence evidence (pure CE-fence couldn't). curriculum rms/ln only (1,131072) canary fires @sm1; rest \u2264128KiB flat.",
+        "reversal_sound": "run-2 flat-lock was grid-SATURATED small-N (M huge/N tiny); EDIT-PID regime = disjoint grid-STARVED wide-looped-reread (M=2048-8192<<machine, N>240KiB looped). Non-overlapping physics \u2014 addresses a regime the prior gold-standard A/B never tested.",
+        "wins_attributed": "A/B reproduces 1.231/1.245/1.054 + rms/ln ties 1.008/1.010. maxnreg isolation: without 1.053/1.155/1.000, with64 1.231/1.245/1.054 \u2014 maxnreg64 ONLY in EDIT-PID block, regime-scoped vs regime's own flat baseline, NOT global.",
+        "256000_honest": "interleaved@16 net-positive (+62us/5.0% vs ~3us spread) AND marginally beats the oracle 'optimum' blocked@4. 'documented small miss' if anything understated.",
+        "oracle_only_disclosed": "mnr64/tc = 0.953/0.766/0.621 (all lose tc). Ledger frames CE-wide as seed\u2248oracle<tc source-bound (2-pass logsumexp), pid gain ORACLE-ONLY, NOT at victory bar. pid closes seed\u2192oracle never seed\u2192tc. Correct.",
+        "env_bug_fixed": "static emit on clean git-archive: n_seeds=1 everywhere (compiler_seed_configs didn't raise/drop). Both build-bugs fixed: local get_num_sm import (no circular), grid_rows uses PASSED env.size_hint (not CompileEnvironment.current() which would vanish the seed).",
+        "no_gaming": "triton.py-only 53+/10-, tolerance untouched (rtol1e-3/atol1e-4), all A/B arms correct:true. sm_mult valid pow2 in [1,128]. EDIT#3 eviction + EDIT-PID compose cleanly (evict 'last' logits@slot2 + pid + maxnreg coexist; 1.231 is pid gain ON evicted baseline)."
+      },
+      {
+        "edit": "EDIT#6 (8577b675, softmax T2 reread-eviction)",
+        "gate": "results-referee",
+        "verdict": "PASS (4/4)",
+        "date": "2026-06-03",
+        "reproduced": {
+          "softmax_wins": "(1024,65536) 1.307x, (512,131072) 1.076x vs same-seed-default-eviction; 2 seeds identical (1.307/1.077); LIVE carries load_eviction_policies=['last','first'] ('last' on reread slot0=x first load); both >=1.05 far beyond ~0.1% spread.",
+          "eviction_sole_carrier": "FIELD-DIFF LIVE vs DEFAULT = {load_eviction_policies: (['last','first'], None)} and NOTHING else (block_sizes/warps/stages/pid held equal). Matches worker decomp (chunk/warps passengers).",
+          "no_regression": "vs isolated git-archive 94851da9 parent: softmax(8192,2048)/(262144,128) persistent\u2192None, kl_div/jsd\u2192None (row_reread=False) \u2014 BYTE-IDENTICAL. Eviction fires ONLY softmax wide-looped (row_reread AND not persistent).",
+          "correctness": "both arms fp32-asserted, maxerr<=4.66e-10."
+        },
+        "tree": "helion/ clean, git diff 8577b675 HEAD empty (HEAD 14e415d3 notebook-only) \u2014 measured exactly 8577b675. GPU idle/pinned/serial.",
+        "magnitude_note": "commit headline 1.36/1.10 = full-oracle-vs-default-seed; eviction-alone CARRIER (what this commit ships) = 1.31/1.08 \u2014 referee reproduced the correct quantity.",
+        "status": "1 of 2 EDIT#6 gates PASS (referee). Awaiting adversarial-auditor (no-softmax-fence). NOT banking until auditor in."
+      },
+      {
+        "edit": "EDIT#6 (8577b675)",
+        "gate": "adversarial-auditor",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "not_a_fence": "the +16-line T2-plain block calls the SAME _eviction_policies('reread',reread_buffer_slots) + SAME gate (row_reread and not persistent) as T1(637)/Band-C(750), byte-for-byte. Fires ONLY row_reread-AND-looped softmax (256/512KiB\u2192['last','first']); NOT kl/jsd(row_reread=False) or narrow/persistent softmax. Cross-track uniformity verified: same rule for CE-T1/welford-BandC/softmax-T2; buffer-identity 'last' differs per kernel (CE slot2=logits, softmax slot0=x) = NOT positional.",
+        "faithful": "softmax reread_buffer_slots=(0,1)\u2192['last','first'] (last on x max-pass load, first on x exp-sum re-read); x only host buffer, no broadcast mis-key.",
+        "eviction_attributed": "parent-vs-audited diff: kl/jsd/narrow/at-cap byte-identical; 2 win shapes change in load_eviction_policies ALONE. eviction-alone 1.306/1.076; chunk32768-alone 1.010/0.998 (passenger).",
+        "tc_beating_honest": "headline 1.36/1.10 = FULL-ORACLE (labeled); SHIPPED eviction lever = 1.31/1.08; both tc-beating (evict/tc 1.336/1.077). softmax-wide genuinely beats tc (vs CE-wide source-bound). quick\u2192full reversal = hub-mandated methodology.",
+        "no_gaming": "fp32 forced (overriding example HALF_DTYPE), tol rtol1e-3/atol1e-4 not loosened, err ~1.2e-10, no shapes dropped.",
+        "uniformity_bar": "EDIT#6 PASSES the same cross-kernel uniformity test EDIT-PID's track-agnostic version FAILED: eviction helps softmax+CE+welford regresses nothing; pid helped CE regressed welford (\u2192correctly T1-scoped). Principled contrast.",
+        "framing_flag": "headline 1.36/1.10=oracle ceiling, shipped=1.31/1.08 \u2014 both disclosed in-notebook, no over-claim."
+      },
+      {
+        "edit": "EDIT#4 (c3d90e8d, welford apply-cap 8192\u219216384)",
+        "gate": "adversarial-auditor",
+        "verdict": "PASS",
+        "date": "2026-06-03",
+        "clean_1constant": "functional diff vs parent 6c942ce3 = exactly STRUCTURED_APPLY_LOOP_CHUNK_BYTES 8192\u219216384 (other +13 lines comment). Read at ONE site (triton.py:732) inside is_structured_combine branch \u2014 cannot reach other bands. Static-emit: rms/ln/sum/softmax/kl/jsd + narrow+mid welford BYTE-IDENTICAL; only wide looped-apply welford changes (apply 2048\u21924096). Principled bytes\u00f7itemsize constant, NOT a welford-fence.",
+        "honest_partial": "CONFIRMED \u2014 commit/ledger/notebook all flag welford as a REMAINING GAP (EDIT#4b pending), NOT closed. 'NARROWS welford 214\u2192200 but does NOT close to tc/oracle (0.93 arm/tc)'. Only 'at parity' claim is for NARROW welford (legit, apply inert). No wide-welford over-claim.",
+        "no_overshoot": "cap in BYTES: 16384/4=4096 elems \u2192 apply=4096 everywhere incl widest (65536,16384)/(262144,5120), NEVER the harmful 16384-elem (0.844). M_block + combine untouched (both unchanged vs parent). No welford regresses.",
+        "no_gaming": "tol rtol1e-3/atol1e-4 not loosened, fp32, baseline=genuine pre-EDIT#4 apply2048 (8192 long-standing since run-2, not strawman), single-lever isolated, no shapes dropped.",
+        "status": "1 of 2 EDIT#4 gates PASS (auditor). Awaiting results-referee (timing). NOT banking until referee in."
+      },
+      {
+        "edit": "EDIT#4 (c3d90e8d, welford apply-cap 8192\u219216384)",
+        "gate": "results-referee",
+        "verdict": "REJECT (FAIL no-regression)",
+        "date": "2026-06-03",
+        "CRITICAL": "CATASTROPHIC 4-7x regression on welford(262144,5120) [IN-SAMPLE-V2 curriculum shape] caused PURELY by the apply-cap constant. apply 2048\u21924096 there: 4612us\u219233571us (~7.3x slower); end-to-end isolated-archive parent-vs-HEAD = 8213\u219236105us (4.4x); arm/tc=0.104 (~9.6x slower than tc). Reproduced 5\u00d7/3 codepaths/2 data seeds, spread<0.3%. Even applyNp2(8192)=9153us is 3.7x faster than the cap's 4096 \u2014 a pathological valley.",
+        "also_regresses": "welford(8192,4096)=0.976-0.978 (-2.3%), welford(16384,4096)=0.977-0.979 \u2014 both in-sample-v2.",
+        "wins_real_but": "the wide-N partial wins (4096,16384)=1.069, (32768,8192)=1.047 ARE real + correctly sized (NOT parity, honest). BUT the SAME single constant catastrophically regresses 3 in-sample-v2 shapes.",
+        "why_missed": "worker's A/B (run3_wf_tile_ab.py) only ran {4096x16384, 32768x8192, 16384x768} + clamps every arm to min(np2(N),...) \u2192 NO arm tested apply=2048-vs-4096 at large-M/N=5120 shapes. The auditor's byte-identity sample also missed timing the flipped wide-M shapes. The referee found it by testing shapes BETWEEN narrow and wide + 3-way cross-confirm. THIS is why the referee re-runs its OWN broad command, not the producer's A/B.",
+        "disposition": "EDIT#4 REJECTED \u2014 net regression as committed. MUST revert or fix: the apply cap needs N/M-bounded gating so it does NOT raise apply above 2048 at the large-M/N~5120 shapes where it regresses (same N-bounded discipline as EDIT#4b's combine cap). The 1.05-1.07x wins at (4096,16384)/(32768,8192) are real but only worth capturing if gated to NOT touch the regressing shapes.",
+        "lesson": "a 1-constant cap change is NOT automatically 'Band-C-only safe' \u2014 it flips the apply tile on EVERY structured-combine shape above the persist threshold, including large-M ones the 3-shape A/B didn't cover. Flip-set + A/B must cover ALL shapes the constant moves, esp. the curriculum extremes (the at-floor-sweep lesson, re-applied)."
+      },
+      {
+        "edit": "EDIT#5 (d2ff878a, jsd Band-B nro-footprint cap)",
+        "gate": "adversarial-auditor",
+        "verdict": "PASS",
+        "date": "2026-06-04",
+        "artifact": "d2ff878a; git diff d2ff878a..HEAD -- helion/ EMPTY (live heuristic == artifact); 1-line: bandb_cap divisor *= max(1,num_reduction_ops)",
+        "claim_gain_real": "oracle_cache (FULL effort 435-477s, seed_dist spread<2%): jsd oracle picks R_BLOCK=2048 at narrow(8192,30522) s/oracle=1.213, mid(8192,32000)=1.127, AND wide(2048,256000)=1.034 -> V-INDEPENDENT confirmed (both M-extreme and V-extreme oracles land 2048). kl_div oracle=4096 s/oracle~1.00 (already parity). Direction+magnitude real, far outside noise.",
+        "measured_correctly": "INDEPENDENT codegen emit (my own probe, live tree): jsd->R_BLOCK=2048, kl_div->4096 on every shape. Independent recompute of flip-set raw rows reproduces EXACTLY 34 flips(all jsd)/0 kl_div/0 other-kernel/0 INCONSISTENT; emitted R_BLOCK==recomputed new_cap on every row.",
+        "no_kernel_identity": "num_reduction_ops is a FAITHFUL device_ir graph walk (count ReductionLowering nodes on V axis, device_ir.py ~1131), computed identically for all kernels - NOT a name check. Full-curriculum fact table: jsd is the SOLE kernel both Band-B(n_tiled>=1) AND nro>=2. cross_entropy/layer_norm/softmax have nro=2 but n_tiled=0 (excluded by Band-B gate, not nro -> nro=2 is NOT a jsd fingerprint). kl_div=clean control (Band-B, nro=1, stays 4096). No non-jsd should-but-doesnt or wrongly-flips.",
+        "generalizes": "flip uniform across jsd full train+val+test+ROBUSTNESS (every np2(N)>2048 flips incl large-M (16384,32000), wide-V (8192,128256)/(8192,151936)/(4096,151936), extreme-M (262144,4096)->[2048,16]). Sole non-flip (8192,1024) np2=1024<2048 correct. Not a narrow window.",
+        "metric_clean": "correctness uses operator OWN fp32 ref rtol1e-3/atol1e-4 NOT loosened (configs=[seed] bypasses autotuner check); maxerr<=1.49e-8 jsd 2048 sane. No shapes dropped, no autotune budget. kl_div Band-B unit test (test_kl_div_wide_seeds_band_b_r_block_cap) PASSES UNCHANGED on live tree (pins [4096,1]; test NOT modified to accommodate edit).",
+        "no_regression": "OPPOSITE direction to the EDIT#4 failure: EDIT#4 RAISED a cap (footprint UP -> spill valley); EDIT#5 LOWERS R_BLOCK 4096->2048 HALVING resident accumulator footprint at EVERY flipped shape (2.0x smaller incl extreme-M 262144x4096). Spill is monotonic in R_BLOCK over this range (smaller chunk=less spill=raison detre of the cap). 3 timed shapes span M-extremes(8192->2048)+V-extremes(30522->256000), all 2048>=4096.",
+        "recommendation_to_referee": "TIMING-ONLY residual (auditor is [analysis], cannot time): the 3 oracle/A-B-timed jsd shapes do NOT include extreme-M (262144,4096) [the (M,np2N=4096) analog of EDIT#4 valley welford 262144x5120] nor wide-V-high-M (8192,151936)/(8192,128256). Footprint argument (strictly shrinking, opposite of EDIT#4) predicts safe, but a clean close = referee times jsd(262144,4096) + jsd(8192,151936) post-cap vs R_BLOCK=4096. NOT a blocker given monotonic-shrink + uniform flip.",
+        "disposition": "PASS \u2014 gain real, measured correctly via independent codegen emit, generalizes off a faithful workload fact (nro graph-walk) gated by Band-B conjunction (NOT kernel identity), no tolerance/budget gaming, no-regression structurally sound (footprint shrinks). World A (V-independent footprint cap) corroborated by full-effort oracle at both M and V extremes.",
+        "lesson": "a cap that SHRINKS footprint is the inverse of the EDIT#4 risk class - the monotonic-spill direction makes a hidden valley implausible (vs EDIT#4 where raising the cap created one); auditor still names the untested extreme-M/wide-V shapes for the referee timing pass since [analysis] cannot time."
+      },
+      {
+        "edit": "EDIT#5 (d2ff878a, jsd Band-B nro-footprint cap)",
+        "gate": "results-referee",
+        "verdict": "PASS",
+        "date": "2026-06-04",
+        "artifact": "d2ff878a; git diff d2ff878a..HEAD -- helion/ EMPTY (live tree == artifact; HEAD dc8755e3 is _lab-only). 1-line: bandb_cap divisor BANDB_R_BLOCK_BYTES//max(1,itemsize) -> //(max(1,itemsize)*max(1,num_reduction_ops)). triton.py:798-801. Measured live worktree directly; NO git checkout in shared tree.",
+        "command": "cd /tmp && CUDA_VISIBLE_DEVICES=0 HELION_AUTOTUNE_EFFORT=none PYTHONPATH=<wt> .venv/bin/python _lab/harness/referee_edit5_fullflipset_ab.py (full flip-set, my own harness) + referee_edit5_highspread_recheck.py (interleaved N=11 on high-spread shapes) + inline N=15 idle-gated confirm + inline N=11 on auditor-named extreme shapes. Each arm = median-of-N independent do_bench(median), fixed torch.manual_seed(0), accuracy ON (own fp32 ref rtol1e-3/atol1e-4, configs=[seed] bypasses autotuner check). SERIAL timing.",
+        "seed_carries_R_BLOCK_2048": "CONFIRMED independently. run3_edit5_flipset (my re-run): 34 jsd FLIPs 4096->2048 across train+val+test+ROBUSTNESS, 0 kl_div flips, 0 sum/softmax, 0 INCONSISTENT (emitted R_BLOCK == recomputed new_cap every row). run3_edit5_correctness (live seed, unmodified): jsd(8192,30522)/(8192,128256)/(4096,151936)/(16384,32000)/(2048,256000) all emit R_BLOCK=2048 + CORRECT; kl_div emits 4096. The seed I timed (new arm) IS the live-heuristic emit.",
+        "jsd_no_regression": "PASS on FULL flip-set (10 timed shapes spanning narrow/mid/wide-V x small..extreme-M). old4096/new2048 latency ratio (>1 = 2048 FASTER) EVERY shape: (8192,30522)=1.19, (8192,32000)=1.11, (8192,50257)=1.12, (8192,65536)=1.07, (4096,98304)=1.04, (8192,128256)=1.04, (4096,128256)=1.04, (4096,151936)=1.03, (2048,256000)=1.02-1.03, (16384,32000)=1.10. Worst = (2048,256000) @ 1.021-1.028 (still 2048 faster). ZERO shape regresses; R_BLOCK=2048 >= 4096 on every flipped shape.",
+        "edit4_lesson_applied": "Swept the FULL flip-set incl the EDIT#4 valley-analog shapes (auditor + coordinator named): jsd(16384,32000) large-M = 1.10x WIN; jsd(262144,4096) EXTREME-M [the direct analog of welford(262144,5120) where EDIT#4 died with a 4-7x valley] = 1.047x WIN; jsd(8192,151936) wide-V-high-M = 1.025x WIN; wide-V (8192,128256)=1.04 / (4096,128256)=1.04 / (4096,151936)=1.03. NO valley anywhere -- opposite of EDIT#4: this cap LOWERS R_BLOCK (shrinks footprint monotonically), so spill only decreases.",
+        "noise_handling": "First pass had 17-24% do_bench spread on wide-V/large-M shapes (intrinsic large-kernel jitter; a transient 62GB welford-owner process appeared mid-run). Re-ran 3 INDEPENDENT times: (a) interleaved N=11, (b) idle-gated N=15 clean confirm after sustained-idle (3x), (c) N=11 on auditor shapes. All agree within ~1%, spreads collapsed to 1-2% when uncontended; min-of-medians (least-perturbed estimator) confirms 2048 faster on every shape. Worst-case margin (2048,256000) reproduced at 1.02-1.03 across all passes -- a stable tie-to-small-win, never a loss.",
+        "kl_div_byte_identical": "PASS. Live seed emits R_BLOCK=4096 (nro=1, cap = 16384/(4*1) = 4096, unchanged) at (8192,30522)/(8192,128256)/(4096,151936)/(16384,32000)/(1024,256000); all correct (maxerr<=1.19e-7). Flip-set: 0 kl_div flips across all 4 splits. Cap is a structural no-op for kl_div.",
+        "other_kernels_untouched": "flip-set: sum (T1, num_tiled_accumulators=0) structurally excluded (R_BLOCK=None, no Band-B branch); softmax (T2 non-Band-B, n_tiled=0) byte-identical (R_BLOCK = np2(N) persistent, unchanged). Only Band-B (n_tiled>=1) AND nro>=2 fires = jsd alone by curriculum incidence.",
+        "accuracy": "PASS. jsd both arms correct on every timed shape, maxerr 0.0 to 1.49e-8 (well within rtol1e-3/atol1e-4). kl_div correct maxerr<=1.19e-7. Benign TensorOperationInWrapper on host-side torch.sum(loss)/torch.sum(loss)/BT (jsd/kl_div) -- unrelated to the reduction config.",
+        "accept_rule": "PASS iff (jsd gain/tie reproduced AND no jsd shape regresses [old4096/new2048 >= ~0.99 within noise on every flipped shape] AND kl_div byte-identical@4096 AND seed carries R_BLOCK=2048). ALL satisfied: every jsd shape old/new in [1.02, 1.19] (2048 strictly >= 4096), worst 1.021; kl_div byte-id; seed emits 2048.",
+        "gpu_discipline": "One H100 idx0, CUDA_VISIBLE_DEVICES=0 pinned. nvidia-smi idle-checked before each bench; one transient external process observed once (gone by next check, ps no-PID, util back to 0) -> re-ran critical shapes idle-gated to fully decontaminate. SERIAL (one do_bench at a time). No git checkout in shared worktree.",
+        "disposition": "PASS -- independently reproduced the jsd gain (narrow 1.19x carrier of the 1.213 oracle gap-close; wide 1.02-1.03x), confirmed NO regression on any of the 10 flip-set shapes incl all EDIT#4-analog extremes, kl_div byte-identical, seed carries R_BLOCK=2048. The EDIT#4 failure class (hidden large-M valley) is empirically absent: extreme-M jsd(262144,4096)=1.047x WIN. Receipt re-runnable: _lab/harness/referee_edit5_fullflipset_ab.py + referee_edit5_highspread_recheck.py + logs/run3/referee_edit5_*.json."
+      },
+      {
+        "edit": "EDIT#5 (d2ff878a/46e58c73, jsd Band-B nro-footprint cap)",
+        "gate": "fact-integrity",
+        "verdict": "FAIL",
+        "date": "2026-06-04",
+        "artifact": "d2ff878a (== live; git diff d2ff878a..HEAD -- helion/ EMPTY; canonical SHA 46e58c73 identical helion/). 1-line: triton.py ~800 bandb_cap divisor BANDB_R_BLOCK_BYTES(16384) // (max(1,itemsize) * max(1,num_reduction_ops)). Branch gated num_tiled_accumulators>=1.",
+        "crux_resolved": "case (B) LUCKY PROXY (failure mode #11). The cap bounds the SIMULTANEOUSLY-RESIDENT loop-carried [M,R] accumulator footprint (R_BLOCK*itemsize*count). num_reduction_ops is NOT that count; it coincides with it on jsd/kl_div by a curriculum-specific 1:1 reduction<->accumulator structure, and DIVERGES on constructible real Band-B kernels.",
+        "true_resident_count_measured": "Direct loop-carry inspection (NOT asserted): inner ForLoop's carried 2D outputs. jsd inner-loop #4 carries 2 (_phi,_phi_1 = intermediate_loss+intermediate_dX, both created in RootGraph, 0 buffers created in-loop) -> resident=2. kl_div inner-loop #0 carries 1 (loss_sum, created in RootGraph); kl_loss is created INSIDE the loop body (loop-body-local scratch, folded into loss_sum and dies per iteration, NOT a carried output) -> resident=1. So case-(A) antecedent IS true: jsd resident=2, kl_div resident=1.",
+        "but_nro_is_not_that_count": "num_reduction_ops counts ReductionLowering nodes (final reductions over the rdim), device_ir.py:1127-1131. It equals the resident-carried-accumulator count ONLY when each carried accumulator maps 1:1 to exactly one final reduction. jsd: 2 carried, each reduced once -> nro=2=resident. kl_div: 1 carried reduced once + in-loop scratch with no own reduction -> nro=1=resident. Coincidence of structure, not footprint physics.",
+        "divergence_kernels_constructed": "TWO real Band-B kernels (both fire num_tiled_accumulators>=1) where nro != true resident, built+bound on fake-tensor trace (no GPU): (DIV-A) two_reductions_one_accum: ONE carried [M,R] acc (root_creates=1), TWO final reductions on it (sum+amax) -> nro=2, true resident=1; cap_via_nro=2048 UNDER-sizes vs faithful 4096. (DIV-B) two_accum_one_reduction: TWO carried [M,R] accs (root_creates=2), only ONE reduced (other carried+stored elementwise) -> nro=1, true resident=2; cap_via_nro=4096 OVER-sizes vs faithful 2048 -> the exact spill the cap exists to prevent. Both fire Band-B; ndivisor mis-sizes in BOTH directions.",
+        "docstring_physics_false": "triton.py ~779-783 states 'the inner loop carries num_reduction_ops independent reduction accumulators ... resident footprint is R_BLOCK*itemsize*num_reduction_ops'. FALSE as a general claim: refuted by DIV-A (nro=2, 1 carried acc) and DIV-B (nro=1, 2 carried accs).",
+        "ntiled_also_not_faithful_as_shipped": "Confirmed worker's premise that num_tiled_accumulators 'CANNOT discriminate': ntiled=2 for BOTH jsd and kl_div (empirically verified, both fake-trace + AUDITOR probe). But ntiled is wrong for a DIFFERENT reason than the worker implies: it counts buffer-CREATION sites incl inner-loop-body-local scratch, so it OVER-counts kl_div (ntiled=2, true resident=1). Substituting ntiled as divisor would wrongly clamp kl_div to 2048 (regression). So neither shipped fact computes the faithful resident count.",
+        "property_divisor_should_use": "The COUNT OF [M,R] 2D ACCUMULATORS CARRIED ACROSS THE INNER hl.tile LOOP = the loop-carried 2D outputs of the inner reduction ForLoop (equivalently: 2D R-tiled buffers created in the root/outer graph that thread as loop-carried state), EXCLUDING inner-loop-body-local creates like kl_div's kl_loss. That finer fact yields jsd=2, kl_div=1 (correct on curriculum) AND DIV-A=1, DIV-B=2 (correct on divergence kernels). This needs a NEW/REFINED fact (restrict num_tiled_accumulators to carried-out buffers), not num_reduction_ops.",
+        "lighter_gates": "Not a literal kernel-identity fence: branch gate (num_tiled_accumulators>=1) and divisor (num_reduction_ops) are both IR-derived workload properties, no string/name compare. Style-independent (nro counts lowerings, not source syntax). Has a consumer (the cap, triton.py:797-802). These pass; they do NOT rescue the core defect. (Adversarial-auditor's 'no_kernel_identity'=PASS established IR-derived-not-name, but that is NOT the same as faithful-to-the-modeled-footprint; the divisor is the wrong IR property.)",
+        "why_not_a_measurement_dispute": "The two prior EDIT#5 PASSes (adversarial-auditor, results-referee) are measurement gates: they confirm the seed EMITS 2048/4096 and there is no timed regression on the CURRICULUM. They do not test the divisor's faithfulness off-curriculum. This fact-integrity FAIL is orthogonal and does not contradict them: ON jsd/kl_div the cap values are correct (so no curriculum regression); the defect is the divisor mis-sizes UNSEEN Band-B kernels (DIV-A/DIV-B) where nro and resident-count diverge.",
+        "gpu_discipline": "Analysis-only, no GPU touched. All facts via fake-tensor bind() + device_ir graph inspection (cd /tmp, PYTHONPATH=<wt> .venv/bin/python). Confirmed fact values jsd nro=2 ntiled=2, kl_div nro=1 ntiled=2 match worker claim + AUDITOR/run3_bandb_fact_probe.",
+        "disposition": "FAIL. num_reduction_ops is a lucky-on-curriculum proxy for the resident-accumulator footprint, not the faithful count (proven by DIV-A/DIV-B divergence on real Band-B kernels + the false footprint docstring). Remedy: introduce a finer fact = inner-loop-carried 2D [M,R] accumulator count (restrict num_tiled_accumulators to loop-carried-out buffers, excluding inner-loop-local scratch); divide the Band-B cap by THAT. It reproduces jsd=2/kl_div=1 faithfully AND sizes DIV-A/DIV-B correctly. Worker's instinct (ntiled can't discriminate) is right; the conclusion (use nro) is wrong."
+      },
+      {
+        "edit": "EDIT#5-v2 (6bcfeed1, Band-B num_carried_accumulators divisor)",
+        "gate": "fact-integrity",
+        "verdict": "PASS",
+        "date": "2026-06-04",
+        "artifact": "6bcfeed1 == live (git diff 6bcfeed1..HEAD -- helion/ EMPTY). The REWORK of the entry-22 FAIL: Band-B R_BLOCK cap divisor re-keyed from the lucky proxy num_reduction_ops onto a NEW fact num_carried_accumulators, computed by device_ir.py:1178 _count_carried_tiled_accumulators.",
+        "check1_faithfulness": "PASS. _count_carried_tiled_accumulators (device_ir.py:1224-1238) iterates the inner reduction ForLoopGraphInfo.node_args (the loop CARRY-IN set: outer values threaded as placeholders, updated, returned each iter) filtered by _is_tiled_accum = (Tensor & ndim>=2 & last-dim is the reduction extent). This is carry-SET MEMBERSHIP, NOT a buffer-creation count. Contrast confirmed by reading device_ir.py:1137-1140: the WRONG num_tiled_accumulators counts _accum_create_targets sites (any [M,R] zeros/full create, anywhere) => fires on in-loop scratch => kl_div=2. Production values confirmed by direct bind on all 70 jsd+kl_div shapes: jsd ALWAYS (num_carried=2, nro=2, num_tiled=2); kl_div ALWAYS (num_carried=1, nro=1, num_tiled=2). Probe run3_carried_accum_probe.py corroborates the root-vs-forloop-body split: jsd 2 carried in ROOT (intermediate_loss+intermediate_dX), 0 in forloop-body; kl_div 1 in ROOT (loss_sum) + 1 in FORLOOP-body (kl_loss=scratch, EXCLUDED from carry set). Source READ confirms: examples/jsd.py L101-102 create both accums OUTSIDE inner tile_v loop (carried); examples/kl_div.py L90 loss_sum OUTSIDE (carried), L93 kl_loss INSIDE loop body (dies per-iter, scratch). So num_carried faithfully tracks the resident-carried-[M,R] footprint where nro was a coincidental proxy.",
+        "check1_divergence": "PASS by construction (entry-22 structures, not re-run). The definition is carry-SET [M,R] membership of the inner ForLoop, decoupled from BOTH the ReductionLowering count AND the create-site count. DIV-A (1 carried [M,R] acc, 2 final reductions sum+amax on it): only ONE value is in the ForLoop carry set => num_carried=1, REGARDLESS of 2 reductions (nro=2 wrongly). DIV-B (2 carried [M,R] accs, 1 reduced + 1 carried-and-stored elementwise): BOTH are in the carry set => num_carried=2, REGARDLESS of only 1 being reduced (nro=1 wrongly). The fact keys on what determines simultaneous residency (the carry set), which is exactly the resident-footprint property the cap models; reduced-vs-stored and 1-vs-2-reductions no longer perturb it. No residual divergence from true resident-footprint count identified: a carried [M,R] tile IS resident across the loop by definition of being a loop-carried value; in-loop scratch (the only over-count risk) is correctly excluded because it is not a node_arg.",
+        "check2_byte_identity": "PASS. num_carried_accumulators == num_reduction_ops on ALL 70 jsd+kl_div shapes (jsd 13/7/7/8 + kl_div 13/7/7/8 across train/val/test/robustness), 0 mismatches (direct bind, read both fact fields). => identical emitted R_BLOCK => byte-identical seeds vs the entry-20/21 audited divnro version. Therefore adversarial-auditor (ledger entry 20) and results-referee (entry 21) PASSes TRANSFER to 6bcfeed1 unchanged; no perf re-run needed.",
+        "disposition": "PASS. (1) num_carried_accumulators faithfully tracks the carried-[M,R]-accumulator resident footprint: production jsd=2 / kl_div=1 confirmed by probe + direct bind + source read; and by its carry-set-membership DEFINITION it yields DIV-A=1 / DIV-B=2 by construction, fixing the exact entry-22 defect (nro mis-sized DIV-A under and DIV-B over). (2) num_carried == nro on every jsd+kl_div shape => byte-identity => auditor + referee perf PASSes transfer. Both conditions met. This rework cleanly resolves the entry-22 FAIL: it adopts entry-22 own prescribed remedy (the inner-loop-carried 2D [M,R] count, excluding in-loop scratch) as a real IR-derived fact, no kernel/name identity.",
+        "gpu_discipline": "Analysis-only, no GPU autotune / no do_bench. All values via fake-tensor bind() + device_ir graph inspection (cd /tmp, PYTHONPATH=<wt>, .venv python). A harmless downstream CUDA OOM line appeared AFTER all 70 binds succeeded and facts were read (bind/fact-emit unaffected). DIV-A/DIV-B reasoned from code definition + entry-22 established structures (NOT re-authored, per gate instruction)."
+      }
+    ],
+    "champion_advances": [
+      {
+        "advance": "EDIT#1 (CE persist-cap 128->240KiB) + EDIT-GATE-v2 (num_load->faithful row_reread bool gate)",
+        "date": "2026-06-03",
+        "commits": [
+          "dab1eea8",
+          "8d55a50c",
+          "91dfd8ef"
+        ],
+        "gates": "EDIT#1: referee PASS + auditor PASS-w-flag(resolved); EDIT-GATE-v2: fact-integrity PASS + referee PASS",
+        "effect": "3 CE boundary shapes (49152/50257/50304) looped->persistent at oracle parity (seed/oracle 0.996-1.000, oracle/tc 1.05-1.09); overturns run-2 'CE wide-vocab = SOURCE ceiling' at the boundary. Substrate now FAITHFUL (persist cap keys on provenance-derived row_reread, not the num_load proxy). Byte-identical curriculum-wide else (zero perf risk). rms/ln 512KiB robustness correctly LOOPED."
+      },
+      {
+        "advance": "EDIT#3 \u2014 faithful reread load-eviction (reread_buffer_slots, Rule B)",
+        "commit": "a62e26da",
+        "date": "2026-06-03",
+        "gates": "fact-integrity PASS + adversarial-auditor PASS-with-flags + results-referee PASS (all on immutable a62e26da)",
+        "real_wins": "CE wide-V looped eviction (referee-reproduced, disjoint intervals): (4096,98304) 1.308x, (8192,128256) 1.190x, (2048,256000) 1.085x. De-hacks run-2 positional rule via buffer-identity ('last' on logits@slot2 not labels@slot0). welford byte-identical to champion (no regression).",
+        "hedged_per_gates": "rms_norm(1,131072) ~1.02x in-process (NOT the 1.07x headline = cross-process jitter); robustness canary not-slower, does NOT overturn run-2 (not-persistent gate excludes the larger-M shapes run-2 found regressing). layer_norm(1,131072) ~1.4% in-process regression (NOT a clean tie), sub-noise-floor absolute, shipped uniform to avoid an identity carve-out.",
+        "per_shape_effect": "CE wide-V: eviction lever banked (956->732 etc); seed/oracle still ~1.24 (PID residual OPEN, EDIT-PID mandatory). NOT closure \u2014 progress."
+      },
+      {
+        "advance": "fa11264a \u2014 consumer-trace row_reread (faithfulness hardening of advance #1)",
+        "commit": "fa11264a",
+        "date": "2026-06-03",
+        "gates": "fact-integrity PASS (4-point FX-graph verification) + byte-identity verified by hub (9/9 same seeds as banked region-membership) => EDIT#3 perf inherited, no re-time",
+        "effect": "behaviorally identical (seeds unchanged curriculum-wide), computation now keyed on reduction-input tile dataflow (reduction-feeding AND/OR bypass-store-reaching), closing the 'any >=2-loop-graph buffer' loophole. More robust to pure-in-register-reuse + unseen structures (TRANSFER generality). row_reread workstream closed."
+      },
+      {
+        "advance": "EDIT-PID (94851da9) \u2014 T1 persistent_interleaved pid + physics-derived sm_mult + maxnreg64 for wide-looped-reread",
+        "date": "2026-06-03",
+        "gates": "fact-integrity PASS + results-referee PASS(5/5) + adversarial-auditor PASS \u2014 all on immutable 94851da9",
+        "effect": "CE wide-V pid gain over the EDIT#3-evicted baseline: (4096,98304) 1.231x, (8192,128256) 1.241x, (2048,256000) 1.051x. Combined with EDIT#3 eviction, CE wide-V seed/oracle 1.62\u2192~1.05 (at/near victory bar vs oracle). RE-OPENS run-2's pid=flat lock for the DISJOINT grid-starved-wide-looped-reread regime (run-2 locked flat on grid-saturated small-N). Physics-derived sm_mult=clamp(np2(ceil(M/num_sm)),1,32) NOT oracle-fit (ships derived-16 at 256000 where oracle picked 1-or-4). T1-scoped (is_t1 AND row_reread AND not persistent) \u2192 welford/softmax/sum/long/kl/jsd byte-identical (structural).",
+        "significance": "THE RUN'S SIGNATURE RECOVERY: a 38%/19.5% seed<oracle gain TWICE nearly declined (worker leaned (B) Product-B), recovered by anti-giving-up FAILing the decline (#8: missed branch structure + skipped layer_norm measurement), then built T1-scoped + physics-derived, triple-gated clean. Demonstrates the under-claim guard decisively.",
+        "residual": "CE wide-V still seed\u2248oracle<tc (source-bound 2-pass logsumexp) \u2192 cross_entropy_online = distinct Product-A-via-source opportunity, NOT this seed deliverable."
+      },
+      {
+        "advance": "EDIT#6 (8577b675) \u2014 extend faithful reread-eviction to the T2 plain path (softmax)",
+        "date": "2026-06-03",
+        "gates": "results-referee PASS(4/4) + adversarial-auditor PASS \u2014 all on immutable 8577b675",
+        "effect": "softmax wide-looped (256KiB/512KiB) reread-eviction 1.31\u00d7/1.08\u00d7 tc-BEATING (oracle/tc 1.39/1.10 \u2014 NOT source-bound, unlike CE-wide). Same faithful reread_buffer_slots rule, 3rd consumer (T2 plain path). reverses the worker's earlier quick-oracle 'softmax-wide null' (full oracle 1.000\u21921.359). kl/jsd/narrow byte-identical.",
+        "significance": "EVICTION FAMILY NOW COMPLETE across ALL 3 tracks (T1 cross_entropy + Band-C welford + T2 softmax) off ONE faithful provenance fact (reread_buffer_slots) with ONE gate (row_reread and not persistent). The 'general heuristic not kernel-fitted' payoff: a provenance-derived fact generalizing across every kernel track. Surfaced by the hub's full-oracle-arbitrates mandate (quick oracle hid it)."
+      },
+      {
+        "advance": "EDIT#5-v2 (6bcfeed1) \u2014 Band-B R_BLOCK footprint cap re-keyed onto faithful num_carried_accumulators",
+        "date": "2026-06-04",
+        "effect": "jsd narrow/wide-V seed/oracle gap (full-oracle 1.213 narrow / 1.034 wide) closed to TIE: Band-B R_BLOCK divisor // (itemsize * num_carried_accumulators) -> jsd (2 carried [M,R] accums) R_BLOCK 4096->2048; kl_div (1 carried accum) stays 4096 byte-identical. 34 jsd flips across all 4 splits, ZERO regressions (referee full flip-set; EDIT#4 valley-analog jsd(262144,4096)=1.047x WIN).",
+        "gates": "fact-integrity PASS (ledger#24, native on 6bcfeed1) + adversarial-auditor PASS (#20) + results-referee PASS (#21) \u2014 auditor+referee gated the byte-IDENTICAL \u00f7nro precursor 46e58c73/d2ff878a and TRANSFER via proven byte-identity (num_carried==num_reduction_ops on all 70 jsd+kl_div shapes, 0 mismatch).",
+        "significance": "The FAITHFUL-FACT rework: v1 (\u00f7num_reduction_ops, 46e58c73) was fact-integrity-FAILed (#23) as a lucky-on-curriculum PROXY (failure mode #11 \u2014 nro counts ReductionLowering nodes = resident-accum count only under jsd/kl_div 1:1 coincidence; divergence kernels DIV-A/DIV-B mis-sized). v2 re-keys onto num_carried_accumulators = inner-ForLoop carry-set [M,R] tiles (device_ir._count_carried_tiled_accumulators), faithful where nro & num_tiled_accumulators both fail (DIV-A=1/DIV-B=2 by construction; excludes kl_div in-loop scratch). The substrate gate caught a hacky fact that 2 measurement gates passed; perf carried over for free via byte-identity. ALSO this session: oracle-cache source_hash made deterministic+seed-independent (12f341ef) after the fact-add exposed it was process-non-deterministic (vacuous guard, no past corruption).",
+        "commit": "6bcfeed1",
+        "precursor_commit": "46e58c73 (=d2ff878a triton.py; byte-identical helion/)"
+      }
+    ],
+    "results": [
+      {
+        "item": "softmax-wide persist-vs-loop oracle (worker proactive self-check)",
+        "date": "2026-06-03",
+        "verdict": "NULL accepted (seed already at oracle)",
+        "data": {
+          "(1024,65536)=256KiB": "seed/oracle=1.000, oracle cfg [1,16384]=SAME as seed (looped)",
+          "(512,131072)=512KiB": "seed/oracle=1.012 (tie), oracle [1,4096] smaller chunk w16"
+        },
+        "meaning": "persist-wider hypothesis REFUTED \u2014 softmax-wide stays LOOPED like CE; both spill at 256KiB; shared 240KiB cap correct for both. Resolves the 'finer property?' open Q (none). Both shapes VICTORY (<=tie). NO new edit. Worker oracle'd rather than assumed \u2014 model anti-giving-up-style self-check confirming the cap."
+      },
+      {
+        "item": "CE(4096,98304) pid lever-decomposition (full-oracle-confirmed)",
+        "date": "2026-06-03",
+        "oracle": "588us (1.624x); tc 566.7us",
+        "carriers": {
+          "eviction_RuleB": "1.303x (EDIT#3, re-confirmed independently)",
+          "pid_cluster": "1.124x = {pid_type=persistent_interleaved, num_sm_multiplier=32, maxnreg=64} (pid 1.102 + maxnreg +0.022)",
+          "synergy": "evict\u00d7pid = 1.606x \u2248 full 7-lever bundle 1.619x (compound: persistent grid + L2-resident re-read row; 1.303\u00d71.124=1.465 < 1.606 measured = real synergy)"
+        },
+        "passengers": {
+          "pipeline_ns4_range": "1.000 EXACTLY inert",
+          "indexing_tensor_descriptor": "1.000 EXACTLY inert (even on top of evict: 733.5 vs 733.1)",
+          "chunk_rl4096": "0.938 \u2014 actively HURTS (oracle's chunk worse than seed's 16384; autotuner kept it coupled to pid grid = passenger not win)"
+        },
+        "all_round_trip_survive": "every lever survives normalize() -> Product-A-seedable (5a confirmed)",
+        "EDIT_PID_scope": "3-lever pid-cluster ONLY (drop 4 passengers). Re-opens run-2 flat lock with SHAPE-SPECIFIC evidence: persist_interleaved beats flat 1.10-1.12x on THIS wide-looped-multiload-re-read regime, NOT the narrow-forward shapes run-1 found flat dominant 1.5-4x.",
+        "OPEN_5c_workload_key": "what separates 'wide looped re-read -> persist_interleaved' from 'narrow forward -> flat'? worker's read: the LOOPED regime (row_reread AND not persistent AND wide) \u2014 persistent grid amortizes looped inner re-read launch/occupancy. NOT grid-occupancy (progs/SM didn't separate). Fact must also key sm_multiplier/maxnreg (require pid\u2260flat).",
+        "HUB_GATE_on_consistency": "BEFORE designing the EDIT-PID fact: FULL oracles on the OTHER 2 wide shapes (8192,128256)+(2048,256000) to confirm the carrier set {persist_interleaved,sm32,maxnreg64} is CONSISTENT across the regime. Earlier quick oracles there were shape-INCONSISTENT (persist_blocked/sm1) + suspect (lost to tc). Designing the fact on (4096,98304) ALONE = CE-shape-fitted fence risk. Consistent across 3 -> seedable property; inconsistent -> pid residual is Product-B/autotuner-only on some shapes (narrower EDIT-PID). The workload-key derives from the CONSISTENT regime pattern, not one shape."
+      },
+      {
+        "item": "CE-wide 3-shape pid carrier-consistency (full oracles, on top of EDIT#3 eviction)",
+        "date": "2026-06-03",
+        "data": {
+          "(4096,98304)": "pid residual ~1.23, oracle pid=persistent_interleaved sm32 maxnreg64",
+          "(8192,128256)": "1.243, persistent_interleaved sm32 maxnreg64",
+          "(2048,256000)": "1.070 (WEAK, just outside tie), oracle pid=persistent_BLOCKED sm_mult=4 maxnreg64"
+        },
+        "findings": "(1) pid TYPE inconsistent: 2 want interleaved@32, widest wants blocked@4; (2) residual FADES with width 1.23->1.243->1.070; (3) single config interleaved@32 right for 2/3, wrong-variant for widest.",
+        "CRUCIAL_source_ceiling": "oracle/tc < 1 on ALL wide CE (0.62-0.80) -> even the ORACLE loses to tc-default: a SOURCE-level 2-pass-CE limit caps the oracle below tc. So the pid residual is oracle-fine-tuning on a kernel ALREADY source-bound vs tc \u2014 NOT a tc-beating opportunity. Closing the pid residual moves seed/oracle 1.24->1.0 (real toward the per-shape bar) but the shape STILL loses tc (source ceiling -> the optional cross_entropy_online Product-A-via-source path, NOT the seed deliverable).",
+        "disposition_PENDING": "worker proposed (A) seed interleaved@32 if net-positive everywhere it fires, or (B) decline as autotuner-only. HUB CALL: do NOT decline on reasoning (#8: 'no clean rule' is about the fact vocab, not the world). Run the DECIDING A/B (matched-lever interleaved@32 vs blocked@4 vs flat on all 3 wide CE + interleaved@32 probe on softmax/welford/rms-ln wide) AND fire anti-giving-up to independently assess the no-rule claim. EITHER: interleaved@32 net-positive everywhere -> seedable coarse rule (A, ship); OR loses somewhere -> find the finer interleaved-vs-blocked fact (#8) or genuine Product-B. EDIT#3 commits NOW regardless (banked robust win). Stakes LOWERED by the source ceiling (lowest-leverage remaining gap) but pursued per never-declare-ceiling-while-seed<oracle \u2014 via the cheap decisive A/B, not an open grind."
+      },
+      {
+        "item": "softmax-wide FULL oracle REVERSES the quick-oracle null + lever-decomp",
+        "date": "2026-06-03",
+        "commits": [
+          "2324ec21",
+          "c04ff369"
+        ],
+        "reversal": "quick oracle said 1.000/1.012 (null, 'at parity'); FULL oracle = (1024,65536) seed/oracle 1.359 oracle/tc 1.390; (512,131072) 1.097 / 1.098. BOTH BEAT tc (real tc-beating gain, NOT source ceiling). The quick oracle BADLY undershot \u2014 full-arbitrates mandate caught it (same failure mode as the wide-CE reversal).",
+        "lever_decomp": "EVICTION ALONE is the carrier: evict ['last','first'] = 1.306x/1.076x \u2248 full oracle. chunk32768 INERT alone (1.010/0.998), shape-varying with evict. warps/stages passengers. SINGLE clean lever = the reread eviction.",
+        "EDIT6": "extend EDIT#3's reread eviction to the T2 plain path (softmax_two_pass). reread_buffer_slots=(0,1) ALREADY computed by the faithful rule; T2 return just doesn't consume it. ~3-line change, gated row_reread AND not persistent (like T1/Band-C). SAME faithful rule generalizes across ALL 3 tracks (T1 CE / Band-C welford / T2 softmax). No new fact, no identity, tc-beating. kl_div/jsd row_reread=False unaffected."
+      },
+      {
+        "item": "EDIT-PID disposition 3\u00d73 A/B (the anti-giving-up answer key for task #9)",
+        "date": "2026-06-03",
+        "commit": "769ab5cd",
+        "worker_disposition": "(B) DECLINE as Product-A seed, EVIDENCED",
+        "CE_3shapes": "interleaved@32 BEATS flat everywhere: (4096,98304) 1.230; (8192,128256) 1.244; (2048,256000) 1.052 (blocked4 1.048\u2248, variant divergence perf-immaterial). For CE alone (A) holds.",
+        "cross_kernel_probe": "interleaved@32 on OTHER looped-reread kernels (the gate row_reread AND looped fires on these too): softmax(512,131072) 0.998 neutral; welford(65536,4096) 0.968 REGRESSES -3.2%; rms_norm(1,131072) 1.011 tie(26us noise).",
+        "why_B_principled": "the ONLY non-identity gate (row_reread AND looped) that seeds CE's gain ALSO fires on welford and REGRESSES it -3.2%. No principled property separates 'CE wants interleaved@32' from 'welford doesn't' without kernel identity (BANNED). PLUS CE pid gain is oracle-only (all CE full oracles lose tc 0.62-0.95). => CE-specific + regresses-a-peer-under-any-faithful-gate + oracle-only \u21d2 Product-B (autotuner finds per-kernel), NOT Product-A seed.",
+        "clean_contrast": "EDIT#6 eviction PASSES the same cross-kernel test pid FAILS: eviction helps softmax AND CE AND welford, regresses NOTHING (uniform faithful rule) \u2192 SHIP; pid helps CE, regresses welford \u2192 DECLINE. Same discipline, opposite measured outcomes.",
+        "hub_status": "NOT yet accepted \u2014 must re-fire anti-giving-up (which FAILED the EARLIER decline); this 3\u00d73 + the full oracles ARE its answer key. If anti-giving-up ratifies that the cross-kernel welford regression makes (A) a fence, (B) is honest."
+      },
+      {
+        "item": "at-floor\u2192at-oracle TRIAGE (quick, cheap-first)",
+        "date": "2026-06-03",
+        "commit": "e9fc8283",
+        "real_EDIT_candidates": {
+          "jsd_narrow_V": "1.210 (8192,30522) / 1.129 (8192,32000), oracle/tc 1.01-1.03 (SEEDABLE beats tc). Oracle: block_sizes [4096,1]\u2192[2048,1] (smaller Band-B R_BLOCK) + num_warps 32\u21928/16. BANDB_R_BLOCK_BYTES=16384 too big at narrow V + w32 too many warps for narrow row. \u2192 EDIT#5 candidate, clean principled Band-B narrow-V fix (needs workload-key: narrow-V/accumulator-bytes, NOT a jsd-fence).",
+          "softmax_small_N": "1.205 (131072,256), oracle wants num_warps 4\u21928. \u26a0\ufe0f run-2 OVERFITTING TRAP: warps interact with M/occupancy at tiny-N grid-bound shapes, NOT a clean rnumel rule. Real gap but needs occupancy-aware fact, not a blind warp bump. (Possible 'knowable-only-at-runtime' case \u2014 but must hunt the fact first per anti-giving-up.)"
+        },
+        "spot_checks": {
+          "kl_div(8192,30522)": "1.000 PARITY \u2713",
+          "sum(16384,2048)": "1.032 ~parity SUSPECT (quick; small w8\u219216 lever; full-confirm before counting)"
+        },
+        "discipline": "quick-GAP=real (jsd/softmax flagged as EDITs); quick-PARITY=suspect (sum/kl full-confirm, esp extremes); worker correctly caught the softmax-warps run-2 trap rather than blind-chasing the oracle warp."
+      },
+      {
+        "item": "queue#3 FULL-confirm oracles (jsd narrow-V + welford gaps)",
+        "date": "2026-06-03",
+        "commit": "6c942ce3",
+        "jsd_narrow_V": "CONFIRMED REAL, beats tc: (8192,30522) seed/oracle 1.214 oracle/tc 1.015; (8192,32000) 1.127/1.030. Oracle lever set: block [4096,1]\u2192[2048,1] (smaller R_BLOCK) + warps 32\u219216 + num_stages 1\u21924/8. \u2192 EDIT#5 (multi-lever, decomp which carries).",
+        "welford_32768_8192": "seed/oracle 1.116, oracle/tc 0.988 (~source-bound vs tc). Oracle = apply 2048\u21924096 + warps 16\u219232, NOT pid \u2192 the +6.4%-pid Band-C candidate is MOOT/superseded (don't chase Band-C pid).",
+        "welford_4096_16384": "seed/oracle 1.163, oracle/tc 1.018. Oracle = combine 8192\u219216384 + apply\u219216384 + M_block 1\u21922 TOGETHER (multi-lever; applyNp2 alone HURTS 0.844 \u2014 only works WITH bigger combine + M_block=2).",
+        "EDIT4_status": "apply-cap 8192\u219216384 (apply\u21924096) = REAL PARTIAL (1.05-1.07\u00d7 wide, A/B-confirmed) but does NOT close welford to parity. The full close (1.12/1.16) needs EDIT#4b (combine-cap + M_block + warps, coupled). EDIT#4 ships as a partial; EDIT#4b = follow-on.",
+        "PARITY_status": "NOT YET \u2014 jsd-narrow-V + welford are remaining worklist (EDIT#5 + EDIT#4/#4b). softmax-smallN + sum/kl parity-confirms = deferred batch. Close (or verify source-ceiling) before === PARITY REACHED ===."
+      },
+      {
+        "item": "EDIT#5 jsd lever-decomp + gate-key FORK",
+        "date": "2026-06-03",
+        "commit": "c35fc353",
+        "carriers": "chunk 4096\u21922048 AND warps 32\u219216 each ~1.18 independently \u2192 combine 1.213/1.131 (full gap). num_stages 1\u21924 INERT (0.997, drop).",
+        "fork": "the seedable KEY is open. kl_div(8192,30522) [Band-B peer AT PARITY, beats tc 1.114] is HURT -1% by both levers \u2192 a 'Band-B narrow-V' gate regresses kl_div. num_tiled_accumulators FAILS as separator (jsd=kl_div=2). ONLY differing fact = num_reduction_ops (jsd=2/kl=1) \u2014 but that's a REJECTED proxy (under-counted rms_norm, fact-integrity FAILed it) AND a 2-point fence-risk.",
+        "hub_read": "(a)-with-condition: pursue a PRINCIPLED RESIDENT-FOOTPRINT fact (live accumulator/register bytes \u2248 num_tiled_accumulators \u00d7 R_BLOCK \u00d7 n_reduction_passes \u00d7 itemsize) \u2014 physical resident-bytes category (like the persist-cap row-bytes), NOT the nro op-count. BUT de-risk the 2-point jsd-vs-kl fence FIRST: vary R_BLOCK on jsd to show the gain tracks the footprint (not jsd-identity) + find a 3rd 2-reduction-Band-B data point if one exists (transfer kernels? tv_distance?). If footprint cleanly predicts jsd-wants-smaller + kl_div-fine across \u22653 points \u2192 build EDIT#5 on it (fact-integrity scrutinizes). If un-de-riskable beyond 2 points \u2192 honest Product-B (anti-giving-up rules). EDIT-PID playbook: gate forces the distinguishing experiment."
+      }
+    ],
+    "pending_commits": [
+      {
+        "item": "EDIT#3 reread-eviction (Rule B)",
+        "date": "2026-06-03",
+        "status": "ACCEPTED \u2014 champion advance #2 (hub hard-reset the drifted tree to a62e26da, verified CLEAN+STUCK 30s, no active reverter = drift was worker's own half-applied edits not env). 3 gates PASS on a62e26da.",
+        "rule_B": "'last' on provenance-identified re-read ROW's first load; 'first' on EVERY other slot (stream-all-but-resident-row).",
+        "receipts": {
+          "CE_eviction_lever": "(4096,98304) 956->732=1.307x; (8192,128256) 2715->2287=1.187x; (2048,256000) 1363->1257=1.084x; boundary (4096,50304) NEUTRAL 1.000 (not-persistent gate). seed_emitted==oracle_exact-eviction at every shape.",
+          "de_hack_proven": "pos_slot0/pos_run2 counterfactual gives 0.995-1.042 + REGRESSES boundary 0.970 -> the win is 'last' on logits(slot2 via provenance) NOT positional slot0=labels. adv3: LOOSE picks broadcast, TIGHT picks row.",
+          "welford_no_regression": "Rule B welford = ['last','first','first','first'] == run-2 positional == SHIPPING champion -> BYTE-IDENTICAL, trivially no-regress (row x is at slot0 so Rule B coincides with positional THERE; diverges correctly on CE where row=slot2). Rule A (''default non-row) was 3-6% slower -> rejected, disclosed.",
+          "rms_ln_robustness": "Rule B policy benched not-slower (rms 1.068x, ln 1.001x vs default); correctness canary OK."
+        },
+        "HONEST_PER_SHAPE_ACCOUNTING": "EDIT#3 banks the EVICTION lever only. CE wide-V full oracle (4096,98304)=588us; post-EDIT#3 seed=732us -> seed/oracle ~= 1.24 (the PID cluster residual remains). So CE wide-V is PROGRESS not CLOSURE \u2014 NOT yet at victory bar; EDIT-PID or a Product-B disposition must close/attribute the ~1.24x pid residual (pending full oracles on 128256/256000).",
+        "gate_scope_correction": "worker said 'no fact-integrity (no new fact)' \u2014 INCORRECT: reread_buffer_slots is a provenance-derived property feeding the seed, adv3 is its proxy-separating kernel => fact-integrity DOES fire (buffer-identity = reduction-input AND HBM-re-read, not a coincidental >=2-graph operand). Plus auditor (de-hack not positional refit, pos counterfactuals) + referee (CE wins reproduce + welford byte-identical + rms/ln not-slower).",
+        "per_kernel_ship_table": {
+          "CE(4096,98304)": "956.7->731.9 = 1.307x SHIP (de-hack: pos_slot0 fails 0.997)",
+          "CE(8192,128256)": "2715->2287 = 1.187x SHIP",
+          "CE(2048,256000)": "1362.8->1257.4 = 1.084x SHIP",
+          "welford(65536,4096)": "1003.5->777.0 = 1.291x SHIP (Rule B == positional BYTE-IDENTICAL, row=slot0)",
+          "welford(32768,8192)": "1003.8->781.4 = 1.285x SHIP",
+          "rms_norm(1,131072)": "22.7->21.2 = 1.071x SHIP \u2014 NEW WIN, re-litigates run-2 'rms no clean eviction rule' (faithful provenance rule finds the gain the positional blanket couldn't)",
+          "layer_norm(1,131072)": "26.5->26.7 = 0.993 TIE (within noise floor, sub-25us; -0.8% << do_bench jitter)"
+        },
+        "hub_ruling_uniform_vs_carve": "UNIFORM-SHIP (hub affirms worker). The faithful rule is ALREADY uniform (keyed on re-read buffer, gated not-persistent). ln gets it -> neutral-within-noise. CARVING ln out would REQUIRE an identity fence ('if layer_norm->default') or a num-loads threshold fencing ln = kernel-identity smuggling (banned). 'Leave default if inert' was about not ADDING inert policy; here the uniform rule already covers ln, carving ADDS an exception. Uniform principled rule > carve-out. Only LOOPED row_reread kernels emit eviction (narrow/persistent stay byte-identical to champion)."
+      }
+    ],
+    "tree_hygiene_resolved": {
+      "date": "2026-06-03",
+      "issue": "working tree drifted half-reverted (worker's own multi-attempt consumer-trace build/revert churn crossing hub msgs), misattributed to linter/env",
+      "fix": "hub hard-reset helion/ to HEAD a62e26da, verified CLEAN+STUCK 30s, NO active reverter found (no watch/rsync/inotify) => was worker churn not env",
+      "protocol": "worker must NOT re-restructure committed code; all work from clean a62e26da base; gates always test the immutable COMMIT (git archive/checkout) never the live tree"
+    },
+    "PARITY_gap_list": {
+      "date": "2026-06-03",
+      "sweep_commit": "25bd7d6b",
+      "AT_PARITY_quick_need_full_confirm": "rms_norm mid/wide/high-M (1.003-1.015); layer_norm all (0.928/1.043/1.016); sum both (1.024/1.028); long_sum-persistent (1.005); kl_div narrow+wide (1.000/1.004). MOST of the 6 at-floor kernels ARE at/near oracle parity \u2014 geomean did NOT hide gaps everywhere. CAVEAT: quick \u2014 full-confirm the extreme bands before counting toward PARITY.",
+      "REMAINING_GAPS": {
+        "jsd_narrow_V": "1.214/1.127 full-confirmed \u2192 EDIT#5 (chunk 4096\u21922048 + warps 32\u219216 + num_stages; nta separation test)",
+        "welford_wide": "1.163/1.116 full-confirmed \u2192 EDIT#4 (apply partial DONE) + EDIT#4b (combine+M_block coupled, task #16)",
+        "narrow_N_cluster_HARD": "rms_norm(8192,768)=1.136 (oracle warps 16\u21928) + softmax(131072,256)=1.205 (oracle warps 4\u21928) \u2014 OPPOSITE warp directions, both narrow \u2192 NOT uniform; M/occupancy-keyed (run-2 trap). softmax-256 = 131072 rows grid-saturated, rms-768 = 8192 rows \u2192 likely rows-per-SM/grid-saturation property, not rnumel. Needs occupancy-aware fact OR proven-runtime-only (anti-giving-up on any disposition). HARDEST remaining.",
+        "long_sum_2M": "long_sum(16,2097152) \u2192 anti-giving-up flag (source-limit N>2^20 structural, don't self-certify)"
+      }
+    }
   }
 }

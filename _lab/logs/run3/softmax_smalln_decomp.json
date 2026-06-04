@@ -1,0 +1,81 @@
+{
+  "shape": [
+    131072,
+    256
+  ],
+  "tc_us": 93.75999867916107,
+  "arms": {
+    "seed": {
+      "label": "seed",
+      "us": 105.95200210809708,
+      "spread": 0.0024162068126765347,
+      "correct": true,
+      "maxerr": 4.470348358154297e-08,
+      "codegen": "persistent",
+      "w": 4
+    },
+    "oracle_verbatim": {
+      "label": "oracle_verbatim",
+      "us": 95.45599669218063,
+      "spread": 0.0006704711023442526,
+      "correct": true,
+      "maxerr": 4.470348358154297e-08,
+      "codegen": "persistent",
+      "w": 16
+    },
+    "+Mblock16": {
+      "label": "+Mblock16",
+      "us": 101.56799852848053,
+      "spread": 0.001417780192317821,
+      "correct": true,
+      "maxerr": 4.470348358154297e-08,
+      "codegen": "persistent",
+      "w": 4
+    },
+    "+warps16": {
+      "label": "+warps16",
+      "us": 101.1200025677681,
+      "spread": 0.0009493742934492731,
+      "correct": true,
+      "maxerr": 4.470348358154297e-08,
+      "codegen": "persistent",
+      "w": 16
+    },
+    "+Mblock16+warps16": {
+      "label": "+Mblock16+warps16",
+      "us": 95.67999839782715,
+      "spread": 0.0006689014255776692,
+      "correct": true,
+      "maxerr": 4.470348358154297e-08,
+      "codegen": "persistent",
+      "w": 16
+    },
+    "+Mblock16+warps16+ns5": {
+      "label": "+Mblock16+warps16+ns5",
+      "us": 95.74399888515472,
+      "spread": 0.00033422714777322235,
+      "correct": true,
+      "maxerr": 4.470348358154297e-08,
+      "codegen": "persistent",
+      "w": 16
+    },
+    "+evict": {
+      "label": "+evict",
+      "us": 97.31200337409973,
+      "spread": 0.0009865250705229525,
+      "correct": true,
+      "maxerr": 4.470348358154297e-08,
+      "codegen": "persistent",
+      "w": 4
+    },
+    "+Mblock16+warps16+evict": {
+      "label": "+Mblock16+warps16+evict",
+      "us": 95.45599669218063,
+      "spread": 0.0006704711023442526,
+      "correct": true,
+      "maxerr": 4.470348358154297e-08,
+      "codegen": "persistent",
+      "w": 16
+    }
+  }
+}
