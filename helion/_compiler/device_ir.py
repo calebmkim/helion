@@ -78,6 +78,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from collections.abc import Sequence
 
+    import sympy
+
     from .compile_environment import BlockSizeInfo
     from .cute.layout import CuTeGridExecutionPlan
 
@@ -1041,6 +1043,55 @@ class DeviceIR:
             )
         )
 
+    def _extent_is_reduction_axis(
+        self,
+        last: object,
+        red_block_id: int,
+        size_hint: int,
+        red_symbol: sympy.Symbol | None,
+    ) -> bool:
+        """True iff a tile dim ``last`` IS the reduction axis ``red_block_id``.
+
+        Identifies the reduction axis by BLOCK-ID PROVENANCE — the faithful
+        property "this tile dim *is* the reduction axis" — instead of an
+        int-equality proxy ("this dim merely EQUALS the reduction extent"). The
+        proxy mis-classifies a buffer carried along a NON-reduction tiled axis
+        whose extent happens to equal the reduction extent; the block-id test
+        does not, because that buffer's dim resolves to ITS OWN block, not
+        ``red_block_id``. We REUSE the provenance the compiler already records
+        for every tile size (``env.resolve_block_id`` — the same resolver
+        ``add_kernel_tensor_size`` and the CuTe indexed-reduction path use), so
+        this is not a new analysis.
+
+        Resolution order:
+        - A **symbolic** extent carries block provenance: resolve it and require
+          the resolved block to BE the reduction axis. (A compound symbolic expr
+          with no single block origin resolves to ``None``; fall back to the
+          prior symbol-membership test for it.)
+        - A **bare Python-int** extent carries NO finer provenance than its value
+          (``resolve_block_id`` would only numel-match it, which is no better and
+          is ambiguous when two reduction blocks share a numel), so it keeps the
+          int-equality last resort. This residual proxy can still be fooled by a
+          coincidentally-equal CONSTANT dim, but a constant tile dim has nothing
+          finer to key on. In practice the in-loop ``[M, R]`` accumulators this
+          gates on carry SYMBOLIC tile extents (the block-id path), so the
+          constant fallback is not exercised by the reduction curriculum.
+        """
+        import sympy
+
+        if isinstance(last, int):
+            return last == size_hint
+        env = CompileEnvironment.current()
+        bid = env.resolve_block_id(last)
+        if bid is not None:
+            return bid == red_block_id
+        if red_symbol is not None:
+            try:
+                return red_symbol in sympy.sympify(last).free_symbols
+            except (TypeError, ValueError, AttributeError):
+                return False
+        return False
+
     def _count_reduction_workload(
         self, graph_ids: set[int], red_block_id: int, size_hint: int
     ) -> tuple[int, int, int, torch.dtype, int, int]:
@@ -1054,7 +1105,6 @@ class DeviceIR:
         num_reduction_ops, dtype, itemsize, num_tiled_accumulators)``; dtype falls
         back to fp32/4 if no tensor is found.
         """
-        import sympy
 
         from ..language import _MEMORY_OPS
         from ..language.creation_ops import full as _full_op
@@ -1078,30 +1128,15 @@ class DeviceIR:
         _accum_create_targets = (_full_op, _zeros_op)
 
         def _is_reduction_extent(last: object) -> bool:
-            """True if a tensor's last dim IS the reduction extent.
+            """True if a tile dim IS the reduction axis ``red_block_id``.
 
-            CAVEAT (general rule, not airtight): for a STATIC dim we test
-            ``last == size_hint`` — an INT-EQUALITY heuristic. A non-reduction
-            last dim that merely HAPPENS to equal the reduction extent is
-            mis-classified. This is NOT a correctness bug (the kernel still
-            computes the right answer); at worst the seed gets a wrong fact and is
-            suboptimal. The higher-severity consequence is at the
-            ``_last_dim_is_reduction`` (accumulator) site: a "lucky" match would
-            over-count ``num_tiled_accumulators`` and MIS-ROUTE the seed between
-            Band A and Band B. A principled ``block_id`` match is NOT cheaply
-            available here — fake tensors carry no block_id provenance (only the
-            ``ReductionLowering`` node does), so we accept the int-equality
-            approximation. For a DYNAMIC/symbolic dim we fall back to a sound test:
-            the reduction-axis symbol appears in the extent's free symbols.
+            Delegates to ``_extent_is_reduction_axis`` (block-id provenance, not
+            an int-equality proxy — see that method). Kept as a thin local so the
+            two call sites below read clearly.
             """
-            if isinstance(last, int):
-                return last == size_hint
-            if red_symbol is not None:
-                try:
-                    return red_symbol in sympy.sympify(last).free_symbols
-                except (TypeError, ValueError, AttributeError):
-                    return False
-            return False
+            return self._extent_is_reduction_axis(
+                last, red_block_id, size_hint, red_symbol
+            )
 
         def _last_dim_is_reduction(val: object) -> bool:
             return (
@@ -1194,16 +1229,14 @@ class DeviceIR:
         ReductionLowering count that ``num_reduction_ops`` gives (the two coincide
         only under a 1:1 reduction<->accumulator structure).
 
-        Reuses the SAME reduction-extent test as ``_count_reduction_workload``'s
-        accumulator site (static int-equality vs ``size_hint`` OR, for a dynamic
-        dim, the reduction-axis symbol in the extent's free symbols) so the two
-        counts stay consistent. ``0`` for Band-A (softmax_two_pass carries only
-        ``[M_BLOCK]`` row state; T1 reduction loops carry no [M,R] tile). Verified
-        jsd=2 (intermediate_loss + intermediate_dX) / kl_div=1 (loss_sum; kl_loss
-        excluded) on curriculum.
+        Reuses the SAME reduction-axis test as ``_count_reduction_workload``'s
+        accumulator site (``_extent_is_reduction_axis``: block-id provenance via
+        ``resolve_block_id``, falling back to symbol-membership then int-equality)
+        so the two counts stay consistent. ``0`` for Band-A (softmax_two_pass
+        carries only ``[M_BLOCK]`` row state; T1 reduction loops carry no [M,R]
+        tile). Verified jsd=2 (intermediate_loss + intermediate_dX) / kl_div=1
+        (loss_sum; kl_loss excluded) on curriculum.
         """
-        import sympy
-
         try:
             red_symbol: sympy.Symbol | None = (
                 CompileEnvironment.current().block_sizes[red_block_id].symbol()
@@ -1211,21 +1244,13 @@ class DeviceIR:
         except (IndexError, KeyError, AttributeError):
             red_symbol = None
 
-        def _is_reduction_extent(last: object) -> bool:
-            if isinstance(last, int):
-                return last == size_hint
-            if red_symbol is not None:
-                try:
-                    return red_symbol in sympy.sympify(last).free_symbols
-                except (TypeError, ValueError, AttributeError):
-                    return False
-            return False
-
         def _is_tiled_accum(val: object) -> bool:
             return (
                 isinstance(val, torch.Tensor)
                 and val.ndim >= 2
-                and _is_reduction_extent(val.shape[-1])
+                and self._extent_is_reduction_axis(
+                    val.shape[-1], red_block_id, size_hint, red_symbol
+                )
             )
 
         count = 0
