@@ -411,6 +411,15 @@ KERNEL_MAPPINGS: dict[str, tuple[str, ...]] = {
         },
     ),
     "sum": ("tritonbench.operators.sum.operator", "examples.sum", "sum_tritonbench"),
+    # long_sum reuses the `sum` tritonbench operator (same row-reduction, same
+    # baselines incl. torch_compile_no_autotune tc-default + accuracy gate) but
+    # binds the long-N Helion kernel via examples/long_sum.py. Drive large N with
+    # the operator's `--shapes` arg, e.g. `--shapes "256,65536;64,1048576"`.
+    "long_sum": (
+        "tritonbench.operators.sum.operator",
+        "examples.long_sum",
+        "longsum_tritonbench",
+    ),
     "softmax": (
         "tritonbench.operators.softmax.operator",
         "examples.softmax",
@@ -1409,8 +1418,16 @@ def run_kernel_variants(
     # pyrefly: ignore [missing-import]
     from tritonbench.utils.triton_op import BenchmarkOperatorMetrics
 
-    # Get the tritonbench operator name, stripping -bwd suffix for backward operators
-    operator_name = kernel_name.removesuffix("-bwd")
+    # Get the tritonbench operator name. Derive it from the tritonbench MODULE
+    # PATH (the source of truth for which operator to load), not the kernel key:
+    # a kernel may reuse another operator (e.g. `long_sum` reuses the `sum`
+    # operator), so key != op name in general. `tritonbench.operators.<op>.operator`
+    # -> `<op>`. Falls back to the de-bwd'd key if the path isn't the standard shape.
+    _parts = tritonbench_module.split(".")
+    if len(_parts) >= 2 and _parts[-1] == "operator":
+        operator_name = _parts[-2]
+    else:
+        operator_name = kernel_name.removesuffix("-bwd")
 
     # Parse tritonbench arguments
     tb_parser = get_parser()

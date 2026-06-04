@@ -12,6 +12,8 @@ This example demonstrates how to implement efficient sum reduction along a long 
 # %%
 from __future__ import annotations
 
+from typing import Callable
+
 import torch
 
 import helion
@@ -145,6 +147,38 @@ def longsum_manual(x: torch.Tensor) -> torch.Tensor:
             acc += x[tile_m, tile_n]
         out[tile_m] = acc.sum(-1)
     return out
+
+
+# %%
+# Benchmark Wrapper
+# -----------------
+
+
+# %%
+def longsum_tritonbench(tb_op: object, x: torch.Tensor) -> Callable[[], torch.Tensor]:
+    """
+    Wrapper for tritonbench. Mirrors ``sum_tritonbench`` (examples/sum.py): the
+    ``sum`` operator feeds a 1D tensor by default, so reshape to 2D for the
+    row-reduction kernel. Uses the persistent ``longsum`` variant (the one the
+    seed heuristic targets); the looped/manual variants stay available for
+    perf-investigation.
+
+    Args:
+        tb_op: TritonBench operator instance (the reused ``sum`` operator)
+        x: Input tensor (1D or 2D)
+
+    Returns:
+        Callable that returns the sum of the tensor along the last dimension
+    """
+
+    def compute_long_sum() -> torch.Tensor:
+        if x.ndim == 1:
+            x_2d = x.unsqueeze(0)
+            result = longsum(x_2d)
+            return result.squeeze()
+        return longsum(x)
+
+    return compute_long_sum
 
 
 # %%
