@@ -776,28 +776,35 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             # over-allocates that live state and SPILLS — at the widest in-sample
             # rows the persistent seed is 1.2–9.7× SLOWER than a small looped
             # chunk (matched A/B vs persistent, M_BLOCK at floor). Cap R_BLOCK so
-            # the LIVE reduction-accumulator footprint stays SM-resident: the inner
-            # loop carries num_reduction_ops independent reduction accumulators, all
-            # tiled to the SAME R_BLOCK, so the resident footprint is
-            # R_BLOCK * itemsize * num_reduction_ops. Hold that to a single
-            # BANDB_R_BLOCK_BYTES budget => R_BLOCK <= budget / (itemsize * n_acc).
-            # EDIT#5: divide the cap by num_reduction_ops (the DIRECT faithful count
-            # of live reduction accumulators sharing the budget — config_spec
-            # docstring: "number of accumulators"; this is the resident-footprint
-            # physics, NOT a row_reread proxy). jsd (n_acc=2): 16384/(4*2)=2048;
-            # kl_div (n_acc=1): 16384/(4*1)=4096, byte-IDENTICAL to before. Closes
-            # jsd to oracle parity (full oracle seed/oracle 1.21@narrow + 1.03@wide
-            # both want R_BLOCK 2048; V-INDEPENDENT, no-regression wide; A/B +19%/
-            # +10%/+2.4%, run3_bandb_nro_ab). Gated on the WORKLOAD properties
-            # num_tiled_accumulators (Band-B) + num_reduction_ops (accumulator
-            # count), NOT kernel identity — any Band-B reduction's chunk scales as
-            # 1/n_acc (the TRANSFER tv_distance probe, n_acc=1 light epilogue, stays
-            # at 4096 like kl_div). Scalar-/row-accumulator T2 (softmax_two_pass,
-            # num_tiled_accumulators==0) stays persistent to the structural cap.
+            # the LIVE carried-accumulator footprint stays SM-resident: the inner
+            # loop holds num_carried_accumulators independent [M_BLOCK, R_BLOCK]
+            # tiles resident SIMULTANEOUSLY (the loop carry set), all at the SAME
+            # R_BLOCK, so the resident footprint is R_BLOCK * itemsize *
+            # num_carried_accumulators. Hold that to a single BANDB_R_BLOCK_BYTES
+            # budget => R_BLOCK <= budget / (itemsize * n_carried).
+            # EDIT#5 (v2 — re-keyed onto num_carried_accumulators per fact-integrity):
+            # jsd carries 2 (intermediate_loss + intermediate_dX) -> 16384/(4*2)=2048;
+            # kl_div carries 1 (loss_sum; its [M,R] kl_loss is in-loop SCRATCH, NOT
+            # carried) -> 16384/(4*1)=4096, byte-IDENTICAL to before. Closes jsd to
+            # oracle parity (full oracle 1.21@narrow + 1.03@wide both want R_BLOCK
+            # 2048; V-INDEPENDENT, no-regression wide; A/B +19%/+10%/+2.4%,
+            # run3_bandb_nro_ab). The divisor is num_carried_accumulators — the
+            # FAITHFUL count of [M,R] tiles in the reduction loop's carry set — NOT
+            # num_reduction_ops (a ReductionLowering count that equals the carried
+            # count only under a 1:1 reduction<->accumulator structure; it mis-sizes
+            # N reductions on ONE carried tile [under-sizes] or M tiles reduced fewer
+            # times [over-sizes -> spill]) and NOT num_tiled_accumulators (over-counts
+            # in-loop scratch like kl_loss -> would over-divide). Gated on the WORKLOAD
+            # properties num_tiled_accumulators>=1 (Band-B routing) + carried-count
+            # divisor, NOT kernel identity — any Band-B reduction's chunk scales as
+            # 1/n_carried (the TRANSFER tv_distance probe carries 1 -> stays 4096 like
+            # kl_div). jsd is the sole firer by curriculum incidence, not a fence.
+            # Scalar-/row-accumulator T2 (softmax_two_pass, num_tiled_accumulators==0)
+            # stays persistent to the structural cap.
             bandb_cap = max(
                 1,
                 cls.BANDB_R_BLOCK_BYTES
-                // (max(1, fact.itemsize) * max(1, fact.num_reduction_ops)),
+                // (max(1, fact.itemsize) * max(1, fact.num_carried_accumulators)),
             )
             r_block = min(r_block, _np2(bandb_cap))
 

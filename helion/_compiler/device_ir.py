@@ -1031,6 +1031,9 @@ class DeviceIR:
                 num_store=num_store,
                 num_reduction_ops=num_reduction_ops,
                 num_tiled_accumulators=num_tiled_accumulators,
+                num_carried_accumulators=self._count_carried_tiled_accumulators(
+                    red_block_id, size_hint
+                ),
                 is_structured_combine=is_structured_combine,
                 apply_block_ids=apply_tiles if is_structured_combine else (),
                 row_reread=self._compute_row_reread(red_block_id),
@@ -1171,6 +1174,68 @@ class DeviceIR:
             itemsize,
             num_tiled_accumulators,
         )
+
+    def _count_carried_tiled_accumulators(
+        self, red_block_id: int, size_hint: int
+    ) -> int:
+        """Count ``[M_BLOCK, R_BLOCK]`` 2D accumulators CARRIED ACROSS the inner
+        reduction loop — the FAITHFUL live-footprint count the Band-B R_BLOCK cap
+        divides by (see ``ReductionFact.num_carried_accumulators``).
+
+        The inner reduction is a manual ``hl.tile`` loop, materialized as a
+        ``ForLoopGraphInfo`` whose ``block_ids`` contains ``red_block_id``. Its
+        ``node_args`` ARE the loop carry set (the outer values threaded in as
+        placeholders, updated, and returned each iteration). A carried accumulator
+        is therefore a ``node_arg`` whose value is a 2D tile with last dim == the
+        reduction extent. This EXCLUDES in-loop SCRATCH (a ``[M,R]`` buffer created
+        INSIDE the loop body that dies each iteration is NOT in the carry set —
+        kl_div's ``kl_loss``), which ``num_tiled_accumulators`` (any [M,R] create,
+        anywhere) over-counts; and it tracks the CARRIED-TILE count, not the
+        ReductionLowering count that ``num_reduction_ops`` gives (the two coincide
+        only under a 1:1 reduction<->accumulator structure).
+
+        Reuses the SAME reduction-extent test as ``_count_reduction_workload``'s
+        accumulator site (static int-equality vs ``size_hint`` OR, for a dynamic
+        dim, the reduction-axis symbol in the extent's free symbols) so the two
+        counts stay consistent. ``0`` for Band-A (softmax_two_pass carries only
+        ``[M_BLOCK]`` row state; T1 reduction loops carry no [M,R] tile). Verified
+        jsd=2 (intermediate_loss + intermediate_dX) / kl_div=1 (loss_sum; kl_loss
+        excluded) on curriculum.
+        """
+        import sympy
+
+        try:
+            red_symbol: sympy.Symbol | None = (
+                CompileEnvironment.current().block_sizes[red_block_id].symbol()
+            )
+        except (IndexError, KeyError, AttributeError):
+            red_symbol = None
+
+        def _is_reduction_extent(last: object) -> bool:
+            if isinstance(last, int):
+                return last == size_hint
+            if red_symbol is not None:
+                try:
+                    return red_symbol in sympy.sympify(last).free_symbols
+                except (TypeError, ValueError, AttributeError):
+                    return False
+            return False
+
+        def _is_tiled_accum(val: object) -> bool:
+            return (
+                isinstance(val, torch.Tensor)
+                and val.ndim >= 2
+                and _is_reduction_extent(val.shape[-1])
+            )
+
+        count = 0
+        for gi in self.graphs:
+            if isinstance(gi, ForLoopGraphInfo) and red_block_id in gi.block_ids:
+                for outer_node in gi.node_args:
+                    val = getattr(outer_node, "meta", {}).get("val")
+                    if _is_tiled_accum(val):
+                        count += 1
+        return count
 
     def _compute_row_reread(self, red_block_id: int) -> bool:
         """True iff the reduction-input row is REUSED / LIVE across the reduction
