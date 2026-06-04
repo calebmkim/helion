@@ -38,6 +38,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 
@@ -107,12 +108,39 @@ def source_hash(kernel: str, bound) -> str:
         h.update(b"\0")
     except Exception as e:
         h.update(f"TRITON_ERR:{type(e).__name__}\0".encode())
-    # (c) config_spec knob/range dump (search space)
+    # (c) config_spec SEARCH-SPACE knob dump — DETERMINISTIC + content-based.
+    # Hub/ledger-keeper ruling (option ii, 2026-06-04): component (c) only needs to
+    # add SEARCH-SPACE knobs component (b) (the DEFAULT-config generated Triton)
+    # doesn't already reflect; it must be CROSS-PROCESS DETERMINISTIC and EXCLUDE
+    # seed-only/heuristic state (the oracle is what the SEARCH finds, independent of
+    # the seed the heuristic emits — keying on the seed invalidated the cache on every
+    # heuristic edit, the original bug). Dump only attrs with STABLE content reprs,
+    # STRUCTURALLY skipping three categories (no hand-maintained name list -> a future
+    # knob is auto-handled, not silently re-added):
+    #   (1) ``*_facts`` (reduction_facts/matmul_facts) — SEED-ONLY workload facts;
+    #       reduction_facts' repr carries num_carried_accumulators etc. (the original
+    #       issue). The autotuner doesn't search these; the heuristic consumes them.
+    #   (2) compiler_seed_configs (the emitted SEED itself) + autotuner_heuristics
+    #       (the heuristic identity) — exactly the "heuristic + seed-only code" the
+    #       recipe must exclude; compiler_seed_configs changes on every heuristic edit.
+    #   (3) any value whose repr carries an ``at 0x<addr>`` object/function identity
+    #       (BlockIdSequence knobs: block_sizes/reduction_loops/num_threads/range_*/
+    #       loop_orders/l2_groupings/flatten_loops/static_ranges/cute_vector_widths;
+    #       and tensor_numel_constraints' check_fn). An address repr is PER-PROCESS
+    #       (verified: same shape hashed 34747730 vs 0d13c6c7 across two processes),
+    #       which made the WHOLE key non-deterministic — and it's an object identity,
+    #       not search-space content, so component (b)'s per-shape Triton already
+    #       reflects its realized effect. Dropping it is what MAKES the key stable.
+    # GUARDRAIL (unchanged): nothing banks off the cache — any parity/ceiling claim is
+    # re-validated by a FRESH FULL oracle. This key is only for the cheap iterating
+    # picture (the by-shape status-table), so deterministic-enough is the bar.
     try:
         spec = bound.config_spec
+        _addr_repr = re.compile(r"at 0x[0-9a-f]+")
+        _seed_only = {"compiler_seed_configs", "autotuner_heuristics"}
         knobs = []
         for attr in sorted(dir(spec)):
-            if attr.startswith("_"):
+            if attr.startswith("_") or attr.endswith("_facts") or attr in _seed_only:
                 continue
             try:
                 v = getattr(spec, attr)
@@ -120,7 +148,10 @@ def source_hash(kernel: str, bound) -> str:
                 continue
             if callable(v):
                 continue
-            knobs.append(f"{attr}={v!r}")
+            r = repr(v)
+            if _addr_repr.search(r):  # per-process object/function identity -> skip
+                continue
+            knobs.append(f"{attr}={r}")
         h.update(("KNOBS\0" + "\n".join(knobs)).encode())
     except Exception as e:
         h.update(f"KNOBS_ERR:{type(e).__name__}\0".encode())

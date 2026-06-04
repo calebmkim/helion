@@ -2942,3 +2942,44 @@ NET: my EDIT#5-v2 fact = independently-corroborated correct. Derivation was rigo
 investigator's independent dump + recommendation. The fact is faithful, the caveats are pre-handled. STILL holding
 for the hub's commit-sequencing decision (commit-now fact-integrity-only re-gate [my lean] vs fresh-correctness-
 first). On the hub's word: commit (3 source files + separate _lab) + DM SHA + DIV-A/DIV-B pre-defense.
+
+## 2026-06-04 — oracle-cache source_hash made DETERMINISTIC (hub option ii) + re-stamp; a non-determinism bug found
+
+While prepping task#2 I found the new ReductionFact field moved the oracle-cache source_hash for all 8 in-scope
+kernels (reduction_facts repr is in source_hash component (c)). Flagged to hub (ledger-keeper). Investigating
+deeper found a BIGGER pre-existing bug: **source_hash was PROCESS-NON-DETERMINISTIC** — same jsd:8192x30522
+hashed 34747730 vs 0d13c6c7 across two processes — because component (c) iterates dir(config_spec) and many
+search-space attrs are BlockIdSequence objects whose repr() is the default `<...object at 0xADDR>` (address
+changes per process). So the hash-match staleness guard was VACUOUS cross-process (always "stale"); the cache's
+by-shape latencies were used regardless (which is why everything still worked) — NOT a past corruption (guardrail:
+nothing banks off the cache, only fresh full oracles). My reduction_facts flag was real but MOOT (hash never
+matched cross-proc anyway).
+
+HUB RULING: option (ii) — minimize component (c) to STABLE knobs only, structural filter (no hand-maintained
+name list). IMPLEMENTED (run3_oracle.py, _lab harness — separate from the heuristic commits):
+component (c) now skips, structurally: (1) `*_facts` (reduction_facts/matmul_facts, seed-only), (2)
+compiler_seed_configs (the emitted SEED) + autotuner_heuristics (heuristic identity) — the recipe's explicit
+"exclude heuristic + seed-only code" [CAUGHT: the naive filter would have KEPT compiler_seed_configs =
+[helion.Config(block_sizes=[2048,1],...)] = the seed itself -> re-coupling the oracle hash to the seed, the
+original bug; must drop], (3) any value whose repr matches `at 0x[0-9a-f]+` (BlockIdSequence knobs +
+tensor_numel_constraints' check_fn — [CAUGHT: the regex must match `at 0x` generally, not just `object at`,
+because tensor_numel_constraints reprs a `<function ... at 0x...>`]). Keeps the stable content knobs
+(indexing/load_eviction_policies ListOf reprs + scalar configs).
+
+DETERMINISM PROVEN: source_hash(jsd:8192x30522) = 6e8256298c53a1cd in BOTH of two separate processes (was
+34747730 != 0d13c6c7). The key is now cross-process stable + seed/heuristic-independent (so future fact-adds
++ heuristic edits do NOT invalidate it — the whole point). Lint clean (my lines; pre-existing harness ANN/FURB
+nits untouched).
+
+RE-STAMP (run3_restamp_oracle_hashes.py, bind-only): updated the 29 in-scope cached entries' source_hash to the
+new deterministic recipe; 3 welford entries SKIPPED (out of scope, another agent's). AUDIT: the script
+deep-compares each entry minus source_hash before/after and ASSERTS only source_hash changes (would abort
+otherwise) — passed 29/29, oracle_us + all latencies UNTOUCHED. Idempotent (re-run = 0 changed). CAVEAT for the
+hub: the working-tree oracle_cache.json was ALREADY uncommitted-dirty at my session start (earlier-run/welford
+latency updates I didn't author), so a `git diff` vs HEAD is NOT a clean hashes-only diff (it carries that
+pre-existing drift). My re-stamp ALONE is source_hash-only (proven by the per-entry assertion + idempotency); the
+git-diff contamination is pre-existing non-mine cache drift. Reporting the cache-commit disposition to the hub
+(its ledger-keeper domain — whether to commit the cache, given it carries non-mine drift).
+
+GUARDRAIL reaffirmed (hub): nothing banks off the cache; every parity/ceiling claim re-validates against a FRESH
+FULL oracle. The deterministic key is only for the cheap iterating picture (task#2 status-table).
