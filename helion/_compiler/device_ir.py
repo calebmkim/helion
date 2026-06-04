@@ -1010,13 +1010,11 @@ class DeviceIR:
         m_block_ids = tuple(sorted(grid_ids))
         size_hint = block_info.size_hint()
         static_rnumel = block_info.size if isinstance(block_info.size, int) else None
-        # Count loads / stores / reductions over ALL device graphs (the manual
-        # inner loop body is in the main device graph, not a roller subgraph).
+        # Digest workload properties over ALL device graphs (the manual inner loop
+        # body is in the main device graph, not a roller subgraph).
         all_graph_ids = set(range(len(self.graphs)))
         (
             num_load,
-            num_store,
-            num_reduction_ops,
             itemsize,
             num_reduction_tiles,
         ) = self._count_reduction_workload(all_graph_ids, red_block_id, size_hint)
@@ -1028,8 +1026,6 @@ class DeviceIR:
                 static_rnumel=static_rnumel,
                 itemsize=itemsize,
                 num_load=num_load,
-                num_store=num_store,
-                num_reduction_ops=num_reduction_ops,
                 num_reduction_tiles=num_reduction_tiles,
                 num_carried_accumulators=self._count_carried_tiled_accumulators(
                     red_block_id
@@ -1096,15 +1092,14 @@ class DeviceIR:
 
     def _count_reduction_workload(
         self, graph_ids: set[int], red_block_id: int, size_hint: int
-    ) -> tuple[int, int, int, int, int]:
-        """Count device loads / stores / reductions over ``red_block_id``.
+    ) -> tuple[int, int, int]:
+        """Digest the workload properties the seed branches on over ``red_block_id``.
 
         Shared by the T1 (``_build_reduction_fact``) and T2
         (``register_user_tiled_reductions``) fact builders so both digest the
-        SAME workload properties (num_load / num_store / num_reduction_ops /
-        itemsize / num_reduction_tiles) the same way — only the set of graphs and
-        the axis differ. Returns ``(num_load, num_store, num_reduction_ops,
-        itemsize, num_reduction_tiles)``.
+        SAME properties (num_load / itemsize / num_reduction_tiles) the same way —
+        only the set of graphs and the axis differ. Returns ``(num_load, itemsize,
+        num_reduction_tiles)``.
 
         ``itemsize`` (bytes per element of the resident reduction tile — the byte
         caps key on ``size_hint * itemsize``) is read from the tensor being
@@ -1114,11 +1109,9 @@ class DeviceIR:
         the real reduced element size rather than fabricating one.
         """
 
-        from ..language import _MEMORY_OPS
         from ..language.creation_ops import full as _full_op
         from ..language.creation_ops import zeros as _zeros_op
         from ..language.memory_ops import load as _load_op
-        from ..language.memory_ops import store as _store_op
         from .inductor_lowering import ReductionLowering
 
         env = CompileEnvironment.current()
@@ -1145,8 +1138,6 @@ class DeviceIR:
             )
 
         num_load = 0
-        num_store = 0
-        num_reduction_ops = 0
         num_reduction_tiles = 0
         itemsize = 0
         for graph_id in sorted(graph_ids):
@@ -1157,14 +1148,11 @@ class DeviceIR:
                 target = node.target
                 if target is _load_op:
                     num_load += 1
-                elif target is _store_op or target in _MEMORY_OPS[2:]:
-                    num_store += 1
                 lowering = node.meta.get("lowering")
                 if (
                     isinstance(lowering, ReductionLowering)
                     and getattr(lowering, "block_index", None) == red_block_id
                 ):
-                    num_reduction_ops += 1
                     # itemsize = bytes per element of the tensor being REDUCED (the
                     # resident reduction tile the byte caps size). Read from the
                     # reduction node's INPUT — the node's own meta['val'] is the
@@ -1186,8 +1174,6 @@ class DeviceIR:
                     num_reduction_tiles += 1
         return (
             num_load,
-            num_store,
-            num_reduction_ops,
             itemsize,
             num_reduction_tiles,
         )
@@ -1205,9 +1191,9 @@ class DeviceIR:
         reduction extent. This EXCLUDES in-loop SCRATCH (a ``[M,R]`` buffer created
         INSIDE the loop body that dies each iteration is NOT in the carry set —
         kl_div's ``kl_loss``), which ``num_reduction_tiles`` (any [M,R] create,
-        anywhere) over-counts; and it tracks the CARRIED-TILE count, not the
-        ReductionLowering count that ``num_reduction_ops`` gives (the two coincide
-        only under a 1:1 reduction<->accumulator structure).
+        anywhere) over-counts; and it tracks the CARRIED-TILE count, not a raw
+        ReductionLowering count (the rejected ÷nro proxy), which coincide only
+        under a 1:1 reduction<->accumulator structure.
 
         Reuses the SAME reduction-axis test as ``_count_reduction_workload``'s
         accumulator site (``_extent_is_reduction_axis``: block-id provenance via
@@ -1260,10 +1246,11 @@ class DeviceIR:
 
         9/9: sum/long_sum False (x feeds only the reduction, no bypass-store);
         rms_norm/layer_norm/softmax/cross_entropy True; kl_div/jsd False (two DISTINCT
-        inputs each feed one reduction, neither reused). ACID = rms_norm: num_load=2
-        OVER-counts (the broadcast weight, fires), num_reduction_ops=1 UNDER-counts
-        (the apply is not a ReductionLowering, exempts), this consumer-trace is the
-        only one that's right. FAITHFULNESS UPGRADE over the prior region-membership
+        inputs each feed one reduction, neither reused). ACID = rms_norm: a load-op
+        count OVER-counts (the broadcast weight, fires), a ReductionLowering count
+        UNDER-counts (the apply is not a ReductionLowering, exempts), this
+        consumer-trace is the only one that's right. FAITHFULNESS UPGRADE over the
+        prior region-membership
         form ("some buffer in >= 2 LOOP graphs"): behaviorally identical seeds on all
         curriculum splits (byte-identity verified), but keyed on the reduction-INPUT
         tile's dataflow specifically — closing the "any >= 2-graph buffer" loophole.
@@ -1431,8 +1418,6 @@ class DeviceIR:
 
         (
             num_load,
-            num_store,
-            num_reduction_ops,
             itemsize,
             num_reduction_tiles,
         ) = self._count_reduction_workload(used_graphs, rdim.block_id, size_hint)
@@ -1444,8 +1429,6 @@ class DeviceIR:
             static_rnumel=static_rnumel,
             itemsize=itemsize,
             num_load=num_load,
-            num_store=num_store,
-            num_reduction_ops=num_reduction_ops,
             num_reduction_tiles=num_reduction_tiles,
             row_reread=self._compute_row_reread(rdim.block_id),
             reread_buffer_slots=self._compute_reread_buffer_slots(rdim.block_id),

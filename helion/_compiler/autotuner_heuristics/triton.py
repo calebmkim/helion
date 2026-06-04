@@ -548,10 +548,10 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         # touches its row in only ONE loop graph -> 1. Two DISTINCT inputs each read
         # once (kl_div yp/yt, jsd) -> each 1 -> False. Dataflow-, not load-op-count- or
         # coding-style-dependent (softmax_decomposed=True too). It REPLACES two rejected
-        # proxies: ``num_load>=2`` (OVER-counts —
-        # cross_entropy's scalar label gather inflates num_load to 3) and
-        # ``num_reduction_ops>=2`` (UNDER-counts — rms_norm/layer_norm's apply-pass
-        # re-read is NOT a ReductionLowering, so num_reduction_ops==1, which would
+        # proxies: a load-op count >=2 (OVER-counts —
+        # cross_entropy's scalar label gather inflates the load count to 3) and
+        # a ReductionLowering count >=2 (UNDER-counts — rms_norm/layer_norm's apply-pass
+        # re-read is NOT a ReductionLowering, so that count is 1, which would
         # EXEMPT their wide 512 KiB rows -> persistent -> ~2.9x spill). row_reread
         # gives the exact right set: sum/long_sum=False (single stream -> persist to
         # the structural cap even at >240 KiB); rms_norm/layer_norm/softmax/
@@ -789,10 +789,10 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             # 2048; V-INDEPENDENT, no-regression wide; A/B +19%/+10%/+2.4%,
             # run3_bandb_nro_ab). The divisor is num_carried_accumulators — the
             # FAITHFUL count of [M,R] tiles in the reduction loop's carry set — NOT
-            # num_reduction_ops (a ReductionLowering count that equals the carried
-            # count only under a 1:1 reduction<->accumulator structure; it mis-sizes
-            # N reductions on ONE carried tile [under-sizes] or M tiles reduced fewer
-            # times [over-sizes -> spill]) and NOT num_reduction_tiles (over-counts
+            # a raw ReductionLowering count (the rejected ÷nro proxy, which equals the
+            # carried count only under a 1:1 reduction<->accumulator structure; it
+            # mis-sizes N reductions on ONE carried tile [under-sizes] or M tiles
+            # reduced fewer times [over-sizes -> spill]) and NOT num_reduction_tiles (over-counts
             # in-loop scratch like kl_loss -> would over-divide). Gated on the WORKLOAD
             # properties num_reduction_tiles>=1 (Band-B routing) + carried-count
             # divisor, NOT kernel identity — any Band-B reduction's chunk scales as

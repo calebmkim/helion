@@ -104,11 +104,8 @@ class ReductionFact(NamedTuple):
       reduction's input, not a hardcoded fp32).  The byte caps key on
       ``size_hint * itemsize``, so this keeps them dtype-general (bf16/fp16) even
       though precision is fixed fp32 for now.
-    - ``num_load`` / ``num_store``: count of device memory loads / stores in the
-      rolling-candidate graphs (arithmetic-intensity / live-state proxy →
-      Band A vs Band B).
-    - ``num_reduction_ops``: count of reduction lowerings over this rdim
-      (number of accumulators, e.g. welford-like multi-accumulator combines).
+    - ``num_load``: count of device memory loads over this rdim (used only as the
+      ``== 1`` single-streamed-input gate for the stream-eviction policy).
     - ``num_reduction_tiles``: count of ALL ``[M_BLOCK, R_BLOCK]`` 2D tiles
       (``zeros``/``full``/``empty``) whose last dim spans the reduction axis,
       materialized ANYWHERE in the device graphs (root OR inner-loop body). Named
@@ -136,12 +133,12 @@ class ReductionFact(NamedTuple):
       ``num_reduction_tiles`` it EXCLUDES in-loop scratch (kl_div's ``kl_loss``
       is created inside the loop body, is NOT in the loop carry set -> excluded:
       kl_div num_carried_accumulators==1; jsd carries ``intermediate_loss`` +
-      ``intermediate_dX`` -> ==2). UNLIKE ``num_reduction_ops`` (a count of
-      ReductionLowerings) it tracks the CARRIED-TILE count, not the
-      reduction-op count — the two coincide only under a 1:1 reduction<->accumulator
-      structure (jsd/kl_div), and diverge on a kernel that runs N reductions on ONE
-      carried accumulator (nro=N, carried=1) or carries M accumulators reduced
-      fewer times (nro<M, carried=M). Computed from the reduction loop's carry set
+      ``intermediate_dX`` -> ==2). UNLIKE a raw ReductionLowering count (the
+      rejected ÷nro proxy) it tracks the CARRIED-TILE count, not the reduction-op
+      count — the two coincide only under a 1:1 reduction<->accumulator structure
+      (jsd/kl_div), and diverge on a kernel that runs N reductions on ONE carried
+      accumulator (nro=N, carried=1) or carries M accumulators reduced fewer times
+      (nro<M, carried=M). Computed from the reduction loop's carry set
       (existing provenance), NOT a reduction-op or buffer-create count. A WORKLOAD
       property (live carried-tile footprint), NOT kernel identity.
     - ``is_structured_combine``: True for a Band-C STRUCTURED-COMBINE reduction —
@@ -171,10 +168,10 @@ class ReductionFact(NamedTuple):
       whole-row tile must stay resident across both passes and SPILLS once the row
       exceeds the register/SMEM budget. This is the FAITHFUL property the persist
       byte cap (``MULTILOAD_PERSIST_MAX_BYTES``) and the re-read load-eviction policy
-      key on — NOT ``num_load`` (a syntactic load-op count that OVER-counts a scalar
-      gather, e.g. cross_entropy's label load) and NOT ``num_reduction_ops`` (which
+      key on — NOT a syntactic load-op count (which OVER-counts a scalar gather,
+      e.g. cross_entropy's label load) and NOT a ReductionLowering count (which
       UNDER-counts: rms_norm/layer_norm re-read the row in an APPLY pass that is not
-      a ``ReductionLowering`` -> num_reduction_ops==1). Computed from the reduction
+      a ``ReductionLowering`` -> would read 1). Computed from the reduction
       roller's host-buffer read provenance: a buffer is loaded in >= 2 distinct LOOP
       graphs (``ReductionLoopGraphInfo`` T1-rollable; ``ForLoopGraphInfo`` T2
       user-tiled). Immune to the roller's root+loop DUPLICATION (a single-pass
@@ -191,8 +188,6 @@ class ReductionFact(NamedTuple):
     static_rnumel: int | None
     itemsize: int
     num_load: int
-    num_store: int
-    num_reduction_ops: int
     num_reduction_tiles: int = 0
     num_carried_accumulators: int = 0
     is_structured_combine: bool = False
