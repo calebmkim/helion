@@ -109,7 +109,7 @@ def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> 
     We do NOT require the M-axis floor to be ``<= 1`` (the CuTe template did).
     Triton's autotuner raises ``autotuner_min`` to 2+ for LARGE-M shapes
     (``raise_grid_block_minimums``) — a search-efficiency knob, NOT a correctness
-    limit. We seed the M-block AT that floor (see ``_m_block_size``) so small-N /
+    limit. We seed the M-block AT that floor (see ``_block_floor``) so small-N /
     large-M shapes still get a seed.
     """
     spec = env.config_spec
@@ -126,7 +126,7 @@ class TritonReductionHeuristic(AutotunerHeuristic):
 
     The seed targets canonical scalar-accumulator inner reductions (sum,
     rms_norm, layer_norm, softmax-row, long_sum): the M-axis tile is the
-    autotuner's floor (``_m_block_size``, typically 1 row per program) so the
+    autotuner's floor (``_block_floor``, typically 1 row per program) so the
     threads cooperate on the contiguous last-dim reduction, with the two-pass
     loads fused so x isn't reloaded.
 
@@ -414,20 +414,17 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         return 16
 
     @classmethod
-    def _m_block_size(cls, env: CompileEnvironment) -> int:
-        """M-axis (non-reduction) block size = the autotuner's floor.
-
-        Prefer 1 row per program (so the reduction recruits the whole block's
-        threads). But for large-M shapes the autotuner raises ``autotuner_min``
-        above 1; we honor that floor (it's a valid block size and keeps the grid
-        sane) rather than emitting an invalid block_size=1.
-        """
-        bs_spec = cast("BlockSizeSpec", env.config_spec.block_sizes[0])
-        return max(1, bs_spec.min_size, bs_spec.autotuner_min)
-
-    @classmethod
     def _block_floor(cls, bs_spec: BlockSizeSpec) -> int:
-        """The autotuner floor for a single block_sizes entry."""
+        """The autotuner floor for a single block_sizes entry — the smallest
+        valid block size (``>= 1``, ``>= min_size``, ``>= autotuner_min``).
+
+        Used for every non-reduction axis the seed does not deliberately widen,
+        including the M/row axis of a T1 reduction. Prefer 1 row per program (so
+        the reduction recruits the whole block's threads); but for large-M shapes
+        the autotuner raises ``autotuner_min`` above 1, and we honor that floor
+        (a valid block size that keeps the grid sane) rather than emitting an
+        invalid ``block_size=1``.
+        """
         return max(1, bs_spec.min_size, bs_spec.autotuner_min)
 
     @classmethod
@@ -606,7 +603,9 @@ class TritonReductionHeuristic(AutotunerHeuristic):
                 [None] if persistent else [cls.LOOPED_CHUNK]
             )
             seed: dict[str, Any] = {
-                "block_sizes": [cls._m_block_size(env)],
+                "block_sizes": [
+                    cls._block_floor(cast("BlockSizeSpec", spec.block_sizes[0]))
+                ],
                 "reduction_loops": reduction_loops,
                 "num_warps": num_warps,
                 "num_stages": 1,

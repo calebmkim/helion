@@ -47,8 +47,7 @@ def compiler_seed_configs(
             if not heuristic.is_eligible(env, device_ir):
                 continue
 
-            single = heuristic.get_seed_config(env, device_ir)
-            heur_configs = [single] if single is not None else []
+            config = heuristic.get_seed_config(env, device_ir)
         except Exception as e:
             log.debug(
                 "Autotuner heuristic %s failed while generating compiler seed config: %s",
@@ -57,8 +56,8 @@ def compiler_seed_configs(
                 exc_info=True,
             )
             continue
-        if not heur_configs:
+        if config is None:
             continue
-        configs.extend(heur_configs)
+        configs.append(config)
         env.config_spec.autotuner_heuristics.append(heuristic.name)
     return dedupe_configs(configs)
