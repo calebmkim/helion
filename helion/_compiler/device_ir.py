@@ -1032,7 +1032,7 @@ class DeviceIR:
                 num_reduction_ops=num_reduction_ops,
                 num_reduction_tiles=num_reduction_tiles,
                 num_carried_accumulators=self._count_carried_tiled_accumulators(
-                    red_block_id, size_hint
+                    red_block_id
                 ),
                 is_structured_combine=is_structured_combine,
                 apply_block_ids=apply_tiles if is_structured_combine else (),
@@ -1045,7 +1045,6 @@ class DeviceIR:
         self,
         last: object,
         red_block_id: int,
-        size_hint: int,
         red_symbol: sympy.Symbol | None,
     ) -> bool:
         """True iff a tile dim ``last`` IS the reduction axis ``red_block_id``.
@@ -1061,24 +1060,29 @@ class DeviceIR:
         ``add_kernel_tensor_size`` and the CuTe indexed-reduction path use), so
         this is not a new analysis.
 
-        Resolution order:
-        - A **symbolic** extent carries block provenance: resolve it and require
-          the resolved block to BE the reduction axis. (A compound symbolic expr
-          with no single block origin resolves to ``None``; fall back to the
-          prior symbol-membership test for it.)
-        - A **bare Python-int** extent carries NO finer provenance than its value
-          (``resolve_block_id`` would only numel-match it, which is no better and
-          is ambiguous when two reduction blocks share a numel), so it keeps the
-          int-equality last resort. This residual proxy can still be fooled by a
-          coincidentally-equal CONSTANT dim, but a constant tile dim has nothing
-          finer to key on. In practice the in-loop ``[M, R]`` accumulators this
-          gates on carry SYMBOLIC tile extents (the block-id path), so the
-          constant fallback is not exercised by the reduction curriculum.
+        Resolution: a reduction tile's extent is the reduction BLOCK's size — a
+        block variable, hence a ``SymInt`` carrying block provenance. Resolve it
+        (``env.resolve_block_id`` — the resolver ``add_kernel_tensor_size`` and the
+        CuTe indexed-reduction path already use) and require the resolved block to
+        BE the reduction axis. A compound symbolic expr with no single block origin
+        resolves to ``None`` -> fall back to the symbol-membership test.
+
+        A reduction-tile extent is NEVER a bare Python int (even under
+        ``static_shapes=True`` it stays a block ``SymInt`` — verified across the
+        Band-B curriculum: 189/189 calls took the resolved-block-id path, 0 bare
+        ints). We ASSERT that rather than fall back to an int-equality proxy
+        (``last == size_hint``): int-equality would mis-classify a constant
+        non-reduction dim that merely EQUALS the extent, and there is no finer
+        provenance on a bare int to avoid it. The assert is a tripwire — if a
+        future kernel ever presents a constant reduction-tile extent it fails
+        loudly here instead of silently keying on a coincidental equality.
         """
         import sympy
 
-        if isinstance(last, int):
-            return last == size_hint
+        assert not isinstance(last, int), (
+            f"reduction-tile extent unexpectedly a bare int ({last!r}); expected a "
+            "block SymInt with provenance (see _extent_is_reduction_axis)"
+        )
         env = CompileEnvironment.current()
         bid = env.resolve_block_id(last)
         if bid is not None:
@@ -1136,7 +1140,7 @@ class DeviceIR:
                 isinstance(val, torch.Tensor)
                 and val.ndim >= 2
                 and self._extent_is_reduction_axis(
-                    val.shape[-1], red_block_id, size_hint, red_symbol
+                    val.shape[-1], red_block_id, red_symbol
                 )
             )
 
@@ -1188,9 +1192,7 @@ class DeviceIR:
             num_reduction_tiles,
         )
 
-    def _count_carried_tiled_accumulators(
-        self, red_block_id: int, size_hint: int
-    ) -> int:
+    def _count_carried_tiled_accumulators(self, red_block_id: int) -> int:
         """Count ``[M_BLOCK, R_BLOCK]`` 2D accumulators CARRIED ACROSS the inner
         reduction loop — the FAITHFUL live-footprint count the Band-B R_BLOCK cap
         divides by (see ``ReductionFact.num_carried_accumulators``).
@@ -1209,8 +1211,8 @@ class DeviceIR:
 
         Reuses the SAME reduction-axis test as ``_count_reduction_workload``'s
         accumulator site (``_extent_is_reduction_axis``: block-id provenance via
-        ``resolve_block_id``, falling back to symbol-membership then int-equality)
-        so the two counts stay consistent. ``0`` for Band-A (softmax_two_pass
+        ``resolve_block_id``, falling back to symbol-membership) so the two counts
+        stay consistent. ``0`` for Band-A (softmax_two_pass
         carries only ``[M_BLOCK]`` row state; T1 reduction loops carry no [M,R]
         tile). Verified jsd=2 (intermediate_loss + intermediate_dX) / kl_div=1
         (loss_sum; kl_loss excluded) on curriculum.
@@ -1227,7 +1229,7 @@ class DeviceIR:
                 isinstance(val, torch.Tensor)
                 and val.ndim >= 2
                 and self._extent_is_reduction_axis(
-                    val.shape[-1], red_block_id, size_hint, red_symbol
+                    val.shape[-1], red_block_id, red_symbol
                 )
             )
 
