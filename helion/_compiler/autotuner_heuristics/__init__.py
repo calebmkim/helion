@@ -47,16 +47,8 @@ def compiler_seed_configs(
             if not heuristic.is_eligible(env, device_ir):
                 continue
 
-            # MULTI-seed hook (get_seed_configs) takes precedence when it returns
-            # a non-None list (run-2 Goal 3b portfolio); otherwise fall back to the
-            # single get_seed_config (the default — backward compatible, used by
-            # Product A and every existing heuristic).
-            multi = heuristic.get_seed_configs(env, device_ir)
-            if multi is not None:
-                heur_configs = [c for c in multi if c is not None]
-            else:
-                single = heuristic.get_seed_config(env, device_ir)
-                heur_configs = [single] if single is not None else []
+            single = heuristic.get_seed_config(env, device_ir)
+            heur_configs = [single] if single is not None else []
         except Exception as e:
             log.debug(
                 "Autotuner heuristic %s failed while generating compiler seed config: %s",
