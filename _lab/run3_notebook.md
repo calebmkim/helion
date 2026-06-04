@@ -2773,3 +2773,172 @@ working-tree drift for a future separate commit — NOT mine to author this turn
 
 NET: EDIT#5 = 46e58c73 (triton.py-only). Re-DM'ing the hub the corrected SHA. Everything else (flip-set GREEN,
 correctness PASS, fact-integrity pre-defense) unchanged — same diff, cleaner commit boundary.
+
+## 2026-06-04 — GPU-GRANTED: EDIT#5 correctness RE-RUN UNDER GRANT = ALL CORRECT; GPU released; gates owed
+
+Hub GPU-GRANTED (independently confirmed idle) + acked the flip-set as clean. Re-ran run3_edit5_correctness.py
+UNDER the grant on committed HEAD 46e58c73 -> a definitive in-grant receipt (the earlier run was during the
+hub's async-silence window): 5 jsd R_BLOCK=2048 maxerr=0.00 + 2 kl_div R_BLOCK=4096 (maxerr<=1.19e-7) = ALL
+CORRECT. GPU-RELEASED immediately so the EDIT#5 results-referee can take the token (it needs the GPU for the
+full jsd flip-set no-regression A/B). DM'd hub: GPU-RELEASED + the in-grant receipt + SHA + pre-defense + asked
+the orchestration Q (task #2 status-table now vs after the referee).
+
+STANDBY STATE (lossless): HEAD = dc8755e3 (lab) on top of 46e58c73 (EDIT#5 triton.py-only) on 264ba037.
+EDIT#5 correctness DONE+verified-in-grant; awaiting the hub's 3 gates on 46e58c73 + the task-#2 sequencing call.
+All further GPU work (task #2 status-table, then narrow-N occupancy A/B + long_sum-2M full oracle + kl_div
+full-confirm) held behind the next grant, sequenced after the referee. Nothing else actionable without the hub
+(gate-spawn is hub-only; GPU is hub-serialized).
+
+## 2026-06-04 — code-investigator CORRECTS the baton: narrow-N occupancy is OPEN, not falsified (climb prep)
+
+DM'd code-investigator (non-GPU, while holding GPU for the referee): is the HUB_BATON's "occupancy FALSIFIED for
+narrow-N (progs/SM identical)" measured on NARROW-N WARP data, or inherited from the EDIT-PID flat-vs-persistent
+progs/SM=31 finding? ANSWER (decisive): it is INHERITED + the questions are genuinely different + the
+falsification does NOT transfer:
+1. The ONLY progs/SM falsification in the notebook (1198-1200) is on EDIT-PID's PID_TYPE decision on WIDE-CE
+   (flat CE(4096,50304) AND persistent CE(4096,98304) both progs/SM=31). Different KNOB (pid_type, not warps),
+   different REGIME (wide-CE looped, not narrow-N), different CONTRAST. Nothing in it touches num_warps on
+   narrow-N softmax/rms.
+2. That EDIT-PID progs/SM conclusion was MOREOVER self-RETRACTED (notebook 1955-1959: I tested flat-vs-persistent
+   = the WRONG contrast; the real EDIT-PID variant question was interleaved-vs-blocked WITHIN persistent, where
+   M/SM 31/62 vs 15.5 DOES separate). So the baton sentence is a stale paraphrase of a retracted intermediate.
+3. The narrow-N WARP question has NO timing data isolating OCC from rnumel: the only narrow-N warp evidence (the
+   prior 3 softmax shapes) has OCC and rnumel CONFOUNDED (the w4 shape (16384,512) also has 2x the rnumel of the
+   w8 shapes). The w8<->w4 split DOES track OCC so far (993->w8, 124->w4) but rnumel co-moves -> tie unbroken.
+4. My compile-only OCC values are FAITHFUL to live code (investigator verified the MECHANISM: get_num_sm(cuda:0)
+   =132 via multi_processor_count runtime/__init__.py:133; grid_rows = product of M-axis extents via
+   env.size_hint(env.block_sizes[mbid].size) triton.py:682-690 = the EXACT EDIT-PID quantity). OCC genuinely
+   VARIES across narrow-N (993/124/31/1986/248), NOT the constant-31 EDIT-PID situation -> the "occupancy can't
+   separate (it's constant)" premise is simply FALSE here.
+
+=> NARROW-N OCCUPANCY-VS-WARPS IS OPEN, not falsified. My staged run3_softmax_occ_warps_ab.py is the CORRECT
+isolating experiment (the 2 discriminators softmax(131072,512) [OCC=993,rnumel=512] vs softmax(4096,256)
+[OCC=31,rnumel=256] hold one var ~fixed, vary the other): if (131072,512)->w8 AND (4096,256)->w4 -> OCC is the
+lever (clean occupancy rule, NO new fact — grid_rows//num_sm already computed). If (131072,512)->w4 -> rnumel-AND-M
+(murkier). I am NOT re-running anything falsified. CAVEAT (investigator's, honored): this is a provenance/mechanism
+clearance only — NOT an outcome prediction; only the GPU A/B decides OCC vs rnumel (vs both). So: don't pre-conclude
+the rule before the A/B; run the discriminators + fresh oracles on softmax(131072,256) + rms/ln(8192,768) when the
+token frees (after EDIT#5 referee + task#2 status-table). This is the next real climb item after EDIT#5.
+
+## 2026-06-04 — EDIT#5 fact-integrity FAIL (ledger 23) -> EDIT#5-v2 carried-accum fact: DISCRIMINATOR FOUND (probe)
+
+EDIT#5 (÷nro) gate result: auditor PASS + referee PASS (reproduced 34 flips, ZERO regress, jsd(262144,4096)=
+1.047x WIN no-valley — this cap LOWERS R_BLOCK so footprint shrinks, opposite of EDIT#4's apply-raise) BUT
+**fact-integrity FAIL** (substrate veto, failure mode #11). NOT banked. A REDIRECT not a rejection — perf carries.
+
+THE FAIL (own it — SAME class of error as the earlier nro-as-row_reread-proxy rejection): num_reduction_ops
+counts ReductionLowerings = carried-[M,R]-accumulator count ONLY under jsd/kl_div's coincidental 1:1
+reduction<->accum structure. The gate built 2 divergence kernels: DIV-A (1 carried accum, 2 reductions on it ->
+nro=2 -> ÷nro UNDER-sizes 2048 vs faithful 4096) + DIV-B (2 carried accums, 1 reduced + 1 stored -> nro=1 ->
+÷nro OVER-sizes 4096 vs 2048 = the exact spill the cap prevents). My docstring "loop carries nro accumulators"
+is FALSE as a general claim. My fact-integrity pre-defense (nro = faithful accumulator count) was WRONG — nro is
+a proxy even for accumulator-count. NOTE num_tiled_accumulators-as-shipped is ALSO wrong (=2 for BOTH jsd+kl_div
+-> over-counts kl_div's in-loop scratch) -> genuinely a FINER fact needed, not nro->ntiled.
+
+THE FAITHFUL FACT (gate-handed-back): count of [M_BLOCK,R_BLOCK] 2D accumulators CARRIED ACROSS the inner
+hl.tile reduction loop, EXCLUDING in-loop scratch. **DISCRIMINATOR FOUND empirically** (run3_carried_accum_probe.py,
+bind-only) — TWO equivalent faithful predicates, both jsd=2 / kl_div=1:
+  (1) [M,R] zeros/full accum-create ops in the ROOT graph (outside any reduction ForLoop) = carried; those
+      created INSIDE a ForLoopGraphInfo body = scratch.
+  (2) [BEST] the inner reduction ForLoop's carried node_args whose val is 2D [M,R] (last dim = reduction extent).
+      The ForLoop = a ForLoopGraphInfo whose block_ids contains red_block_id; its node_args ARE the carried
+      values (the loop's carry set) — the MOST DIRECT expression of "carried across the inner loop" (= the gate's
+      exact definition "loop-carried 2D outputs of the inner reduction ForLoop").
+PROBE EVIDENCE (graph dumps):
+  jsd: ForLoop graph[4] node_args=[intermediate_loss(u2,u1), intermediate_dX(u2,u1)] both 2D[M,R] -> CARRIED=2.
+       Both also created in RootGraphInfo graph[5] (predicate 1 agrees). nro=2 coincidentally = 2 here.
+  kl_div: ForLoop graph[0] node_args=[loss_sum(u1,u0)] -> CARRIED=1. kl_loss(u1,u0) is created INSIDE the
+       ForLoop body graph[0] (NOT a node_arg) -> in-loop SCRATCH, excluded. shipped ntiled=2 over-counts it
+       exactly; nro=1 coincidentally = 1 here. THE GATE'S DIAGNOSIS CONFIRMED at the graph level.
+  softmax: ForLoops carry [M] row state, NO 2D[M,R] node_args -> CARRIED=0 (Band-A, correct). sum/rms (T1) -> 0.
+VERIFIED predicate-(2) across jsd/kl_div/softmax/sum/rms_norm -> 2/1/0/0/0 (run, bind-only). Uses the SAME
+_is_reduction_extent helper as _count_reduction_workload (static int-eq OR symbolic-symbol-in-free-symbols) for
+dtype/dynamic-dim consistency.
+DIV-A/DIV-B GENERALIZATION (by construction, the fact-integrity pre-defense): predicate (2) counts what's
+CARRIED, not what's reduced/created -> DIV-A (1 carried) -> 1 ✓ (nro=2 wrong); DIV-B (2 carried) -> 2 ✓ (nro=1
+wrong). The fact tracks the real property where nro diverges from it = the divergence test PASSES.
+
+IMPLEMENTATION PLAN (no GPU; fact + codegen-diff): add ReductionFact.num_carried_accumulators (int) computed in
+register_user_tiled_reductions via predicate (2) (inspect the reduction ForLoop's node_args; reuse
+_is_reduction_extent + the red_symbol). Wire the Band-B divisor: bandb_cap //= max(1, num_carried_accumulators)
+(replacing max(1,nro)). Since num_carried_accumulators == nro on the curriculum (jsd=2,kl_div=1), the emitted
+seeds are BYTE-IDENTICAL to live ÷nro -> codegen-diff all 4 splits to PROVE it -> auditor+referee transfer, only
+fact-integrity re-runs. SUPERSEDE the live ÷nro (commit on top; don't revert — no curriculum regression, jsd sole
+firer). Asked code-investigator to corroborate the device_ir provenance (node_args = carry set; root-vs-loop
+creation); not blocking on it (derived rigorously, 5/5). NEXT: implement the fact + divisor, codegen-diff, then
+correctness-gate (GPU, REQ when ready), commit, DM SHA + DIV-A/DIV-B pre-defense.
+
+## 2026-06-04 — EDIT#5-v2 IMPLEMENTED + byte-identity PROVEN (uncommitted; correctness inherited)
+
+Built the faithful fact (3 files, lint+format clean, ZERO new pyrefly errors — the 3 pyrefly errs are
+pre-existing at device_ir 98/3233 + triton 688, confirmed by stash-baseline = same count):
+- config_spec.py: ReductionFact gains `num_carried_accumulators: int = 0` + docstring (faithful carried-tile
+  count for the cap divisor; CORRECTED the num_tiled_accumulators docstring too — it's the Band-A/B ROUTING
+  signal that OVER-counts in-loop scratch, must NOT size the cap).
+- device_ir.py: `_count_carried_tiled_accumulators(red_block_id, size_hint)` = predicate (2): count the inner
+  reduction ForLoopGraphInfo's (block_ids contains red_block_id) carried node_args whose val is 2D [M,R]
+  (last dim = reduction extent, SAME _is_reduction_extent test as _count_reduction_workload). Wired into the T2
+  fact build. T1 build unchanged (defaults 0 — T1 carries no [M,R] tile).
+- triton.py: Band-B divisor `max(1, num_reduction_ops)` -> `max(1, num_carried_accumulators)`; comment rewritten
+  to the faithful carried-footprint physics + why NOT nro (proxy, 1:1-only) NOR num_tiled_accumulators (scratch).
+
+VERIFIED (bind-only, no GPU):
+- PRODUCTION fact: jsd n_carried=2 / kl_div n_carried=1 (excludes the in-loop kl_loss scratch that
+  num_tiled_accumulators=2 over-counts) / softmax=0 / sum,rms (T1)=0. Emitted R_BLOCK: jsd 2048, kl_div 4096,
+  softmax 16384 (unchanged) — IDENTICAL to live ÷nro.
+- BYTE-IDENTITY PROOF (the auditor+referee transfer condition): num_carried_accumulators == num_reduction_ops on
+  ALL 70 jsd+kl_div shapes across train+val+test+robustness -> the ÷n_carried divisor yields the SAME R_BLOCK as
+  live ÷nro -> emitted seeds BYTE-IDENTICAL. (n_carried merely COINCIDES with nro on the curriculum; it DIVERGES
+  on the gate's DIV-A/DIV-B — the whole point.) flip-set re-run under the new fact = SAME 34 jsd flips / 0
+  inconsistent / kl_div byte-id.
+- CORRECTNESS INHERITED: seeds byte-identical to 46e58c73 (which I correctness-gated in-grant: ALL CORRECT,
+  jsd@2048 maxerr<=1.49e-8). Same emitted kernels -> same numerics. (Will still run the in-grant correctness on
+  the superseding commit when granted, for a clean receipt — but it's inherited by byte-identity.)
+
+DIV-A/DIV-B FACT-INTEGRITY PRE-DEFENSE (by construction): predicate (2) counts CARRIED [M,R] tiles (the loop
+carry set), not reductions/creates. DIV-A (1 carried accum, 2 reductions) -> node_args has 1 [M,R] -> n_carried=1
+(÷ gives 4096, faithful; nro=2 wrongly gave 2048). DIV-B (2 carried accums, 1 reduced + 1 stored) -> node_args
+has 2 [M,R] -> n_carried=2 (÷ gives 2048, faithful; nro=1 wrongly gave 4096=spill). The fact tracks the real
+property where nro diverges -> divergence test PASSES. ALSO distinct from num_tiled_accumulators (kl_div: ntiled=2
+counts kl_loss scratch, n_carried=1 excludes it -> the finer fact the gate demanded, not nro->ntiled).
+
+PLAN: code-investigator corroboration pending (asked for the device_ir carry-set provenance; derived rigorously
+myself 5/5, not blocking). COMMIT (superseding the live ÷nro on 46e58c73; don't revert — no curriculum regression,
+jsd sole firer): triton.py + config_spec.py + device_ir.py = the fact + divisor, triton.py-only-style scoped to
+those 3 source files + a separate _lab commit. Then hub re-runs ONLY fact-integrity (auditor+referee transfer via
+byte-identity); I DM the SHA + DIV-A/DIV-B values. Correctness in-grant on the new SHA when GPU-granted.
+
+## 2026-06-04 — code-investigator CORROBORATES EDIT#5-v2 fact (independent graph-dump) — converges on my predicate (2)
+
+code-investigator independently dumped jsd + kl_div carry sets and CONVERGED EXACTLY on my implemented
+predicate (2): faithful fact = count of the inner reduction ForLoopGraphInfo's carry-IN values (node_args) that
+are 2D [M,R] tiles. All details match my impl:
+- Q1: ForLoopGraphInfo (subclasses NodeArgsGraphInfo, device_ir.py:277,301) .node_args = carried accumulators
+  (carry-IN); body output = carry-OUT (symmetric). jsd g4.node_args=[intermediate_loss(u2,u1),
+  intermediate_dX(u2,u1)]=2; kl_div g0.node_args=[loss_sum(u1,u0)]=1. (jsd carry-OUT names _phi/_phi_1 = the
+  updated SSA values, same count/shape.) -> node_args.length already = carried-accum count.
+- Q2: the CARRY SET ITSELF is the discriminator; scratch isn't in it -> NO creation-site check needed (my
+  predicate (1) root-vs-loop is redundant-but-corroborating). PROOF: kl_div kl_loss created by hl.zeros INSIDE
+  ForLoop body g0, consumed there (loss_sum += kl_loss), NEVER in g0.node_args/output -> excluded; loss_sum
+  created in RootGraph g1, IS g0's node_arg+output -> counted. jsd creates both accums in root g5, threads both
+  as g4.node_args, inner loop creates NO scratch (+= on carried buffers) -> 2.
+- Q3: existing num_tiled_accumulators (_count_reduction_workload:1116-1137) is a FLAT all-nodes traversal with
+  NO loop-nesting notion -> counts root carried AND in-loop scratch -> kl_div=2 (the bug). My fix counts the
+  carry set instead, same _is_reduction_extent shape filter applied to node_args not create-nodes. CONFIRMED a
+  different (correct) traversal, exactly my method.
+- ACID: DIV-A (1 carried + 2 reductions) -> node_args 1 [M,R] -> 1 ✓ (nro=2 over-sizes); DIV-B (2 carried, 1
+  reduced + 1 stored) -> node_args 2 [M,R] -> 2 ✓ (nro=1 under-sizes=spill). Passes by carry-set membership,
+  ORTHOGONAL to reduction count + to reduced-vs-stored — exactly the 1:1 coincidence nro exploited.
+
+TWO CAVEATS (investigator) — BOTH ALREADY HANDLED in my impl:
+(a) pick the RIGHT ForLoop = the ForLoopGraphInfo whose block_ids contains red_block_id (jsd has If/Else branch
+    bodies g0-g3 + the reduction ForLoop g4; only g4 qualifies). + filter node_args to 2D [M,R] so a 1D carried
+    scalar doesn't count. MY IMPL: `isinstance(gi, ForLoopGraphInfo) and red_block_id in gi.block_ids` + the
+    `_is_tiled_accum` (ndim>=2 AND _is_reduction_extent(last)) filter. ✓ both covered.
+(b) the static-dim int-equality caveat on _is_reduction_extent is INHERITED (same approximation the current code
+    already accepts; symbolic path is sound). Not a new hazard. ✓ I reuse the exact same helper.
+
+NET: my EDIT#5-v2 fact = independently-corroborated correct. Derivation was rigorous (my probe) AND matches the
+investigator's independent dump + recommendation. The fact is faithful, the caveats are pre-handled. STILL holding
+for the hub's commit-sequencing decision (commit-now fact-integrity-only re-gate [my lean] vs fresh-correctness-
+first). On the hub's word: commit (3 source files + separate _lab) + DM SHA + DIV-A/DIV-B pre-defense.
