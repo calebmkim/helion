@@ -775,14 +775,30 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             # intermediate_loss + intermediate_dX). A full-N persistent R_BLOCK
             # over-allocates that live state and SPILLS — at the widest in-sample
             # rows the persistent seed is 1.2–9.7× SLOWER than a small looped
-            # chunk (matched A/B vs persistent, M_BLOCK at floor). Cap R_BLOCK by
-            # the accumulator footprint (BANDB_R_BLOCK_BYTES per element), so the
-            # carried state stays SM-resident. This is best-or-tied at every
-            # in-sample Band-B row (narrow rows unaffected, wide rows recovered)
-            # — gated on the WORKLOAD property num_tiled_accumulators, NOT kernel
-            # identity. Scalar-/row-accumulator T2 (softmax_two_pass,
+            # chunk (matched A/B vs persistent, M_BLOCK at floor). Cap R_BLOCK so
+            # the LIVE reduction-accumulator footprint stays SM-resident: the inner
+            # loop carries num_reduction_ops independent reduction accumulators, all
+            # tiled to the SAME R_BLOCK, so the resident footprint is
+            # R_BLOCK * itemsize * num_reduction_ops. Hold that to a single
+            # BANDB_R_BLOCK_BYTES budget => R_BLOCK <= budget / (itemsize * n_acc).
+            # EDIT#5: divide the cap by num_reduction_ops (the DIRECT faithful count
+            # of live reduction accumulators sharing the budget — config_spec
+            # docstring: "number of accumulators"; this is the resident-footprint
+            # physics, NOT a row_reread proxy). jsd (n_acc=2): 16384/(4*2)=2048;
+            # kl_div (n_acc=1): 16384/(4*1)=4096, byte-IDENTICAL to before. Closes
+            # jsd to oracle parity (full oracle seed/oracle 1.21@narrow + 1.03@wide
+            # both want R_BLOCK 2048; V-INDEPENDENT, no-regression wide; A/B +19%/
+            # +10%/+2.4%, run3_bandb_nro_ab). Gated on the WORKLOAD properties
+            # num_tiled_accumulators (Band-B) + num_reduction_ops (accumulator
+            # count), NOT kernel identity — any Band-B reduction's chunk scales as
+            # 1/n_acc (the TRANSFER tv_distance probe, n_acc=1 light epilogue, stays
+            # at 4096 like kl_div). Scalar-/row-accumulator T2 (softmax_two_pass,
             # num_tiled_accumulators==0) stays persistent to the structural cap.
-            bandb_cap = max(1, cls.BANDB_R_BLOCK_BYTES // max(1, fact.itemsize))
+            bandb_cap = max(
+                1,
+                cls.BANDB_R_BLOCK_BYTES
+                // (max(1, fact.itemsize) * max(1, fact.num_reduction_ops)),
+            )
             r_block = min(r_block, _np2(bandb_cap))
 
         red_idx = spec.block_sizes.block_id_to_index(fact.block_id)
