@@ -86,90 +86,52 @@ class MatmulFact(NamedTuple):
 
 
 class ReductionFact(NamedTuple):
-    """Pre-digested workload facts for a single rollable reduction dimension.
+    """Pre-digested workload facts for a single inner reduction dimension.
 
-    Analogous to ``MatmulFact``: recorded once at compile time (in
-    ``device_ir.register_rollable_reductions``) so the autotuner-seed heuristic
-    can branch on *workload* properties (NEVER on kernel identity).  One
-    ``ReductionFact`` per registered ``ReductionLoopSpec`` (i.e. per T1 rollable
-    rdim).
+    Analogous to ``MatmulFact``: recorded once at compile time (in device_ir's
+    ``register_rollable_reductions`` for T1, ``register_user_tiled_reductions`` for
+    T2) so the autotuner-seed heuristic can branch on *workload* properties, never
+    kernel identity. Exactly one ``ReductionFact`` per seeded kernel.
 
-    Fields (grown by co-design as heuristics need them):
+    Fields:
 
     - ``block_id`` / ``size_hint``: the reduction axis and its extent (rnumel).
       ``size_hint`` drives persistent-vs-looped (the first lever).
     - ``m_block_ids``: the non-reduction (kept) tile block_ids (the "rows").
     - ``static_rnumel``: the reduction extent if statically known, else None.
-    - ``itemsize``: bytes per element of the tensor being reduced (read from the
-      reduction's input, not a hardcoded fp32).  The byte caps key on
-      ``size_hint * itemsize``, so this keeps them dtype-general (bf16/fp16) even
-      though precision is fixed fp32 for now.
-    - ``num_load``: count of device memory loads over this rdim (used only as the
-      ``== 1`` single-streamed-input gate for the stream-eviction policy).
+    - ``itemsize``: bytes per element of the reduced tensor (read from the reduction's
+      input). The byte caps key on ``size_hint * itemsize`` (dtype-general).
+    - ``num_load``: device loads over this rdim (used only as the ``== 1`` gate for the
+      stream-eviction policy).
     - ``num_carried_accumulators``: count of ``[M_BLOCK, R_BLOCK]`` 2D accumulators
-      genuinely CARRIED ACROSS the inner reduction loop — i.e. the loop-carried
-      values (the inner reduction ``ForLoopGraphInfo``'s carry set / ``node_args``)
-      whose tile is 2D with last dim == the reduction extent. This is the SINGLE
-      Band-B signal: it both ROUTES (``>= 1`` => an ``[M,R]``-accumulator reduction
-      => Band B; ``0`` for a scalar/row-accumulator reduction — every T1 kernel, or
-      a T2 like softmax_two_pass that carries only ``[M_BLOCK]`` row state — which
-      stays persistent to the structural cap) AND SIZES the R_BLOCK cap (the inner
-      loop holds ``num_carried_accumulators`` such tiles resident simultaneously, so
-      the live footprint is ``R_BLOCK * itemsize * num_carried_accumulators``, held
-      to a single byte budget => ``R_BLOCK <= budget / (itemsize * n_carried)``).
-      It is the FAITHFUL live-resident-footprint count: it counts ONLY the loop
-      carry set, so it EXCLUDES in-loop scratch (kl_div allocates a ``[M,R]``
-      ``kl_loss`` INSIDE the loop body that dies each iteration and is NOT in the
-      carry set -> excluded: kl_div num_carried_accumulators==1; jsd carries
-      ``intermediate_loss`` + ``intermediate_dX`` -> ==2). It supersedes two rejected
-      proxies for this role: a raw ``[M,R]``-buffer-CREATE count (over-counts the
-      scratch tile -> would mis-route AND over-divide kl_div) and a raw
-      ReductionLowering count (the ÷nro proxy: equals the carried count only under a
-      1:1 reduction<->accumulator structure, and diverges on a kernel that runs N
-      reductions on ONE carried accumulator [nro=N, carried=1] or carries M
-      accumulators reduced fewer times [nro<M, carried=M]). Computed from the
-      reduction loop's carry set (existing provenance), NOT a reduction-op or
-      buffer-create count. A WORKLOAD property (live carried-tile footprint), NOT
-      kernel identity.
-    - ``is_structured_combine``: True for a Band-C STRUCTURED-COMBINE reduction —
-      a two-pass *reduce-then-apply* kernel that tiles the SAME inner extent with
-      MORE THAN ONE non-grid user tile: a combine pass (the inner reduction,
-      computing per-row statistics carried as a scalar recurrence) PLUS one-or-more
-      separate apply/normalize passes (no reduction) over the same axis. welford
-      (Welford-combine pass + LayerNorm normalize pass over N) is the canonical
-      case. A single-axis T2 seed would floor the apply tile(s) to width 1
-      (~10-20x slower), so when True the seed widens the apply tile(s) and sizes
-      the combine tile by INDEPENDENT byte caps (see the heuristic's
-      STRUCTURED_* constants). NOTE: the welford source previously divided each
-      chunk by the constexpr tile width (``Tn=chunk.size(-1)``), which made a
-      masked non-divisor combine tile numerically WRONG at non-pow2 N and forced
-      the combine to be a power-of-2 DIVISOR of N; that source bug is now FIXED
-      (the per-chunk count is the masked valid count ``(tile.index<n).sum()``), so
-      the combine tile is a plain byte-capped next_pow2(N) reduction correct at
-      ANY N. A WORKLOAD-STRUCTURE property (number of non-grid tiles + which
-      carries the reduction), NOT kernel identity — it fires for any welford-like
-      multi-pass structured combine. ``apply_block_ids`` lists the non-reduction
-      apply tile block_ids the seed must widen.
-    - ``apply_block_ids``: for a structured combine, the non-grid non-reduction
-      apply/normalize tile block_ids (empty otherwise).
-    - ``row_reread``: True iff some reduction-input HOST BUFFER is read in >= 2
-      distinct PASSES over the reduction axis — i.e. the kernel RE-READS its row (a
-      2nd reduction pass and/or a post-reduction apply pass), so a persistent
-      whole-row tile must stay resident across both passes and SPILLS once the row
-      exceeds the register/SMEM budget. This is the FAITHFUL property the persist
-      byte cap (``MULTILOAD_PERSIST_MAX_BYTES``) and the re-read load-eviction policy
-      key on — NOT a syntactic load-op count (which OVER-counts a scalar gather,
-      e.g. cross_entropy's label load) and NOT a ReductionLowering count (which
-      UNDER-counts: rms_norm/layer_norm re-read the row in an APPLY pass that is not
-      a ``ReductionLowering`` -> would read 1). Computed from the reduction
-      roller's host-buffer read provenance: a buffer is loaded in >= 2 distinct LOOP
-      graphs (``ReductionLoopGraphInfo`` T1-rollable; ``ForLoopGraphInfo`` T2
-      user-tiled). Immune to the roller's root+loop DUPLICATION (a single-pass
-      stream's row is in the root graph AND its one rolled loop graph, but only ONE
-      is a loop graph -> count 1) and to coding style (tracks dataflow, not op
-      counts). Right set (verified): sum/long_sum=False; rms_norm/layer_norm/softmax/
-      cross_entropy=True; kl_div/jsd=False (two DISTINCT inputs each read once);
-      welford=True. A WORKLOAD property (re-read dataflow), NOT kernel identity.
+      CARRIED ACROSS the inner reduction loop (the loop carry set / ``node_args``,
+      tile 2D with last dim == the reduction extent). The single Band-B signal — it
+      ROUTES (``>= 1`` => Band B; ``0`` for scalar/row accumulators) and SIZES the
+      R_BLOCK cap (footprint = ``R_BLOCK * itemsize * n_carried``). Faithful: counts
+      only the carry set, excluding in-loop scratch (kl_div's ``kl_loss`` -> kl_div=1;
+      jsd carries 2). Not a raw [M,R]-create count (over-counts scratch) nor a
+      ReductionLowering count (the ÷nro proxy, exact only under a 1:1
+      reduction<->accumulator structure). See ``_count_carried_tiled_accumulators``.
+    - ``is_structured_combine``: True for a Band-C reduce-then-apply kernel (welford):
+      the same inner extent tiled by a combine pass (the reduction) PLUS one-or-more
+      apply/normalize passes. The seed widens the apply tile(s) (else they floor to 1)
+      and byte-caps the combine tile. A workload-structure property. See
+      ``register_user_tiled_reductions``.
+    - ``apply_block_ids``: for a structured combine, the apply/normalize tile block_ids
+      (empty otherwise).
+    - ``row_reread``: True iff the reduction-input row is reused / live across the
+      reduction boundary (a 2nd reduction pass and/or a post-reduction apply re-read),
+      so a persistent whole-row tile spills once the row exceeds the register/SMEM
+      budget. The faithful property the persist byte cap and re-read eviction key on —
+      not a load-op count (over-counts scalar gathers) nor a ReductionLowering count
+      (under-counts apply-pass re-reads). sum/long_sum/kl_div/jsd False; the rest True.
+      See ``_compute_row_reread``.
+    - ``reread_buffer_slots``: ``load_eviction_policies`` SLOT indices (emission order,
+      slot i = the i-th hl.load) that load the re-read row buffer; empty unless
+      ``row_reread``. The seed marks the first 'last' (keep L2-resident), the rest
+      'first' — keyed on which buffer is re-read, not a positional slot. Captured at
+      fact-build (the provenance resolver needs HostFunction context). See
+      ``_compute_reread_buffer_slots``.
     """
 
     block_id: int
@@ -182,15 +144,6 @@ class ReductionFact(NamedTuple):
     is_structured_combine: bool = False
     apply_block_ids: tuple[int, ...] = ()
     row_reread: bool = False
-    # ``load_eviction_policies`` SLOT indices that load the RE-READ host buffer (the
-    # ``row_reread`` buffer), in codegen-emission order (slot i = the i-th hl.load).
-    # Empty unless ``row_reread``. The seed builds the faithful re-read eviction from
-    # this — first slot -> 'last' (keep L2-resident for the re-read), the rest ->
-    # 'first' (stream the final uses) — keyed on WHICH host buffer is re-read, NOT a
-    # positional slot. Captured at fact-build (the host-buffer provenance resolver
-    # needs the HostFunction context, unavailable in the seed heuristic). Provenance,
-    # not policy: the SEED decides the eviction values; the FACT only says which slots
-    # touch the re-read buffer.
     reread_buffer_slots: tuple[int, ...] = ()
 
 
@@ -1870,19 +1823,14 @@ class ReductionLoopSpec(_PowerOfTwoBlockIdItem):
         return value
 
     def _encode_flat_value(self, base: ConfigSpec, value: object) -> object:
-        # None means "persistent reduction" in the normalized Config. In the
-        # flat search space that same choice is represented by an integer
-        # sentinel. This is the one non-identity Config <-> FlatConfig
-        # mapping today.
-        #
-        # The sentinel MUST be the fragment max (`.high` ==
-        # next_power_of_2(size_hint)): _flat_config() decodes a flat int back to
-        # None only when `value >= self.size_hint`, and `.high` is the one flat
-        # value that satisfies that for EVERY size_hint (and is a power of two,
-        # so it stays within the fragment's invariants). The fragment default is
-        # capped at 4096 (max_reduction_loop), which is < size_hint for
-        # rnumel>4096 and therefore decodes back to a LOOPED chunk instead of
-        # persistent -- silently degrading an injected persistent seed.
+        # None means "persistent reduction"; in the flat search space it is an
+        # integer sentinel (the one non-identity Config <-> FlatConfig mapping).
+        # The sentinel MUST be the fragment max (`.high` == next_power_of_2(size_hint)):
+        # _flat_config() decodes a flat int back to None only when `value >= size_hint`,
+        # and `.high` is the one pow2 value that satisfies that for every size_hint. The
+        # fragment default is capped at 4096 (max_reduction_loop), which is < size_hint
+        # for rnumel>4096 and would decode back to a looped chunk — silently degrading
+        # an injected persistent seed.
         if value is None:
             return self._flat_fragment(base).high
         return value

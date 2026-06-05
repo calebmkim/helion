@@ -671,15 +671,11 @@ def _classify_load_dataflow(
       flows into (recorded then NOT traversed through — we want where the *row* goes,
       not what happens to the reduced result).
     - ``reaches_bypass_store``: True iff the value reaches a ``store`` on a path that
-      does NOT pass through a reduction (i.e. the row is used OUTSIDE the reduction —
-      an apply/normalize that writes it back, so it is live across the boundary).
+      does NOT pass through a reduction (the row is used OUTSIDE the reduction — an
+      apply/normalize that writes it back, so it is live across the boundary).
 
-    One traversal serves every reduction-input dataflow question:
-    ``_compute_row_reread`` reads both fields (``len(reductions_fed) >= 2`` OR
-    ``reaches_bypass_store`` => reread); ``_compute_reread_buffer_slots`` reads only
-    ``bool(reductions_fed)`` (is this load a reduction input?). Cutting at ``redset``
-    and the per-node predicates are pure, so collecting both signals in one shared
-    ``seen`` walk is equivalent to the two separate walks it replaces.
+    One traversal serves both reduction-input dataflow questions: ``_compute_row_reread``
+    reads both fields, ``_compute_reread_buffer_slots`` reads only ``bool(reductions_fed)``.
     """
     from ..language.memory_ops import store as _store_op
 
@@ -949,29 +945,22 @@ class DeviceIR:
         """Register a ReductionFact for a user-tiled (T2) inner reduction.
 
         T2 = a reduction the user writes by hand as a nested ``hl.tile`` over the
-        reduction axis (softmax_two_pass, kl_div, jsd) with a scalar/row
-        accumulator carried across the inner loop. Unlike T1 (rollable rdim) there
-        is NO ``reduction=True`` block and NO ``ReductionLoopSpec`` — both
-        ``hl.tile`` axes are ordinary ``block_sizes`` entries. The ``.sum/.amax``
-        over the inner tile is realized by ``ReductionLowering`` reusing the
-        EXISTING user tile (``allocate_reduction_dimension`` is never called).
+        reduction axis (softmax_two_pass, kl_div, jsd). Unlike T1 (rollable rdim)
+        there is NO ``reduction=True`` block and NO ``ReductionLoopSpec`` — both
+        ``hl.tile`` axes are ordinary ``block_sizes`` entries, and the ``.sum/.amax``
+        reuses the existing user tile.
 
-        GUARDED by the caller (``if not env.config_spec.reduction_facts``) so T1
-        and T2 are mutually exclusive — a kernel is one or the other, and the
-        ``reduction_facts`` count stays exactly 1 (the seed gate keys on that).
+        GUARDED by the caller (``if not env.config_spec.reduction_facts``) so T1 and
+        T2 are mutually exclusive, keeping the ``reduction_facts`` count at exactly 1
+        (the seed gate keys on that).
 
-        Finding the reduction axis (env + device_ir only):
-        - Collect every ``ReductionLowering.block_index`` across all device graphs.
-        - FILTER OUT the grid (non-reduction kept) axes (``grid_block_ids``).
-          This filter is LOAD-BEARING for jsd: its dead ``beta==0/1`` branches do
-          ``amax(dim=0)`` over the M/grid tile, so the raw set is {0,1}; removing
-          the grid axis (1) leaves the real V reduction (0). Without the filter
-          jsd would mis-resolve and (worse) look like a 2-reduction-axis kernel.
-        - If exactly one reduction axis survives AND it is a ``block_sizes`` entry,
-          register a single ReductionFact for it. Anything else (0, or >1 distinct
-          inner reduction axes) is left unregistered — the seed gate
-          (``len(reduction_facts)==1``) then declines, which is correct: a
-          multi-axis manual reduction is out of scope for this single-axis seed.
+        Finding the reduction axis: collect every ``ReductionLowering.block_index``
+        across all device graphs, then drop the grid (kept) axes. The grid filter is
+        LOAD-BEARING for jsd — its dead ``beta==0/1`` branches do ``amax(dim=0)`` over
+        the M/grid tile, so the raw set is {0,1}; dropping the grid axis leaves the
+        real V reduction. If exactly one inner reduction axis survives AND it is a
+        ``block_sizes`` entry, register a fact; otherwise leave it unregistered so the
+        gate declines (a multi-axis manual reduction is out of scope).
         """
         from .inductor_lowering import ReductionLowering
 
@@ -995,31 +984,17 @@ class DeviceIR:
         # The reduction axis must be a user tile in the block_sizes spec.
         if red_block_id not in spec.block_sizes.valid_block_ids():
             return
-        # NON-GRID TILE COUNT. The single-axis T2 seed (softmax/kl_div/jsd)
-        # controls exactly ONE inner tile (the reduction axis). A kernel with a
-        # SECOND independent non-grid user tile is a MULTI-PASS pattern.
-        #
-        # There are two multi-pass cases, distinguished STRUCTURALLY:
-        #
-        #  (1) STRUCTURED COMBINE (Band C, welford): the SAME inner extent is
-        #      tiled by a combine pass (the inner reduction, carrying per-row
-        #      scalar statistics as a recurrence) AND one-or-more separate
-        #      apply/normalize passes (no reduction) over that axis. This DOES get
-        #      a seed — but a structured one: the apply tile(s) are widened (else
-        #      they floor to width 1 -> ~10-20x slower) and the combine tile is a
-        #      byte-capped next_pow2(N) reduction. (The welford source counts each
-        #      chunk's VALID columns via the masked ``(tile.index<n).sum()``, so a
-        #      non-divisor combine tile is correct at any N; the old pow2-divisor
-        #      constraint — a workaround for the now-fixed ``Tn=chunk.size(-1)``
-        #      bug — is gone.) See get_seed_config's is_structured_combine branch.
-        #  (2) anything else with >1 non-grid tile: out of scope for this seed —
-        #      decline so the gate (reduction_facts==1) does not fire.
-        #
-        # The working single-axis T2 kernels (softmax_two_pass, kl_div, jsd) have
-        # exactly ONE non-grid tile and skip both branches. This keys on the
-        # WORKLOAD STRUCTURE (number of non-grid tiles + which carries the
-        # reduction), NOT kernel identity — case (1) fires for ANY welford-like
-        # reduce-then-apply structured combine.
+        # NON-GRID TILE COUNT. A single-axis T2 seed (softmax/kl_div/jsd) controls
+        # exactly ONE inner tile. A second independent non-grid tile means a
+        # multi-pass pattern, distinguished structurally:
+        #  (1) STRUCTURED COMBINE (Band C, welford): the same inner extent is tiled by
+        #      a combine pass (the inner reduction) AND one-or-more apply/normalize
+        #      passes (no reduction). Gets a structured seed (apply tiles widened, else
+        #      they floor to width 1; combine tile byte-capped). See get_seed_config's
+        #      is_structured_combine branch.
+        #  (2) anything else with >1 non-grid tile: out of scope — decline.
+        # Keys on workload STRUCTURE (tile count + which carries the reduction), not
+        # kernel identity; case (1) fires for any welford-like reduce-then-apply.
         non_grid_tiles = [
             b for b in spec.block_sizes.valid_block_ids() if b not in grid_ids
         ]
@@ -1098,33 +1073,20 @@ class DeviceIR:
     ) -> bool:
         """True iff a tile dim ``last`` IS the reduction axis ``red_block_id``.
 
-        Identifies the reduction axis by BLOCK-ID PROVENANCE — the faithful
-        property "this tile dim *is* the reduction axis" — instead of an
-        int-equality proxy ("this dim merely EQUALS the reduction extent"). The
-        proxy mis-classifies a buffer carried along a NON-reduction tiled axis
-        whose extent happens to equal the reduction extent; the block-id test
-        does not, because that buffer's dim resolves to ITS OWN block, not
-        ``red_block_id``. We REUSE the provenance the compiler already records
-        for every tile size (``env.resolve_block_id`` — the same resolver
-        ``add_kernel_tensor_size`` and the CuTe indexed-reduction path use), so
-        this is not a new analysis.
+        Identifies the reduction axis by BLOCK-ID PROVENANCE, not an int-equality
+        proxy ("this dim EQUALS the reduction extent") — the proxy mis-classifies a
+        buffer carried along a non-reduction axis whose extent happens to equal the
+        reduction extent. A reduction tile's extent is the reduction block's size, a
+        ``SymInt`` with block provenance: resolve it (``env.resolve_block_id``, the
+        same resolver ``add_kernel_tensor_size`` uses) and require the resolved block
+        to be the reduction axis. A compound expr with no single block origin resolves
+        to ``None`` -> fall back to symbol-membership.
 
-        Resolution: a reduction tile's extent is the reduction BLOCK's size — a
-        block variable, hence a ``SymInt`` carrying block provenance. Resolve it
-        (``env.resolve_block_id`` — the resolver ``add_kernel_tensor_size`` and the
-        CuTe indexed-reduction path already use) and require the resolved block to
-        BE the reduction axis. A compound symbolic expr with no single block origin
-        resolves to ``None`` -> fall back to the symbol-membership test.
-
-        A reduction-tile extent is NEVER a bare Python int (even under
-        ``static_shapes=True`` it stays a block ``SymInt`` — verified across the
-        Band-B curriculum: 189/189 calls took the resolved-block-id path, 0 bare
-        ints). We ASSERT that rather than fall back to an int-equality proxy
-        (``last == size_hint``): int-equality would mis-classify a constant
-        non-reduction dim that merely EQUALS the extent, and there is no finer
-        provenance on a bare int to avoid it. The assert is a tripwire — if a
-        future kernel ever presents a constant reduction-tile extent it fails
-        loudly here instead of silently keying on a coincidental equality.
+        A reduction-tile extent is NEVER a bare int (even under ``static_shapes=True``
+        it stays a block ``SymInt`` — verified 189/189 on the Band-B curriculum). We
+        assert that rather than fall back to int-equality (which would mis-classify a
+        constant non-reduction dim equal to the extent): a tripwire that fails loudly
+        if a future kernel presents a constant reduction-tile extent.
         """
         import sympy
 
@@ -1145,20 +1107,18 @@ class DeviceIR:
 
     def _count_reduction_workload(
         self, graph_ids: set[int], red_block_id: int, size_hint: int
-    ) -> tuple[int, int, int]:
+    ) -> tuple[int, int]:
         """Digest the workload properties the seed branches on over ``red_block_id``.
 
         Shared by the T1 (``_build_reduction_fact``) and T2
-        (``register_user_tiled_reductions``) fact builders so both digest the
-        SAME properties (num_load / itemsize) the same way — only the set of
-        graphs and the axis differ. Returns ``(num_load, itemsize)``.
+        (``register_user_tiled_reductions``) fact builders so both digest num_load /
+        itemsize the same way — only the graph set and axis differ. Returns
+        ``(num_load, itemsize)``.
 
-        ``itemsize`` (bytes per element of the resident reduction tile — the byte
-        caps key on ``size_hint * itemsize``) is read from the tensor being
-        reduced over ``red_block_id`` (the input of a ``ReductionLowering``).
-        That tensor is GUARANTEED present — ``red_block_id`` was derived from such
-        a node — so there is no "no tensor found" case to fall back on; we read
-        the real reduced element size rather than fabricating one.
+        ``itemsize`` (bytes per element of the resident reduction tile; the byte caps
+        key on ``size_hint * itemsize``) is read from the tensor being reduced over
+        ``red_block_id`` (a ``ReductionLowering`` input) — guaranteed present, since
+        ``red_block_id`` was derived from such a node.
         """
 
         from ..language.memory_ops import load as _load_op
@@ -1179,49 +1139,35 @@ class DeviceIR:
                     isinstance(lowering, ReductionLowering)
                     and getattr(lowering, "block_index", None) == red_block_id
                 ):
-                    # itemsize = bytes per element of the tensor being REDUCED (the
-                    # resident reduction tile the byte caps size). Read from the
-                    # reduction node's INPUT — the node's own meta['val'] is the
-                    # reduced OUTPUT (rdim removed; for a type-changing reduction
-                    # like argmax it is even a different dtype), so we read the
-                    # input value, mirroring ReductionLowering.add_input_mask. The
-                    # faithful reduced-element size, dtype-agnostic. (All reductions
-                    # over one rdim share an input element size; the last wins.)
+                    # itemsize = element size of the tensor being REDUCED. Read from
+                    # the reduction node's INPUT — the node's own meta['val'] is the
+                    # reduced OUTPUT (rdim removed; possibly a different dtype, e.g.
+                    # argmax), mirroring ReductionLowering.add_input_mask. (All
+                    # reductions over one rdim share an input element size; last wins.)
                     for inp in node.all_input_nodes:
                         in_val = inp.meta.get("val")
                         if isinstance(in_val, torch.Tensor):
                             itemsize = in_val.element_size()
                             break
-        return (
-            num_load,
-            itemsize,
-        )
+        return num_load, itemsize
 
     def _count_carried_tiled_accumulators(self, red_block_id: int) -> int:
         """Count ``[M_BLOCK, R_BLOCK]`` 2D accumulators CARRIED ACROSS the inner
-        reduction loop — the FAITHFUL live-footprint count the Band-B R_BLOCK cap
+        reduction loop — the faithful live-footprint count the Band-B R_BLOCK cap
         divides by (see ``ReductionFact.num_carried_accumulators``).
 
-        The inner reduction is a manual ``hl.tile`` loop, materialized as a
-        ``ForLoopGraphInfo`` whose ``block_ids`` contains ``red_block_id``. Its
-        ``node_args`` ARE the loop carry set (the outer values threaded in as
-        placeholders, updated, and returned each iteration). A carried accumulator
-        is therefore a ``node_arg`` whose value is a 2D tile with last dim == the
-        reduction extent. This EXCLUDES in-loop SCRATCH (a ``[M,R]`` buffer created
-        INSIDE the loop body that dies each iteration is NOT in the carry set —
-        kl_div's ``kl_loss``), which a raw [M,R]-buffer-CREATE count (any [M,R]
-        create, anywhere) would over-count; and it tracks the CARRIED-TILE count,
-        not a raw ReductionLowering count (the rejected ÷nro proxy), which coincide
-        only under a 1:1 reduction<->accumulator structure. It is the SINGLE Band-B
-        signal — both the routing gate (``>= 1`` => Band B) and the cap divisor.
+        The inner reduction is a manual ``hl.tile`` loop, a ``ForLoopGraphInfo`` whose
+        ``block_ids`` contains ``red_block_id``; its ``node_args`` ARE the loop carry
+        set. A carried accumulator is a ``node_arg`` whose value is a 2D tile with last
+        dim == the reduction extent. This EXCLUDES in-loop scratch (kl_div's ``kl_loss``,
+        created inside the loop body and not in the carry set), which a raw
+        [M,R]-buffer-CREATE count would over-count; and it is not a raw ReductionLowering
+        count (the rejected ÷nro proxy, which coincides only under a 1:1
+        reduction<->accumulator structure). The single Band-B signal — routing gate
+        (``>= 1``) and cap divisor.
 
-        Reuses the SAME reduction-axis test as ``_count_reduction_workload``'s
-        accumulator site (``_extent_is_reduction_axis``: block-id provenance via
-        ``resolve_block_id``, falling back to symbol-membership) so the two counts
-        stay consistent. ``0`` for Band-A (softmax_two_pass
-        carries only ``[M_BLOCK]`` row state; T1 reduction loops carry no [M,R]
-        tile). Verified jsd=2 (intermediate_loss + intermediate_dX) / kl_div=1
-        (loss_sum; kl_loss excluded) on curriculum.
+        Uses the same reduction-axis test as ``_extent_is_reduction_axis`` so the
+        counts stay consistent. ``0`` for Band-A. Verified jsd=2 / kl_div=1 on curriculum.
         """
         try:
             red_symbol: sympy.Symbol | None = (
@@ -1250,33 +1196,23 @@ class DeviceIR:
 
     def _compute_row_reread(self, red_block_id: int) -> bool:
         """True iff the reduction-input row is REUSED / LIVE across the reduction
-        boundary — the FAITHFUL persist-cap gate property (see
-        ``ReductionFact.row_reread``), computed at fact-build.
+        boundary — the faithful persist-cap gate property (see
+        ``ReductionFact.row_reread``).
 
-        A CONSUMER-DATAFLOW trace cutting AT the reduction: for a load whose value
-        feeds a ``ReductionLowering(red_block_id)``, the row is reused iff that value
-        is consumed by ``>= 2`` distinct such reductions (softmax/cross_entropy:
-        max + sum re-read the row) OR by a reduction AND a STORE reached on a path
-        that BYPASSES the reduction (rms_norm/layer_norm: x feeds the sum-of-squares
-        AND the x*rstd*w apply -> store). Liveness, NOT a load-op count and NOT a
-        read-region count: right for IN-REGISTER reuse (rms_norm loads x with ONE
-        ``hl.load``, value used twice -> True) and immune to the
-        single-pass-double-load false positive (two loads feeding ONE reduction with
-        no bypass-store -> False).
+        A consumer-dataflow trace cutting AT the reduction: for a load feeding a
+        ``ReductionLowering(red_block_id)``, the row is reused iff that value reaches
+        ``>= 2`` distinct such reductions (softmax/cross_entropy: max + sum) OR a
+        reduction AND a store on a path that BYPASSES the reduction (rms_norm/layer_norm:
+        x feeds the sum-of-squares AND the x*rstd*w apply). Liveness, not a load-op count
+        (right for rms_norm's one-load-used-twice in-register reuse) and not a
+        read-region count (immune to the single-pass-double-load false positive).
 
-        9/9: sum/long_sum False (x feeds only the reduction, no bypass-store);
-        rms_norm/layer_norm/softmax/cross_entropy True; kl_div/jsd False (two DISTINCT
-        inputs each feed one reduction, neither reused). ACID = rms_norm: a load-op
-        count OVER-counts (the broadcast weight, fires), a ReductionLowering count
-        UNDER-counts (the apply is not a ReductionLowering, exempts), this
-        consumer-trace is the only one that's right. FAITHFULNESS UPGRADE over the
-        prior region-membership
-        form ("some buffer in >= 2 LOOP graphs"): behaviorally identical seeds on all
-        curriculum splits (byte-identity verified), but keyed on the reduction-INPUT
-        tile's dataflow specifically — closing the "any >= 2-graph buffer" loophole.
-        Dataflow-, not coding-style-dependent (softmax_decomposed=True too). The
-        EVICTION consumer's per-slot ``reread_buffer_slots`` is a SEPARATE, finer
-        computation off the SHARED dataflow walk (``_classify_load_dataflow``).
+        9/9: sum/long_sum False; rms_norm/layer_norm/softmax/cross_entropy True;
+        kl_div/jsd False (two distinct inputs each read once). ACID = rms_norm: a load-op
+        count over-counts (the broadcast weight), a ReductionLowering count under-counts
+        (the apply is not a ReductionLowering) — only this consumer-trace is right.
+        Dataflow-, not coding-style-dependent. The eviction consumer's per-slot
+        ``reread_buffer_slots`` is a finer computation off the same dataflow walk.
         """
         from ..language.memory_ops import load as _load_op
 
@@ -1298,26 +1234,19 @@ class DeviceIR:
 
     def _compute_reread_buffer_slots(self, red_block_id: int) -> tuple[int, ...]:
         """The ``load_eviction_policies`` SLOT indices that load the re-read REDUCTION
-        ROW — the EVICTION consumer's provenance (a DIFFERENT, finer question than the
-        ``row_reread`` bool). Slot ``i`` = the i-th ``hl.load`` in
-        ``_count_device_loads_and_stores`` codegen-emission order.
+        ROW (a finer question than the ``row_reread`` bool). Slot ``i`` = the i-th
+        ``hl.load`` in codegen-emission order.
 
         Selects the host buffer that is BOTH (a) HBM-re-read = loaded in >= 2 distinct
-        LOOP graphs (e.g. cross_entropy's amax + exp-sum passes both ``tl.load``
-        logits) AND (b) a REDUCTION INPUT = its loaded value feeds a
-        ``ReductionLowering(red_block_id)``. The (a)-AND-(b) is the fact-integrity
-        cap-vs-eviction TIGHTENING: the eviction consumer equates "the re-read buffer"
-        with "the row to keep L2-resident", so it must select the reduction ROW
-        specifically — NOT a coincidentally re-loaded broadcast operand (an
-        adversarial/transfer kernel with a reused weight loaded in 2 loop graphs would
-        otherwise get the wrong slot marked 'last'; proven load-bearing by the ``adv3``
-        probe — LOOSE picks the broadcast, this picks the row). Returns the slots that
-        load that buffer (empty if no buffer is both). The seed sets the first such
-        slot -> 'last' (keep L2-resident for the re-read), the rest -> 'first' (stream
-        the final uses) — de-hacking the run-2 POSITIONAL slot-0 rule (which only
-        happened to be right for welford). Verified 9/9: CE -> logits slots (NOT
-        labels/logits_flat); welford -> x slots (NOT weight/bias); sum/long_sum/kl_div/
-        jsd -> () (no HBM-re-read reduction input).
+        LOOP graphs (cross_entropy's amax + exp-sum passes both load logits) AND (b) a
+        REDUCTION INPUT = its value feeds a ``ReductionLowering(red_block_id)``. The
+        AND selects the reduction ROW specifically, NOT a coincidentally re-loaded
+        broadcast operand (load-bearing — a reused weight loaded in 2 loop graphs would
+        otherwise get the wrong slot marked 'last'). Returns the slots loading that
+        buffer (empty if none qualifies); the seed marks the first 'last', the rest
+        'first' — de-hacking the run-2 positional slot-0 rule. Verified 9/9: CE ->
+        logits (not labels/logits_flat); welford -> x (not weight/bias);
+        sum/long_sum/kl_div/jsd -> ().
         """
         from ..language.memory_ops import load as _load_op
 
@@ -1378,11 +1307,10 @@ class DeviceIR:
     def _build_reduction_fact(
         self, rdim: BlockSizeInfo, used_graphs: set[int]
     ) -> ReductionFact:
-        """Digest workload facts for a single rollable reduction dim.
+        """Digest workload facts for a single rollable reduction dim (T1).
 
-        Walks the ORIGINAL graphs that use ``rdim`` and counts device loads,
-        stores, and reductions over this rdim, and reads the element size of the
-        reduced tensor. These feed the seed heuristic's workload-property
+        Walks the original graphs that use ``rdim`` to count device loads and read
+        the reduced element size, which feed the seed heuristic's workload-property
         branching (NOT kernel identity).
         """
         env = CompileEnvironment.current()
@@ -2835,11 +2763,9 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
 
         device_ir.register_rollable_reductions()
         config_spec = CompileEnvironment.current().config_spec
-        # T2 (user-tiled / manually-looped) reductions: only when NO T1 rollable
-        # rdim was registered (mutually exclusive — a kernel is T1 or T2). This
-        # keeps reduction_facts at exactly 1, which the seed gate keys on, and is
-        # T1-transparent (the guard is False whenever register_rollable_reductions
-        # populated a fact).
+        # T2 (user-tiled) reductions, only when no T1 rollable rdim was registered
+        # (mutually exclusive — a kernel is T1 or T2). Keeps reduction_facts at
+        # exactly 1, which the seed gate keys on.
         if not config_spec.reduction_facts:
             device_ir.register_user_tiled_reductions()
         config_spec.raise_grid_block_minimums()
