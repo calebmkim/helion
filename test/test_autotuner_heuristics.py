@@ -2515,7 +2515,7 @@ class TestTritonReductionHeuristic(TestCase):
       *persistent* reduction (``reduction_loops=[None]``) with the rnumel-ramp
       warp count, NOT the looped default.
     - kl_div on a wide row (rnumel=131072): the Band-B T2 path
-      (``num_reduction_tiles >= 1``) must *cap* R_BLOCK by the accumulator
+      (``num_carried_accumulators >= 1``) must *cap* R_BLOCK by the accumulator
       footprint (``BANDB_R_BLOCK_BYTES``) instead of going full-N persistent,
       with the grid (M) axis pinned at its floor of 1.
     """
@@ -2571,7 +2571,7 @@ class TestTritonReductionHeuristic(TestCase):
         self.assertEqual(len(bound.config_spec.reduction_facts), 1)
         fact = bound.config_spec.reduction_facts[0]
         self.assertEqual(fact.size_hint, n)
-        self.assertGreaterEqual(fact.num_reduction_tiles, 1)
+        self.assertGreaterEqual(fact.num_carried_accumulators, 1)
         self.assertFalse(fact.is_structured_combine)
         self.assertIn(
             TritonReductionHeuristic.name,

@@ -1016,7 +1016,6 @@ class DeviceIR:
         (
             num_load,
             itemsize,
-            num_reduction_tiles,
         ) = self._count_reduction_workload(all_graph_ids, red_block_id, size_hint)
         spec.reduction_facts.append(
             ReductionFact(
@@ -1026,7 +1025,6 @@ class DeviceIR:
                 static_rnumel=static_rnumel,
                 itemsize=itemsize,
                 num_load=num_load,
-                num_reduction_tiles=num_reduction_tiles,
                 num_carried_accumulators=self._count_carried_tiled_accumulators(
                     red_block_id
                 ),
@@ -1097,9 +1095,8 @@ class DeviceIR:
 
         Shared by the T1 (``_build_reduction_fact``) and T2
         (``register_user_tiled_reductions``) fact builders so both digest the
-        SAME properties (num_load / itemsize / num_reduction_tiles) the same way —
-        only the set of graphs and the axis differ. Returns ``(num_load, itemsize,
-        num_reduction_tiles)``.
+        SAME properties (num_load / itemsize) the same way — only the set of
+        graphs and the axis differ. Returns ``(num_load, itemsize)``.
 
         ``itemsize`` (bytes per element of the resident reduction tile — the byte
         caps key on ``size_hint * itemsize``) is read from the tensor being
@@ -1109,36 +1106,10 @@ class DeviceIR:
         the real reduced element size rather than fabricating one.
         """
 
-        from ..language.creation_ops import full as _full_op
-        from ..language.creation_ops import zeros as _zeros_op
         from ..language.memory_ops import load as _load_op
         from .inductor_lowering import ReductionLowering
 
-        env = CompileEnvironment.current()
-        # Sympy symbol of the reduction axis, for matching 2D accumulator buffers
-        # whose last dim is the reduction extent (the live state carried across a
-        # manually-looped reduction). None if the axis has no resolvable symbol.
-        try:
-            red_symbol: sympy.Symbol | None = env.block_sizes[red_block_id].symbol()
-        except (IndexError, KeyError, AttributeError):
-            red_symbol = None
-
-        # In-tile buffer-creating ops (``hl.zeros``/``hl.full``; ``hl.zeros``
-        # lowers to ``full``). A 2D output whose last dim is the reduction extent
-        # is an accumulator carried across the manual inner loop.
-        _accum_create_targets = (_full_op, _zeros_op)
-
-        def _last_dim_is_reduction(val: object) -> bool:
-            return (
-                isinstance(val, torch.Tensor)
-                and val.ndim >= 2
-                and self._extent_is_reduction_axis(
-                    val.shape[-1], red_block_id, red_symbol
-                )
-            )
-
         num_load = 0
-        num_reduction_tiles = 0
         itemsize = 0
         for graph_id in sorted(graph_ids):
             graph = self.graphs[graph_id].graph
@@ -1166,16 +1137,9 @@ class DeviceIR:
                         if isinstance(in_val, torch.Tensor):
                             itemsize = in_val.element_size()
                             break
-                # Count 2D [M, R] accumulator buffers (live state scaling with
-                # R_BLOCK) — the Band-B vs Band-A T2 distinction.
-                if target in _accum_create_targets and _last_dim_is_reduction(
-                    node.meta.get("val")
-                ):
-                    num_reduction_tiles += 1
         return (
             num_load,
             itemsize,
-            num_reduction_tiles,
         )
 
     def _count_carried_tiled_accumulators(self, red_block_id: int) -> int:
@@ -1190,10 +1154,11 @@ class DeviceIR:
         is therefore a ``node_arg`` whose value is a 2D tile with last dim == the
         reduction extent. This EXCLUDES in-loop SCRATCH (a ``[M,R]`` buffer created
         INSIDE the loop body that dies each iteration is NOT in the carry set —
-        kl_div's ``kl_loss``), which ``num_reduction_tiles`` (any [M,R] create,
-        anywhere) over-counts; and it tracks the CARRIED-TILE count, not a raw
-        ReductionLowering count (the rejected ÷nro proxy), which coincide only
-        under a 1:1 reduction<->accumulator structure.
+        kl_div's ``kl_loss``), which a raw [M,R]-buffer-CREATE count (any [M,R]
+        create, anywhere) would over-count; and it tracks the CARRIED-TILE count,
+        not a raw ReductionLowering count (the rejected ÷nro proxy), which coincide
+        only under a 1:1 reduction<->accumulator structure. It is the SINGLE Band-B
+        signal — both the routing gate (``>= 1`` => Band B) and the cap divisor.
 
         Reuses the SAME reduction-axis test as ``_count_reduction_workload``'s
         accumulator site (``_extent_is_reduction_axis``: block-id provenance via
@@ -1419,7 +1384,6 @@ class DeviceIR:
         (
             num_load,
             itemsize,
-            num_reduction_tiles,
         ) = self._count_reduction_workload(used_graphs, rdim.block_id, size_hint)
 
         return ReductionFact(
@@ -1429,7 +1393,6 @@ class DeviceIR:
             static_rnumel=static_rnumel,
             itemsize=itemsize,
             num_load=num_load,
-            num_reduction_tiles=num_reduction_tiles,
             row_reread=self._compute_row_reread(rdim.block_id),
             reread_buffer_slots=self._compute_reread_buffer_slots(rdim.block_id),
         )

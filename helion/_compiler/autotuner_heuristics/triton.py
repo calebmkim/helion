@@ -217,7 +217,7 @@ class TritonReductionHeuristic(AutotunerHeuristic):
     # (= 4096 fp32 elems) is best-or-tied at EVERY in-sample Band-B row (narrow
     # rows: persist/cap=0.996–1.017, i.e. no regression; wide rows: recovers the
     # spill). Expressed in BYTES (via itemsize) so it generalizes across dtypes.
-    # Scalar-accumulator reductions (num_reduction_tiles==0: every T1 kernel +
+    # Scalar-accumulator reductions (num_carried_accumulators==0: every T1 kernel +
     # softmax_two_pass, which carries only a [M_BLOCK] row state) are UNAFFECTED —
     # they stay persistent to the structural cap. EVIDENCE:
     # _lab/harness/t2_bandb_chunk_sweep.py + t2_bandb_narrow_check.py.
@@ -768,7 +768,7 @@ class TritonReductionHeuristic(AutotunerHeuristic):
         # (the inner loop carries [M_BLOCK, R_BLOCK] live accumulators; a full-N
         # R_BLOCK only survives at M_BLOCK=1).
         r_block = extent
-        if fact.num_reduction_tiles >= 1:
+        if fact.num_carried_accumulators >= 1:
             # BAND B: this T2 reduction carries one-or-more [M_BLOCK, R_BLOCK] 2D
             # accumulators across the inner loop (kl_div: loss_sum; jsd:
             # intermediate_loss + intermediate_dX). A full-N persistent R_BLOCK
@@ -781,25 +781,33 @@ class TritonReductionHeuristic(AutotunerHeuristic):
             # R_BLOCK, so the resident footprint is R_BLOCK * itemsize *
             # num_carried_accumulators. Hold that to a single BANDB_R_BLOCK_BYTES
             # budget => R_BLOCK <= budget / (itemsize * n_carried).
-            # EDIT#5 (v2 — re-keyed onto num_carried_accumulators per fact-integrity):
-            # jsd carries 2 (intermediate_loss + intermediate_dX) -> 16384/(4*2)=2048;
-            # kl_div carries 1 (loss_sum; its [M,R] kl_loss is in-loop SCRATCH, NOT
-            # carried) -> 16384/(4*1)=4096, byte-IDENTICAL to before. Closes jsd to
-            # oracle parity (full oracle 1.21@narrow + 1.03@wide both want R_BLOCK
-            # 2048; V-INDEPENDENT, no-regression wide; A/B +19%/+10%/+2.4%,
-            # run3_bandb_nro_ab). The divisor is num_carried_accumulators — the
-            # FAITHFUL count of [M,R] tiles in the reduction loop's carry set — NOT
-            # a raw ReductionLowering count (the rejected ÷nro proxy, which equals the
-            # carried count only under a 1:1 reduction<->accumulator structure; it
-            # mis-sizes N reductions on ONE carried tile [under-sizes] or M tiles
-            # reduced fewer times [over-sizes -> spill]) and NOT num_reduction_tiles (over-counts
-            # in-loop scratch like kl_loss -> would over-divide). Gated on the WORKLOAD
-            # properties num_reduction_tiles>=1 (Band-B routing) + carried-count
-            # divisor, NOT kernel identity — any Band-B reduction's chunk scales as
-            # 1/n_carried (the TRANSFER tv_distance probe carries 1 -> stays 4096 like
-            # kl_div). jsd is the sole firer by curriculum incidence, not a fence.
-            # Scalar-/row-accumulator T2 (softmax_two_pass, num_reduction_tiles==0)
+            #
+            # num_carried_accumulators is the SINGLE Band-B signal — it both ROUTES
+            # (>= 1 here) and SIZES (the divisor below). Both uses want the SAME
+            # faithful quantity: the count of [M,R] tiles genuinely resident across
+            # the loop. Routing on a coarser [M,R]-buffer-CREATE count would key on
+            # allocation SYNTAX (a loaded x[tile_m, tile_n] and an hl.zeros tile have
+            # the same residency but differ in create-op count), so it is BOTH a
+            # weaker router AND the wrong divisor; the carry-set count is the right
+            # property for each. EDIT#5 (v2 — re-keyed onto num_carried_accumulators
+            # per fact-integrity): jsd carries 2 (intermediate_loss + intermediate_dX)
+            # -> 16384/(4*2)=2048; kl_div carries 1 (loss_sum; its [M,R] kl_loss is
+            # in-loop SCRATCH, excluded from the carry set) -> 16384/(4*1)=4096. Closes
+            # jsd to oracle parity (full oracle 1.21@narrow + 1.03@wide both want
+            # R_BLOCK 2048; V-INDEPENDENT, no-regression wide; A/B +19%/+10%/+2.4%,
+            # run3_bandb_nro_ab). NOT a raw ReductionLowering count (the rejected ÷nro
+            # proxy, which equals the carried count only under a 1:1
+            # reduction<->accumulator structure; it mis-sizes N reductions on ONE
+            # carried tile [under-sizes] or M tiles reduced fewer times [over-sizes ->
+            # spill]). Gated on the WORKLOAD property (carried-tile footprint), NOT
+            # kernel identity — any Band-B reduction's chunk scales as 1/n_carried (the
+            # TRANSFER tv_distance probe carries 1 -> stays 4096 like kl_div). jsd is
+            # the sole firer by curriculum incidence, not a fence. Scalar-/row-
+            # accumulator T2 (softmax_two_pass carries only [M_BLOCK]) -> carried==0 ->
             # stays persistent to the structural cap.
+            #
+            # max(1, n_carried): a routed kernel always has n_carried >= 1, so this is
+            # a defensive guard against a 0-divide, never the live divisor.
             bandb_cap = max(
                 1,
                 cls.BANDB_R_BLOCK_BYTES

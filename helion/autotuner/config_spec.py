@@ -106,41 +106,31 @@ class ReductionFact(NamedTuple):
       though precision is fixed fp32 for now.
     - ``num_load``: count of device memory loads over this rdim (used only as the
       ``== 1`` single-streamed-input gate for the stream-eviction policy).
-    - ``num_reduction_tiles``: count of ALL ``[M_BLOCK, R_BLOCK]`` 2D tiles
-      (``zeros``/``full``/``empty``) whose last dim spans the reduction axis,
-      materialized ANYWHERE in the device graphs (root OR inner-loop body). Named
-      for what it counts — 2D tiles that are PART OF the reduction — NOT
-      "accumulators": a tile created inside the inner loop lives only for that
-      iteration and is not necessarily a live/carried accumulator (that faithful
-      live-footprint count is ``num_carried_accumulators`` below). Used ONLY as the
-      Band-A-vs-Band-B ROUTING signal: ``>=1`` => an ``[M,R]``-tile reduction
-      exists => Band B. ``0`` for a scalar/row-accumulator (Band-A) reduction (T1,
-      or a T2 like softmax_two_pass that carries only ``[M_BLOCK]`` row state) —
-      those stay persistent to the structural cap. CAVEAT: this count is NOT the
-      carried-footprint count — it OVER-counts in-loop SCRATCH (kl_div allocates a
-      ``[M,R]`` ``kl_loss`` INSIDE the inner loop that dies each iteration -> not
-      carried, yet counted here: kl_div num_reduction_tiles==2). Over-counting
-      is BENIGN for routing (``>=1`` still routes to Band B), but it must NOT be
-      used to SIZE the R_BLOCK cap (that needs the carried count below). A WORKLOAD
-      property (a [M,R]-tile reduction exists), NOT kernel identity.
     - ``num_carried_accumulators``: count of ``[M_BLOCK, R_BLOCK]`` 2D accumulators
       genuinely CARRIED ACROSS the inner reduction loop — i.e. the loop-carried
       values (the inner reduction ``ForLoopGraphInfo``'s carry set / ``node_args``)
-      whose tile is 2D with last dim == the reduction extent. This is the FAITHFUL
-      live-resident-footprint count the Band-B R_BLOCK cap divides by: the inner
-      loop holds ``num_carried_accumulators`` such tiles resident simultaneously,
-      so footprint = ``R_BLOCK * itemsize * num_carried_accumulators``. UNLIKE
-      ``num_reduction_tiles`` it EXCLUDES in-loop scratch (kl_div's ``kl_loss``
-      is created inside the loop body, is NOT in the loop carry set -> excluded:
-      kl_div num_carried_accumulators==1; jsd carries ``intermediate_loss`` +
-      ``intermediate_dX`` -> ==2). UNLIKE a raw ReductionLowering count (the
-      rejected ÷nro proxy) it tracks the CARRIED-TILE count, not the reduction-op
-      count — the two coincide only under a 1:1 reduction<->accumulator structure
-      (jsd/kl_div), and diverge on a kernel that runs N reductions on ONE carried
-      accumulator (nro=N, carried=1) or carries M accumulators reduced fewer times
-      (nro<M, carried=M). Computed from the reduction loop's carry set
-      (existing provenance), NOT a reduction-op or buffer-create count. A WORKLOAD
-      property (live carried-tile footprint), NOT kernel identity.
+      whose tile is 2D with last dim == the reduction extent. This is the SINGLE
+      Band-B signal: it both ROUTES (``>= 1`` => an ``[M,R]``-accumulator reduction
+      => Band B; ``0`` for a scalar/row-accumulator reduction — every T1 kernel, or
+      a T2 like softmax_two_pass that carries only ``[M_BLOCK]`` row state — which
+      stays persistent to the structural cap) AND SIZES the R_BLOCK cap (the inner
+      loop holds ``num_carried_accumulators`` such tiles resident simultaneously, so
+      the live footprint is ``R_BLOCK * itemsize * num_carried_accumulators``, held
+      to a single byte budget => ``R_BLOCK <= budget / (itemsize * n_carried)``).
+      It is the FAITHFUL live-resident-footprint count: it counts ONLY the loop
+      carry set, so it EXCLUDES in-loop scratch (kl_div allocates a ``[M,R]``
+      ``kl_loss`` INSIDE the loop body that dies each iteration and is NOT in the
+      carry set -> excluded: kl_div num_carried_accumulators==1; jsd carries
+      ``intermediate_loss`` + ``intermediate_dX`` -> ==2). It supersedes two rejected
+      proxies for this role: a raw ``[M,R]``-buffer-CREATE count (over-counts the
+      scratch tile -> would mis-route AND over-divide kl_div) and a raw
+      ReductionLowering count (the ÷nro proxy: equals the carried count only under a
+      1:1 reduction<->accumulator structure, and diverges on a kernel that runs N
+      reductions on ONE carried accumulator [nro=N, carried=1] or carries M
+      accumulators reduced fewer times [nro<M, carried=M]). Computed from the
+      reduction loop's carry set (existing provenance), NOT a reduction-op or
+      buffer-create count. A WORKLOAD property (live carried-tile footprint), NOT
+      kernel identity.
     - ``is_structured_combine``: True for a Band-C STRUCTURED-COMBINE reduction —
       a two-pass *reduce-then-apply* kernel that tiles the SAME inner extent with
       MORE THAN ONE non-grid user tile: a combine pass (the inner reduction,
@@ -188,7 +178,6 @@ class ReductionFact(NamedTuple):
     static_rnumel: int | None
     itemsize: int
     num_load: int
-    num_reduction_tiles: int = 0
     num_carried_accumulators: int = 0
     is_structured_combine: bool = False
     apply_block_ids: tuple[int, ...] = ()
