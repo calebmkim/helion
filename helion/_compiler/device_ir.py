@@ -646,6 +646,61 @@ def _fx_trace_tensor_arg_rw_names(
     return out2
 
 
+def _reduction_node_ids(graph: torch.fx.Graph, red_block_id: int) -> set[int]:
+    """``id()`` of every ``ReductionLowering`` node in ``graph`` whose reduction is
+    over ``red_block_id``. The "cut set" the reduction-input dataflow walk stops at
+    (see :func:`_classify_load_dataflow`)."""
+    from .inductor_lowering import ReductionLowering
+
+    return {
+        id(nd)
+        for nd in graph.nodes
+        if isinstance(nd.meta.get("lowering"), ReductionLowering)
+        and getattr(nd.meta["lowering"], "block_index", None) == red_block_id
+    }
+
+
+def _classify_load_dataflow(
+    load_node: torch.fx.Node, redset: set[int]
+) -> tuple[set[int], bool]:
+    """Trace a load's value FORWARD (over ``node.users``), cutting AT the reductions
+    in ``redset``, and classify what it reaches. Returns
+    ``(reductions_fed, reaches_bypass_store)``:
+
+    - ``reductions_fed``: the set of ``redset`` reduction-node ids this load's value
+      flows into (recorded then NOT traversed through — we want where the *row* goes,
+      not what happens to the reduced result).
+    - ``reaches_bypass_store``: True iff the value reaches a ``store`` on a path that
+      does NOT pass through a reduction (i.e. the row is used OUTSIDE the reduction —
+      an apply/normalize that writes it back, so it is live across the boundary).
+
+    One traversal serves every reduction-input dataflow question:
+    ``_compute_row_reread`` reads both fields (``len(reductions_fed) >= 2`` OR
+    ``reaches_bypass_store`` => reread); ``_compute_reread_buffer_slots`` reads only
+    ``bool(reductions_fed)`` (is this load a reduction input?). Cutting at ``redset``
+    and the per-node predicates are pure, so collecting both signals in one shared
+    ``seen`` walk is equivalent to the two separate walks it replaces.
+    """
+    from ..language.memory_ops import store as _store_op
+
+    reductions_fed: set[int] = set()
+    reaches_bypass_store = False
+    seen: set[int] = set()
+    stack = list(load_node.users)
+    while stack:
+        u = stack.pop()
+        if id(u) in redset:
+            reductions_fed.add(id(u))
+            continue  # do not traverse THROUGH the reduction
+        if id(u) in seen:
+            continue
+        seen.add(id(u))
+        if u.op == "call_function" and u.target is _store_op:
+            reaches_bypass_store = True
+        stack.extend(u.users)
+    return reductions_fed, reaches_bypass_store
+
+
 def _reduction_fx_inter_loop_rw_names(
     graph: torch.fx.Graph,
     host: HostFunction,
@@ -1221,52 +1276,24 @@ class DeviceIR:
         tile's dataflow specifically — closing the "any >= 2-graph buffer" loophole.
         Dataflow-, not coding-style-dependent (softmax_decomposed=True too). The
         EVICTION consumer's per-slot ``reread_buffer_slots`` is a SEPARATE, finer
-        computation off the same resolver (``_compute_reread_buffer_slots``).
+        computation off the SHARED dataflow walk (``_classify_load_dataflow``).
         """
         from ..language.memory_ops import load as _load_op
-        from ..language.memory_ops import store as _store_op
-        from .inductor_lowering import ReductionLowering
 
         for gi in self.graphs:
             g = gi.graph
-            redset = {
-                id(nd)
-                for nd in g.nodes
-                if isinstance(nd.meta.get("lowering"), ReductionLowering)
-                and getattr(nd.meta["lowering"], "block_index", None) == red_block_id
-            }
+            redset = _reduction_node_ids(g, red_block_id)
             if not redset:
                 continue
             for node in g.find_nodes(op="call_function", target=_load_op, sort=False):
-                # which red_block_id-reductions does this load feed (cut AT them)?
-                feeds: set[int] = set()
-                seen: set[int] = set()
-                stack = list(node.users)
-                while stack:
-                    u = stack.pop()
-                    if id(u) in redset:
-                        feeds.add(id(u))
-                        continue  # do not traverse THROUGH the reduction
-                    if id(u) in seen:
-                        continue
-                    seen.add(id(u))
-                    stack.extend(u.users)
+                feeds, reaches_bypass_store = _classify_load_dataflow(node, redset)
                 if not feeds:
-                    continue
-                if len(feeds) >= 2:  # disjunct A: feeds >= 2 reductions
+                    continue  # this load's value never reaches our reduction
+                # Disjunct A: the row feeds >= 2 reductions (softmax/CE max+sum).
+                # Disjunct B: the row also reaches a store bypassing the reduction
+                # (rms_norm/layer_norm/welford apply pass -> live across the boundary).
+                if len(feeds) >= 2 or reaches_bypass_store:
                     return True
-                # disjunct B: the loaded tile reaches a store on a path BYPASSING the
-                # reduction (used outside the reduction = live across the boundary)
-                seen2: set[int] = set()
-                stack = list(node.users)
-                while stack:
-                    u = stack.pop()
-                    if id(u) in redset or id(u) in seen2:
-                        continue
-                    seen2.add(id(u))
-                    if u.op == "call_function" and u.target is _store_op:
-                        return True
-                    stack.extend(u.users)
         return False
 
     def _compute_reread_buffer_slots(self, red_block_id: int) -> tuple[int, ...]:
@@ -1293,38 +1320,22 @@ class DeviceIR:
         jsd -> () (no HBM-re-read reduction input).
         """
         from ..language.memory_ops import load as _load_op
-        from .inductor_lowering import ReductionLowering
 
         host = HostFunction.current()
 
         # (b) REDUCTION-INPUT buffers: a loaded tile whose value reaches a
-        # ReductionLowering(red_block_id) (cut AT the reduction). A consumer-dataflow
-        # trace — so a broadcast that's never reduced is NOT a reduction input even if
-        # it is re-loaded across passes.
+        # ReductionLowering(red_block_id) (cut AT the reduction; the SHARED
+        # _classify_load_dataflow walk — here we need only whether it feeds the
+        # reduction at all). A broadcast that's never reduced is NOT a reduction
+        # input even if it is re-loaded across passes.
         reduction_input_buffers: set[str] = set()
         for gi in self.graphs:
             g = gi.graph
-            redset = {
-                id(nd)
-                for nd in g.nodes
-                if isinstance(nd.meta.get("lowering"), ReductionLowering)
-                and getattr(nd.meta["lowering"], "block_index", None) == red_block_id
-            }
+            redset = _reduction_node_ids(g, red_block_id)
             if not redset:
                 continue
             for node in g.find_nodes(op="call_function", target=_load_op, sort=False):
-                seen: set[int] = set()
-                stack = list(node.users)
-                feeds = False
-                while stack:
-                    u = stack.pop()
-                    if id(u) in redset:
-                        feeds = True
-                        break  # do not traverse THROUGH the reduction
-                    if id(u) in seen:
-                        continue
-                    seen.add(id(u))
-                    stack.extend(u.users)
+                feeds, _ = _classify_load_dataflow(node, redset)
                 if feeds:
                     reduction_input_buffers.update(
                         _fx_trace_tensor_arg_rw_names(host, node.args[0])
