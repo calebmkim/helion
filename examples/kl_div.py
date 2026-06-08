@@ -70,6 +70,13 @@ def kl_div_forward(
 
     Returns:
         loss: KL divergence loss
+
+    Precision note: use bf16 or fp32, NOT fp16, at realistic vocabularies. The target
+    probabilities (~1/V) underflow fp16's 5-bit exponent (min normal ~6e-5) to 0 for
+    V >= ~30k; then log(0) = -inf and 0 * -inf = NaN, so the whole row is NaN. bf16
+    shares fp32's 8-bit exponent and is safe. Mixed-precision training keeps loss
+    kernels in bf16/fp32 (autocast runs softmax/log/loss in fp32) for exactly this
+    reason, so fp16-wide-V is not a real workload (it is skipped in the dtype harness).
     """
     BT, V = y_pred.shape
     assert y_true.shape == y_pred.shape, (

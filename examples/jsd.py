@@ -67,6 +67,12 @@ def jsd_forward(
     Returns:
         loss: Scalar JSD loss
         dX: Gradient of loss wrt input
+
+    Precision note: use bf16 or fp32, NOT fp16, at realistic vocabularies. exp(X)/exp(Y)
+    of the log-softmax inputs are probabilities ~1/V that underflow fp16's 5-bit exponent
+    to 0 for wide V; then log(M) = log(0) = -inf and 0 * inf = NaN. bf16 (fp32-range
+    exponent) is safe. fp16-wide-V is not a real workload and is skipped in the dtype
+    harness; the loss/dX accumulators here are already fp32.
     """
     BT, V = _input.shape
     assert target.shape == _input.shape, (
