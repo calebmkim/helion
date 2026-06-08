@@ -1130,6 +1130,8 @@ class DeviceIR:
                 full_width_output=self._has_full_width_output_store(
                     red_block_id, size_hint
                 ),
+                grid_rows=self._grid_rows(m_block_ids),
+                input_load_itemsize=self._input_load_itemsize(red_block_id),
             )
         )
 
@@ -1198,6 +1200,61 @@ class DeviceIR:
                             itemsize = in_val.element_size()
                             break
         return num_load, itemsize
+
+    def _input_load_itemsize(self, red_block_id: int) -> int:
+        """Element size (bytes) of the widest HBM *input row load* feeding the reduction
+        over ``red_block_id`` — the dtype-faithful per-byte signal, distinct from
+        ``ReductionFact.itemsize``.
+
+        ``itemsize`` (``_count_reduction_workload``) reads the reduction *input* node,
+        which Helion promotes to fp32 for the norm/softmax family (rms_norm/layer_norm/
+        softmax reduce ``x.to(fp32)``), so it is 4 at BOTH bf16 and fp32 there and cannot
+        tell the dtypes apart. This reads the actual ``hl.load`` of the row from HBM (the
+        store buffer's element size, pre-promotion): 2 for a bf16/fp16 row, 4 for fp32 —
+        a faithful, dtype-AGNOSTIC workload property (the HBM-load width), NOT a dtype-kind
+        branch. Used to scale the occupancy threshold of the narrow-row fewer-warps lever
+        (a 2 B/elem row stays in the fewer-warps regime to ~2x the occupancy of a 4 B row).
+
+        Returns the MIN element size over the reduction-fed loads (the row itself; a
+        broadcast weight shares the dtype). 0 if no row load feeds the reduction (kl_div/
+        jsd carry 2-D tiles with no single reduction-fed row load — the lever does not fire
+        there, and 0 reads as "unknown", disabling the byte-scaled branch).
+        """
+        from ..language.memory_ops import load as _load_op
+
+        sizes: list[int] = []
+        for graph_info in self.graphs:
+            graph = graph_info.graph
+            redset = _reduction_node_ids(graph, red_block_id)
+            if not redset:
+                continue
+            for node in graph.find_nodes(
+                op="call_function", target=_load_op, sort=False
+            ):
+                feeds, _bypass = _classify_load_dataflow(node, redset)
+                if not feeds:
+                    continue
+                fake = _accessed_tensor_fake(node)
+                if fake is not None:
+                    sizes.append(fake.element_size())
+        return min(sizes) if sizes else 0
+
+    def _grid_rows(self, m_block_ids: tuple[int, ...]) -> int:
+        """Product of the static M-axis (non-reduction grid) extents — the program count
+        the reduction launches, the numerator of the occupancy ``grid_rows // num_sm``.
+        0 if any extent is not a statically-resolvable size (a dynamic/jagged grid has no
+        compile-time occupancy, so the occupancy-gated lever declines). Computed at fact
+        time so the seed needs no env walk; the existing ``persistent_interleaved`` branch
+        computes the same product at emit time.
+        """
+        env = CompileEnvironment.current()
+        grid_rows = 1
+        for mbid in m_block_ids:
+            size = env.block_sizes[mbid].size
+            if not isinstance(size, (int, torch.SymInt)):
+                return 0
+            grid_rows *= env.size_hint(size)
+        return grid_rows
 
     def _count_carried_2d_tiles(self, red_block_id: int) -> int:
         """Count 2-D ``[M_BLOCK, R_BLOCK]`` tiles carried across the inner reduction
@@ -1508,6 +1565,8 @@ class DeviceIR:
             full_width_output=self._has_full_width_output_store(
                 rdim.block_id, size_hint
             ),
+            grid_rows=self._grid_rows(m_block_ids),
+            input_load_itemsize=self._input_load_itemsize(rdim.block_id),
         )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:

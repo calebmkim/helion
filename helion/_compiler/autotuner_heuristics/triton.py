@@ -354,11 +354,41 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # bytes for 8 warps to cover. cross_entropy bf16 V<=~50k lives here (+35-49%).
     REREAD_W8_MAX_BYTES = 102400
 
+    # NARROW-row single-warp (occupancy-gated). A narrow reduction extent wants ONE warp:
+    # the cross-warp reduction tree (shared-mem + __syncthreads) is pure overhead when each
+    # warp's slice is tiny, and w1 reduces in-register via shuffle (0 shared traffic, 0
+    # barriers). The win INVERTS to a >10% (up to 6x) regression past an occupancy ceiling
+    # (the SMs saturate, so more warps amortize), so it is gated on BOTH a row-byte cap and
+    # an occupancy cap. Both caps key on the INPUT-LOAD byte width (``input_load_itemsize``:
+    # 2 bf16/fp16, 4 fp32) so they scale ~2x with dtype — the measured crossover shift —
+    # WITHOUT a dtype-kind branch (faithful: the HBM-load element size IS a workload
+    # property). NOT ``itemsize`` (the fp32-promoted accumulator width = 4 at BOTH dtypes
+    # for the norm/softmax family, which cannot discriminate — the bug that admitted softmax
+    # fp32 (32768,512) at +19.6% in an earlier fixed-occ attempt).
+    #   - row cap: ``rnumel * input_load_itemsize <= NARROW_W1_MAX_BYTES`` (bf16 rnumel<=1024,
+    #     fp32 rnumel<=512). Above it the row is wide enough that 1 warp under-utilizes.
+    #   - occ cap: ``grid_rows // num_sm <= NARROW_W1_OCC_BYTES // input_load_itemsize``
+    #     (bf16 occ<=256, fp32 occ<=128). Above it the cliff: w32 wins by up to 6x.
+    # CUDA-graph-fit across softmax/rms_norm/layer_norm/sum/welford/cross_entropy x bf16/fp32:
+    # in the fired zone w1 beats the ramp by up to +62% (softmax bf16) with worst regression
+    # ~2.3% vs the cell-best. Disabled when input_load_itemsize==0 (kl_div/jsd: 2-D carried
+    # tiles, no single reduction-fed row load — and forcing w1 there regresses up to +46%).
+    NARROW_W1_MAX_BYTES = 2048
+    NARROW_W1_OCC_BYTES = 512
+
     @classmethod
-    def _num_warps(cls, fact: ReductionFact) -> int:
+    def _num_warps(cls, fact: ReductionFact, num_sm: int = 0) -> int:
         """Scale num_warps with the reduction extent (pow2, per NumWarpsFragment):
         rnumel <= 1024 -> 4, <= 4096 -> 8, <= 16384 -> 16, > 16384 -> 32. Too few
         under-occupies the SM, too many wastes the reduction tree.
+
+        NARROW-row single-warp refinement at the LOW end (the occupancy-gated lever): a
+        narrow row at low/moderate occupancy wants ONE warp (the cross-warp reduction tree
+        is pure overhead — see ``NARROW_W1_MAX_BYTES``). Fires only when BOTH the row-byte
+        cap and the occupancy cap (both keyed on ``input_load_itemsize`` so they scale ~2x
+        with dtype, faithfully, no dtype-kind branch) hold; needs ``num_sm`` (0 disables it,
+        e.g. an off-device caller). Disjoint from the wide-row w8/w32 branch below
+        (``NARROW_W1_MAX_BYTES`` << the rnumel>16384 region), so the two never interact.
 
         One dtype-aware refinement at the WIDE end (rnumel > 16384): a REDUCTION-BOUND row
         — re-read (``row_reread``, i.e. live across >=2 reductions, e.g. cross_entropy's
@@ -376,14 +406,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         is dtype-AGNOSTIC (not an fp32-vs-half switch): the byte cap simply means a 4-byte fp32
         row hits the cap at half the extent of a 2-byte row, so realistic fp32 vocabs (V>=30522
         -> >cap) stay w32 while the common bf16 vocabs (V~32k/50k -> <=cap) get w8; fp32 CE in
-        V in [16384,25600] does fire w8 and also benefits. (The NARROW-row fewer-warps want is
-        also real but OCCUPANCY-gated, not extent-gated — deferred pending a grid_rows fact; a
-        narrow byte-ramp was reverted.)
+        V in [16384,25600] does fire w8 and also benefits. (The NARROW-row fewer-warps want,
+        the opposite low-extent regime, is the occupancy-gated w1 branch above.)
         """
+        rnumel = fact.size_hint
+        # NARROW-row single-warp: a narrow row at low/moderate occupancy. Both caps key on
+        # the input-load byte width (dtype-faithful), and the occupancy needs num_sm; an
+        # input_load_itemsize of 0 (kl_div/jsd, or unknown) disables it.
+        ils = fact.input_load_itemsize
+        if num_sm > 0 and ils > 0 and rnumel * ils <= cls.NARROW_W1_MAX_BYTES:
+            occ = fact.grid_rows // num_sm
+            if occ <= cls.NARROW_W1_OCC_BYTES // ils:
+                return 1
         # >16384 (not >=) so sum's widest in-sample row (16384) stays w16, excluding the
         # tiny-rnumel w32 regression.
         warps32_min_elems = 16384
-        rnumel = fact.size_hint
         if rnumel > warps32_min_elems:
             # Reduction-bound (re-read, scalar output) wide rows want fewer warps; the byte cap
             # caps the resident-row footprint (so wide fp32, 4 B/elem, hits it sooner than bf16)
@@ -522,6 +559,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         tighter), so only rms_norm/layer_norm/softmax/cross_entropy/welford are steered.
         """
         from ..._utils import next_power_of_2 as _np2
+        from ...runtime import get_num_sm
 
         # Persistent iff BOTH: the element cap (None => no cap, a compile limit) AND the
         # byte ceiling (a residency limit) — distinct limits.
@@ -531,9 +569,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         )
 
         if can_persist:
+            # num_sm feeds the occupancy-gated narrow-row w1 branch in _num_warps.
+            num_sm = max(1, get_num_sm(env.device))
             # Persistent: T1 encodes the extent as reduction_loops=None; T2 as the full
             # pow2 R_BLOCK so the inner `for tile_n` runs once.
-            return True, _np2(fact.size_hint), cls._num_warps(fact)
+            return True, _np2(fact.size_hint), cls._num_warps(fact, num_sm)
         # Looped: exceeds the 2**20 or byte cap. Fixed chunk + high streaming warps.
         return False, cls.LOOPED_CHUNK, cls.LOOPED_NUM_WARPS
 
