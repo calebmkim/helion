@@ -347,17 +347,53 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # so for the welford shapes (N<=8192).
     STRUCTURED_COMBINE_CAP_BYTES = 32768
 
+    # A wide half-precision REDUCTION-BOUND row (re-read for multiple reductions, no
+    # full-width output store) whose reduction-tree footprint is <= this many bytes prefers
+    # w8 over w32: the cross-warp shared-memory reduction tree dominates and grows ~linearly
+    # with warp count, so fewer warps win once the half-precision row is small enough in
+    # bytes for 8 warps to cover. cross_entropy bf16 V<=~50k lives here (+35-49%).
+    REREAD_W8_MAX_BYTES = 102400
+
     @classmethod
     def _num_warps(cls, fact: ReductionFact) -> int:
         """Scale num_warps with the reduction extent (pow2, per NumWarpsFragment):
         rnumel <= 1024 -> 4, <= 4096 -> 8, <= 16384 -> 16, > 16384 -> 32. Too few
         under-occupies the SM, too many wastes the reduction tree.
+
+        One dtype-aware refinement at the WIDE end (rnumel > 16384): a REDUCTION-BOUND row
+        — re-read (``row_reread``, i.e. live across >=2 reductions, e.g. cross_entropy's
+        amax+sum) AND with a per-row SCALAR output (``not full_width_output``: it does NOT
+        store the whole [M, N] row back, so the kernel is not store/occupancy-bound) — over
+        a wide half-precision row whose reduction-tree footprint is <= ``REREAD_W8_MAX_BYTES``
+        (size_hint * itemsize) prefers w8 over w32. ncu: at w32 the cross-warp shared-memory
+        reduction tree is ~4x costlier (bank conflicts) and throttles the read pipeline;
+        fewer warps win because the kernel is reduction-tree-bound on a tiny output.
+        CUDA-graph-validated M-stable (occ 15-124) and zero-regression: cross_entropy bf16 at
+        V=32000/50257 is ~35-49% faster. Excluded by faithful facts (NOT kernel identity):
+        sum/long_sum (not re-read -> single reduction, want w32); layer_norm/softmax/welford/
+        rms_norm (full_width_output -> store/occupancy-bound, want w32 — keying on num_load
+        instead regressed layer_norm ~32%); kl_div/jsd (streaming, not re-read). The mechanism
+        is dtype-AGNOSTIC (not an fp32-vs-half switch): the byte cap simply means a 4-byte fp32
+        row hits the cap at half the extent of a 2-byte row, so realistic fp32 vocabs (V>=30522
+        -> >cap) stay w32 while the common bf16 vocabs (V~32k/50k -> <=cap) get w8; fp32 CE in
+        V in [16384,25600] does fire w8 and also benefits. (The NARROW-row fewer-warps want is
+        also real but OCCUPANCY-gated, not extent-gated — deferred pending a grid_rows fact; a
+        narrow byte-ramp was reverted.)
         """
         # >16384 (not >=) so sum's widest in-sample row (16384) stays w16, excluding the
         # tiny-rnumel w32 regression.
         warps32_min_elems = 16384
         rnumel = fact.size_hint
         if rnumel > warps32_min_elems:
+            # Reduction-bound (re-read, scalar output) wide rows want fewer warps; the byte cap
+            # caps the resident-row footprint (so wide fp32, 4 B/elem, hits it sooner than bf16)
+            # and full-width/non-reread kernels stay on the w32 default.
+            if (
+                fact.row_reread
+                and not fact.full_width_output
+                and rnumel * max(1, fact.itemsize) <= cls.REREAD_W8_MAX_BYTES
+            ):
+                return 8
             return 32
         if rnumel <= 1024:
             return 4

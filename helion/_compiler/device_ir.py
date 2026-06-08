@@ -1127,6 +1127,9 @@ class DeviceIR:
                 non_reduction_loop_block_ids=non_reduction_loop_block_ids,
                 row_reread=row_reread,
                 reread_buffer_name=reread_buffer_name,
+                full_width_output=self._has_full_width_output_store(
+                    red_block_id, size_hint
+                ),
             )
         )
 
@@ -1328,6 +1331,43 @@ class DeviceIR:
         reread_buffer_name = next((nm for nm in first_seen if nm in hbm_reread), None)
         return row_reread, reread_buffer_name
 
+    def _has_full_width_output_store(self, red_block_id: int, size_hint: int) -> bool:
+        """True iff some store writes a tensor over the reduction extent — i.e. the
+        reduction's result is written back FULL-WIDTH ([M, N]: layer_norm/softmax/welford/
+        rms_norm normalize and store the whole row) rather than collapsed to a per-row
+        scalar ([M]: cross_entropy loss, sum). Distinguishes two reductions that are
+        otherwise identical on every other fact but want opposite num_warps at a wide
+        half-precision row (a full-width store is occupancy/store-bound -> more warps; a
+        scalar-output reduction is reduction-tree-bound -> fewer warps). Faithful: keys on
+        the store's indexed extent, not kernel identity.
+
+        A store is full-width iff its target is rank>=2 and the inner store dim is sized to
+        the reduction extent and written by a tile / full slice (not a bare-int scalar).
+        Keyed on the extent-SIZE match, not the reduction ``block_id`` — welford's apply
+        loop stores over a different block_id (its normalize tile) than the combine, yet is
+        still a full-width [M, N] write. ``red_block_id`` is accepted for signature symmetry.
+        """
+        from ..language.memory_ops import store as _store_op
+
+        for gi in self.graphs:
+            for node in gi.graph.find_nodes(
+                op="call_function", target=_store_op, sort=False
+            ):
+                index_list = node.args[1] if len(node.args) >= 2 else None
+                if not isinstance(index_list, (list, tuple)) or not index_list:
+                    continue
+                target_val = node.args[0].meta.get("val")
+                if not isinstance(target_val, torch.Tensor) or target_val.ndim < 2:
+                    continue  # a rank-1 store ([M]) is a per-row scalar output
+                if int(target_val.shape[-1]) != int(size_hint):
+                    continue  # inner store dim is not the reduction-width dim
+                last = index_list[-1]
+                # full slice ``out[..., :]`` or a tile ``out[..., tile_n]`` -> full-width;
+                # a bare int (single column) is a scalar-ish store.
+                if not isinstance(last, int):
+                    return True
+        return False
+
     def reread_eviction_slot_for_config(
         self,
         reread_buffer_name: str | None,
@@ -1465,6 +1505,9 @@ class DeviceIR:
             non_reduction_loop_block_ids=non_reduction_loop_block_ids,
             row_reread=row_reread,
             reread_buffer_name=reread_buffer_name,
+            full_width_output=self._has_full_width_output_store(
+                rdim.block_id, size_hint
+            ),
         )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:

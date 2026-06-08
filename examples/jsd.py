@@ -99,7 +99,11 @@ def jsd_forward(
                     dX[tile_bt, tile_X] = 0.0
                 continue
         intermediate_loss = hl.zeros([tile_bt, block_size_n], dtype=torch.float32)
-        intermediate_dX = hl.zeros([tile_bt, block_size_n], dtype=_input.dtype)
+        # Accumulate dX in fp32 (the loop body's exp/log math promotes to fp32, so a
+        # _input.dtype accumulator mismatches the carried value at bf16/fp16 ->
+        # ControlFlowTensorMismatch; fp32 also matches intermediate_loss, the fp32 dX
+        # output, and is a no-op at fp32 input).
+        intermediate_dX = hl.zeros([tile_bt, block_size_n], dtype=torch.float32)
         for tile_v in hl.tile(V, block_size=block_size_n):
             # Load log probabilities and convert to float32
             X = _input[tile_bt, tile_v]

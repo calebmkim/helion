@@ -110,6 +110,12 @@ class ReductionFact(NamedTuple):
       ``row_reread``) — the *which buffer*, not *which slot*. Config-independent; the seed
       resolves the slot at emit time via ``reread_eviction_slot_for_config``. See
       ``_analyze_reread``.
+    - ``full_width_output``: True iff a store writes the result back over the reduction
+      axis ([M, N] full-width: layer_norm/softmax/welford/rms_norm normalize the row),
+      False for a per-row scalar output ([M]: cross_entropy loss, sum). Two reductions
+      identical on every other fact can want opposite ``num_warps`` at a wide half-precision
+      row — full-width is store/occupancy-bound (more warps), scalar-output is
+      reduction-tree-bound (fewer warps). See ``_has_full_width_output_store``.
     """
 
     block_id: int
@@ -122,6 +128,7 @@ class ReductionFact(NamedTuple):
     non_reduction_loop_block_ids: tuple[int, ...] = ()
     row_reread: bool = False
     reread_buffer_name: str | None = None
+    full_width_output: bool = True
 
 
 class MemoryOpFact(NamedTuple):
