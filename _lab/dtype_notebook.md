@@ -8,10 +8,24 @@ Source of truth (method §6.1): THIS notebook + `_lab/ledger.json` key `dtype`. 
 over context. Wins AND rejections recorded as one-liners with evidence pointers.
 
 ## ⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-08, D4 BUILD session) — READ FIRST
-**Human explicitly asked to BUILD D4 (the deferred narrow-N occupancy win). DONE + committed @ `3408c4f5`
-(NOT FOR PR MERGE pending gates). The genuine grid_rows//num_sm path the prior assessment said was
-needed is now built and measurement-validated; Path-A poison cell structurally excluded. GATES PENDING
-(Gate A/D/F) — do those next before banking as a confirmed win.**
+**Human asked to BUILD D4 (deferred narrow-N occupancy win) — DONE, GATE-CONFIRMED, BANKED.**
+Branch `reduction-pr-with-lab` tip ~`e70e0a79`. D4 = SHIPPED WIN #3. Commits:
+`3408c4f5` D4 code → `7b9f476d` notebook → `f1869309` gate verdicts → `d666933e` report →
+`fa63c50d` fp32-cap decision → `e70e0a79` dynamic-grid hardening. NO git push.
+
+**GATES ALL PASS** (ledger `D4_narrowN_w1_gate_suite` + `D4_no_regression_config_proof`):
+Gate A 3/3 NOT-refuted (softmax bf16 +20-26%, welford +33%, held-out (8192,768) +61%; danger cells
+excluded; noise≪signal). Gate D faithful (both new facts; input_load_itemsize diverges from fact.itemsize
+exactly where needed). Gate F mechanism (cross-warp reduction-tree overhead; boundary verified
+occ124 w1+52%→occ497 w8+2%→occ993 w8+29%). Gate E no overfit. NO-REGRESSION config-proof: 777-cell
+BEFORE(ab9dcb98)/AFTER, 39 diffs ALL num_warps→1 in the predicted narrow zone, ZERO non-warp diffs, fp32
+invariant except softmax (16384,512) (−0.3% = NOISE; logged keep-cap decision, net +6.5% on 22 fp32 cells).
+Dynamic-grid hardening (`e70e0a79`): require grid_rows>0 so jagged/dynamic-M (unknown occ) declines.
+
+**REFRAME (human, mid-run): oracle≤tc does NOT excuse a seed<oracle gap. Re-aim exempt losers at oracle
+parity (~5%), not tc.** See [[feedback-oracle-parity-not-tc-exemption]]. D4 already rescues 3 prior-"exempt"
+shapes (welford (16384,896), rms/ln narrow). IN FLIGHT (task #6): fresh full-oracle re-audit of welford
+mid-N (5120/7168/14336) bf16 + jsd bf16 → /tmp/oracle_reaudit.json.
 
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
