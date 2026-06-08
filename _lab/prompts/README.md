@@ -1,17 +1,18 @@
-# Originating prompts / context (dev reference, not shipped)
+# Prompts directory — read order
 
-These files are the originating prompts and shape-curriculum context for the
-reduction-heuristics work, copied verbatim from the dev box's `local/` dir
-(outside any git checkout) so the branch is self-contained for handoff to
-another machine. They are **dev context only** — not part of the shippable diff.
+**The AUTHORITATIVE prompt set for the current (dtype) run is these four files, in order:**
 
-- `reduction-heuristics-run2-prompt.md` — the run-2 driving prompt.
-- `reduction-heuristics-wip.md` — running WIP notes/scope.
-- `shapes_v3_draft.py` — the v3 shape curriculum (train/val/test/coverage/
-  robustness/transfer shapes for the 9 reduction kernels).
+1. `hillclimb-method.md` — the durable, task-agnostic method (the loop, the gates, the discipline).
+2. `local-setup.md` — this machine's concrete facts (paths, GPU, scripts, env knobs, resume state).
+3. `gate-prompts.md` — verbatim adversarial-gate frames (gates A–F).
+4. `dtype-task.md` — the *what* for this run (extend the reduction seed heuristic to bf16/fp16).
 
-**`shapes_v3_draft.py` supersedes the earlier shape lists** referenced in the
-two prompt `.md` files — treat it as the current source of truth for shapes.
+These four override anything else you find in this repo. **Everything below is SUPERSEDED** —
+prior-run lineage kept only as reference; do not drive from it:
 
-See `_lab/HANDOFF_run2.md` for the run-2 orientation and `_lab/HANDOFF_run3_perf_dig.md`
-for the in-progress run-3 perf dig.
+- `reduction-heuristics-run2-prompt.md`, `reduction-heuristics-wip.md`,
+  `reduction-heuristics-standalone.md`, `hub-kickoff.md`, `server-specific-setup.md` — old prompts
+  (earlier framework / a different machine's setup). Stale paths and stale orchestration model.
+- `shapes_v3_draft.py` — still current: the v3 shape curriculum (the 9 reduction kernels +
+  transfer), referenced by the authoritative set. fp32-baked today (a dtype axis is part of this
+  run's setup).

@@ -22,9 +22,15 @@ import statistics
 import subprocess
 import sys
 
-PR = "/home/dev/local/helion-pr-edit"
-PY = "/home/dev/helion/.venv/bin/python"
-sys.path.insert(0, "/home/dev/local/helion-reduction-heuristics-run2/_lab/prompts")
+# Portable: derive the worktree root from this file's location (<root>/_lab/bench/<this>).
+# Override with HELION_WORKTREE / HELION_PY if you've moved things. Paths may not be 100% portable
+# across machines — if an import/path fails, repoint with your judgement; don't expect perfection.
+PR = os.environ.get(
+    "HELION_WORKTREE",
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+)
+PY = os.environ.get("HELION_PY", "/home/dev/helion/.venv/bin/python")
+sys.path.insert(0, os.path.join(PR, "_lab", "prompts"))
 import shapes_v3_draft as SH  # noqa: E402
 
 # kernel -> (run.py --kernel, helion latency col, tc-default latency col,

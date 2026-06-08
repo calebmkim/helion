@@ -26,7 +26,13 @@ from triton.testing import do_bench
 import helion
 from helion._compiler.autotuner_heuristics import compiler_seed_configs
 
-sys.path.insert(0, "/home/dev/local/helion-reduction-heuristics-run2/_lab/prompts")
+# Portable: worktree root from this file's location (<root>/_lab/bench/<this>); override via
+# HELION_WORKTREE. Paths may not be 100% portable across machines — repoint with judgement if needed.
+_WT = os.environ.get(
+    "HELION_WORKTREE",
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+)
+sys.path.insert(0, os.path.join(_WT, "_lab", "prompts"))
 import shapes_v3_draft as SH  # noqa: E402
 
 from examples.rms_norm import rms_norm_fwd, rms_norm_pytorch  # noqa: E402
@@ -168,7 +174,8 @@ def bench(kn: str) -> dict:
 
 
 def main() -> None:
-    assert helion.__file__.startswith("/home/dev/local/helion-pr-edit"), helion.__file__
+    # Guard against the wrong-helion-import footgun: helion must resolve to THIS worktree.
+    assert os.path.realpath(helion.__file__).startswith(os.path.realpath(_WT)), helion.__file__
     out = []
     for kn in (sys.argv[1:] or list(KERNELS)):
         sys.stderr.write(f"\n===== {kn} =====\n")
