@@ -80,8 +80,9 @@ def _run_seeded(kernel: str) -> tuple[list[dict], int]:
     env = dict(os.environ)
     env.update({"CUDA_VISIBLE_DEVICES": "0", "HELION_AUTOTUNE_EFFORT": "none",
                 "PYTHONPATH": PR, "HELION_PROMOTE_REDUCTION_SEED": "1"})
+    precision = os.environ.get("HELION_LAB_PRECISION", "fp32")
     cmd = [PY, f"{PR}/_lab/bench/run_seeded.py", "--kernel", run_name,
-           "--metrics", "latency,accuracy", "--precision", "fp32",
+           "--metrics", "latency,accuracy", "--precision", precision,
            "--csv", "--output-dir", "/tmp/seedtc_out", *extra]
     if supports_shapes:
         shapes = ";".join(f"{m},{n}" for m, n in SH.SHAPES[kernel]["test"])
