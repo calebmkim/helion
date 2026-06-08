@@ -91,6 +91,18 @@ GATING BEFORE SHIP: coverage-gap sweep RUNNING (/tmp/midN_coverage.json) — bf1
 N=1536/2560 (the fire range is UNTESTED except bf16 N5120). If fp32 regresses in-range, rule must drop
 fp32 (byte cap would then need an ils-aware floor). DO NOT write code until coverage confirms.
 
+### 2D-SURFACE INSIGHT (consolidated best_w across all sweeps) — strengthens the mechanism story
+best num_warps for softmax bf16 grows MONOTONICALLY with BOTH byte and occ (a clean 2D surface):
+  byte 1024: w1(occ16-248)→w2(496)→w4(993)→w8(1986)   [D4 narrow rule]
+  byte10240: w4(occ16-248)→w8(496-993)                  [mid-N rule]
+  byte16384: w8(occ16-124)→w16/w32(occ248+)             [ramp]
+So the TRUE optimum is num_warps ≈ f(byte, occ), monotone-increasing in both — the three band-rules
+(narrow w1 / mid w4 / wide w8-ramp) are a PIECEWISE approximation of one coherent surface, NOT curriculum
+luck. rms_norm at byte 10240/16384 is FLAT w16 (warp-insensitive resident-reuse) → mid-N w4 is harmless
+there. This 2D coherence is the Gate-F mechanism for mid-N (same cross-warp-tree story, parameterized by
+per-program work = byte AND saturation = occ). A future unified `warps=clamp(f(byte,occ))` could replace
+the bands, but incremental band-rules are gate-able now.
+
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
   - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
