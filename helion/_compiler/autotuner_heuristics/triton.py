@@ -414,7 +414,15 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         # the input-load byte width (dtype-faithful), and the occupancy needs num_sm; an
         # input_load_itemsize of 0 (kl_div/jsd, or unknown) disables it.
         ils = fact.input_load_itemsize
-        if num_sm > 0 and ils > 0 and rnumel * ils <= cls.NARROW_W1_MAX_BYTES:
+        if (
+            num_sm > 0
+            and ils > 0
+            and fact.grid_rows > 0
+            and rnumel * ils <= cls.NARROW_W1_MAX_BYTES
+        ):
+            # grid_rows==0 means a dynamic/jagged M-grid: occupancy is unknown at compile
+            # time, so the lever DECLINES (an unknown occ must not assume the best-case low
+            # occ — that would wrongly fire w1 on a possibly-saturated grid).
             occ = fact.grid_rows // num_sm
             if occ <= cls.NARROW_W1_OCC_BYTES // ils:
                 return 1
