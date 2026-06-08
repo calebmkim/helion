@@ -38,6 +38,16 @@ from the full candidate, warps-only vs warps+blocks) is running: /tmp/welford_mi
 If confirmed + warps-carried, the faithful key is welford's Band-C structure (non_reduction_loop_block_ids,
 already a fact), NOT a byte cap. DO NOT bank until the A/B separates warps from blocks + a fresh full oracle.
 
+**A/B RESULT (CUDA-graph, /tmp/welford_midN_result.json) — gap is REAL + warps-ALONE, optimum is w4:**
+  - welford bf16 (16384,5120): seed w16=133.5us → **w4=116.7us = +14.4%** (warps-only, seed blocks). Sweep
+    w1=164,w2=119,w4=117,w8=121,w16=134,w32=199. COUPLED smaller-block cands are WORSE (w4+2048x1024=117.8,
+    w2+2048x1024=135) → the partial-oracle's "smaller blocks" was a red herring; lever is PURE num_warps.
+  - (16384,7168): seed w16=170 → w4=166 = +2.5% (marginal). (8192,14336): seed w16 already optimal (+0%).
+  - So: welford wants **w4 not w16** at mid-N, gain FADES with N (+14.4%@5120 → +2.5%@7168 → 0@14336).
+    The ramp gives w16 (rnumel 5120-16384 → w16). DISAMBIGUATION RUNNING (/tmp/midN_crosskernel.py): do
+    rms/ln/softmax/sum ALSO want w4 at (16384,5120)? If yes → general ramp mid-N fix; if welford-only →
+    welford serial-recurrence structure (Band-C fact). Decision pending that result.
+
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
   - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
