@@ -3388,6 +3388,16 @@
         "verified_true": "Bimodal crossover real (softmax ~occ496, welford ~992, rms/ln >1985). layer_norm N=512 contradiction RESOLVED: w1 beats ramp-w4 ~10% but ties true-optimum w2 (both prior statements true re different baselines).",
         "minimal_shippable": "Narrow resident-class only: w1 for full_width_output AND itemsize>=4 AND size_hint<=512 AND occ<=~200 (rms/ln bf16, ~5-10%, few shapes). EXCLUDES softmax (biggest win, needs real grid_rows//num_sm + dtype-aware threshold). Needs new occupancy plumbing (grid_rows not in persistent path; _num_warps takes only fact). ~1-2 days + fresh Gate A+D. Low yield.",
         "recommendation": "KEEP DEFERRED. If occupancy win wanted later: build a genuine grid_rows//num_sm fact + DTYPE-AWARE threshold (softmax crossover is dtype-dependent), NOT the itemsize-cap proxy nor second_hbm_pass. Corroborates the existing effort/reward-unfavorable deferral."
+      },
+      {
+        "gate": "D4_narrowN_w1_gate_suite",
+        "sha": "3408c4f5",
+        "verdict": "ALL PASS \u2014 D4 narrow-N occupancy-gated num_warps=1 SHIPPED-CANDIDATE (gate-confirmed)",
+        "A_adversarial": "3/3 NOT-refuted. softmax bf16 (8192,512)+26%,(8192,1024)+21%,(16384,1024)+7%; welford bf16 (8192,512)+33%; held-out softmax (8192,768)+61%,(10240,896)+22%,(16384,512)+25%; rms (12288,640) +0.1% (neutral, fires but ~roofline). Danger EXCLUDED: softmax fp32 (32768,512) occ248>cap128 -> w4 (w1 would be +12.8% SLOWER); CE bf16 (8192,4096) rnumel>1024 -> w8; kl_div ils=0 -> w8. Noise 0.1-1.5% vs 17-33% signal. Worst reg vs cell-best <=0.4%.",
+        "D_fact_integrity": "faithful=True both facts. input_load_itemsize DIVERGES from fact.itemsize on softmax/rms/ln (2 vs 4 bf16) = genuine HBM-load provenance via _accessed_tensor_fake, NOT the fp32-accum proxy (the Path-A bug). grid_rows = faithful program count, 0 on dynamic grid. kl_div/jsd=0 correctly disables (forcing w1 there = +46%).",
+        "F_mechanism": "mechanism_found=True. Cross-warp reduction tree (shared-mem + __syncthreads) is pure overhead at narrow row; w1 = in-register warp-shuffle (0 shared, 0 barriers). Boundary VERIFIED: softmax bf16 N=512 occ124 w1 +52% -> occ497 w8 +2% -> occ993 w8 +29%. Dtype 2x cap scaling: heavier per-block footprint (4B fp32 vs 2B bf16) saturates SMs at lower grid_rows.",
+        "E_overfit": "overfit=False, fences=[]. 2048/512 are round hardware thresholds for a structural regime (narrow row at low occ), not curriculum fences. Held-out fires via interpolation. Hypothetical rnumel=600 bf16 occ100 correctly fires + mechanistically defensible.",
+        "note": "The genuine grid_rows//num_sm + input-load-itemsize path the D4_landing_feasibility_assessment said was REQUIRED. Pending: full-curriculum config-diff audit (no-regression backstop) + report writeup."
       }
     ],
     "results": [
