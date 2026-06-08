@@ -1,8 +1,10 @@
 # bf16/fp16 reduction-seed dtype climb — REPORT (living; updated as the climb proceeds)
 
-## EXECUTIVE SUMMARY (milestone banked @ ~8d4b4a40)
-The bf16/fp16 frontier turned out to be **mostly transfer + correctness, not big seed-perf wins** — a
-legitimate, gate-verified result:
+## EXECUTIVE SUMMARY (milestone banked @ f1869309 — D4 narrow-N w1 SHIPPED)
+The bf16/fp16 frontier is **transfer + correctness + THREE gate-confirmed perf wins** (jsd correctness,
+CE wide-V w8, and — newest — D4 narrow-N occupancy-gated w1, +20-60% on a broad narrow-row class). The
+inherited fp32 champion transfers free; on top of that the warps lever yielded two faithful wins at
+opposite extents (wide-V w8 via `full_width_output`; narrow-N w1 via `grid_rows` + `input_load_itemsize`):
 - **The inherited fp32 champion's configs transfer to bf16/fp16 for FREE.** The seed already beats
   torch.compile-default on the large majority of curriculum shapes at bf16 (geo G_cg: softmax 1.31,
   CE 1.19, layer_norm 1.09, kl_div 1.08, sum 1.07, rms_norm 1.06) and fp16 tracks bf16 (transfer
@@ -34,21 +36,31 @@ legitimate, gate-verified result:
   one-pass siblings match tc); rms/ln (16384,896) = ~3% near-roofline tie. jsd all-V = quick-oracle
   ≤tc (Band-B, not full-confirmed). NOTE: rms_norm (2048,4096) / layer_norm (2048,6144/10240) are NOT
   losers under CUDA-graph (their do_bench "losses" were host-overhead artifacts).
-- **One real win still DEFERRED (D4):** narrow-N fewer-warps (10-20%) is OCCUPANCY-gated (grid_rows//num_sm),
-  not cleanly keyable on existing facts. A later fork explored two landing paths; a measurement-backed
-  feasibility assessment (HEAD 39fe2034, ledger `D4_landing_feasibility_assessment`) found BOTH NOT
-  feasible as documented: the workflow's "SHIP" rule (`itemsize*size_hint<=2048 AND occ<=250 → w1`) is
-  REFUTED (admits softmax fp32 (32768,512) at +19.6%; the itemsize-cap is a lucky proxy that can't
-  exclude fp32 since softmax's crossover is dtype-dependent), and the proposed `second_hbm_pass` fact is
-  unbuildable (all 4 kernels re-read in ≥2 loop graphs, so it's redundant with row_reread). Only a narrow
-  resident-class (rms/ln bf16, ~5-10%, few shapes) is gate-survivable. A real occupancy win needs a
-  genuine grid_rows//num_sm fact AND the occupancy threshold keyed on the **INPUT-LOAD itemsize** (not
-  the current `fact.itemsize`, which is the fp32 accumulator width =4 for softmax/rms/ln at BOTH dtypes
-  and so can't discriminate — that's exactly why Path A's cap failed). NB this is a faithful
-  dtype-AGNOSTIC property (the HBM-load element size), NOT a dtype-kind branch; but it is not a clean
-  single 2× cap either — softmax's measured crossover shifts ~4× between fp32 (occ~124) and bf16
-  (occ~496) while input itemsize differs only 2×, so the input-bytes signal needs an empirically-fit
-  scaling (the two-pass re-read amplifies it). Kept deferred (effort/reward unfavorable).
+- **Shipped win #3 (perf): D4 narrow-N occupancy-gated num_warps=1 (+20-60%)** — the formerly-DEFERRED
+  occupancy win, BUILT once the human asked for it (@ `3408c4f5`, gate-confirmed). Two new FAITHFUL
+  `ReductionFact` fields close the gap the prior feasibility assessment said was *required* but unbuilt:
+  `grid_rows` (product of static M-axis extents → occupancy `grid_rows//num_sm`) and
+  `input_load_itemsize` (the **HBM input-row-load** element width = 2 bf16/fp16, 4 fp32 — read via
+  `_accessed_tensor_fake` on the reduction-fed load; DISTINCT from `fact.itemsize`, the fp32-promoted
+  accumulator width = 4 at BOTH dtypes for softmax/rms/ln). Rule: **w1 IF `input_load_itemsize>0` AND
+  `rnumel*input_load_itemsize<=2048` AND `grid_rows//num_sm <= 512//input_load_itemsize`** (bf16:
+  rnumel≤1024 & occ≤256; fp32: rnumel≤512 & occ≤128). Both caps key on the input-load byte width, so they
+  scale ~2× with dtype FAITHFULLY (no dtype-kind branch). This STRUCTURALLY fixes the two refuted paths:
+  the dtype-faithful occ cap excludes the Path-A poison cell softmax fp32 (32768,512) occ248 (fp32 cap
+  128 < 248 → stays w4, no +19.6% regression), and the `input_load_itemsize==0` guard excludes kl_div/jsd
+  (where forcing w1 regresses up to +46%). The earlier "4× crossover" worry was an artifact of the wrong
+  signal (`fact.itemsize`): with the true input-load byte width the crossover is a clean ~2× shift, fit by
+  a single 2048-byte row cap + a 512-occ-byte cap (BYTE_CAP=2048 had ZERO bad cells; 3072/4096 introduced
+  regressions). GATE-CONFIRMED: Gate A 3/3 NOT-refuted (softmax bf16 +20-26%, welford +33%, held-out
+  (8192,768) +61%, danger cells excluded, noise≪signal), Gate D faithful (both facts; divergence from
+  `fact.itemsize` is exactly the discriminator), Gate F mechanism (cross-warp reduction tree overhead;
+  boundary verified occ124 w1+52% → occ497 w8+2% → occ993 w8+29%), Gate E no overfit (round HW thresholds,
+  no fences). NO-REGRESSION config-proof (777-cell BEFORE/AFTER snapshot): 39 diffs, ALL num_warps→1 in
+  the predicted narrow zone, ZERO non-warp/anomaly diffs, fp32 invariant except softmax (16384,512) (a
+  genuine fp32 win). It fires on layer_norm/rms_norm/softmax/sum/welford × bf16/fp16/fp32 at real model
+  dims (768-1024) — BROADER than the dtype curriculum's 6 shapes — and RESCUES 3 shapes the report had
+  filed "exempt" (welford (16384,896); rms/ln narrow). Reframe-relevant: these were seed↔oracle gaps the
+  old "oracle≤tc exempt" labeling wrongly shelved.
 - **Method finding:** CUDA-graph device time is the correct seed-vs-tc metric; plain do_bench
   mis-attributes Python host-enqueue cost to the kernel at low-M, inventing phantom losses.
 
