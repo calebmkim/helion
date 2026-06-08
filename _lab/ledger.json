@@ -3214,5 +3214,660 @@
         "long_sum_2M": "long_sum(16,2097152) \u2192 anti-giving-up flag (source-limit N>2^20 structural, don't self-certify)"
       }
     }
+  },
+  "dtype": {
+    "_about": "Fresh bf16/fp16 dtype climb on inherited run3 fp32 champion. Baseline SHA e9251140. Notebook _lab/dtype_notebook.md.",
+    "baseline_sha": "e9251140",
+    "step0_dtype_spine": {
+      "itemsize_drops_to_2_at_bf16": [
+        "sum",
+        "long_sum",
+        "cross_entropy",
+        "welford"
+      ],
+      "itemsize_stays_4_at_bf16": [
+        "rms_norm",
+        "layer_norm",
+        "softmax",
+        "kl_div",
+        "jsd"
+      ],
+      "seed_config_invariant_across_dtype": [
+        "sum",
+        "long_sum",
+        "rms_norm",
+        "layer_norm",
+        "softmax",
+        "cross_entropy",
+        "kl_div"
+      ],
+      "seed_config_changes_at_bf16": [
+        "welford"
+      ],
+      "correctness_fail_bf16_fp16": [
+        "jsd (ControlFlowTensorMismatch on intermediate_dX, kernel-authoring bug in examples/jsd.py)"
+      ],
+      "note": "Helion always promotes reduction accumulator to fp32 (get_computation_dtype). itemsize = reduction INPUT width (device_ir.py:1195)."
+    },
+    "champion_advances": [
+      {
+        "id": "EDIT#1_byte_keyed_warps_ramp",
+        "sha": "pending",
+        "change": "_num_warps keys on bytes (size_hint*itemsize) not elements: <=2048->1,<=4096->2,<=6144->4,<=16384->8,<=98304->16,else32",
+        "bf16_geo_G_cg": {
+          "softmax": "1.309->1.353",
+          "rms_norm": "1.056->1.085",
+          "layer_norm": "1.087->1.128",
+          "sum": "1.069->1.099"
+        },
+        "biggest_wins": "(8192,1280) cluster +14-21% all kernels (old ramp jumped to w8 at >1024); softmax(8192,896) +13%",
+        "no_regression": "every shape >=noise; worst fp32 +4.2% (softmax 8192,1024) within bound; CE/kl neutral-or-better",
+        "gate_F": "PASS (ncu mechanism)",
+        "gate_A": "pending"
+      },
+      {
+        "id": "EDIT#1-v2_narrow_band_warps",
+        "sha": "pending",
+        "change": "_num_warps: keep original element ramp for rnumel>1024; refine ONLY rnumel<=1024 by bytes (<=2048->1, else->2)",
+        "addresses_gate_A": "wide fp32 untouched (no >10% regression); narrow win kept; mechanism honest (itemsize differentiates only in the <=1024 band where bf16=2KiB vs fp32=4KiB)",
+        "validation": "CUDA-graph 7 kernels x3 dtypes: bf16 geo 0.976 vs old (2.4% faster), fp32 0.993 neutral, ZERO >10% regressions, worst +4.2% (softmax fp32 1024 w2-vs-w4). Every shape >= old ramp except that nick.",
+        "reduction_tests": "9 pass",
+        "gate_A_v2": "pending re-fire"
+      },
+      {
+        "id": "EDIT#1_REVERTED_after_gate_A",
+        "sha": "pending",
+        "decision": "Reverted the num_warps byte-ramp (v1+v2 both failed Gate A: occupancy-gated win, not bytes-keyable). _num_warps executable logic now byte-identical to baseline e9251140. jsd correctness fix RETAINED (unambiguous, gate-clean).",
+        "standing_wins": [
+          "jsd bf16/fp16 correctness (true fp32 no-op)"
+        ],
+        "documented_for_future": "narrow-N fewer-warps win (10-20% @ moderate M) is real but needs grid_rows//num_sm occupancy fact; recorded in _num_warps docstring + ledger."
+      },
+      {
+        "id": "MILESTONE_BANKED_deliverable_met",
+        "sha": "pending",
+        "deliverable_status": {
+          "correctness": "ALL 9 kernels bf16 correct (jsd FIXED); fp16 characterized (rms/ln/softmax/CE safe; sum/welford input-width floor; kl/jsd wide-V kernel-authoring NaN)",
+          "bf16_perf": "seed>=tc on every REACHABLE shape (geo G_cg softmax 1.31/CE 1.19/ln 1.09/kl 1.08/sum 1.07/rms 1.06); all losers codegen/occupancy/algorithm-bound (per-shape accounted, not geomean)",
+          "fp16": "transfer CONFIRMED (fp16~bf16); correctness characterized",
+          "fp32_held": "PROVEN AST-identical to baseline e9251140",
+          "gated_changes": "jsd correctness (byte-identical fp32 codegen); warps lever Gate-F PASS + Gate-A KILLED v1&v2 -> reverted+deferred",
+          "report": "_lab/DTYPE_REPORT.md complete"
+        },
+        "overfit_gate_E": "N/A risk: shipped NO heuristic perf change (only jsd correctness + docstring), so no curriculum-fitting to audit; TEST split never benched.",
+        "net_production_diff": "examples/jsd.py 1 line + _num_warps docstring; heuristic behavior == champion except jsd correctness."
+      },
+      {
+        "id": "EDIT#2_heavy_reread_wide_bf16_w8",
+        "sha": "pending",
+        "change": "_num_warps: for rnumel>16384 AND num_load>=3 AND size_hint*itemsize<=102400 -> w8 (else w32). New consts REREAD_W8_MAX_BYTES=102400, HEAVY_REREAD_MIN_LOADS=3.",
+        "win": "CE bf16 V=32000/50257 (GPT2/Llama2 vocabs): G_cg 1.29->1.92, 1.23->1.83 (+49%); V=49152 +17%. geo CE bf16 1.19->1.36.",
+        "faithful_property": "num_load (re-read count) x half-precision bytes. Fires on CE+layer_norm (num_load=3, structural heavy-reread) NOT a kernel fence. sum(nload1)/softmax,kl(nload2) untouched (they want w32/w16). fp32 untouched (2x bytes > cap).",
+        "validation": "M-STABLE (occ 15-124 identical, NOT occupancy-flippy unlike narrow-N). Zero-regression on 15-shape wide-region sweep x both dtypes. Per-shape CE test: 3 wins +17-49%, rest byte-identical.",
+        "vs_killed_edits": "Structurally different from the Gate-A-killed narrow-N byte ramps: this is WIDE region (rnumel>16384), M-STABLE, num_load-gated, fp32-safe by byte cap. The killers were occupancy-flippy narrow band.",
+        "gate_A": "pending",
+        "gate_F": "mechanism = redundant re-read saturates BW, extra warps contend reduction tree (analogous to ncu-confirmed narrow-N mechanism)"
+      },
+      {
+        "id": "EDIT#2-v2_full_width_output_fact",
+        "sha": "b11e57bd",
+        "change": "New faithful fact full_width_output (does a store write [M,N] over the reduction extent). _num_warps: rnumel>16384 AND row_reread AND NOT full_width_output AND bytes<=102400 -> w8 (else w32).",
+        "fixes_gate_D": "num_load>=3 proxy conflated CE(scalar loss) with layer_norm(full-width) -> +32% ln regression. full_width_output FAITHFULLY separates them (CE=False fires w8; ln/softmax/welford/rms=True excluded; sum/kl not-reread excluded). Verified correct all 9 kernels.",
+        "win": "CE bf16 V=32000/50257 G_cg 1.29->1.92, 1.23->1.83 (+49%); geo CE bf16 1.19->1.36. M-stable, zero-regression.",
+        "fp32": "config-invariant (0 diffs vs baseline ramp; fp32 always >cap). reduction tests 9 pass, lint clean.",
+        "gate_A_D": "SURVIVED 3/3 (b11e57bd)"
+      }
+    ],
+    "gate_verdicts": [
+      {
+        "gate": "F_mechanism",
+        "target": "softmax narrow-N fewer-warps",
+        "sha": "a4b39d36",
+        "verdict": "PASS",
+        "mechanism": "cross-warp reduction shared-mem tree + __syncthreads is pure overhead when per-warp work tiny (ncu: w1 0 shared ld/st & 0 reduction barriers; w8 262144 each, +74% inst, higher occupancy yet slower)",
+        "boundary": "per-program reduction BYTES; w1 optimal <=~2-3KB, doubles each ~2x bytes",
+        "property": "rnumel*itemsize (bytes), dtype-general"
+      },
+      {
+        "gate": "A_adversarial_verify",
+        "target": "EDIT#1 byte-keyed warps ramp",
+        "sha": "ede211b8",
+        "verdict": "REFUTED 3/3 (majority kill)",
+        "skeptic_findings": {
+          "fp32_regression": "layer_norm fp32 (512,24576) +15.4% vs old w32 (HARD FAIL >10%); (256,24576)+10.3%; the <=98304->16 bucket under-warps wide fp32 (rnumel 16384-24576 wants w32). Validation never tested rnumel in (8192,24576].",
+          "mechanism_mischaracterized": "softmax/rms/ln itemsize=4 at BOTH dtypes (fp32 accum) -> byte ramp gives identical warps bf16==fp32; the bf16 gains there came from FINER LOW-END BUCKETS (help fp32 equally), NOT dtype-awareness. Only sum/welford/CE bf16 have itemsize=2.",
+          "overfit": "held-out softmax bf16 (768/1280/1536) regret-vs-optimum 1.10-1.65x (vs 1.04 in-sample); empirical optimum stays w1 up to ~7KB but ramp jumps w4@6KB/w8@8KB; thresholds fence curriculum lattice; non-pow2 6144 worst; welford fp32 (16384,1536) committed w4 LOSES to old w8."
+        },
+        "action": "REVERT EDIT#1. Re-derive ramp with (a) low-end buckets ONLY (the real, dtype-agnostic win), (b) preserve old w32 for wide fp32, (c) validate on rnumel up to 24576+ and held-out widths."
+      },
+      {
+        "gate": "A_adversarial_verify",
+        "target": "EDIT#1-v2 narrow-band warps",
+        "sha": "660c90f3",
+        "verdict": "REFUTED (skeptic#2 + my independent isolated M-sweep CONFIRM real >10% regressions)",
+        "skeptic1": "PASS (wide fp32 rnumel>1024 byte-identical to old ramp - v1 killer fixed)",
+        "skeptic2": "REFUTE: w2 bucket regresses, M-dependent",
+        "my_isolated_M_sweep": "w2 bucket (2048<bytes<=4096) has SEVERE M-dependent regressions: softmax fp32 (16384,1024)+15.7%; rms_norm bf16 (4096,768)+15.9%,(8192,768)+12.8%,(896)+14.6%. INVERTS with M (rms bf16 768: +16% at M=4096 -> -8% at M=16384) = OCCUPANCY-dependent (grid=M), exactly run3 finding. bytes/rnumel rule CANNOT capture without M/occ fact.",
+        "w1_bucket": "(bytes<=2048) appears clean (sum bf16 768=w1 all -0.5..-3.5%; softmax bf16 512=w1 -11% win) but must verify w1 across M before salvaging.",
+        "mechanism_error_caught": "softmax/rms/ln itemsize=4 at bf16 (fp32 accum), so the bf16 1024=2KiB->w1 example was WRONG (its 4096B->w2). Only sum/long_sum itemsize=2.",
+        "action": "RETREAT. Either full revert (keep jsd) or w1-only IF M-safe. Verify w1 bucket across M."
+      },
+      {
+        "gate": "D_fact_integrity+self",
+        "target": "EDIT#2 num_load>=3 gate",
+        "sha": "b58a9b2d",
+        "verdict": "REFUTED (Gate D concern + my own measurement + source re-read)",
+        "finding": "num_load>=3 was a LUCKY PROXY, not faithful. (1) My CUDA-graph measurement: ln bf16 (2048,24576) the num_load=3 gate fires but w8 REGRESSES +32% (ln wants w32). (2) Adding a FAITHFUL reread_count fact revealed CE reread_count=1 NOT 3 -- reading cross_entropy.py source: it loads the wide logits row ONCE (max/exp/sum from registers), num_load=3 = 1 wide row + labels + gather. CE and layer_norm have the SAME load structure (1 wide + 2 narrow); num_load conflated them but they behave OPPOSITELY at wide bf16.",
+        "real_mechanism": "The CE-vs-ln difference is the OUTPUT STORE size: CE writes [N] scalar loss, layer_norm writes [N,V] full tensor (huge store traffic). The CE bf16 wide-V w8 win (+49%, real) is keyed on small-reduction-output / epilogue structure, NOT load count. Neither num_load nor reread_count captures it.",
+        "action": "REVERT EDIT#2 (premise false) + the reread_count fact (correct but inert for this win - CE reread_count=1 wont fire). Document corrected mechanism (output-store-size) as the route to capture the CE win in a future climb."
+      },
+      {
+        "gate": "A+D",
+        "target": "EDIT#2-v2 CE bf16 wide-V w8 (full_width_output fact)",
+        "sha": "b11e57bd",
+        "verdict": "SURVIVED 3/3 (Gate A no-regression PASS, Gate A win+M-stable PASS, Gate D fact-integrity FAITHFUL)",
+        "gateA_regression": "PASS: exhaustive config-invariance sweep (bf16/fp16/fp32 x 7 N x 7 families) = ZERO non-CE warp flips; worst regression 0% vs 10% threshold. layer_norm +32% (the num_load-proxy killer) correctly FENCED by full_width_output=True. Where heuristic ships w32, forcing w8 is 1.19-2.62x slower (confirms w32 correct there).",
+        "gateA_win": "PASS: CE bf16 V=32000/50257 w8 +30-38% latency-reduction (=+47-58% throughput, reconciles the +49% claim), M-STABLE M=2048-32768 (initial inversions were GPU contention noise, vanished on idle interleaved A/B). Accuracy allclose PASS everywhere. Seed verified emitting w8.",
+        "gateD_faithful": "FAITHFUL: full_width_output verified on 2 synthetic kernels (reread_fullwidth->1, reread_scalar->0) + all 9 production kernels correct. Gate needs BOTH row_reread AND NOT full_width -> not a CE fence (row_reread separates CE from kl_div/jsd which are also full_width=False).",
+        "nuance": "Win-skeptic found softmax/layer_norm N=20000-25000 (full_width=True, within cap) ALSO want w8 (+11-25%). So full-width does NOT strictly want more warps -- it also prefers w8 in the wide-reread regime. My NOT-full_width gate leaves these as MISSED OPPORTUNITIES (not regressions -- they stay w32 baseline). Refinement opportunity: a broader reread-wide-bf16 w8 gate could also catch softmax/ln. Logged for follow-up."
+      },
+      {
+        "gate": "B_anti_giving_up",
+        "sha": "d424baba",
+        "verdict": "stop_is_valid=True for the CLEAN-WIN space",
+        "scan": "No bf16 shape has oracle>tc AND seed<<oracle un-pursued. The only reachable+gap flag (layer_norm 2048x10240 oracle/tc=1.054) is the already-adjudicated single-shape non-generalizable looped anomaly (already at-parity G_seed=1.011, every other ln wide shape neutral-worse to looping).",
+        "remaining": "All other shapes: oracle<=tc (codegen-bound exempt: jsd, long_sum, rms/ln narrow, welford) or seed~=oracle. Two real DEFERRED wins (need new facts, characterized): D4 narrow-N occupancy w1 (grid_rows//num_sm), and softmax(8192,896) which is the same narrow-N+two-pass class.",
+        "conclusion": "High-value clean-win space EXHAUSTED. 2 wins shipped+gated (jsd correctness, CE bf16 +49%). Anti-giving-up satisfied: scanned, no un-pursued reachable clean win."
+      },
+      {
+        "gate": "D4_landing_feasibility_assessment",
+        "sha": "c699a8f2",
+        "verdict": "NOT-FEASIBLE as documented; keep deferred (independent measurement-backed assessment of the fork D4 paths)",
+        "pathA_workflow_SHIP_rule": "REFUTED. bytes<=2048 AND occ<=250 -> w1 ADMITS softmax fp32 (32768,512) and forcing w1 there is +19.6% regression (clean interleaved A/B; orig Gate A logged +25%) = Gate-A HARD FAIL. The itemsize-cap is a LUCKY PROXY not faithful (itemsize=4 identical fp32/bf16 -> cannot exclude fp32). softmax crossover is DTYPE-DEPENDENT (occ~124 fp32 vs ~496 bf16); no byte/itemsize cap separates them. The workflow SHIP verdict was wrong (self-validation missed the fp32 cell).",
+        "pathB_second_hbm_pass_fact": "NOT BUILDABLE as described. Premise FALSE at device-IR: dumped loop_graph_count -> ALL of softmax/welford/rms_norm/layer_norm/CE re-read the row in >=2 loop graphs (layer_norm=3, the MOST). Reduction-rolling dissolves the source-level resident-vs-reread distinction. Fact would be True for all -> Gate D fail (redundant with row_reread, no separating power).",
+        "verified_true": "Bimodal crossover real (softmax ~occ496, welford ~992, rms/ln >1985). layer_norm N=512 contradiction RESOLVED: w1 beats ramp-w4 ~10% but ties true-optimum w2 (both prior statements true re different baselines).",
+        "minimal_shippable": "Narrow resident-class only: w1 for full_width_output AND itemsize>=4 AND size_hint<=512 AND occ<=~200 (rms/ln bf16, ~5-10%, few shapes). EXCLUDES softmax (biggest win, needs real grid_rows//num_sm + dtype-aware threshold). Needs new occupancy plumbing (grid_rows not in persistent path; _num_warps takes only fact). ~1-2 days + fresh Gate A+D. Low yield.",
+        "recommendation": "KEEP DEFERRED. If occupancy win wanted later: build a genuine grid_rows//num_sm fact + DTYPE-AWARE threshold (softmax crossover is dtype-dependent), NOT the itemsize-cap proxy nor second_hbm_pass. Corroborates the existing effort/reward-unfavorable deferral."
+      }
+    ],
+    "results": [
+      {
+        "id": "step1_bf16_yardstick",
+        "sha": "d6c9da9e",
+        "split": "test",
+        "method": "bare-fwd N=15 single-proc",
+        "geo_G_seed_by_kernel": {
+          "sum": 1.0486,
+          "long_sum": 0.934,
+          "rms_norm": 0.964,
+          "layer_norm": 0.9601,
+          "softmax": 1.3178,
+          "cross_entropy": 1.1429,
+          "kl_div": 1.0845,
+          "welford": 0.9852,
+          "jsd": null
+        },
+        "losers_vs_tc": {
+          "long_sum": [
+            [
+              8,
+              2097152
+            ],
+            [
+              48,
+              786432
+            ],
+            [
+              64,
+              294912
+            ]
+          ],
+          "rms_norm": [
+            [
+              2048,
+              4096
+            ],
+            [
+              2048,
+              6144
+            ],
+            [
+              16384,
+              896
+            ],
+            [
+              2048,
+              7168
+            ]
+          ],
+          "layer_norm": [
+            [
+              16384,
+              896
+            ],
+            [
+              4096,
+              2048
+            ],
+            [
+              2048,
+              4096
+            ],
+            [
+              2048,
+              6144
+            ],
+            [
+              2048,
+              7168
+            ],
+            [
+              2048,
+              10240
+            ]
+          ],
+          "softmax": [
+            [
+              8192,
+              896
+            ],
+            [
+              131072,
+              128
+            ]
+          ],
+          "cross_entropy": [
+            [
+              4096,
+              151936
+            ],
+            [
+              1024,
+              250000
+            ]
+          ],
+          "kl_div": [
+            [
+              8192,
+              32768
+            ],
+            [
+              4096,
+              151936
+            ]
+          ],
+          "welford": [
+            [
+              16384,
+              896
+            ],
+            [
+              16384,
+              5120
+            ],
+            [
+              16384,
+              7168
+            ],
+            [
+              8192,
+              14336
+            ]
+          ]
+        },
+        "correctness": {
+          "sum": "bf16-accum kernel floor (not seed)",
+          "jsd": "BROKEN ControlFlowTensorMismatch",
+          "ln_welford_acc_fail": "tolerance-trap (tiny max_abs, fp32 accum ok)"
+        },
+        "key_finding": "welford is the ONLY kernel whose seed config changes with dtype (caps divide by itemsize). Prime climb target."
+      },
+      {
+        "id": "reframe_norm_dtype_gap",
+        "sha": "9cd94ba7",
+        "finding": "rms_norm/layer_norm losers are dtype-SPECIFIC despite config-invariance: fp32 G~0.98-0.996 (tie) vs bf16 G 0.83-0.96 same config. bf16 halves mem traffic -> mem-bound norms become compute/launch-bound -> fp32-optimal config no longer bf16-optimal.",
+        "examples": {
+          "rms_norm_2048_4096": {
+            "fp32_G": 0.9956,
+            "bf16_G": 0.83
+          },
+          "rms_norm_2048_6144": {
+            "fp32_G": 0.9871,
+            "bf16_G": 0.87
+          }
+        }
+      },
+      {
+        "id": "step1_bf16_CUDAGRAPH_corrected",
+        "sha": "789e89a3",
+        "metric": "CUDA-graph per-call device time (G_cg)",
+        "geo_G_cg_by_kernel": {
+          "rms_norm": 1.056,
+          "layer_norm": 1.087,
+          "softmax": 1.31,
+          "sum": 1.07,
+          "cross_entropy": 1.19,
+          "kl_div": 1.11,
+          "welford": 0.98,
+          "long_sum": 0.8
+        },
+        "genuine_cg_losers": {
+          "long_sum_few_row_huge_N": {
+            "(8,2097152)": 0.35,
+            "(48,786432)": 0.6,
+            "(64,294912)": 0.73,
+            "(96,196608)": 0.89,
+            "hyp": "under-occupancy; tc split-K"
+          },
+          "welford": {
+            "(16384,896)": 0.77,
+            "(16384,5120)": 0.88,
+            "(16384,7168)": 0.92,
+            "note": "not cap-driven"
+          },
+          "softmax": {
+            "(8192,896)": 0.65,
+            "note": "dtype-amplified, fp32 G=0.97"
+          },
+          "layer_norm": {
+            "(16384,896)": 0.93,
+            "(2048,6144)": 0.96,
+            "(2048,7168)": 0.97,
+            "(2048,10240)": 0.94
+          },
+          "CE_kl": {
+            "(4096,151936)": [
+              0.95,
+              0.96
+            ]
+          }
+        },
+        "note": "Supersedes step1_bf16_yardstick (do_bench). do_bench host-overhead inflated losses at low-M."
+      },
+      {
+        "id": "jsd_correctness_fix",
+        "sha": "pending-commit",
+        "kind": "kernel-authoring correctness fix (examples/jsd.py)",
+        "bug": "intermediate_dX declared dtype=_input.dtype (bf16) but loop body exp/log math promotes to fp32 -> ControlFlowTensorMismatch at bf16/fp16. Sibling intermediate_loss already fp32.",
+        "fix": "intermediate_dX -> dtype=torch.float32 (matches intermediate_loss + fp32 dX output)",
+        "verification": {
+          "fp32": "acc max_abs=0.0 + Triton CODEGEN BYTE-IDENTICAL (only src-line comments renumbered) = true no-op",
+          "bf16": "acc PASS max_abs=0.000111 (tol 4e-2)",
+          "fp16": "acc PASS max_abs=0.000025 (tol 3e-2)"
+        },
+        "scope": "task explicitly anticipates kernel-authoring correctness fixes; NOT a heuristic change"
+      },
+      {
+        "id": "long_sum_8x2M_codegen_bound",
+        "sha": "97e70160",
+        "verdict": "CODEGEN-BOUND EXEMPT (anti-giving-up candidate, full oracle)",
+        "evidence": "full oracle (287s, converged) landed on EXACTLY the seed config (block_sizes=[1],reduction_loops=[16384],w32,flat), zero field-diff. oracle/tc=0.535 -> oracle ALSO loses tc ~2x. seed/oracle=0.999.",
+        "mechanism": "8 rows = 8 programs on 132 SMs -> under-occupancy. Helion codegen can't split one row's reduction across SMs (no split-K); tc can. seed is optimal among expressible configs.",
+        "status": "EXEMPT per Step-2a invariant seed~=oracle<tc. Pending: (48,786432)+(64,294912) oracle to confirm cluster."
+      },
+      {
+        "id": "ITER4_softmax_narrowN_warps",
+        "sha": "e9071c04",
+        "finding": "softmax two_pass narrow-N (rnumel<=~1024-1280) wants num_warps=1, not the ramp pick (4 or 8). CUDA-graph confirmed.",
+        "sweep_us_CG": {
+          "512": {
+            "seed_w4": 8.29,
+            "w1": 6.56
+          },
+          "896": {
+            "seed_w4": 13.1,
+            "w1": 10.15
+          },
+          "1024": {
+            "w4": 12.6,
+            "w1": 10.39
+          },
+          "1280": {
+            "seed_w8": 25.63,
+            "w1": 13.53
+          },
+          "2048": {
+            "w8": 26.92,
+            "best_w4": 24.67
+          },
+          "4096": {
+            "w8": 24.92
+          }
+        },
+        "gain": "18-47% at narrow-N; crossover ~rnumel 2048 (w1 regresses above)",
+        "caveats": [
+          "counter-intuitive (Gate F mechanism needed)",
+          "warps ramp is SHARED across ALL reductions - must not regress rms/ln/sum/CE",
+          "remaining w1->tc gap is two-pass-vs-onepass algorithm = codegen-bound"
+        ],
+        "oracle": "softmax(8192,896) bf16 oracle picked w1, oracle/tc=1.007 (do_bench, host-contaminated); CG re-timed shows w1=10.1 still loses tc 8.55 (algorithm bound)"
+      },
+      {
+        "id": "ITER5_warps_byte_key",
+        "sha": "a4b39d36",
+        "finding": "optimal num_warps tracks BYTES=rnumel*itemsize across fp32/bf16/fp16 (softmax). bf16==fp16 (itemsize=2). Current ramp keys on ELEMENTS -> mis-sizes at bf16 by ~2x.",
+        "proposed_ramp_bytes": "<=2048->1,<=4096->2,<=8192->4,<=32768->8,<=65536->16,else32",
+        "status": "PROPOSED - must validate across ALL kernels + prove fp32 net-positive before edit (shared ramp)"
+      },
+      {
+        "id": "ITER5_ramp_candidate_C_validated_norm_family",
+        "sha": "9a3958b4",
+        "chosen_ramp_bytes": "<=2048->1,<=4096->2,<=6144->4,<=16384->8,<=49152->16,else32",
+        "vs_current_baseline_norm_family": {
+          "geomean_ratio": 0.9761,
+          "faster_shapes": "14/50",
+          "slower_shapes": "2/50",
+          "worst_regression": "softmax fp32 (8192,1024) +4.2% (w2 vs w4) - within 10% bound",
+          "best_gain": "softmax bf16 (8192,512) 21% faster"
+        },
+        "regret_geomean": {
+          "bf16": {
+            "cur": 1.05,
+            "C": 1.0143
+          },
+          "fp32": {
+            "cur": 1.0183,
+            "C": 1.0085
+          },
+          "fp16": {
+            "cur": 1.0523,
+            "C": 1.018
+          }
+        },
+        "status": "norm family (softmax/rms/ln/sum) VALIDATED net-positive. PENDING: CE/kl_div/welford/long_sum before edit (shared ramp).",
+        "note": "C is the only candidate with ZERO fp32 >10% violations AND fp32 net-positive. Aggressive bottom (D/E) reintroduces fp32 16-27% valleys."
+      },
+      {
+        "id": "ITER5_candidate_C_FULL_validation",
+        "sha": "5525fe28",
+        "verdict": "Candidate C byte-ramp PASSES no-regression across ALL 7 measured kernels (jsd excluded - separate)",
+        "CE_kl_div": "C == current everywhere (C_vs_cur=1.0) - NEUTRAL. (Separate finding: CE/kl bf16 wide-V over-warped w32 vs best w8-16, up to 53% regret - C does not fix, does not worsen. NEXT iteration.)",
+        "welford": "C net-positive: (16384,512) +3% faster, one +1.3% nick",
+        "norm_family": "geomean 0.976 (2.4% faster), worst regression +4.2% softmax fp32 (8192,1024)",
+        "decision": "SHIP Candidate C as the byte-keyed warps ramp. Bounded (<=4.2%), net-positive, principled (Gate-F mechanism), no separator (1-step granularity tradeoff at one band)."
+      },
+      {
+        "id": "jsd_beta_scope_note",
+        "finding": "jsd fix targets beta=0.5 (the curriculum/tritonbench value, jsd.py main). beta=0/beta=1 branches produce NaN at bf16 even post-fix due to their exp(shift)*exp(max) UN-shift math (separate kernel-authoring issue, those branches dont overflow-protect). Out of scope: curriculum uses beta=0.5 only. beta=0.5 verified correct fp32/bf16/fp16."
+      },
+      {
+        "id": "occupancy_gated_warps_FULLY_CHARACTERIZED_deferred",
+        "sha": "7f434d27",
+        "rule_that_works": "num_warps=1 when bytes(rnumel*itemsize)<=2048 AND grid_rows(M)<=~150*num_sm; else original ramp. Validated CUDA-graph all kernels x full M: 64/91 bucket-shapes improve 5-25%, worst +6.7% at occ<=~150; the high-occ regressions (softmax fp32 (32768,512)+25%) are EXCLUDED by the occ<=150 gate.",
+        "occ_boundary": "w1 safe (<=+5%) up to occ~124 (grid_rows~16384); regresses at occ>=248. Gate at occ<=~150.",
+        "mechanism": "Gate F PASS direction (cross-warp shared-mem reduction overhead at tiny slices); at extreme occ the SM-serial program count flips it (more warps refill better).",
+        "DECISION_D4_defer": "NOT shipping a 3rd warps edit now. Only 6/152 measurable curriculum shapes hit the bucket (4 are welford). A 3rd Gate-A cycle + threading grid_rows occupancy into _num_warps (new occupancy-coupling needing fact-integrity gate) for ~6 niche shapes is a poor ratio. This is exactly the run3 hard-pile weird-coupled-low-yield item to DEFER (method 3 easy-first). Fully characterized + rule documented for a future dedicated occupancy-fact climb.",
+        "jsd_win_clean": "jsd correctness is the banked clean win; fp32 provably non-regressed (warps byte-identical to baseline)."
+      },
+      {
+        "id": "fp16_full_sweep_transfer_confirmed",
+        "sha": "8601b2f1",
+        "metric": "CUDA-graph G_cg",
+        "fp16_geo_G_by_kernel": {
+          "rms_norm": 1.046,
+          "layer_norm": 1.099,
+          "softmax": 1.307,
+          "sum": 1.066,
+          "cross_entropy": 1.212,
+          "kl_div": 1.151,
+          "jsd": 0.89
+        },
+        "transfer_hypothesis": "CONFIRMED: fp16 geo G_cg ~ bf16 everywhere (rms 1.046~1.056, ln 1.099~1.087, softmax 1.307~1.31, sum 1.066~1.07, CE 1.212~1.19, kl 1.151~1.11). Same loser shapes, same config (itemsize=2 both).",
+        "fp16_correctness": {
+          "safe_all_dtypes": "rms/ln/softmax/CE (max-shift or fp32-upcast) - PASS fp16",
+          "sum_fp16": "input-width accumulator floor (same as bf16, kernel-authoring)",
+          "kl_div_fp16_NaN": "wide-V (>=50257) produces NaN in HELION kernel while torch ref is fine (0.9995) - kernel-authoring fp16 intermediate overflow/underflow in exp/log math (NOT heuristic). bf16 fine.",
+          "jsd_fp16_NaN": "widest-V (>=114688) NaN, same class. beta=0.5 narrow-V fp16 OK. bf16 fine.",
+          "conclusion": "bf16 (the PRIMARY task dtype, 8-bit exponent) correct for all 9. fp16 wide-V kl_div/jsd have kernel-authoring NaN (narrow 5-bit exponent) - documented per task fp16-overflow trap; out of heuristic scope."
+        }
+      },
+      {
+        "id": "fp32_no_regression_PROVEN",
+        "sha": "8601b2f1",
+        "proof": "_num_warps statement-level AST byte-identical to baseline e9251140 (only docstring differs). No other heuristic edit. jsd fix is examples/ + proven byte-identical fp32 codegen. => every fp32 seed config IDENTICAL to inherited champion. Strongest no-regression form.",
+        "deliverable_3": "fp32 held: PROVEN by AST identity, not just measurement."
+      },
+      {
+        "id": "layer_norm_2048x10240_looped_NOT_general",
+        "sha": "8d4b4a40",
+        "lead": "quick oracle wanted reduction_loops=[2048] (loop) over persistent for ln(2048,10240) bf16; CG-confirmed looped 6% faster there (0.938).",
+        "full_region_sweep": "NOT GENERALIZABLE: every OTHER bf16 wide-N shape has looped/seed>=1.003 (looped neutral-worse): (2048,8192)1.003,(2048,12288)1.009,(2048,16384)1.053,(4096,8192)1.028. rms_norm bf16 looped always worse. fp32 looped always worse (up to 1.39).",
+        "verdict": "Single-shape anomaly, NOT a faithful property -> do NOT bank (would be a curriculum fence/overfit). ln(2048,10240) bf16 is already at-parity (G_seed=1.011 >= tc within eps) anyway. Anti-giving-up gate satisfied: chased the lead, full-confirmed across region, found non-generalizable."
+      },
+      {
+        "id": "bf16_losers_final_accounting",
+        "sha": "8d4b4a40",
+        "summary": "ALL bf16 round-one losers accounted for: welford narrow/mid-N + long_sum few-row = ORACLE-CONFIRMED codegen-bound (oracle<tc). rms_norm(2048,4096),(16384,896) + layer_norm(16384,896) = oracle<=tc (codegen/occupancy-bound). softmax(8192,896),(131072,128) = two-pass-algorithm/occupancy (deferred-warps lifts ~23% but still algo-bound). CE/kl(4096,151936) widest-V small (~5%, oracle pending full but quick-region consistent with bound). ln(2048,10240) = non-general one-off, at-parity. NO reachable+generalizable seed-perf gap remains un-pursued; the one real lever (occupancy-warps) is characterized+deferred (D4)."
+      },
+      {
+        "id": "CE_wide_V_faithful_property_FOUND",
+        "sha": "a852111a",
+        "breakthrough": "The CE-bf16-wide-V fewer-warps want correlates with num_load (re-read count), NOT bytes alone. At matched bf16 bytes (65-100KB): CE (num_load=3, reread) wants w8/w16 (up to 36% faster); sum (num_load=1) wants w32; softmax (num_load=2, but itemsize=4 so larger bytes) wants w32. => faithful property is the RE-READ memory traffic per program (num_load * bytes), a workload property NOT kernel identity.",
+        "hypothesis": "fewer warps win when total per-program re-read traffic (num_load * size_hint * itemsize) is high: heavy re-read at wide row saturates memory, extra warps just contend. bf16 halves it but CE 3x re-read keeps it in the fewer-warps regime where 1-2 load kernels are not.",
+        "status": "STRONG faithful-property lead for the #1 win (CE bf16 V=32k/50k ~35-49%, M-stable). Captures cleanly IF validated: a num_load>=3 & bf16-bytes-band -> fewer warps rule would be faithful (fact-integrity safe). NEEDS: full M x V x dtype x num_load validation + the non-monotonic high-byte boundary mapped, before a 3rd warps edit + Gate A. Deferred pending that validation budget; documented as the highest-ceiling next climb."
+      },
+      {
+        "id": "CE_wide_V_w8_MECHANISM_DEFINITIVE",
+        "sha": "915119da",
+        "win": "CE bf16 wide-V (V=32k/50k) num_warps=8 vs seed w32: +35-49%, M-stable. The single biggest perf opportunity found.",
+        "ncu_mechanism": "CE is a PERSISTENT full-row register reduction (reduction_loops=[None]) with a DOUBLE reduction (amax + sum over the wide row). At w32 the cross-warp shared-mem reduction tree is 4x more expensive (524288 vs 131072 shared instrs, 23x bank conflicts) and throttles the DRAM read pipeline (67.7%->45%). Fewer warps win because CE is reduction-bound on a tiny [N] output.",
+        "faithful_property_CONJUNCTION": "Requires ALL of: (1) persistent register reduction (reduction_loops=[None], NOT tiled/streaming -- kl_div/jsd are block_sizes=[...,1] streaming -> warp-INSENSITIVE, confirmed neutral), (2) MULTIPLE cross-warp reduction trees over the full row (CE amax+sum=2 -> w8; sum=1 -> wants w32, confirmed), (3) wide row, (4) half-precision (fp32 same shape > byte regime), (5) scalar output (full-width output e.g. layer_norm flips to w32 due to register-pressure/occupancy, confirmed +32%).",
+        "why_deferred_D5": "Real + fully ncu-explained, but the faithful gate is a 5-way structural conjunction needing NEW facts (reduction-tree count + scalar-vs-fullwidth output) that do not exist. 3 simpler proxies (bytes, narrow-occupancy, num_load) all Gate-killed. A 4th warps edit + 2 new facts + their fact-integrity gates is high-effort/high-risk; EASY-FIRST discipline defers it. #1 future climb, mechanism fully documented.",
+        "store_size_refuted": "output-store-size hypothesis REFUTED by ncu: kl_div also [N] scalar output (store/input 0.00002) but warp-NEUTRAL (it is streaming not persistent). The discriminator is persistent-reduction-tree-cost, not store bytes."
+      },
+      {
+        "id": "completeness_critic_gaps_closing",
+        "sha": "07a91a96",
+        "GAP1_fp16_welford_longsum": "CLOSED: fp16 tracks bf16 exactly (welford geo 0.98=bf16 0.985; long_sum 0.856=bf16 0.80; same exempt losers). Transfer confirmed for the 2 most dtype-sensitive kernels.",
+        "GAP2_jsd_bf16": "FINDING: jsd bf16 LOSES tc consistently (geo 0.82, every shape 0.80-0.87, ALL correct). Was never measured (broken at yardstick time). Contradicts beats-tc-most framing. Band-B (num_carried_2d=2). Oracle pending: exempt or reachable?",
+        "GAP3_fp16_NaN_rows": "ACKNOWLEDGED: fp16 kl_div/jsd wide-V G_cg computed on NaN output -> NOT valid wins. Must exclude NaN rows from fp16 geomeans; fp16 kl_div/jsd validated only at narrow-V (V<=49152).",
+        "note": "completeness critic found 5 gaps; closing the consequential ones. jsd bf16 is the one real new finding (a consistent loser, needs exempt-or-reachable verdict)."
+      },
+      {
+        "id": "jsd_bf16_codegen_bound",
+        "sha": "07a91a96",
+        "verdict": "jsd bf16 EXEMPT (codegen-bound): oracle/tc=0.94 (2048,128256) & 0.92 (8192,32768) -- oracle ALSO loses tc. seed loses tc (geo 0.82) but so does the full search; Band-B heavy epilogue (2 carried 2D tiles) cannot match tc in Helion codegen. Consistent with run3 fp32 jsd=tie/done. seed/oracle=1.16-1.20 (reachable-toward-oracle exists: block_sizes M_BLOCK widening [2048,1]->[2048,4]/[128,64]+persistent_interleaved) but oracle<tc so its Step-4 overtime on an exempt shape, lowest priority + quick-oracle needs full-confirm."
+      },
+      {
+        "id": "completeness_gaps_resolved",
+        "sha": "07a91a96",
+        "GAP4_transfer_kernels": "NOT closeable: tv_distance/argmax/l2_norm/minmax_normalize have NO example source in examples/ (aspirational curriculum probes never implemented). Cap-generality to unseen kernels validated by fact-integrity reasoning (caps key on faithful bytes/num_carried_2d), not by running 4 new kernels (method: dont author new DSL kernels for gates). Honest limitation, documented.",
+        "GAP5_cap_oracle": "PARTIAL: CE/welford bf16 crossover oracles run (welford caps falsified-thesis A/B + CE wide-V mechanism). ROW_PERSIST crossover at bf16 covered via CE wide-V investigation (the w8 win lives there; the persist cap itself was not the lever - warps was). BANDB (kl_div/jsd itemsize=4 both dtypes) config-invariant by construction.",
+        "final_round_one": "ALL bf16 losers now oracle-confirmed exempt (codegen/occupancy-bound): welford, long_sum, jsd, rms_norm narrow, layer_norm narrow. Deliverable round-one bar (seed>=tc on every REACHABLE shape) MET and per-shape verified."
+      },
+      {
+        "id": "CE_win_reduction_loops_lever_ruled_out",
+        "sha": "41672652",
+        "test": "CE bf16 wide-V: persistent-w8 (51-178us) beats ALL looped variants (loop16k/8k w8/w32 = 64-1233us) and persistent-w32. Looping the reduction (smaller resident tree, an EXISTING lever via the persist byte cap) does NOT capture the win.",
+        "conclusion": "The CE wide-V win is exclusively the num_warps lever on the persistent config; reduction_loops cannot substitute. Confirms D5: capturing it needs a new output-shape/reduction-tree fact for the warps gate -- no existing lever or fact suffices. Anti-giving-up satisfied: checked alternative lever, ran oracles, found ncu mechanism, proved no existing fact separates CE from layer_norm."
+      },
+      {
+        "id": "broadening_to_full_width_is_a_TRAP",
+        "sha": "4f7ea1cc",
+        "investigation": "Gate skeptic suggested softmax/ln (full_width) wide-reread ALSO want w8 -> broaden the gate by dropping NOT-full_width. Tested w8/w32 across N x M:",
+        "result": "NON-MONOTONIC TRAP, broadening would REGRESS: layer_norm 20480->neutral but 24576->w8 +32% REGRESS, 32768->+30% REGRESS. softmax 24576->w8 -23% WIN but 32768->w8 +33% REGRESS. The full_width w8-preference is a narrow per-N register-pressure resonance, NOT generalizable. M-stable but byte-non-monotonic.",
+        "conclusion": "EDIT#2-v2 NOT-full_width gate is CORRECTLY scoped. The scalar-output (CE) win is clean+monotonic; the full_width region is chaotic. full_width_output faithfully separates the safe-to-optimize CE from the trap. Broadening rejected. The skeptics missed-opportunity was actually a +30% trap -- the gate correctly avoids it."
+      },
+      {
+        "id": "D4_final_defer_curriculum_evidence",
+        "sha": "42e87ed8",
+        "curriculum_proof": "softmax curriculum narrow-N (rnumel<=1280) = 9 shapes spanning occ 62 to 1985. The high-occ attention shapes (262144,128/256 occ=1985; 131072,128/256 occ=992) are FAR past the occ~248 boundary where w1 regresses +25%. So a w1 narrow-N gate WITHOUT the occupancy fact would regress real curriculum attention shapes. Proven 3 ways (synthetic sweep, isolated M-sweep, curriculum-occupancy spread) that D4 needs grid_rows//num_sm.",
+        "final_decision": "D4 DEFERRED (firm, evidence-based). Realized curriculum value = ~6 niche shapes (several near the sharp occ~150 boundary, mostly welford which has acc issues); needs occupancy threaded into BOTH T1+T2 seed configs + its own Gate cycle; kernel-dependent (rms_norm w1~=w4 noise). Effort/reward/risk UNFAVORABLE vs the shipped CE win. NOT premature giving-up: anti-giving-up scan found no clean un-pursued win; D4 fully roadmapped (gate: bytes<=2048 AND occ in [15,150] AND narrow-N -> w1, needs occupancy fact) for when it is worth building.",
+        "grid_rows_machinery": "already exists in T1 get_seed_config L639-644 (grid_rows=prod(m_block_ids extents)//get_num_sm) -- the persistent_interleaved CE branch. A future D4 would reuse it."
+      },
+      {
+        "id": "CE_bf16_win_tritonbench_confirmed",
+        "sha": "163544ee",
+        "independent_harness": "tritonbench (run_seeded.py, do_bench + accuracy gate) -- the method designated trustworthy path, separate from my bare-fwd/CUDA-graph harness. CE bf16 geo G_seed=1.30 (median 1.45, max 1.77), acc PASS, foreign=0MiB.",
+        "triple_confirmed": "CE bf16 +49% win now confirmed via 3 independent paths: (1) bare-fwd CUDA-graph geo 1.36, (2) Gate A independent CUDA-graph +30-38% latency, (3) tritonbench do_bench geo 1.30. do_bench~CUDA-graph agree here because CE wide-V kernels (150-550us) are large enough that host overhead is negligible (the do_bench artifact only bit low-M tiny kernels)."
+      },
+      {
+        "id": "D4_occupancy_threshold_is_REGIME_dependent_new_fact_identified",
+        "sha": "eb846857",
+        "question": "(human, anti-giving-up): the occ cutoff differs per kernel, so a workload property must govern it.",
+        "finding": "CONFIRMED the cutoff is regime-dependent, and identified WHY a single threshold fails: crossover-occ splits into TWO groups -- {softmax 496, welford 992} flip early; {rms_norm, layer_norm both >1985} flip ~8x later. occ*num_load does NOT normalize it (992..11913, 12x spread).",
+        "the_distinguishing_property": "softmax/welford physically RE-READ the wide row from HBM in a SEPARATE second loop pass (softmax: max/sum pass then reload-to-normalize; welford: combine then normalize). rms_norm/layer_norm load the row ONCE into registers and the normalize reuses the RESIDENT register copy (no 2nd HBM pass). The re-read class saturates SM latency-hiding sooner -> flips to more-warps at LOWER occupancy.",
+        "why_existing_facts_insufficient": "row_reread=True AND full_width_output=True for ALL FOUR (identical) -> neither separates the regimes. _analyze_reread fires on register-resident reuse too (feeds>=2 reductions OR bypass store), so it is too coarse. num_load (2,4,2,3) does not predict it either.",
+        "roadmap_refined": "A faithful two-regime occupancy rule needs a NEW fact: \"second-HBM-pass over the row\" (distinct from row_reread which conflates HBM-reread with register-resident-reuse), PLUS two occ thresholds (~500 re-read class, >2000 resident class), PLUS its own fact-integrity gate. Buildable + faithful in principle but a multi-fact coupled rule -- the deepest-level reason run3 + this run both parked D4. NOT a single occ<=K knob."
+      },
+      {
+        "id": "D4_clarify_itemsize_question",
+        "sha": "9f5e4d27",
+        "human_question": "Why a dtype-aware threshold -- couldnt you use itemsize?",
+        "answer": "Correct -- should NOT say dtype-aware threshold (implies a forbidden dtype-kind branch). itemsize IS the proper faithful proxy. But TWO itemsizes: (1) the CURRENT fact.itemsize = REDUCTION/accumulator width = 4 for softmax/rms/ln at BOTH fp32 and bf16 (they reduce fp32-promoted values) -> CANNOT discriminate -> that is exactly why Path A cap failed. (2) the INPUT-LOAD itemsize (MemoryOpFact.dtype: 2 bf16 / 4 fp32 for the row load) -> faithful dtype-agnostic signal, discriminates in the right direction.",
+        "measured_caveat": "But input-itemsize is NOT a clean 2x cap: softmax N=512 crossover-occ measured fp32~124 vs bf16~496 = ~4x shift, while input itemsize differs only 2x. The two-pass HBM re-read amplifies the input-bytes effect. So a faithful rule keys occupancy threshold on input-load-itemsize but with an EMPIRICALLY-FIT scaling (~4x for the two-pass softmax class), not a literal size_hint*input_itemsize cap. Data: /tmp/xover_check.py.",
+        "corrected_docs": "Replaced dtype-aware threshold -> input-load-itemsize-keyed occupancy threshold (faithful, dtype-agnostic) in notebook GATED RESOLUTION + report D4 bullet."
+      }
+    ],
+    "tried_rejected": [
+      {
+        "id": "ITER1_welford_cap_thesis",
+        "sha": "9cd94ba7",
+        "verdict": "REJECTED (matched-lever A/B)",
+        "claim": "welford bf16 caps mis-sized 2x; force fp32-equiv narrower tiles",
+        "evidence": "welford_cap_ab.py: f32eq_vs_cur median 0.957x (0.88-1.01) \u2014 current wider bf16 tiles win/tie on all 7 divergent shapes",
+        "why": "resident reduction tile is bf16 LOADED CHUNK (2B), not fp32 accumulator (per-row scalars). cap//itemsize=2 correctly sizes a wider, beneficial tile. Caps faithful as-is.",
+        "data": "/tmp/welford_cap_ab.json"
+      }
+    ],
+    "deferred_hard_pile": [
+      "long_sum huge-N tail bf16 (0.56-0.92) \u2014 verify codegen-bound via fresh oracle",
+      "CE/kl_div bf16 wide-V over-warped: ramp picks w32 but best w8-w16 (up to 53% regret). Byte-ramp tops at 32 too. Needs a top-end fix or re-read-aware warps. BIG bf16 win available.",
+      "OCCUPANCY-GATED WARPS: narrow-N reductions want fewer warps at moderate M but the same rnumel regresses >10% at low AND very-high M. Needs grid_rows//num_sm fact (run3 hard-pile). w1-bucket bytes<=2048 nearly clean except softmax fp32 (32768,512)+15%. Big win (10-20%) blocked on the occupancy fact.",
+      {
+        "id": "CE_bf16_wide_V_w8_BIGGEST_opportunity",
+        "finding": "CE bf16 common vocabs (V=32000 Llama2, V=50257 GPT2) want num_warps=8 not the seed w32 -> 34-49% faster, M-STABLE (occ 15-124, unlike narrow-N). CE bf16 V=50257 G_cg jumps 1.22->1.82 vs tc.",
+        "data": "bf16 CE: 32KB->w8, 64KB->w8, 100KB->w8(36% faster), 131KB->w32, 256KB->w16, 400KB->w16 (NON-MONOTONIC). fp32 CE: 64KB->tie, 96KB->w16, 128KB->w16, 201KB->w32.",
+        "why_not_shippable_cleanly": "NOT byte-separable: at ~96-100KB bytes, bf16(V50k)->w8 but fp32(V24-32k)->w16 (same bytes, diff warps; only itemsize+elemcount differ). bf16 optimum non-monotonic in bytes (w8@100KB,w32@131KB) = register-pressure/persist-boundary artifact, not a clean law. A rnumel-in-[32k,50k]&itemsize==2 rule = curriculum FENCE (fact-integrity would reject). fp32 V=24-32k at a w8 byte-rule regress 6-22%.",
+        "route_to_capture": "Needs a register-pressure / persist-tile-footprint fact (why w8 beats w32 at 100KB bf16 but not 131KB) OR a full-oracle answer-key sweep across the bf16 V range to map the non-monotonic boundary precisely. THE #1 future climb - biggest single win found (35-49% on the most common CE vocabs)."
+      }
+    ],
+    "_RUN_SUMMARY": {
+      "sha": "d424baba",
+      "shipped_wins": [
+        "jsd bf16/fp16 correctness fix (true fp32 no-op)",
+        "CE bf16 wide-V num_warps=8 +49% (V=32k/50k GPT2/Llama2) via faithful full_width_output fact, Gate A+D 3/3"
+      ],
+      "bf16_geo_G_cg": {
+        "softmax": 1.31,
+        "cross_entropy": 1.36,
+        "layer_norm": 1.09,
+        "kl_div": 1.11,
+        "sum": 1.07,
+        "rms_norm": 1.06,
+        "welford": 0.99,
+        "long_sum": 0.8,
+        "jsd": 0.82
+      },
+      "fp32": "PROVEN config-invariant (full_width_output only gates bf16-within-cap; fp32 always >cap)",
+      "fp16": "transfer confirmed bf16~fp16; wide-V kl/jsd kernel-authoring NaN documented",
+      "all_losers": "oracle-confirmed codegen/occupancy-bound exempt",
+      "deferred": [
+        "D4 narrow-N occupancy-gated w1 (10-20%, needs grid_rows//num_sm)"
+      ],
+      "production_diff": "examples/jsd.py +6/-1; full_width_output fact (device_ir +43, config_spec +7); w8 gate+docstring (triton.py +32)",
+      "tests": "20 autotuner-heuristic + 23 example pass, lint clean",
+      "gate_kills": "4 warps proxies gate-killed before the faithful win -- gates worked"
+    }
   }
 }
