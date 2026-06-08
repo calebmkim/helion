@@ -48,6 +48,21 @@ already a fact), NOT a byte cap. DO NOT bank until the A/B separates warps from 
     rms/ln/softmax/sum ALSO want w4 at (16384,5120)? If yes → general ramp mid-N fix; if welford-only →
     welford serial-recurrence structure (Band-C fact). Decision pending that result.
 
+### ★ CROSS-KERNEL RESULT — mid-N over-warping is GENERAL (re-read kernels), NOT welford-specific ★
+(16384,5120) bf16, ramp gives w16, but BEST num_warps per kernel (CUDA-graph /tmp/midN_crosskernel.json):
+  - **softmax w16→w4 = +44.7%** (sweep w2=124,w4=117,w8=121,w16=169,w32=218) — HUGE
+  - layer_norm w16→w4 = +11.5% ; welford w16→w4 = +14.4% (from prior A/B)
+  - rms_norm: FLAT, w16 already best (+0%) — resident-reuse, warp-insensitive
+  - sum: FLAT, +0.8% — single-load, warp-insensitive
+SO: the shared ramp is OVER-WARPED at MID-N (rnumel 4097-16384) for RE-READ kernels (softmax/ln/welford)
+at moderate occupancy — same cross-warp-tree mechanism as D4 narrow-N, the NEXT ramp step up. This is a
+2nd, BIGGER occupancy-gated regime (softmax +44.7%). rms/sum flat → safe to lower their warps too.
+NEW TASK #7. Need M-axis sweep at N=5120/8192 (does w4 invert at high occ? — /tmp/midN_occ_sweep.json
+running) + Gate A/D/F before banking. RISK: shared ramp touches all; bound by occ + faithful facts.
+The faithful key may be the SAME (occ + input_load_itemsize), just extending the byte cap from 2048 up to
+~the mid-N band — OR a re-read-gated rule (row_reread distinguishes the warp-sensitive softmax/ln/welford
+from flat rms/sum... but rms_norm IS row_reread too yet flat — so the separator is subtler, TBD from data).
+
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
   - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
