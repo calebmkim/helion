@@ -63,6 +63,19 @@ The faithful key may be the SAME (occ + input_load_itemsize), just extending the
 ~the mid-N band — OR a re-read-gated rule (row_reread distinguishes the warp-sensitive softmax/ln/welford
 from flat rms/sum... but rms_norm IS row_reread too yet flat — so the separator is subtler, TBD from data).
 
+### ★ KEY CONSTRAINT — softmax & rms_norm are FACT-IDENTICAL yet behave OPPOSITELY at mid-N ★
+Probed all facts at (16384,5120) bf16: softmax = {non_red_loops=0, num_load=2, row_reread=1, full_w=1},
+rms_norm = IDENTICAL {non_red_loops=0, num_load=2, row_reread=1, full_w=1}. Yet softmax w4=+59%-then-CLIFF
+(-71% at occ993) while rms_norm is flat-safe (±2% all occ). layer_norm differs only by num_load=3; welford
+by non_red_loops=1. ⇒ NO faithful fact separates softmax (cliffs) from rms_norm (safe) — the difference is
+the ALGORITHM (softmax 2-pass exp/max vs rms single mean-of-squares), not a recorded workload property.
+CONSEQUENCE: a mid-N w4 rule CANNOT kernel-discriminate; it must rely on the occ+byte CAPS alone to dodge
+softmax's cliff for ALL kernels. The kernel-agnostic rule `4096<byte<=10240 AND occ<=992//ils` (bf16
+occ<=496) was clean (16 fired, 13 wins +37-59%, worst -1.8%, ALL catastrophes excluded incl softmax bf16
+N5120 occ993 +302%). REMAINING RISK: softmax bf16 N5120 cliff is VIOLENT with no data between occ496(+59%)
+and occ993(-71%) → fine-occ sweep running (/tmp/softmax_cliff.json) to confirm occ<=496 has margin. If the
+cliff edge is < ~700, occ<=496 is safe; if it's near 500, must tighten. DECISION GATED ON THAT DATA.
+
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
   - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
