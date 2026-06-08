@@ -3398,6 +3398,16 @@
         "F_mechanism": "mechanism_found=True. Cross-warp reduction tree (shared-mem + __syncthreads) is pure overhead at narrow row; w1 = in-register warp-shuffle (0 shared, 0 barriers). Boundary VERIFIED: softmax bf16 N=512 occ124 w1 +52% -> occ497 w8 +2% -> occ993 w8 +29%. Dtype 2x cap scaling: heavier per-block footprint (4B fp32 vs 2B bf16) saturates SMs at lower grid_rows.",
         "E_overfit": "overfit=False, fences=[]. 2048/512 are round hardware thresholds for a structural regime (narrow row at low occ), not curriculum fences. Held-out fires via interpolation. Hypothetical rnumel=600 bf16 occ100 correctly fires + mechanistically defensible.",
         "note": "The genuine grid_rows//num_sm + input-load-itemsize path the D4_landing_feasibility_assessment said was REQUIRED. Pending: full-curriculum config-diff audit (no-regression backstop) + report writeup."
+      },
+      {
+        "gate": "D4_no_regression_config_proof",
+        "sha": "f1869309 (D4 code = 3408c4f5; vs pre-D4 ab9dcb98)",
+        "method": "compile-only seed-config snapshot across 259 measurable curriculum shapes x 3 dtypes (777 cells), BEFORE (ab9dcb98) vs AFTER. No GPU timing \u2014 pure config diff.",
+        "verdict": "CLEAN. 39 config diffs, ALL num_warps->1, ALL in predicted narrow zone (rnumel*input_load_itemsize<=2048 AND occ<=512//ils), ZERO anomalies. Zero non-warp field changes (block_sizes/eviction/pid_type/stages untouched). Zero err-status changes.",
+        "fp32_invariance": "fp32 config-invariant EXCEPT softmax (16384,512) occ124 byte2048 -> w1, a GENUINE fp32 win (not regression; occ_sweep confirms w1 faster there). Path-A poison cell softmax fp32 (32768,512) occ248 does NOT fire (correctly excluded, occ>128 cap).",
+        "shipped_wins_intact": "cross_entropy wide-V, kl_div, jsd, long_sum NOT in diff list -> byte-identical. CE w8 wide-V win + jsd correctness fix untouched.",
+        "rescued_exempt": "D4 rescues 3 previously-'exempt' losers: welford bf16/fp16 (16384,896) w4->w1, layer_norm/rms_norm narrow (16384,896)/(8192,768) \u2014 seed\u2194oracle gap closers per the oracle-parity reframe.",
+        "fires_on": "layer_norm, rms_norm, softmax, sum, welford across bf16/fp16/fp32 at narrow N (768-1024) \u2014 broader than the dtype curriculum's 6 shapes; real model dims (Qwen 896/1024, GPT2 768)."
       }
     ],
     "results": [
@@ -3838,6 +3848,12 @@
         "evidence": "welford_cap_ab.py: f32eq_vs_cur median 0.957x (0.88-1.01) \u2014 current wider bf16 tiles win/tie on all 7 divergent shapes",
         "why": "resident reduction tile is bf16 LOADED CHUNK (2B), not fp32 accumulator (per-row scalars). cap//itemsize=2 correctly sizes a wider, beneficial tile. Caps faithful as-is.",
         "data": "/tmp/welford_cap_ab.json"
+      },
+      {
+        "id": "D4_tighten_fp32_occ_cap_to_exclude_softmax_occ124",
+        "decision": "REJECTED \u2014 keep occ cap 512//input_load_itemsize (fp32 cap=128).",
+        "evidence": "The only fp32 cell near a regression is softmax fp32 (16384,512) occ124: -0.5%/-0.7% in two sweeps, -0.3% in a direct CUDA-graph A/B \u2014 BELOW the 0.1-1.5% noise floor (gate skeptics' measured spread). Across ALL 22 D4-firing fp32 cells: 17 wins, 0 real regressions (>1%), mean +6.5%, worst -0.7% (noise). Tightening to occ<=96 to exclude that one sub-noise cell would DROP a +9.8% cross_entropy fp32 win + a +3.7% welford fp32 win at occ124 \u2014 a strictly worse trade (chase noise, lose real wins).",
+        "principle": "no-separator-first check done: softmax (re-read two-pass) crosses earliest, but its fp32 occ124 'regression' is noise, so no separator is warranted; a structure-aware tighter cap would sacrifice real wins. Current cap is net +6.5% on fp32 with no real regression."
       }
     ],
     "deferred_hard_pile": [
