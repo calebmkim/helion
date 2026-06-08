@@ -1,0 +1,526 @@
+{
+ "rows": [
+  {
+   "key": "cross_entropy:4096x50304",
+   "kernel": "cross_entropy",
+   "shape": [
+    4096,
+    50304
+   ],
+   "seed_us": 282.4319899082184,
+   "tc_us": 303.0720055103302,
+   "oracle_us": 282.8480005264282,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 9.5367431640625e-07,
+   "seed_oracle": 0.9985292078521483,
+   "G_floor": 1.073079595582707,
+   "oracle_vs_tc": 0.9332699668191141
+  },
+  {
+   "key": "cross_entropy:8192x32000",
+   "kernel": "cross_entropy",
+   "shape": [
+    8192,
+    32000
+   ],
+   "seed_us": 351.1039912700653,
+   "tc_us": 379.32801246643066,
+   "oracle_us": 353.85599732398987,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 0.9922228079367414,
+   "G_floor": 1.0803865005757105,
+   "oracle_vs_tc": 0.9328496332848738
+  },
+  {
+   "key": "cross_entropy:8192x49152",
+   "kernel": "cross_entropy",
+   "shape": [
+    8192,
+    49152
+   ],
+   "seed_us": 524.2879986763,
+   "tc_us": 562.1439814567566,
+   "oracle_us": 527.3920297622681,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 0.9941143761930433,
+   "G_floor": 1.0722045571823764,
+   "oracle_vs_tc": 0.9381796250767797
+  },
+  {
+   "key": "cross_entropy:8192x50257",
+   "kernel": "cross_entropy",
+   "shape": [
+    8192,
+    50257
+   ],
+   "seed_us": 619.951993227005,
+   "tc_us": 676.2239933013916,
+   "oracle_us": 624.1599917411804,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 0.9932581412300449,
+   "G_floor": 1.0907683186587993,
+   "oracle_vs_tc": 0.9230077576720849
+  },
+  {
+   "key": "cross_entropy:4096x98304",
+   "kernel": "cross_entropy",
+   "shape": [
+    4096,
+    98304
+   ],
+   "seed_us": 595.9680080413818,
+   "tc_us": 555.3600192070007,
+   "oracle_us": 588.3679986000061,
+   "oracle_effort": "full",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 1.012917101982874,
+   "G_floor": 0.9318621330567103,
+   "oracle_vs_tc": 1.0594352820718667
+  },
+  {
+   "key": "cross_entropy:8192x128256",
+   "kernel": "cross_entropy",
+   "shape": [
+    8192,
+    128256
+   ],
+   "seed_us": 1829.807996749878,
+   "tc_us": 1397.4720239639282,
+   "oracle_us": 1832.1119546890259,
+   "oracle_effort": "full",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 0.998742457886784,
+   "G_floor": 0.7637260447249826,
+   "oracle_vs_tc": 1.311018698959169
+  },
+  {
+   "key": "cross_entropy:2048x256000",
+   "kernel": "cross_entropy",
+   "shape": [
+    2048,
+    256000
+   ],
+   "seed_us": 1193.120002746582,
+   "tc_us": 726.0479927062988,
+   "oracle_us": 1171.8720197677612,
+   "oracle_effort": "full",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 9.5367431640625e-07,
+   "seed_oracle": 1.0181316582531186,
+   "G_floor": 0.6085288915070775,
+   "oracle_vs_tc": 1.6140420902476171
+  },
+  {
+   "key": "long_sum:16x2097152",
+   "kernel": "long_sum",
+   "shape": [
+    16,
+    2097152
+   ],
+   "seed_us": 76.54400169849396,
+   "tc_us": 56.28800019621849,
+   "oracle_us": 76.7040029168129,
+   "oracle_effort": "quick",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 0.0009765625,
+   "seed_oracle": 0.9979140434366579,
+   "G_floor": 0.7353678792224158,
+   "oracle_vs_tc": 1.3627061300707923
+  },
+  {
+   "key": "jsd:8192x30522",
+   "kernel": "jsd",
+   "shape": [
+    8192,
+    30522
+   ],
+   "seed_us": 676.6080260276794,
+   "tc_us": 676.8320202827454,
+   "oracle_us": 661.9680225849152,
+   "oracle_effort": "full",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 1.0221158771168382,
+   "G_floor": 1.0003310546822524,
+   "oracle_vs_tc": 0.978038867470217
+  },
+  {
+   "key": "softmax:131072x256",
+   "kernel": "softmax",
+   "shape": [
+    131072,
+    256
+   ],
+   "seed_us": 104.38399761915207,
+   "tc_us": 93.6799980700016,
+   "oracle_us": 93.82399916648865,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 2.9802322387695312e-08,
+   "seed_oracle": 1.1125511441259814,
+   "G_floor": 0.897455550723356,
+   "oracle_vs_tc": 1.0015371594732467
+  },
+  {
+   "key": "cross_entropy:8192x57344",
+   "kernel": "cross_entropy",
+   "shape": [
+    8192,
+    57344
+   ],
+   "seed_us": 674.6879816055298,
+   "tc_us": 649.9840021133423,
+   "oracle_us": 612.2559905052185,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 9.5367431640625e-07,
+   "seed_oracle": 1.1019704046485423,
+   "G_floor": 0.9633845864077787,
+   "oracle_vs_tc": 0.9419554766187231
+  },
+  {
+   "key": "softmax:1024x65536",
+   "kernel": "softmax",
+   "shape": [
+    1024,
+    65536
+   ],
+   "seed_us": 201.60000026226044,
+   "tc_us": 269.74400877952576,
+   "oracle_us": 194.0159946680069,
+   "oracle_effort": "full",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 1.7462298274040222e-10,
+   "seed_oracle": 1.039089589532198,
+   "G_floor": 1.3380159148244897,
+   "oracle_vs_tc": 0.7192596993936764
+  },
+  {
+   "key": "softmax:512x131072",
+   "kernel": "softmax",
+   "shape": [
+    512,
+    131072
+   ],
+   "seed_us": 256.25601410865784,
+   "tc_us": 276.12799406051636,
+   "oracle_us": 251.52000784873962,
+   "oracle_effort": "full",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 1.1641532182693481e-10,
+   "seed_oracle": 1.0188295408402117,
+   "G_floor": 1.077547370043118,
+   "oracle_vs_tc": 0.9108819578561685
+  },
+  {
+   "key": "jsd:8192x32000",
+   "kernel": "jsd",
+   "shape": [
+    8192,
+    32000
+   ],
+   "seed_us": 697.5840032100677,
+   "tc_us": 699.7439861297607,
+   "oracle_us": 680.895984172821,
+   "oracle_effort": "full",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 1.0245089109425722,
+   "G_floor": 1.0030963767944125,
+   "oracle_vs_tc": 0.9730644316628045
+  },
+  {
+   "key": "sum:16384x2048",
+   "kernel": "sum",
+   "shape": [
+    16384,
+    2048
+   ],
+   "seed_us": 51.64799839258194,
+   "tc_us": 51.44000053405762,
+   "oracle_us": 52.22399905323982,
+   "oracle_effort": "full",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 3.0517578125e-05,
+   "seed_oracle": 0.9889705753848785,
+   "G_floor": 0.9959727798753534,
+   "oracle_vs_tc": 1.0152410285972515
+  },
+  {
+   "key": "kl_div:8192x30522",
+   "kernel": "kl_div",
+   "shape": [
+    8192,
+    30522
+   ],
+   "seed_us": 651.2640118598938,
+   "tc_us": 727.9040217399597,
+   "oracle_us": 651.5680253505707,
+   "oracle_effort": "quick",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 0.999533412508213,
+   "G_floor": 1.117678865228858,
+   "oracle_vs_tc": 0.8951290360961082
+  },
+  {
+   "key": "softmax:4096x4096",
+   "kernel": "softmax",
+   "shape": [
+    4096,
+    4096
+   ],
+   "seed_us": 54.11199852824211,
+   "tc_us": 56.03199824690819,
+   "oracle_us": 50.12800171971321,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 3.725290298461914e-09,
+   "seed_oracle": 1.0794764736644622,
+   "G_floor": 1.0354819591012516,
+   "oracle_vs_tc": 0.8946316977456581
+  },
+  {
+   "key": "rms_norm:8192x768",
+   "kernel": "rms_norm",
+   "shape": [
+    8192,
+    768
+   ],
+   "seed_us": 23.663999512791634,
+   "tc_us": 22.752000018954277,
+   "oracle_us": 20.22399939596653,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 1.9073486328125e-06,
+   "seed_oracle": 1.1700949475656717,
+   "G_floor": 0.9614604668435539,
+   "oracle_vs_tc": 0.888888861599784
+  },
+  {
+   "key": "rms_norm:4096x8192",
+   "kernel": "rms_norm",
+   "shape": [
+    4096,
+    8192
+   ],
+   "seed_us": 95.2640026807785,
+   "tc_us": 95.16800194978714,
+   "oracle_us": 93.66399794816971,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 1.9073486328125e-06,
+   "seed_oracle": 1.0170823877654056,
+   "G_floor": 0.9989922664564804,
+   "oracle_vs_tc": 0.9841963268030889
+  },
+  {
+   "key": "rms_norm:2048x16384",
+   "kernel": "rms_norm",
+   "shape": [
+    2048,
+    16384
+   ],
+   "seed_us": 96.76799923181534,
+   "tc_us": 95.0080007314682,
+   "oracle_us": 96.12800180912018,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 1.9073486328125e-06,
+   "seed_oracle": 1.0066577626773725,
+   "G_floor": 0.9818121846651916,
+   "oracle_vs_tc": 1.0117884922220137
+  },
+  {
+   "key": "rms_norm:32768x2048",
+   "kernel": "rms_norm",
+   "shape": [
+    32768,
+    2048
+   ],
+   "seed_us": 183.55199694633484,
+   "tc_us": 181.66400492191315,
+   "oracle_us": 182.75199830532074,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 2.86102294921875e-06,
+   "seed_oracle": 1.0043775096766798,
+   "G_floor": 0.9897141297516164,
+   "oracle_vs_tc": 1.0059890421543622
+  },
+  {
+   "key": "layer_norm:8192x768",
+   "kernel": "layer_norm",
+   "shape": [
+    8192,
+    768
+   ],
+   "seed_us": 24.09599907696247,
+   "tc_us": 23.04000034928322,
+   "oracle_us": 22.816000506281853,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 1.9073486328125e-06,
+   "seed_oracle": 1.0561009178768295,
+   "G_floor": 0.9561753499281603,
+   "oracle_vs_tc": 0.990277784739342
+  },
+  {
+   "key": "layer_norm:2048x16384",
+   "kernel": "layer_norm",
+   "shape": [
+    2048,
+    16384
+   ],
+   "seed_us": 100.35199671983719,
+   "tc_us": 98.91200065612793,
+   "oracle_us": 95.96800059080124,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 1.9073486328125e-06,
+   "seed_oracle": 1.0456818533474392,
+   "G_floor": 0.9856505489598832,
+   "oracle_vs_tc": 0.9702361690614101
+  },
+  {
+   "key": "layer_norm:32768x1024",
+   "kernel": "layer_norm",
+   "shape": [
+    32768,
+    1024
+   ],
+   "seed_us": 96.03200107812881,
+   "tc_us": 94.62399780750275,
+   "oracle_us": 94.59199756383896,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 1.9073486328125e-06,
+   "seed_oracle": 1.0152233122396852,
+   "G_floor": 0.9853381867000713,
+   "oracle_vs_tc": 0.999661816828656
+  },
+  {
+   "key": "sum:16384x1024",
+   "kernel": "sum",
+   "shape": [
+    16384,
+    1024
+   ],
+   "seed_us": 29.343999922275543,
+   "tc_us": 34.55999866127968,
+   "oracle_us": 28.76799926161766,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 1.52587890625e-05,
+   "seed_oracle": 1.0200222704199795,
+   "G_floor": 1.1777535016637108,
+   "oracle_vs_tc": 0.8324074182864116
+  },
+  {
+   "key": "sum:4096x28672",
+   "kernel": "sum",
+   "shape": [
+    4096,
+    28672
+   ],
+   "seed_us": 165.15199840068817,
+   "tc_us": 165.48799723386765,
+   "oracle_us": 160.51200032234192,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 0.00011444091796875,
+   "seed_oracle": 1.0289074839826815,
+   "G_floor": 1.0020344823946017,
+   "oracle_vs_tc": 0.9699313726995339
+  },
+  {
+   "key": "long_sum:256x65536",
+   "kernel": "long_sum",
+   "shape": [
+    256,
+    65536
+   ],
+   "seed_us": 30.62400035560131,
+   "tc_us": 31.888000667095184,
+   "oracle_us": 30.271999537944794,
+   "oracle_effort": "quick",
+   "seed_codegen": "persistent",
+   "correct": true,
+   "maxerr": 0.000152587890625,
+   "seed_oracle": 1.0116279341645502,
+   "G_floor": 1.0412748268291696,
+   "oracle_vs_tc": 0.9493225948524919
+  },
+  {
+   "key": "kl_div:1024x256000",
+   "kernel": "kl_div",
+   "shape": [
+    1024,
+    256000
+   ],
+   "seed_us": 682.1119785308838,
+   "tc_us": 715.3279781341553,
+   "oracle_us": 679.0720224380493,
+   "oracle_effort": "quick",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 0.0,
+   "seed_oracle": 1.0044766328053396,
+   "G_floor": 1.0486958163010291,
+   "oracle_vs_tc": 0.9493156191224686
+  },
+  {
+   "key": "jsd:2048x256000",
+   "kernel": "jsd",
+   "shape": [
+    2048,
+    256000
+   ],
+   "seed_us": 1354.0159463882446,
+   "tc_us": 1390.1439905166626,
+   "oracle_us": 1344.7840213775635,
+   "oracle_effort": "full",
+   "seed_codegen": "looped",
+   "correct": true,
+   "maxerr": 1.4901161193847656e-08,
+   "seed_oracle": 1.0068649871383988,
+   "G_floor": 1.0266821408010647,
+   "oracle_vs_tc": 0.9673703087963998
+  }
+ ]
+}

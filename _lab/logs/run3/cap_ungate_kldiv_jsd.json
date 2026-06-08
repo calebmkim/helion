@@ -1,0 +1,316 @@
+{
+  "claim": "ungate row_reread cap to ALL kernels (incl row_reread=False kl_div/jsd) with ~no perf change",
+  "method": "STEP1 compile-only: GATED=live compiler_seed_configs[0]; UNGATED=hand-built T2/Band-B config with _persistent_looped forced to (False,16384,32). Both normalized & diffed; codegen emitted for each.",
+  "finding": "Band-B dominance confirmed: R_BLOCK = min(extent, np2(bandb_cap)) and np2(bandb_cap) (4096 kl_div / 2048 jsd) < both np2(N) and LOOPED_CHUNK=16384, so R_BLOCK identical in both arms. num_warps=32 in both arms (rnumel=N>16384 -> _num_warps=32 == LOOPED_NUM_WARPS=32). row_reread=False so reread-eviction never fires in either arm. => emitted config BYTE-IDENTICAL for all 8 shapes; ungating is INERT.",
+  "config_differs_count": 0,
+  "n_shapes": 8,
+  "step2_benched": false,
+  "step2_reason": "0/8 shapes differ -> nothing to bench; claim trivially holds",
+  "bottom_line": "YES \u2014 the cap can be ungated for kl_div+jsd with ZERO perf change (config & codegen identical; not just within noise). Band-B R_BLOCK cap already strictly dominates. NOTE: row_reread FIELD is still needed by reread-eviction + EDIT-PID for OTHER kernels; ungating the cap != deleting the field.",
+  "shapes": [
+    {
+      "kernel": "kl_div",
+      "shape": [
+        4096,
+        65536
+      ],
+      "rowKB": 256.0,
+      "row_reread": false,
+      "n_carried": 1,
+      "itemsize": 4,
+      "bandb_cap": 4096,
+      "np2_N": 65536,
+      "gated_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "ungated_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "gated_R_BLOCK": 4096,
+      "ungated_R_BLOCK": 4096,
+      "gated_warps": 32,
+      "ungated_warps": 32,
+      "gated_cg": "looped",
+      "ungated_cg": "looped",
+      "config_differs": false
+    },
+    {
+      "kernel": "kl_div",
+      "shape": [
+        2048,
+        98304
+      ],
+      "rowKB": 384.0,
+      "row_reread": false,
+      "n_carried": 1,
+      "itemsize": 4,
+      "bandb_cap": 4096,
+      "np2_N": 131072,
+      "gated_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "ungated_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "gated_R_BLOCK": 4096,
+      "ungated_R_BLOCK": 4096,
+      "gated_warps": 32,
+      "ungated_warps": 32,
+      "gated_cg": "looped",
+      "ungated_cg": "looped",
+      "config_differs": false
+    },
+    {
+      "kernel": "kl_div",
+      "shape": [
+        4096,
+        128256
+      ],
+      "rowKB": 501.0,
+      "row_reread": false,
+      "n_carried": 1,
+      "itemsize": 4,
+      "bandb_cap": 4096,
+      "np2_N": 131072,
+      "gated_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "ungated_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "gated_R_BLOCK": 4096,
+      "ungated_R_BLOCK": 4096,
+      "gated_warps": 32,
+      "ungated_warps": 32,
+      "gated_cg": "looped",
+      "ungated_cg": "looped",
+      "config_differs": false
+    },
+    {
+      "kernel": "kl_div",
+      "shape": [
+        1024,
+        256000
+      ],
+      "rowKB": 1000.0,
+      "row_reread": false,
+      "n_carried": 1,
+      "itemsize": 4,
+      "bandb_cap": 4096,
+      "np2_N": 262144,
+      "gated_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "ungated_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "gated_R_BLOCK": 4096,
+      "ungated_R_BLOCK": 4096,
+      "gated_warps": 32,
+      "ungated_warps": 32,
+      "gated_cg": "looped",
+      "ungated_cg": "looped",
+      "config_differs": false
+    },
+    {
+      "kernel": "jsd",
+      "shape": [
+        8192,
+        65536
+      ],
+      "rowKB": 256.0,
+      "row_reread": false,
+      "n_carried": 2,
+      "itemsize": 4,
+      "bandb_cap": 2048,
+      "np2_N": 65536,
+      "gated_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "ungated_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "gated_R_BLOCK": 2048,
+      "ungated_R_BLOCK": 2048,
+      "gated_warps": 32,
+      "ungated_warps": 32,
+      "gated_cg": "looped",
+      "ungated_cg": "looped",
+      "config_differs": false
+    },
+    {
+      "kernel": "jsd",
+      "shape": [
+        4096,
+        98304
+      ],
+      "rowKB": 384.0,
+      "row_reread": false,
+      "n_carried": 2,
+      "itemsize": 4,
+      "bandb_cap": 2048,
+      "np2_N": 131072,
+      "gated_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "ungated_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "gated_R_BLOCK": 2048,
+      "ungated_R_BLOCK": 2048,
+      "gated_warps": 32,
+      "ungated_warps": 32,
+      "gated_cg": "looped",
+      "ungated_cg": "looped",
+      "config_differs": false
+    },
+    {
+      "kernel": "jsd",
+      "shape": [
+        4096,
+        151936
+      ],
+      "rowKB": 593.5,
+      "row_reread": false,
+      "n_carried": 2,
+      "itemsize": 4,
+      "bandb_cap": 2048,
+      "np2_N": 262144,
+      "gated_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "ungated_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "gated_R_BLOCK": 2048,
+      "ungated_R_BLOCK": 2048,
+      "gated_warps": 32,
+      "ungated_warps": 32,
+      "gated_cg": "looped",
+      "ungated_cg": "looped",
+      "config_differs": false
+    },
+    {
+      "kernel": "jsd",
+      "shape": [
+        2048,
+        256000
+      ],
+      "rowKB": 1000.0,
+      "row_reread": false,
+      "n_carried": 2,
+      "itemsize": 4,
+      "bandb_cap": 2048,
+      "np2_N": 262144,
+      "gated_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "ungated_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_stages": 1,
+        "num_warps": 32,
+        "pid_type": "flat"
+      },
+      "gated_R_BLOCK": 2048,
+      "ungated_R_BLOCK": 2048,
+      "gated_warps": 32,
+      "ungated_warps": 32,
+      "gated_cg": "looped",
+      "ungated_cg": "looped",
+      "config_differs": false
+    }
+  ]
+}

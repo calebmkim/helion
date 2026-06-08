@@ -1,0 +1,287 @@
+[
+  {
+    "shape": [
+      8192,
+      57344
+    ],
+    "tc_us": 649.6639847755432,
+    "arms": {
+      "seed_looped": {
+        "cfg_rl": [
+          16384
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 729.3760180473328,
+        "spread": 0.004957710282645955
+      },
+      "persist": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 673.3600199222565,
+        "spread": 0.0006177688065523681
+      },
+      "persist_w16": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 637.8560066223145,
+        "spread": 0.01204033323340916
+      },
+      "persist_ns4": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 4,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 640.4160261154175,
+        "spread": 0.010093445905484886
+      }
+    }
+  },
+  {
+    "shape": [
+      8192,
+      65536
+    ],
+    "tc_us": 733.6160242557526,
+    "arms": {
+      "seed_looped": {
+        "cfg_rl": [
+          16384
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 810.0799918174744,
+        "spread": 0.00900654975646549
+      },
+      "persist": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 916.1919951438904,
+        "spread": 0.004121356949782095
+      },
+      "persist_w16": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 792.0480072498322,
+        "spread": 0.003959329670503746
+      },
+      "persist_ns4": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 4,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 792.2559976577759,
+        "spread": 0.003675635821951045
+      }
+    }
+  },
+  {
+    "shape": [
+      8192,
+      73728
+    ],
+    "tc_us": 824.5600163936615,
+    "arms": {
+      "seed_looped": {
+        "cfg_rl": [
+          16384
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "us": 1265.120029449463,
+        "spread": 0.005944068727387719
+      },
+      "persist": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "us": 1289.3439531326294,
+        "spread": 0.002643169932582894
+      },
+      "persist_w16": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "us": 1171.4239716529846,
+        "spread": 0.005682016795913425
+      },
+      "persist_ns4": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 4,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "us": 1171.7760562896729,
+        "spread": 0.003359048259486427
+      }
+    }
+  },
+  {
+    "shape": [
+      2048,
+      57344
+    ],
+    "tc_us": 180.4800033569336,
+    "arms": {
+      "seed_looped": {
+        "cfg_rl": [
+          16384
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 209.28000658750534,
+        "spread": 0.013608559082037803
+      },
+      "persist": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 188.22400271892548,
+        "spread": 0.015130904099347196
+      },
+      "persist_w16": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 182.78400599956512,
+        "spread": 0.020658256882790726
+      },
+      "persist_ns4": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 4,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 183.20000171661377,
+        "spread": 0.019213957247332596
+      }
+    }
+  },
+  {
+    "shape": [
+      2048,
+      65536
+    ],
+    "tc_us": 202.7519941329956,
+    "arms": {
+      "seed_looped": {
+        "cfg_rl": [
+          16384
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 231.58399760723114,
+        "spread": 0.016166882403118546
+      },
+      "persist": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 32,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 251.64799392223358,
+        "spread": 0.012334695124193419
+      },
+      "persist_w16": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 1,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 219.80799734592438,
+        "spread": 0.013539090228400458
+      },
+      "persist_ns4": {
+        "cfg_rl": [
+          null
+        ],
+        "cfg_w": 16,
+        "cfg_ns": 4,
+        "codegen": "persistent",
+        "correct": true,
+        "maxerr": 0.0,
+        "us": 219.9840024113655,
+        "spread": 0.013382825494746908
+      }
+    }
+  }
+]

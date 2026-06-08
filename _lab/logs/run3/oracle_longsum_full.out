@@ -1,0 +1,8 @@
+GPU=0 helion=/home/dev/local/helion-reduction-heuristics-run2/helion/__init__.py effort=full
+[0s] Starting autotuning process, this may take a while...
+[0s] Autotune random seed: 2368686169
+[0s] Starting LFBOTreeSearch with initial_population=FROM_RANDOM, copies=5, max_generations=20, similarity_penalty=1.0
+[61s] Timeout after 60s compiling Config(atomic_indexing=[], block_sizes=[8], indexing=['pointer', 'tensor_descriptor', 'tensor_descriptor'], load_eviction_policies=['first', 'last'], num_stages=6, num_warps=1, pid_type='flat', range_flattens=[None], range_multi_buffers=[None], range_num_stages=[0], range_unroll_factors=[0], range_warp_specializes=[], reduction_loops=[4096])
+[62s] Timeout after 60s compiling Config(atomic_indexing=[], block_sizes=[1], indexing=['tensor_descriptor', 'pointer', 'tensor_descriptor'], load_eviction_policies=['last', 'last'], maxnreg=128, num_sm_multiplier=8, num_stages=1, num_warps=4, pid_type='persistent_blocked', range_flattens=[None], range_multi_buffers=[False], range_num_stages=[3], range_unroll_factors=[2], range_warp_specializes=[], reduction_loops=[262144])
+[62s] Timeout after 60s compiling Config(atomic_indexing=[], block_sizes=[2], indexing=['tensor_descriptor', 'tensor_descriptor', 'pointer'], load_eviction_policies=['first', 'last'], num_stages=1, num_warps=8, pid_type='flat', range_flattens=[None], range_multi_buffers=[None], range_num_stages=[0], range_unroll_factors=[0], range_warp_specializes=[], reduction_loops=[131072])
+Initial population precompiling 100% ━━━━━━━━━━━━━━━━━━━━━ 100/100 0.2 configs/s

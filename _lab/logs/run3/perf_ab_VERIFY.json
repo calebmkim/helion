@@ -1,0 +1,654 @@
+{
+  "gpu": "0",
+  "helion": "/tmp/v2-wt/helion/__init__.py",
+  "results": [
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        4096,
+        65536
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first",
+          "last",
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 32,
+        "maxnreg": 64
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "looped",
+      "mine_correct": true,
+      "mine_maxerr": 0.0,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 0.0,
+      "mine_lat_us_runs": [
+        368.5759902000427
+      ],
+      "main_lat_us_runs": [
+        6292.1600341796875
+      ],
+      "mine_lat_us": 368.5759902000427,
+      "main_lat_us": 6292.1600341796875,
+      "ratio_main_over_mine": 17.071540744595573,
+      "ratio_runs": [
+        17.0715
+      ]
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        49152
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 0.0,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 0.0,
+      "mine_lat_us_runs": [
+        524.9919891357422
+      ],
+      "main_lat_us_runs": [
+        8353.407859802246
+      ],
+      "mine_lat_us": 524.9919891357422,
+      "main_lat_us": 8353.407859802246,
+      "ratio_main_over_mine": 15.911495856448935,
+      "ratio_runs": [
+        15.9115
+      ]
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        4096,
+        49152
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 0.0,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 0.0,
+      "mine_lat_us_runs": [
+        278.49599719047546
+      ],
+      "main_lat_us_runs": [
+        4210.015773773193
+      ],
+      "mine_lat_us": 278.49599719047546,
+      "main_lat_us": 4210.015773773193,
+      "ratio_main_over_mine": 15.116970499557238,
+      "ratio_runs": [
+        15.117
+      ]
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        30522
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 0.0,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 0.0,
+      "mine_lat_us_runs": [
+        347.4879860877991
+      ],
+      "main_lat_us_runs": [
+        384.0959966182709
+      ],
+      "mine_lat_us": 347.4879860877991,
+      "main_lat_us": 384.0959966182709,
+      "ratio_main_over_mine": 1.1053504351117973,
+      "ratio_runs": [
+        1.1054
+      ]
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        8192,
+        16384
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 8.392333984375e-05,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 0.0001220703125,
+      "mine_lat_us_runs": [
+        182.01600015163422
+      ],
+      "main_lat_us_runs": [
+        182.5920045375824
+      ],
+      "mine_lat_us": 182.01600015163422,
+      "main_lat_us": 182.5920045375824,
+      "ratio_main_over_mine": 1.003164581055887,
+      "ratio_runs": [
+        1.0032
+      ]
+    },
+    {
+      "kernel": "sum",
+      "shape": [
+        4096,
+        8192
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 6.103515625e-05,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 7.62939453125e-05,
+      "mine_lat_us_runs": [
+        49.92000013589859
+      ],
+      "main_lat_us_runs": [
+        57.66399949789047
+      ],
+      "mine_lat_us": 49.92000013589859,
+      "main_lat_us": 57.66399949789047,
+      "ratio_main_over_mine": 1.155128191925284,
+      "ratio_runs": [
+        1.1551
+      ]
+    },
+    {
+      "kernel": "long_sum",
+      "shape": [
+        8,
+        393216
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 0.0003662109375,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 0.001220703125,
+      "mine_lat_us_runs": [
+        18.559999763965607
+      ],
+      "main_lat_us_runs": [
+        33.40800106525421
+      ],
+      "mine_lat_us": 18.559999763965607,
+      "main_lat_us": 33.40800106525421,
+      "ratio_main_over_mine": 1.8000000802864298,
+      "ratio_runs": [
+        1.8
+      ]
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        8192,
+        2048
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 1.9073486328125e-06,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 1.9073486328125e-06,
+      "mine_lat_us_runs": [
+        51.392000168561935,
+        48.09600114822388,
+        48.16000163555145
+      ],
+      "main_lat_us_runs": [
+        50.00000074505806,
+        50.016000866889954,
+        50.016000866889954
+      ],
+      "mine_lat_us": 48.16000163555145,
+      "main_lat_us": 50.016000866889954,
+      "ratio_main_over_mine": 1.0385381887107,
+      "ratio_runs": [
+        0.9729,
+        1.0399,
+        1.0385
+      ]
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        4096,
+        2048
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 1.9073486328125e-06,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 1.9073486328125e-06,
+      "mine_lat_us_runs": [
+        26.399999856948853,
+        25.98400041460991,
+        25.79200081527233
+      ],
+      "main_lat_us_runs": [
+        27.871999889612198,
+        27.871999889612198,
+        27.871999889612198
+      ],
+      "mine_lat_us": 25.98400041460991,
+      "main_lat_us": 27.871999889612198,
+      "ratio_main_over_mine": 1.0726600771581243,
+      "ratio_runs": [
+        1.0558,
+        1.0727,
+        1.0806
+      ]
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        8192,
+        1280
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 1.9073486328125e-06,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 1.9073486328125e-06,
+      "mine_lat_us_runs": [
+        33.1839993596077,
+        31.936001032590866,
+        31.840000301599503
+      ],
+      "main_lat_us_runs": [
+        33.344000577926636,
+        33.56799855828285,
+        33.56799855828285
+      ],
+      "mine_lat_us": 31.936001032590866,
+      "main_lat_us": 33.56799855828285,
+      "ratio_main_over_mine": 1.0511021252794464,
+      "ratio_runs": [
+        1.0048,
+        1.0511,
+        1.0543
+      ]
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        4096,
+        5120
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 2.384185791015625e-06,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 1.9073486328125e-06,
+      "mine_lat_us_runs": [
+        63.551999628543854
+      ],
+      "main_lat_us_runs": [
+        63.391998410224915
+      ],
+      "mine_lat_us": 63.551999628543854,
+      "main_lat_us": 63.391998410224915,
+      "ratio_main_over_mine": 0.9974823574513134,
+      "ratio_runs": [
+        0.9975
+      ]
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        8192,
+        1280
+      ],
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      },
+      "mine_cg": "persistent",
+      "mine_correct": true,
+      "mine_maxerr": 2.384185791015625e-06,
+      "main_cg": "persistent",
+      "main_correct": true,
+      "main_maxerr": 1.9073486328125e-06,
+      "mine_lat_us_runs": [
+        33.76000002026558
+      ],
+      "main_lat_us_runs": [
+        35.16799956560135
+      ],
+      "mine_lat_us": 33.76000002026558,
+      "main_lat_us": 35.16799956560135,
+      "ratio_main_over_mine": 1.0417061476448628,
+      "ratio_runs": [
+        1.0417
+      ]
+    }
+  ]
+}

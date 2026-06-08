@@ -1,0 +1,169 @@
+GPU=0 helion=/home/dev/local/helion-reduction-heuristics-run2/helion/__init__.py
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+
+=== jsd(8192,30522) === tc=678.5us seed_bs=[4096, 1] seed_w=32
+          seed bs=   [4096, 1] w32     800.9us vs_seed=1.000 arm/tc=0.847 sp=0.00 OK
+           w16 bs=   [4096, 1] w16     670.4us vs_seed=1.195 arm/tc=1.012 sp=0.00 OK
+        rb1024 bs=   [1024, 1] w32     802.8us vs_seed=0.998 arm/tc=0.845 sp=0.00 OK
+    rb1024_w16 bs=   [1024, 1] w16     670.0us vs_seed=1.196 arm/tc=1.013 sp=0.00 OK
+        rb2048 bs=   [2048, 1] w32     674.6us vs_seed=1.187 arm/tc=1.006 sp=0.00 OK
+    rb2048_w16 bs=   [2048, 1] w16     660.1us vs_seed=1.213 arm/tc=1.028 sp=0.00 OK
+        rb4096 bs=   [4096, 1] w32     803.6us vs_seed=0.997 arm/tc=0.844 sp=0.00 OK
+    rb4096_w16 bs=   [4096, 1] w16     674.3us vs_seed=1.188 arm/tc=1.006 sp=0.03 OK
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+
+=== jsd(8192,32000) === tc=699.8us seed_bs=[4096, 1] seed_w=32
+          seed bs=   [4096, 1] w32     767.3us vs_seed=1.000 arm/tc=0.912 sp=0.00 OK
+           w16 bs=   [4096, 1] w16     684.0us vs_seed=1.122 arm/tc=1.023 sp=0.00 OK
+        rb1024 bs=   [1024, 1] w32     830.8us vs_seed=0.924 arm/tc=0.842 sp=0.00 OK
+    rb1024_w16 bs=   [1024, 1] w16     688.3us vs_seed=1.115 arm/tc=1.017 sp=0.00 OK
+        rb2048 bs=   [2048, 1] w32     697.8us vs_seed=1.100 arm/tc=1.003 sp=0.04 OK
+    rb2048_w16 bs=   [2048, 1] w16     678.8us vs_seed=1.130 arm/tc=1.031 sp=0.00 OK
+        rb4096 bs=   [4096, 1] w32     770.0us vs_seed=0.997 arm/tc=0.909 sp=0.00 OK
+    rb4096_w16 bs=   [4096, 1] w16     683.9us vs_seed=1.122 arm/tc=1.023 sp=0.00 OK
+
+=== softmax(131072,256) === tc=93.7us seed_bs=[8, 256] seed_w=4
+          seed bs=    [8, 256] w4      117.5us vs_seed=1.000 arm/tc=0.797 sp=0.00 OK
+            w2 bs=    [8, 256] w2      128.5us vs_seed=0.914 arm/tc=0.729 sp=0.00 OK
+            w8 bs=    [8, 256] w8       96.9us vs_seed=1.213 arm/tc=0.967 sp=0.00 OK
+           w16 bs=    [8, 256] w16     100.5us vs_seed=1.169 arm/tc=0.932 sp=0.00 OK
+
+=== softmax(262144,128) === tc=94.8us seed_bs=[16, 128] seed_w=4
+          seed bs=   [16, 128] w4      103.5us vs_seed=1.000 arm/tc=0.916 sp=0.00 OK
+            w2 bs=   [16, 128] w2      123.8us vs_seed=0.836 arm/tc=0.766 sp=0.00 OK
+            w8 bs=   [16, 128] w8       95.1us vs_seed=1.088 arm/tc=0.996 sp=0.00 OK
+           w16 bs=   [16, 128] w16      94.3us vs_seed=1.097 arm/tc=1.005 sp=0.00 OK
+
+=== softmax(16384,512) === tc=27.6us seed_bs=[1, 512] seed_w=4
+          seed bs=    [1, 512] w4       29.0us vs_seed=1.000 arm/tc=0.953 sp=0.00 OK
+            w2 bs=    [1, 512] w2       29.0us vs_seed=1.002 arm/tc=0.955 sp=0.00 OK
+            w8 bs=    [1, 512] w8       34.8us vs_seed=0.834 arm/tc=0.794 sp=0.00 OK
+           w16 bs=    [1, 512] w16      56.4us vs_seed=0.514 arm/tc=0.490 sp=0.01 OK
+
+[wrote /home/dev/local/helion-reduction-heuristics-run2/_lab/logs/run3/warps_ab.json]

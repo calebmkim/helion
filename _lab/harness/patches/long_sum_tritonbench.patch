@@ -1,0 +1,76 @@
+diff --git a/benchmarks/run.py b/benchmarks/run.py
+index ca94297b..56e7e71f 100644
+--- a/benchmarks/run.py
++++ b/benchmarks/run.py
+@@ -411,6 +411,14 @@ KERNEL_MAPPINGS: dict[str, tuple[str, ...]] = {
+         },
+     ),
+     "sum": ("tritonbench.operators.sum.operator", "examples.sum", "sum_tritonbench"),
++    # long_sum reuses the `sum` tritonbench operator (same row-reduction + baselines
++    # incl. torch_compile_no_autotune); drive large N with the operator's `--shapes`
++    # and pass `--reduce-dim 1`. (Lab benchmarking entry, not upstream.)
++    "long_sum": (
++        "tritonbench.operators.sum.operator",
++        "examples.long_sum",
++        "longsum_tritonbench",
++    ),
+     "softmax": (
+         "tritonbench.operators.softmax.operator",
+         "examples.softmax",
+@@ -1409,8 +1417,15 @@ def run_kernel_variants(
+     # pyrefly: ignore [missing-import]
+     from tritonbench.utils.triton_op import BenchmarkOperatorMetrics
+ 
+-    # Get the tritonbench operator name, stripping -bwd suffix for backward operators
+-    operator_name = kernel_name.removesuffix("-bwd")
++    # Get the tritonbench operator name. Derive it from the operator MODULE PATH
++    # (``tritonbench.operators.<op>.operator`` -> ``<op>``) so a kernel whose dict key
++    # differs from its operator dir (e.g. ``long_sum`` reusing the ``sum`` operator)
++    # resolves correctly; fall back to the de-bwd'd dict key.
++    parts = tritonbench_module.split(".")
++    if len(parts) >= 2 and parts[-1] == "operator":
++        operator_name = parts[-2]
++    else:
++        operator_name = kernel_name.removesuffix("-bwd")
+ 
+     # Parse tritonbench arguments
+     tb_parser = get_parser()
+diff --git a/examples/long_sum.py b/examples/long_sum.py
+index 06b59c20..02843778 100644
+--- a/examples/long_sum.py
++++ b/examples/long_sum.py
+@@ -12,6 +12,8 @@ This example demonstrates how to implement efficient sum reduction along a long
+ # %%
+ from __future__ import annotations
+ 
++from typing import Callable
++
+ import torch
+ 
+ import helion
+@@ -192,3 +194,25 @@ def main() -> None:
+ 
+ if __name__ == "__main__":
+     main()
++
++
++# %%
++# Benchmark Wrapper
++# -----------------
++def longsum_tritonbench(tb_op: object, x: torch.Tensor) -> Callable[[], torch.Tensor]:
++    """Wrapper for tritonbench. Mirrors ``sum_tritonbench``: the ``sum`` operator
++    feeds a 1D tensor by default, so reshape to 2D for the row-reduction kernel.
++
++    The module-level ``longsum`` ships a BAKED ``config=...`` which would shadow the
++    reduction-seed heuristic at effort=none. To benchmark the SEED, we run a
++    config-free clone of the same kernel body so ``default_config()`` resolves to the
++    seed (when ``HELION_PROMOTE_REDUCTION_SEED=1``) or the base default otherwise.
++    """
++    seeded = helion.kernel(longsum.fn, static_shapes=True)
++
++    def compute_long_sum() -> torch.Tensor:
++        if x.ndim == 1:
++            return seeded(x.unsqueeze(0)).squeeze()
++        return seeded(x)
++
++    return compute_long_sum

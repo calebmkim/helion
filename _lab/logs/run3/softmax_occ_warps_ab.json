@@ -1,0 +1,242 @@
+[
+  {
+    "label": "hiOcc_tinyN",
+    "shape": [
+      131072,
+      256
+    ],
+    "grid_rows": 131072,
+    "num_sm": 132,
+    "occ": 992.969696969697,
+    "rnumel": 256,
+    "m_block": [
+      8
+    ],
+    "seed_w": 4,
+    "best_w": "w8",
+    "tc_us": 93.66399794816971,
+    "arms": {
+      "w4": {
+        "us": 105.85600137710571,
+        "spread": 0.004836725753658989,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 4
+      },
+      "w8": {
+        "us": 95.61599791049957,
+        "spread": 0.0010040237312716651,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 8
+      },
+      "w16": {
+        "us": 100.5759984254837,
+        "spread": 0.0012726791347737571,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 16
+      }
+    }
+  },
+  {
+    "label": "hiOcc_tinierN",
+    "shape": [
+      262144,
+      128
+    ],
+    "grid_rows": 262144,
+    "num_sm": 132,
+    "occ": 1985.939393939394,
+    "rnumel": 128,
+    "m_block": [
+      16
+    ],
+    "seed_w": 4,
+    "best_w": "w16",
+    "tc_us": 94.7519987821579,
+    "arms": {
+      "w4": {
+        "us": 98.84800016880035,
+        "spread": 0.002266122787147869,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 4
+      },
+      "w8": {
+        "us": 95.13600170612335,
+        "spread": 0.0006727262674468308,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 8
+      },
+      "w16": {
+        "us": 94.27200257778168,
+        "spread": 0.0010183376651212593,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 16
+      }
+    }
+  },
+  {
+    "label": "loOcc_smallN",
+    "shape": [
+      16384,
+      512
+    ],
+    "grid_rows": 16384,
+    "num_sm": 132,
+    "occ": 124.12121212121212,
+    "rnumel": 512,
+    "m_block": [
+      1
+    ],
+    "seed_w": 4,
+    "best_w": "w4",
+    "tc_us": 27.807999402284622,
+    "arms": {
+      "w4": {
+        "us": 29.279999434947968,
+        "spread": 0.002185809035610366,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 4
+      },
+      "w8": {
+        "us": 34.912001341581345,
+        "spread": 0.0018331944565821551,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 8
+      },
+      "w16": {
+        "us": 56.384000927209854,
+        "spread": 0.00397272234450676,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 16
+      }
+    }
+  },
+  {
+    "label": "hiOcc_smallN",
+    "shape": [
+      131072,
+      512
+    ],
+    "grid_rows": 131072,
+    "num_sm": 132,
+    "occ": 992.969696969697,
+    "rnumel": 512,
+    "m_block": [
+      8
+    ],
+    "seed_w": 4,
+    "best_w": "w16",
+    "tc_us": 182.01600015163422,
+    "arms": {
+      "w4": {
+        "us": 238.25599998235703,
+        "spread": 0.001410274174773992,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 4
+      },
+      "w8": {
+        "us": 189.34400379657745,
+        "spread": 0.0008449898836523616,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 8
+      },
+      "w16": {
+        "us": 184.60799753665924,
+        "spread": 0.0005200651263924536,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 16
+      }
+    }
+  },
+  {
+    "label": "loOcc_tinyN",
+    "shape": [
+      4096,
+      256
+    ],
+    "grid_rows": 4096,
+    "num_sm": 132,
+    "occ": 31.03030303030303,
+    "rnumel": 256,
+    "m_block": [
+      1
+    ],
+    "seed_w": 4,
+    "best_w": "w4",
+    "tc_us": 10.432000271975994,
+    "arms": {
+      "w4": {
+        "us": 9.727999567985535,
+        "spread": 0.0032894031416820482,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 4
+      },
+      "w8": {
+        "us": 12.06399966031313,
+        "spread": 0.0026525401661821046,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 8
+      },
+      "w16": {
+        "us": 17.56799966096878,
+        "spread": 0.0018215075296753051,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 16
+      }
+    }
+  },
+  {
+    "label": "midOcc_tinyN",
+    "shape": [
+      32768,
+      256
+    ],
+    "grid_rows": 32768,
+    "num_sm": 132,
+    "occ": 248.24242424242425,
+    "rnumel": 256,
+    "m_block": [
+      2
+    ],
+    "seed_w": 4,
+    "best_w": "w4",
+    "tc_us": 27.744000777602196,
+    "arms": {
+      "w4": {
+        "us": 29.24799919128418,
+        "spread": 0.0032822371102506622,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 4
+      },
+      "w8": {
+        "us": 34.591998904943466,
+        "spread": 0.0037001981214378767,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 8
+      },
+      "w16": {
+        "us": 55.87200075387955,
+        "spread": 0.008304692897585323,
+        "correct": true,
+        "codegen": "persistent",
+        "w": 16
+      }
+    }
+  }
+]

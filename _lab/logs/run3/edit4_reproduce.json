@@ -1,0 +1,114 @@
+[
+  {
+    "kernel": "welford",
+    "shape": [
+      4096,
+      16384
+    ],
+    "fires": true,
+    "tc_us": 186.73600256443024,
+    "win": 1.0684614354479915,
+    "arms": {
+      "seed_live": {
+        "us": 200.28799772262573,
+        "spread": 0.000958626898096138,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          1,
+          8192,
+          4096
+        ]
+      },
+      "apply2048": {
+        "us": 214.00000154972076,
+        "spread": 0.002990607324672695,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          1,
+          8192,
+          2048
+        ]
+      }
+    }
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      32768,
+      8192
+    ],
+    "fires": true,
+    "tc_us": 705.0880193710327,
+    "win": 1.0473211249586831,
+    "arms": {
+      "seed_live": {
+        "us": 751.9680261611938,
+        "spread": 0.0009787625644720602,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2,
+          8192,
+          4096
+        ]
+      },
+      "apply2048": {
+        "us": 787.551999092102,
+        "spread": 0.0006501207529291383,
+        "correct": true,
+        "codegen": "looped",
+        "bs": [
+          2,
+          8192,
+          2048
+        ]
+      }
+    }
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      16384,
+      768
+    ],
+    "fires": false,
+    "tc_us": 39.583999663591385,
+    "win": null,
+    "arms": {
+      "seed_live": {
+        "us": 39.99999910593033,
+        "spread": 0.0032000244379049043,
+        "correct": true,
+        "codegen": "persistent",
+        "bs": [
+          1,
+          1024,
+          1024
+        ]
+      }
+    }
+  },
+  {
+    "kernel": "rms_norm",
+    "shape": [
+      8192,
+      4096
+    ],
+    "fires": false,
+    "tc_us": 94.46399658918381,
+    "win": null,
+    "arms": {
+      "seed_live": {
+        "us": 94.68799829483032,
+        "spread": 0.0006759091804675938,
+        "correct": true,
+        "codegen": "persistent",
+        "bs": [
+          1
+        ]
+      }
+    }
+  }
+]

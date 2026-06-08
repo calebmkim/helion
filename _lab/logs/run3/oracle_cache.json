@@ -1,0 +1,6066 @@
+{
+  "entries": {
+    "cross_entropy:4096x50304": {
+      "kernel": "cross_entropy",
+      "shape": [
+        4096,
+        50304
+      ],
+      "source_hash": "482ffdd502c01383",
+      "effort": "quick",
+      "ts": "2026-06-03 10:12:41",
+      "autotune_s": 49.0,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 0.0,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "last",
+          "last",
+          "",
+          "last"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 0.0,
+      "seed_us": 282.81599283218384,
+      "oracle_us": 282.8480005264282,
+      "tc_us": 298.8159954547882,
+      "seed_oracle": 0.999886837827438,
+      "G_floor": 1.0565738962014726,
+      "oracle_vs_tc": 1.0564543320039061,
+      "seed_dist": {
+        "median_ms": 0.28281599283218384,
+        "min_ms": 0.282368004322052,
+        "max_ms": 0.28575998544692993,
+        "spread": 0.011993597288858586,
+        "n": 7,
+        "samples_ms": [
+          0.2826400101184845,
+          0.282368004322052,
+          0.28537601232528687,
+          0.28281599283218384,
+          0.28281599283218384,
+          0.2826879918575287,
+          0.28575998544692993
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.2828480005264282,
+        "min_ms": 0.2826879918575287,
+        "max_ms": 0.28569599986076355,
+        "spread": 0.010634715457194143,
+        "n": 7,
+        "samples_ms": [
+          0.2828640043735504,
+          0.28281599283218384,
+          0.2826879918575287,
+          0.28569599986076355,
+          0.2828480005264282,
+          0.2829119861125946,
+          0.28275200724601746
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.2988159954547882,
+        "min_ms": 0.29868799448013306,
+        "max_ms": 0.29897600412368774,
+        "spread": 0.0009638360995914767,
+        "n": 7,
+        "samples_ms": [
+          0.29897600412368774,
+          0.2987839877605438,
+          0.2988159954547882,
+          0.2988159954547882,
+          0.298880010843277,
+          0.29868799448013306,
+          0.29872000217437744
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "tensor_descriptor",
+            "tensor_descriptor"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "last",
+            "last",
+            "",
+            "last"
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+    },
+    "cross_entropy:8192x32000": {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        32000
+      ],
+      "source_hash": "0af877d3ef6d25b9",
+      "effort": "quick",
+      "ts": "2026-06-03 09:40:35",
+      "autotune_s": 62.3,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 9.5367431640625e-07,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "first",
+          ""
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "tensor_descriptor",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 9.5367431640625e-07,
+      "seed_us": 351.3279855251312,
+      "oracle_us": 353.85599732398987,
+      "tc_us": 380.14400005340576,
+      "seed_oracle": 0.9928558175699252,
+      "G_floor": 1.0820202651525272,
+      "oracle_vs_tc": 1.0742901149852397,
+      "seed_dist": {
+        "median_ms": 0.3513279855251312,
+        "min_ms": 0.3511359989643097,
+        "max_ms": 0.35417601466178894,
+        "spread": 0.00865292781312404,
+        "n": 7,
+        "samples_ms": [
+          0.3511359989643097,
+          0.35395199060440063,
+          0.3513279855251312,
+          0.35417601466178894,
+          0.35129600763320923,
+          0.35388800501823425,
+          0.35120001435279846
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.35385599732398987,
+        "min_ms": 0.35123199224472046,
+        "max_ms": 0.35412800312042236,
+        "spread": 0.008184150890765664,
+        "n": 7,
+        "samples_ms": [
+          0.35392001271247864,
+          0.35126399993896484,
+          0.35385599732398987,
+          0.35126399993896484,
+          0.353983998298645,
+          0.35123199224472046,
+          0.35412800312042236
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.38014400005340576,
+        "min_ms": 0.3800640106201172,
+        "max_ms": 0.3803519904613495,
+        "spread": 0.0007575546140195348,
+        "n": 7,
+        "samples_ms": [
+          0.3800640106201172,
+          0.38014400005340576,
+          0.38022398948669434,
+          0.3800799995660782,
+          0.3800959885120392,
+          0.3802880048751831,
+          0.3803519904613495
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "tensor_descriptor",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "",
+            "",
+            "first",
+            ""
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      },
+      "old_source_hash": "608b9bab3ac6650f",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+    },
+    "cross_entropy:8192x49152": {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        49152
+      ],
+      "source_hash": "5501990a51460baf",
+      "effort": "quick",
+      "ts": "2026-06-03 10:11:49",
+      "autotune_s": 33.6,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 9.5367431640625e-07,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "last",
+          "",
+          "last"
+        ],
+        "num_warps": 32,
+        "num_stages": 2,
+        "indexing": [
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 9.5367431640625e-07,
+      "seed_us": 525.0400006771088,
+      "oracle_us": 527.3920297622681,
+      "tc_us": 553.5039901733398,
+      "seed_oracle": 0.995540264258033,
+      "G_floor": 1.0542129922663472,
+      "oracle_vs_tc": 1.0495114809050912,
+      "seed_dist": {
+        "median_ms": 0.5250400006771088,
+        "min_ms": 0.5249919891357422,
+        "max_ms": 0.5276639759540558,
+        "spread": 0.0050891109531992175,
+        "n": 7,
+        "samples_ms": [
+          0.5249919891357422,
+          0.5276479721069336,
+          0.5250400006771088,
+          0.5276639759540558,
+          0.5250239968299866,
+          0.527616024017334,
+          0.5249919891357422
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.5273920297622681,
+        "min_ms": 0.5248000025749207,
+        "max_ms": 0.5275840163230896,
+        "spread": 0.005278831668017229,
+        "n": 7,
+        "samples_ms": [
+          0.5275039970874786,
+          0.5248640179634094,
+          0.5275200009346008,
+          0.5248000025749207,
+          0.5273920297622681,
+          0.5248000025749207,
+          0.5275840163230896
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.5535039901733398,
+        "min_ms": 0.5534080266952515,
+        "max_ms": 0.5608320236206055,
+        "spread": 0.013412725214553637,
+        "n": 7,
+        "samples_ms": [
+          0.5536640286445618,
+          0.5534080266952515,
+          0.5534719824790955,
+          0.5535039901733398,
+          0.5535680055618286,
+          0.5534080266952515,
+          0.5608320236206055
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "",
+            "last",
+            "",
+            "last"
+          ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 2
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+    },
+    "cross_entropy:8192x50257": {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        50257
+      ],
+      "source_hash": "ead5aeee603f11ea",
+      "effort": "quick",
+      "ts": "2026-06-03 10:13:52",
+      "autotune_s": 68.0,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 9.5367431640625e-07,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 9.5367431640625e-07,
+      "seed_us": 624.4159936904907,
+      "oracle_us": 624.1599917411804,
+      "tc_us": 677.5840222835541,
+      "seed_oracle": 1.000410154371792,
+      "G_floor": 1.085148409282126,
+      "oracle_vs_tc": 1.0855934876462363,
+      "seed_dist": {
+        "median_ms": 0.6244159936904907,
+        "min_ms": 0.6229439973831177,
+        "max_ms": 0.6247200071811676,
+        "spread": 0.002844273394653398,
+        "n": 7,
+        "samples_ms": [
+          0.6236799955368042,
+          0.623583972454071,
+          0.6244480013847351,
+          0.6229439973831177,
+          0.6244159936904907,
+          0.6245120167732239,
+          0.6247200071811676
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.6241599917411804,
+        "min_ms": 0.6239520013332367,
+        "max_ms": 0.6250879764556885,
+        "spread": 0.001820006308451176,
+        "n": 7,
+        "samples_ms": [
+          0.6250879764556885,
+          0.6241599917411804,
+          0.6240320205688477,
+          0.6247200071811676,
+          0.6239520013332367,
+          0.6248639822006226,
+          0.6240800023078918
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.6775840222835541,
+        "min_ms": 0.677344024181366,
+        "max_ms": 0.6940159797668457,
+        "spread": 0.024605001058456023,
+        "n": 7,
+        "samples_ms": [
+          0.6776959896087646,
+          0.6776639819145203,
+          0.677344024181366,
+          0.6774719953536987,
+          0.6775840222835541,
+          0.6773919761180878,
+          0.6940159797668457
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+    },
+    "cross_entropy:4096x98304": {
+      "kernel": "cross_entropy",
+      "shape": [
+        4096,
+        98304
+      ],
+      "source_hash": "69dcdbeca291517f",
+      "effort": "full",
+      "ts": "2026-06-03 10:38:25",
+      "autotune_s": 1071.6,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 9.5367431640625e-07,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          4096
+        ],
+        "range_unroll_factors": [
+          4
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          2
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          false
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "last",
+          "first",
+          "last"
+        ],
+        "num_warps": 32,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 32,
+        "maxnreg": 64
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 9.5367431640625e-07,
+      "seed_us": 955.4880261421204,
+      "oracle_us": 588.3679986000061,
+      "tc_us": 556.9599866867065,
+      "seed_oracle": 1.6239632821901582,
+      "G_floor": 0.5829062965189515,
+      "oracle_vs_tc": 0.9466184225042262,
+      "seed_dist": {
+        "median_ms": 0.9554880261421204,
+        "min_ms": 0.9547999799251556,
+        "max_ms": 0.9576800167560577,
+        "spread": 0.003014205047163741,
+        "n": 7,
+        "samples_ms": [
+          0.9555040001869202,
+          0.955839991569519,
+          0.9554719924926758,
+          0.9576800167560577,
+          0.9554880261421204,
+          0.9549760222434998,
+          0.9547999799251556
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.5883679986000061,
+        "min_ms": 0.5873280167579651,
+        "max_ms": 0.5892319977283478,
+        "spread": 0.00323603760726811,
+        "n": 7,
+        "samples_ms": [
+          0.5892319977283478,
+          0.5879999995231628,
+          0.5873280167579651,
+          0.5877439975738525,
+          0.5889279842376709,
+          0.5889279842376709,
+          0.5883679986000061
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.5569599866867065,
+        "min_ms": 0.556848019361496,
+        "max_ms": 0.5670719742774963,
+        "spread": 0.01835671351692883,
+        "n": 7,
+        "samples_ms": [
+          0.5568640232086182,
+          0.5571040213108063,
+          0.5569279789924622,
+          0.5569599866867065,
+          0.556848019361496,
+          0.5617280006408691,
+          0.5670719742774963
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "tensor_descriptor"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "",
+            "last",
+            "first",
+            "last"
+          ]
+        },
+        "maxnreg": {
+          "seed": null,
+          "oracle": 64
+        },
+        "num_sm_multiplier": {
+          "seed": null,
+          "oracle": 32
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 4
+        },
+        "pid_type": {
+          "seed": "flat",
+          "oracle": "persistent_interleaved"
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            false
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            2
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            4
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        },
+        "reduction_loops": {
+          "seed": [
+            16384
+          ],
+          "oracle": [
+            4096
+          ]
+        }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+    },
+    "cross_entropy:8192x128256": {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        128256
+      ],
+      "source_hash": "9078db8537812d83",
+      "effort": "full",
+      "ts": "2026-06-03 14:19:23",
+      "autotune_s": 726.0,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first",
+          "last",
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 9.5367431640625e-07,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          false
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "last",
+          "first",
+          "last"
+        ],
+        "num_warps": 32,
+        "num_stages": 6,
+        "indexing": [
+          "pointer",
+          "tensor_descriptor",
+          "pointer",
+          "pointer",
+          "pointer",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 32,
+        "maxnreg": 64
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 9.5367431640625e-07,
+      "seed_us": 2277.3120403289795,
+      "oracle_us": 1832.1119546890259,
+      "tc_us": 1461.7600440979004,
+      "seed_oracle": 1.242998297402366,
+      "G_floor": 0.6418795572198948,
+      "oracle_vs_tc": 0.7978551967617136,
+      "seed_dist": {
+        "median_ms": 2.2773120403289795,
+        "min_ms": 2.276512026786804,
+        "max_ms": 2.2810720205307007,
+        "spread": 0.002002357895248185,
+        "n": 7,
+        "samples_ms": [
+          2.278528094291687,
+          2.277184009552002,
+          2.278112053871155,
+          2.276512026786804,
+          2.2810720205307007,
+          2.2771360874176025,
+          2.2773120403289795
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 1.8321119546890259,
+        "min_ms": 1.8296799659729004,
+        "max_ms": 1.834447979927063,
+        "spread": 0.0026024686657163906,
+        "n": 7,
+        "samples_ms": [
+          1.8327839970588684,
+          1.8321119546890259,
+          1.8324159979820251,
+          1.8296800255775452,
+          1.8310239911079407,
+          1.8296799659729004,
+          1.834447979927063
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 1.4617600440979004,
+        "min_ms": 1.3937920331954956,
+        "max_ms": 1.505952000617981,
+        "spread": 0.07672939746530212,
+        "n": 7,
+        "samples_ms": [
+          1.3937920331954956,
+          1.3966399431228638,
+          1.4164799451828003,
+          1.4617600440979004,
+          1.4802559614181519,
+          1.505952000617981,
+          1.4716160297393799
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "tensor_descriptor",
+            "pointer",
+            "pointer",
+            "pointer",
+            "tensor_descriptor"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": [
+            "first",
+            "first",
+            "last",
+            "first",
+            "first"
+          ],
+          "oracle": [
+            "last",
+            "first",
+            "last",
+            "first",
+            "last"
+          ]
+        },
+        "maxnreg": {
+          "seed": null,
+          "oracle": 64
+        },
+        "num_sm_multiplier": {
+          "seed": null,
+          "oracle": 32
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 6
+        },
+        "pid_type": {
+          "seed": "flat",
+          "oracle": "persistent_interleaved"
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            false
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "cross_entropy:2048x256000": {
+      "kernel": "cross_entropy",
+      "shape": [
+        2048,
+        256000
+      ],
+      "source_hash": "2d6c89c8265362dd",
+      "effort": "full",
+      "ts": "2026-06-03 14:33:00",
+      "autotune_s": 813.3,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first",
+          "last",
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 0.0,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          2048
+        ],
+        "range_unroll_factors": [
+          4
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          1
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "",
+          "last",
+          "first",
+          ""
+        ],
+        "num_warps": 32,
+        "num_stages": 2,
+        "indexing": [
+          "tensor_descriptor",
+          "pointer",
+          "pointer",
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "persistent_blocked",
+        "num_sm_multiplier": 4,
+        "maxnreg": 64
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 0.0,
+      "seed_us": 1253.935992717743,
+      "oracle_us": 1171.8720197677612,
+      "tc_us": 729.8880219459534,
+      "seed_oracle": 1.0700281016746565,
+      "G_floor": 0.5820775750794235,
+      "oracle_vs_tc": 0.6228393626896227,
+      "seed_dist": {
+        "median_ms": 1.253935992717743,
+        "min_ms": 1.2536960244178772,
+        "max_ms": 1.2564159631729126,
+        "spread": 0.0021691208888105105,
+        "n": 7,
+        "samples_ms": [
+          1.253935992717743,
+          1.2541279792785645,
+          1.2538560032844543,
+          1.2564159631729126,
+          1.2536960244178772,
+          1.2540640234947205,
+          1.2539039850234985
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 1.1718720197677612,
+        "min_ms": 1.1716480255126953,
+        "max_ms": 1.1721279621124268,
+        "spread": 0.00040954693996922805,
+        "n": 7,
+        "samples_ms": [
+          1.1716480255126953,
+          1.172063946723938,
+          1.171712040901184,
+          1.171839952468872,
+          1.1721279621124268,
+          1.1720960140228271,
+          1.1718720197677612
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.7298880219459534,
+        "min_ms": 0.727616012096405,
+        "max_ms": 0.741599977016449,
+        "spread": 0.01915905522433608,
+        "n": 7,
+        "samples_ms": [
+          0.727616012096405,
+          0.7298880219459534,
+          0.728767991065979,
+          0.7299679815769196,
+          0.7293760180473328,
+          0.7304959893226624,
+          0.741599977016449
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "pointer",
+            "pointer",
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "tensor_descriptor"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": [
+            "first",
+            "first",
+            "last",
+            "first",
+            "first"
+          ],
+          "oracle": [
+            "last",
+            "",
+            "last",
+            "first",
+            ""
+          ]
+        },
+        "maxnreg": {
+          "seed": null,
+          "oracle": 64
+        },
+        "num_sm_multiplier": {
+          "seed": null,
+          "oracle": 4
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 2
+        },
+        "pid_type": {
+          "seed": "flat",
+          "oracle": "persistent_blocked"
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            1
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            4
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        },
+        "reduction_loops": {
+          "seed": [
+            16384
+          ],
+          "oracle": [
+            2048
+          ]
+        }
+      }
+    },
+    "long_sum:16x2097152": {
+      "kernel": "long_sum",
+      "shape": [
+        16,
+        2097152
+      ],
+      "source_hash": "10fb250e064f3e8b",
+      "effort": "quick",
+      "ts": "2026-06-03 09:53:18",
+      "autotune_s": 78.2,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 0.0008544921875,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 0.0008544921875,
+      "seed_us": 76.54400169849396,
+      "oracle_us": 76.7040029168129,
+      "tc_us": 56.384000927209854,
+      "seed_oracle": 0.9979140434366579,
+      "G_floor": 0.7366220693465422,
+      "oracle_vs_tc": 0.735085507706286,
+      "seed_dist": {
+        "median_ms": 0.07654400169849396,
+        "min_ms": 0.0764160007238388,
+        "max_ms": 0.07673600316047668,
+        "spread": 0.004180633747087914,
+        "n": 7,
+        "samples_ms": [
+          0.0764160007238388,
+          0.0764480009675026,
+          0.07648000121116638,
+          0.07654400169849396,
+          0.07667200267314911,
+          0.07667200267314911,
+          0.07673600316047668
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.0767040029168129,
+        "min_ms": 0.07667200267314911,
+        "max_ms": 0.07673600316047668,
+        "spread": 0.0008343826253368492,
+        "n": 7,
+        "samples_ms": [
+          0.07667200267314911,
+          0.07673600316047668,
+          0.0767040029168129,
+          0.0767040029168129,
+          0.0767040029168129,
+          0.0767040029168129,
+          0.0767040029168129
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.056384000927209854,
+        "min_ms": 0.056352000683546066,
+        "max_ms": 0.056384000927209854,
+        "spread": 0.0005675412020707656,
+        "n": 7,
+        "samples_ms": [
+          0.056384000927209854,
+          0.056384000927209854,
+          0.056384000927209854,
+          0.056352000683546066,
+          0.05636800080537796,
+          0.056384000927209854,
+          0.056384000927209854
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      },
+      "old_source_hash": "8fe4e7fe965b1dbe",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+    },
+    "welford:4096x16384": {
+      "kernel": "welford",
+      "shape": [
+        4096,
+        16384
+      ],
+      "source_hash": "ffdab84838c74b4d",
+      "effort": "full",
+      "ts": "2026-06-03 18:08:22",
+      "autotune_s": 517.6,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 1.3113021850585938e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          2,
+          16384,
+          16384
+        ],
+        "range_unroll_factors": [
+          4,
+          4,
+          1
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          2,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          true,
+          false
+        ],
+        "range_flattens": [
+          null,
+          null,
+          true
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "",
+          "last"
+        ],
+        "num_warps": 16,
+        "num_stages": 7,
+        "indexing": [
+          "pointer",
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 16,
+        "maxnreg": 128
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.5497207641601562e-06,
+      "seed_us": 214.20800685882568,
+      "oracle_us": 184.2239946126938,
+      "tc_us": 187.6160055398941,
+      "seed_oracle": 1.1627584523349916,
+      "G_floor": 0.8758589760071055,
+      "oracle_vs_tc": 1.0184124274057327,
+      "seed_dist": {
+        "median_ms": 0.21420800685882568,
+        "min_ms": 0.21398399770259857,
+        "max_ms": 0.21438399702310562,
+        "spread": 0.0018673406581420184,
+        "n": 7,
+        "samples_ms": [
+          0.21420800685882568,
+          0.2141920030117035,
+          0.21427200734615326,
+          0.21438399702310562,
+          0.2141759991645813,
+          0.21398399770259857,
+          0.21425600349903107
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.1842239946126938,
+        "min_ms": 0.1841920018196106,
+        "max_ms": 0.18428799510002136,
+        "spread": 0.0005210682821886454,
+        "n": 7,
+        "samples_ms": [
+          0.18428799510002136,
+          0.18425600230693817,
+          0.1841920018196106,
+          0.1842239946126938,
+          0.1842239946126938,
+          0.1842239946126938,
+          0.1841920018196106
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.1876160055398941,
+        "min_ms": 0.18751999735832214,
+        "max_ms": 0.18768000602722168,
+        "spread": 0.0008528519112166705,
+        "n": 7,
+        "samples_ms": [
+          0.18768000602722168,
+          0.1876160055398941,
+          0.18751999735832214,
+          0.1876479983329773,
+          0.1876160055398941,
+          0.1876160055398941,
+          0.18758399784564972
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            1,
+            8192,
+            2048
+          ],
+          "oracle": [
+            2,
+            16384,
+            16384
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": [
+            "last",
+            "first",
+            "first",
+            "first"
+          ],
+          "oracle": [
+            "last",
+            "last",
+            "",
+            "last"
+          ]
+        },
+        "maxnreg": {
+          "seed": null,
+          "oracle": 128
+        },
+        "num_sm_multiplier": {
+          "seed": null,
+          "oracle": 16
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 7
+        },
+        "pid_type": {
+          "seed": "flat",
+          "oracle": "persistent_interleaved"
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            null,
+            true
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            true,
+            false
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            2,
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            4,
+            4,
+            1
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "welford:32768x8192": {
+      "kernel": "welford",
+      "shape": [
+        32768,
+        8192
+      ],
+      "source_hash": "4d7fe349d31f2ce3",
+      "effort": "full",
+      "ts": "2026-06-03 17:59:41",
+      "autotune_s": 436.0,
+      "seed_cfg": {
+        "block_sizes": [
+          2,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 1.5497207641601562e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          2,
+          8192,
+          4096
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.7285346984863281e-06,
+      "seed_us": 796.1919903755188,
+      "oracle_us": 713.6960029602051,
+      "tc_us": 705.3280174732208,
+      "seed_oracle": 1.1155898128518924,
+      "G_floor": 0.8858768060961747,
+      "oracle_vs_tc": 0.9882751403226636,
+      "seed_dist": {
+        "median_ms": 0.7961919903755188,
+        "min_ms": 0.7944319844245911,
+        "max_ms": 0.7967680096626282,
+        "spread": 0.002933997410518207,
+        "n": 7,
+        "samples_ms": [
+          0.7961599826812744,
+          0.7959679961204529,
+          0.7967680096626282,
+          0.7962239980697632,
+          0.7963519990444183,
+          0.7944319844245911,
+          0.7961919903755188
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.7136960029602051,
+        "min_ms": 0.7135679721832275,
+        "max_ms": 0.7138239741325378,
+        "spread": 0.00035869886933439523,
+        "n": 7,
+        "samples_ms": [
+          0.7136960029602051,
+          0.7137280106544495,
+          0.7135679721832275,
+          0.7137600183486938,
+          0.7136960029602051,
+          0.7136960029602051,
+          0.7138239741325378
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.7053280174732208,
+        "min_ms": 0.7052640020847321,
+        "max_ms": 0.705407977104187,
+        "spread": 0.0002041249119391778,
+        "n": 7,
+        "samples_ms": [
+          0.7052800059318542,
+          0.7053760290145874,
+          0.7053120136260986,
+          0.7052640020847321,
+          0.705407977104187,
+          0.7053280174732208,
+          0.7053920030593872
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            2,
+            8192,
+            2048
+          ],
+          "oracle": [
+            2,
+            8192,
+            4096
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "num_warps": {
+          "seed": 16,
+          "oracle": 32
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            null,
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            null,
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            0,
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            0,
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "welford:16384x768": {
+      "kernel": "welford",
+      "shape": [
+        16384,
+        768
+      ],
+      "source_hash": "f14a334d216b6b2c",
+      "effort": "quick",
+      "ts": "2026-06-03 09:55:23",
+      "autotune_s": 33.7,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          1024,
+          1024
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 1.1920928955078125e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          1,
+          1024,
+          256
+        ],
+        "range_unroll_factors": [
+          0,
+          2,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          1
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          false,
+          false
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "",
+          ""
+        ],
+        "num_warps": 1,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.5497207641601562e-06,
+      "seed_us": 40.352001786231995,
+      "oracle_us": 39.103999733924866,
+      "tc_us": 36.639999598264694,
+      "seed_oracle": 1.0319149463174841,
+      "G_floor": 0.9080094661069869,
+      "oracle_vs_tc": 0.9369885394735589,
+      "seed_dist": {
+        "median_ms": 0.040352001786231995,
+        "min_ms": 0.04028800129890442,
+        "max_ms": 0.040383998304605484,
+        "spread": 0.0023789899249513566,
+        "n": 7,
+        "samples_ms": [
+          0.04032000154256821,
+          0.040352001786231995,
+          0.04028800129890442,
+          0.04032000154256821,
+          0.040383998304605484,
+          0.040352001786231995,
+          0.040352001786231995
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.039103999733924866,
+        "min_ms": 0.03907199949026108,
+        "max_ms": 0.03916800022125244,
+        "spread": 0.0024550105269174707,
+        "n": 7,
+        "samples_ms": [
+          0.039103999733924866,
+          0.039135999977588654,
+          0.03907199949026108,
+          0.03907199949026108,
+          0.03916800022125244,
+          0.039135999977588654,
+          0.03907199949026108
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.036639999598264694,
+        "min_ms": 0.036639999598264694,
+        "max_ms": 0.03670400008559227,
+        "spread": 0.0017467382104067164,
+        "n": 7,
+        "samples_ms": [
+          0.036639999598264694,
+          0.036639999598264694,
+          0.03665599972009659,
+          0.036639999598264694,
+          0.03670400008559227,
+          0.03670400008559227,
+          0.036639999598264694
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            1,
+            1024,
+            1024
+          ],
+          "oracle": [
+            1,
+            1024,
+            256
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": [
+            "last",
+            "first",
+            "first",
+            "first"
+          ],
+          "oracle": [
+            "last",
+            "first",
+            "",
+            ""
+          ]
+        },
+        "num_warps": {
+          "seed": 4,
+          "oracle": 1
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            false,
+            false
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            null,
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            0,
+            1
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            2,
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      },
+      "old_source_hash": "155251868f501581",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+    },
+    "jsd:8192x30522": {
+      "kernel": "jsd",
+      "shape": [
+        8192,
+        30522
+      ],
+      "source_hash": "6e8256298c53a1cd",
+      "effort": "full",
+      "ts": "2026-06-03 19:27:00",
+      "autotune_s": 446.8,
+      "seed_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 0.0,
+      "oracle_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          2
+        ],
+        "range_multi_buffers": [
+          null,
+          true
+        ],
+        "range_flattens": [
+          null,
+          true
+        ],
+        "load_eviction_policies": [
+          "last",
+          ""
+        ],
+        "num_warps": 16,
+        "num_stages": 7,
+        "indexing": [
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 0.0,
+      "seed_us": 803.167998790741,
+      "oracle_us": 661.9680225849152,
+      "tc_us": 672.1280217170715,
+      "seed_oracle": 1.2133033188740068,
+      "G_floor": 0.8368461177848661,
+      "oracle_vs_tc": 1.0153481720952058,
+      "seed_dist": {
+        "median_ms": 0.803167998790741,
+        "min_ms": 0.8026880025863647,
+        "max_ms": 0.8048799932003021,
+        "spread": 0.0027291807159120687,
+        "n": 7,
+        "samples_ms": [
+          0.8026880025863647,
+          0.80308797955513,
+          0.8036479949951172,
+          0.8048799932003021,
+          0.803167998790741,
+          0.803167998790741,
+          0.8032960295677185
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.6619680225849152,
+        "min_ms": 0.6596800088882446,
+        "max_ms": 0.6624959707260132,
+        "spread": 0.004253924270801664,
+        "n": 7,
+        "samples_ms": [
+          0.6596800088882446,
+          0.6599680185317993,
+          0.6613439917564392,
+          0.6619840264320374,
+          0.6619680225849152,
+          0.6624959707260132,
+          0.6620479822158813
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.6721280217170715,
+        "min_ms": 0.670415997505188,
+        "max_ms": 0.6728480160236359,
+        "spread": 0.003618385842975046,
+        "n": 7,
+        "samples_ms": [
+          0.6719519793987274,
+          0.670415997505188,
+          0.6706240177154541,
+          0.6721280217170715,
+          0.6726720035076141,
+          0.6726080179214478,
+          0.6728480160236359
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            4096,
+            1
+          ],
+          "oracle": [
+            2048,
+            1
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "last",
+            ""
+          ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 7
+        },
+        "num_warps": {
+          "seed": 32,
+          "oracle": 16
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            true
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            true
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            2
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "softmax:131072x256": {
+      "kernel": "softmax",
+      "shape": [
+        131072,
+        256
+      ],
+      "source_hash": "b64b848b92d5101e",
+      "effort": "full",
+      "ts": "2026-06-04 16:22:40",
+      "autotune_s": 570.4,
+      "seed_cfg": {
+        "block_sizes": [
+          8,
+          256
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 5.960464477539063e-08,
+      "oracle_cfg": {
+        "block_sizes": [
+          16,
+          256
+        ],
+        "range_unroll_factors": [
+          0,
+          2
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          1
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          false
+        ],
+        "load_eviction_policies": [
+          "",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 5,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 5.960464477539063e-08,
+      "seed_us": 111.39199882745743,
+      "oracle_us": 95.16800194978714,
+      "tc_us": 93.63199770450592,
+      "seed_oracle": 1.1704774351176401,
+      "G_floor": 0.8405630448335776,
+      "oracle_vs_tc": 0.9838600767714799,
+      "seed_dist": {
+        "median_ms": 0.11139199882745743,
+        "min_ms": 0.11123199760913849,
+        "max_ms": 0.111455999314785,
+        "spread": 0.0020109317366096124,
+        "n": 7,
+        "samples_ms": [
+          0.11139199882745743,
+          0.111455999314785,
+          0.11132799834012985,
+          0.11139199882745743,
+          0.11142399907112122,
+          0.11126399785280228,
+          0.11123199760913849
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.09516800194978714,
+        "min_ms": 0.09513600170612335,
+        "max_ms": 0.09516800194978714,
+        "spread": 0.00033625003160906873,
+        "n": 7,
+        "samples_ms": [
+          0.09516800194978714,
+          0.09513600170612335,
+          0.09516800194978714,
+          0.09513600170612335,
+          0.09516800194978714,
+          0.09516800194978714,
+          0.09516800194978714
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.09363199770450592,
+        "min_ms": 0.09359999746084213,
+        "max_ms": 0.09366399794816971,
+        "spread": 0.0006835322207858408,
+        "n": 7,
+        "samples_ms": [
+          0.09359999746084213,
+          0.09366399794816971,
+          0.09363199770450592,
+          0.09363199770450592,
+          0.09359999746084213,
+          0.09363199770450592,
+          0.09359999746084213
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            8,
+            256
+          ],
+          "oracle": [
+            16,
+            256
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "first"
+          ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 5
+        },
+        "num_warps": {
+          "seed": 4,
+          "oracle": 16
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            false
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            1
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            2
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "cross_entropy:8192x57344": {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        57344
+      ],
+      "source_hash": "9ebd8a3a6fdd5a80",
+      "effort": "quick",
+      "ts": "2026-06-03 10:15:10",
+      "autotune_s": 73.9,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 9.5367431640625e-07,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          32768
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "last",
+          "",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 3,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "tensor_descriptor",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 9.5367431640625e-07,
+      "seed_us": 676.5440106391907,
+      "oracle_us": 612.2559905052185,
+      "tc_us": 640.1280164718628,
+      "seed_oracle": 1.105001863813408,
+      "G_floor": 0.9461735029877473,
+      "oracle_vs_tc": 1.0455234842923218,
+      "seed_dist": {
+        "median_ms": 0.6765440106391907,
+        "min_ms": 0.6762880086898804,
+        "max_ms": 0.679423987865448,
+        "spread": 0.004635292200140522,
+        "n": 7,
+        "samples_ms": [
+          0.6792320013046265,
+          0.6765440106391907,
+          0.6767680048942566,
+          0.6762880086898804,
+          0.679423987865448,
+          0.6764479875564575,
+          0.6764479875564575
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.6122559905052185,
+        "min_ms": 0.6120319962501526,
+        "max_ms": 0.61244797706604,
+        "spread": 0.0006794230229486102,
+        "n": 7,
+        "samples_ms": [
+          0.6124160289764404,
+          0.61244797706604,
+          0.6123200058937073,
+          0.6122559905052185,
+          0.6122559905052185,
+          0.6120319962501526,
+          0.6121280193328857
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.6401280164718628,
+        "min_ms": 0.6398240029811859,
+        "max_ms": 0.6656320095062256,
+        "spread": 0.040316945768572025,
+        "n": 7,
+        "samples_ms": [
+          0.6401120126247406,
+          0.6398240029811859,
+          0.6399679780006409,
+          0.6401280164718628,
+          0.6468319892883301,
+          0.6656320095062256,
+          0.6577600240707397
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "tensor_descriptor",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "",
+            "last",
+            "",
+            "first"
+          ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 3
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        },
+        "reduction_loops": {
+          "seed": [
+            null
+          ],
+          "oracle": [
+            32768
+          ]
+        }
+      },
+      "old_source_hash": "add1986eedc7d231",
+      "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+    },
+    "softmax:1024x65536": {
+      "kernel": "softmax",
+      "shape": [
+        1024,
+        65536
+      ],
+      "source_hash": "65e4b6ae2c821656",
+      "effort": "full",
+      "ts": "2026-06-03 15:40:57",
+      "autotune_s": 625.5,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 2.3283064365386963e-10,
+      "oracle_cfg": {
+        "block_sizes": [
+          1,
+          32768
+        ],
+        "range_unroll_factors": [
+          0,
+          2
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          false
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "tensor_descriptor",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 2.3283064365386963e-10,
+      "seed_us": 263.71198892593384,
+      "oracle_us": 194.0159946680069,
+      "tc_us": 269.6639895439148,
+      "seed_oracle": 1.3592280851750815,
+      "G_floor": 1.0225700797382127,
+      "oracle_vs_tc": 1.3899059714399011,
+      "seed_dist": {
+        "median_ms": 0.26371198892593384,
+        "min_ms": 0.26368001103401184,
+        "max_ms": 0.2637760043144226,
+        "spread": 0.0003640080255802374,
+        "n": 7,
+        "samples_ms": [
+          0.2637760043144226,
+          0.2637439966201782,
+          0.26368001103401184,
+          0.26368001103401184,
+          0.26371198892593384,
+          0.2637439966201782,
+          0.26369599997997284
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.1940159946680069,
+        "min_ms": 0.19392000138759613,
+        "max_ms": 0.19404800236225128,
+        "spread": 0.0006597444446484012,
+        "n": 7,
+        "samples_ms": [
+          0.19392000138759613,
+          0.19404800236225128,
+          0.1940159946680069,
+          0.19393599778413773,
+          0.1940319985151291,
+          0.19395199418067932,
+          0.1940159946680069
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.2696639895439148,
+        "min_ms": 0.2696320116519928,
+        "max_ms": 0.26972800493240356,
+        "spread": 0.000355973671431328,
+        "n": 7,
+        "samples_ms": [
+          0.2696320116519928,
+          0.26971200108528137,
+          0.2696320116519928,
+          0.26972800493240356,
+          0.2696639895439148,
+          0.2696320116519928,
+          0.2696959972381592
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            1,
+            16384
+          ],
+          "oracle": [
+            1,
+            32768
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "last",
+            "first"
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            false
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            2
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "softmax:512x131072": {
+      "kernel": "softmax",
+      "shape": [
+        512,
+        131072
+      ],
+      "source_hash": "e61d1300f8cfe9e3",
+      "effort": "full",
+      "ts": "2026-06-03 15:50:18",
+      "autotune_s": 556.5,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 1.1641532182693481e-10,
+      "oracle_cfg": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "range_unroll_factors": [
+          0,
+          2
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          1
+        ],
+        "range_multi_buffers": [
+          null,
+          true
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          ""
+        ],
+        "num_warps": 16,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.1641532182693481e-10,
+      "seed_us": 275.87199211120605,
+      "oracle_us": 251.52000784873962,
+      "tc_us": 276.095986366272,
+      "seed_oracle": 1.0968192728314137,
+      "G_floor": 1.0008119499676345,
+      "oracle_vs_tc": 1.0977098352044898,
+      "seed_dist": {
+        "median_ms": 0.27587199211120605,
+        "min_ms": 0.27584001421928406,
+        "max_ms": 0.2759360074996948,
+        "spread": 0.0003479631247671964,
+        "n": 7,
+        "samples_ms": [
+          0.27587199211120605,
+          0.27584001421928406,
+          0.2759360074996948,
+          0.27587199211120605,
+          0.2759360074996948,
+          0.2759360074996948,
+          0.27584001421928406
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.2515200078487396,
+        "min_ms": 0.25148800015449524,
+        "max_ms": 0.2515519857406616,
+        "spread": 0.00025439561136170847,
+        "n": 7,
+        "samples_ms": [
+          0.25148800015449524,
+          0.2515200078487396,
+          0.25148800015449524,
+          0.2515519857406616,
+          0.2515200078487396,
+          0.25148800015449524,
+          0.2515359967947006
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.276095986366272,
+        "min_ms": 0.2759999930858612,
+        "max_ms": 0.2762880027294159,
+        "spread": 0.00104315041788623,
+        "n": 7,
+        "samples_ms": [
+          0.2762880027294159,
+          0.276095986366272,
+          0.27612799406051636,
+          0.276095986366272,
+          0.27606400847435,
+          0.2759999930858612,
+          0.27606400847435
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "last",
+            ""
+          ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 4
+        },
+        "num_warps": {
+          "seed": 32,
+          "oracle": 16
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            true
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            1
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            2
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "jsd:8192x32000": {
+      "kernel": "jsd",
+      "shape": [
+        8192,
+        32000
+      ],
+      "source_hash": "410c1ea6e2c98fc8",
+      "effort": "full",
+      "ts": "2026-06-03 17:52:21",
+      "autotune_s": 435.3,
+      "seed_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 0.0,
+      "oracle_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          2
+        ],
+        "range_multi_buffers": [
+          null,
+          false
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 16,
+        "num_stages": 8,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 0.0,
+      "seed_us": 767.1999931335449,
+      "oracle_us": 680.895984172821,
+      "tc_us": 701.1680006980896,
+      "seed_oracle": 1.126750650564593,
+      "G_floor": 0.9139311874003611,
+      "oracle_vs_tc": 1.029772559974628,
+      "seed_dist": {
+        "median_ms": 0.7671999931335449,
+        "min_ms": 0.7670080065727234,
+        "max_ms": 0.7677119970321655,
+        "spread": 0.0009176100961194827,
+        "n": 7,
+        "samples_ms": [
+          0.7671999931335449,
+          0.7671040296554565,
+          0.7674880027770996,
+          0.7671040296554565,
+          0.7677119970321655,
+          0.7670080065727234,
+          0.7674880027770996
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.680895984172821,
+        "min_ms": 0.6803200244903564,
+        "max_ms": 0.68367999792099,
+        "spread": 0.004934635405017657,
+        "n": 7,
+        "samples_ms": [
+          0.6823359727859497,
+          0.6803200244903564,
+          0.680976003408432,
+          0.6805760264396667,
+          0.68367999792099,
+          0.6805440187454224,
+          0.680895984172821
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.7011680006980896,
+        "min_ms": 0.7008320093154907,
+        "max_ms": 0.7016639709472656,
+        "spread": 0.0011865367942441658,
+        "n": 7,
+        "samples_ms": [
+          0.7009599804878235,
+          0.7011680006980896,
+          0.7014719843864441,
+          0.7015359997749329,
+          0.7016639709472656,
+          0.7009919881820679,
+          0.7008320093154907
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            4096,
+            1
+          ],
+          "oracle": [
+            2048,
+            1
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            ""
+          ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 8
+        },
+        "num_warps": {
+          "seed": 32,
+          "oracle": 16
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            false
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            2
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "sum:16384x2048": {
+      "kernel": "sum",
+      "shape": [
+        16384,
+        2048
+      ],
+      "source_hash": "23808e4c60fa21e8",
+      "effort": "full",
+      "ts": "2026-06-03 19:47:36",
+      "autotune_s": 457.6,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 3.0517578125e-05,
+      "oracle_cfg": {
+        "block_sizes": [
+          2
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          3
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          2
+        ],
+        "range_multi_buffers": [
+          false
+        ],
+        "range_flattens": [
+          true
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 3,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 32,
+        "maxnreg": 128
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 3.0517578125e-05,
+      "seed_us": 51.64799839258194,
+      "oracle_us": 52.22399905323982,
+      "tc_us": 51.392000168561935,
+      "seed_oracle": 0.9889705753848785,
+      "G_floor": 0.9950434047400224,
+      "oracle_vs_tc": 0.9840686485186685,
+      "seed_dist": {
+        "median_ms": 0.05164799839258194,
+        "min_ms": 0.051552001386880875,
+        "max_ms": 0.0517439991235733,
+        "spread": 0.0037174284128696205,
+        "n": 7,
+        "samples_ms": [
+          0.051552001386880875,
+          0.05159999988973141,
+          0.0517439991235733,
+          0.05164799839258194,
+          0.05167999863624573,
+          0.05164799839258194,
+          0.05164799839258194
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.05222399905323982,
+        "min_ms": 0.05220799893140793,
+        "max_ms": 0.0522879995405674,
+        "spread": 0.0015318744372278515,
+        "n": 7,
+        "samples_ms": [
+          0.05222399905323982,
+          0.05222399905323982,
+          0.05225599929690361,
+          0.05220799893140793,
+          0.05225599929690361,
+          0.0522879995405674,
+          0.05222399905323982
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.051392000168561935,
+        "min_ms": 0.051311999559402466,
+        "max_ms": 0.0514880008995533,
+        "spread": 0.0034246836000459573,
+        "n": 7,
+        "samples_ms": [
+          0.05132799968123436,
+          0.05142400041222572,
+          0.051311999559402466,
+          0.05145600065588951,
+          0.0514880008995533,
+          0.05132799968123436,
+          0.051392000168561935
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            1
+          ],
+          "oracle": [
+            2
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "tensor_descriptor",
+            "tensor_descriptor"
+          ]
+        },
+        "maxnreg": {
+          "seed": null,
+          "oracle": 128
+        },
+        "num_sm_multiplier": {
+          "seed": null,
+          "oracle": 32
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 3
+        },
+        "num_warps": {
+          "seed": 8,
+          "oracle": 16
+        },
+        "pid_type": {
+          "seed": "flat",
+          "oracle": "persistent_interleaved"
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            true
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            false
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            2
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            3
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "kl_div:8192x30522": {
+      "kernel": "kl_div",
+      "shape": [
+        8192,
+        30522
+      ],
+      "source_hash": "7d3f7be7adaa28b3",
+      "effort": "quick",
+      "ts": "2026-06-03 17:17:46",
+      "autotune_s": 22.6,
+      "seed_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 5.960464477539063e-08,
+      "oracle_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 5.960464477539063e-08,
+      "seed_us": 651.5520215034485,
+      "oracle_us": 651.5680253505707,
+      "tc_us": 731.9999933242798,
+      "seed_oracle": 0.9999754379489177,
+      "G_floor": 1.1234712949477135,
+      "oracle_vs_tc": 1.1234437001883777,
+      "seed_dist": {
+        "median_ms": 0.6515520215034485,
+        "min_ms": 0.6514720022678375,
+        "max_ms": 0.6516799926757812,
+        "spread": 0.00031922302606596204,
+        "n": 7,
+        "samples_ms": [
+          0.6515520215034485,
+          0.6514720022678375,
+          0.6516799926757812,
+          0.6516159772872925,
+          0.6515520215034485,
+          0.6514720022678375,
+          0.6515839993953705
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.6515680253505707,
+        "min_ms": 0.6514880061149597,
+        "max_ms": 0.6516639888286591,
+        "spread": 0.0002700910831292785,
+        "n": 7,
+        "samples_ms": [
+          0.6516639888286591,
+          0.6514880061149597,
+          0.6515680253505707,
+          0.6515679955482483,
+          0.6515840291976929,
+          0.6515360176563263,
+          0.6515840291976929
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.7319999933242798,
+        "min_ms": 0.7247040271759033,
+        "max_ms": 0.7356639802455902,
+        "spread": 0.014972613619726597,
+        "n": 7,
+        "samples_ms": [
+          0.7247040271759033,
+          0.7322559952735901,
+          0.7296959757804871,
+          0.7316160202026367,
+          0.7328640222549438,
+          0.7319999933242798,
+          0.7356639802455902
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            ""
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "softmax:4096x4096": {
+      "kernel": "softmax",
+      "shape": [
+        4096,
+        4096
+      ],
+      "source_hash": "a640bdfa2efde763",
+      "effort": "quick",
+      "ts": "2026-06-03 17:18:49",
+      "autotune_s": 59.8,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          4096
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 2.7939677238464355e-09,
+      "oracle_cfg": {
+        "block_sizes": [
+          1,
+          4096
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          true
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 2,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 2.7939677238464355e-09,
+      "seed_us": 52.639998495578766,
+      "oracle_us": 50.12800171971321,
+      "tc_us": 55.743999779224396,
+      "seed_oracle": 1.050111647974942,
+      "G_floor": 1.058966591420141,
+      "oracle_vs_tc": 1.1120331524666114,
+      "seed_dist": {
+        "median_ms": 0.052639998495578766,
+        "min_ms": 0.05260799825191498,
+        "max_ms": 0.05276799947023392,
+        "spread": 0.0030395369090365325,
+        "n": 7,
+        "samples_ms": [
+          0.052639998495578766,
+          0.05276799947023392,
+          0.05275199934840202,
+          0.05260799825191498,
+          0.05273599922657013,
+          0.052639998495578766,
+          0.052639998495578766
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.05012800171971321,
+        "min_ms": 0.05004800111055374,
+        "max_ms": 0.050175998359918594,
+        "spread": 0.0025534081745476208,
+        "n": 7,
+        "samples_ms": [
+          0.05012800171971321,
+          0.05004800111055374,
+          0.05008000135421753,
+          0.050175998359918594,
+          0.05008000135421753,
+          0.050144001841545105,
+          0.050175998359918594
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.055743999779224396,
+        "min_ms": 0.055504001677036285,
+        "max_ms": 0.05580800026655197,
+        "spread": 0.0054534764408668305,
+        "n": 7,
+        "samples_ms": [
+          0.055743999779224396,
+          0.05567999929189682,
+          0.055743999779224396,
+          0.05580800026655197,
+          0.05580800026655197,
+          0.05580800026655197,
+          0.055504001677036285
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "last",
+            "first"
+          ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 2
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            true
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "rms_norm:8192x768": {
+      "kernel": "rms_norm",
+      "shape": [
+        8192,
+        768
+      ],
+      "source_hash": "cece43e0653000c9",
+      "effort": "quick",
+      "ts": "2026-06-04 16:44:50",
+      "autotune_s": 23.8,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 1.9073486328125e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          256
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "last",
+          "",
+          "first",
+          "last"
+        ],
+        "num_warps": 1,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.9073486328125e-06,
+      "seed_us": 23.264000192284584,
+      "oracle_us": 20.479999482631683,
+      "tc_us": 19.7759997099638,
+      "seed_oracle": 1.1359375380850916,
+      "G_floor": 0.8500687562976565,
+      "oracle_vs_tc": 0.9656250102318157,
+      "seed_dist": {
+        "median_ms": 0.023264000192284584,
+        "min_ms": 0.023264000192284584,
+        "max_ms": 0.023360000923275948,
+        "spread": 0.004126578842756449,
+        "n": 7,
+        "samples_ms": [
+          0.023360000923275948,
+          0.02332800067961216,
+          0.023264000192284584,
+          0.023264000192284584,
+          0.023264000192284584,
+          0.02332800067961216,
+          0.023264000192284584
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.020479999482631683,
+        "min_ms": 0.020320000126957893,
+        "max_ms": 0.020576000213623047,
+        "spread": 0.012500004547473624,
+        "n": 7,
+        "samples_ms": [
+          0.020576000213623047,
+          0.02051199972629547,
+          0.02054399996995926,
+          0.020479999482631683,
+          0.020479999482631683,
+          0.020479999482631683,
+          0.020320000126957893
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.0197759997099638,
+        "min_ms": 0.01974399946630001,
+        "max_ms": 0.019840000197291374,
+        "spread": 0.004854405966793942,
+        "n": 7,
+        "samples_ms": [
+          0.0197759997099638,
+          0.0197759997099638,
+          0.019807999953627586,
+          0.019807999953627586,
+          0.019840000197291374,
+          0.0197759997099638,
+          0.01974399946630001
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "last",
+            "",
+            "first",
+            "last"
+          ]
+        },
+        "num_warps": {
+          "seed": 4,
+          "oracle": 1
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        },
+        "reduction_loops": {
+          "seed": [
+            null
+          ],
+          "oracle": [
+            256
+          ]
+        }
+      }
+    },
+    "rms_norm:4096x8192": {
+      "kernel": "rms_norm",
+      "shape": [
+        4096,
+        8192
+      ],
+      "source_hash": "78ee7047b61d8e7f",
+      "effort": "quick",
+      "ts": "2026-06-03 18:22:17",
+      "autotune_s": 23.1,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 1.9073486328125e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "",
+          "",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor",
+          "pointer",
+          "pointer",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.9073486328125e-06,
+      "seed_us": 95.07200121879578,
+      "oracle_us": 93.66399794816971,
+      "tc_us": 94.71999853849411,
+      "seed_oracle": 1.0150324916880573,
+      "G_floor": 0.9962975147699734,
+      "oracle_vs_tc": 1.011274348879585,
+      "seed_dist": {
+        "median_ms": 0.09507200121879578,
+        "min_ms": 0.09504000097513199,
+        "max_ms": 0.09513600170612335,
+        "spread": 0.001009768699098175,
+        "n": 7,
+        "samples_ms": [
+          0.09510400146245956,
+          0.09507200121879578,
+          0.09513600170612335,
+          0.09507200121879578,
+          0.09507200121879578,
+          0.09504000097513199,
+          0.09513600170612335
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.09366399794816971,
+        "min_ms": 0.09366399794816971,
+        "max_ms": 0.0936959981918335,
+        "spread": 0.0003416493462247429,
+        "n": 7,
+        "samples_ms": [
+          0.09366399794816971,
+          0.09366399794816971,
+          0.09366399794816971,
+          0.0936959981918335,
+          0.09366399794816971,
+          0.09366399794816971,
+          0.09366399794816971
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.09471999853849411,
+        "min_ms": 0.09465599805116653,
+        "max_ms": 0.0947519987821579,
+        "spread": 0.0010135212465438217,
+        "n": 7,
+        "samples_ms": [
+          0.09465599805116653,
+          0.09471999853849411,
+          0.0947519987821579,
+          0.09471999853849411,
+          0.09471999853849411,
+          0.0947519987821579,
+          0.0947519987821579
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor",
+            "pointer",
+            "pointer",
+            "tensor_descriptor",
+            "tensor_descriptor"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "last",
+            "last",
+            "",
+            "",
+            "first"
+          ]
+        },
+        "num_warps": {
+          "seed": 16,
+          "oracle": 8
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "rms_norm:2048x16384": {
+      "kernel": "rms_norm",
+      "shape": [
+        2048,
+        16384
+      ],
+      "source_hash": "1c33ee3ac1da302f",
+      "effort": "quick",
+      "ts": "2026-06-03 18:22:38",
+      "autotune_s": 18.2,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 1.9073486328125e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "tensor_descriptor",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 3.814697265625e-06,
+      "seed_us": 96.44799679517746,
+      "oracle_us": 96.12800180912018,
+      "tc_us": 95.20000219345093,
+      "seed_oracle": 1.003328842585251,
+      "G_floor": 0.9870604404114598,
+      "oracle_vs_tc": 0.9903462092397181,
+      "seed_dist": {
+        "median_ms": 0.09644799679517746,
+        "min_ms": 0.09641599655151367,
+        "max_ms": 0.09654399752616882,
+        "spread": 0.0013271501628694439,
+        "n": 7,
+        "samples_ms": [
+          0.09647999703884125,
+          0.09647999703884125,
+          0.09654399752616882,
+          0.09644799679517746,
+          0.09641599655151367,
+          0.09644799679517746,
+          0.09644799679517746
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.09612800180912018,
+        "min_ms": 0.09609600156545639,
+        "max_ms": 0.09616000205278397,
+        "spread": 0.0006657840184243132,
+        "n": 7,
+        "samples_ms": [
+          0.09616000205278397,
+          0.09616000205278397,
+          0.09612800180912018,
+          0.09612800180912018,
+          0.09609600156545639,
+          0.09612800180912018,
+          0.09612800180912018
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.09520000219345093,
+        "min_ms": 0.09516800194978714,
+        "max_ms": 0.09523200243711472,
+        "spread": 0.0006722740110606684,
+        "n": 7,
+        "samples_ms": [
+          0.09520000219345093,
+          0.09523200243711472,
+          0.09523200243711472,
+          0.09516800194978714,
+          0.09520000219345093,
+          0.09516800194978714,
+          0.09516800194978714
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "tensor_descriptor",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "num_warps": {
+          "seed": 16,
+          "oracle": 8
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "rms_norm:32768x2048": {
+      "kernel": "rms_norm",
+      "shape": [
+        32768,
+        2048
+      ],
+      "source_hash": "910d1c6b9215e601",
+      "effort": "quick",
+      "ts": "2026-06-03 18:22:57",
+      "autotune_s": 15.7,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 1.9073486328125e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          4
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.9073486328125e-06,
+      "seed_us": 183.6480051279068,
+      "oracle_us": 182.75199830532074,
+      "tc_us": 181.31199479103088,
+      "seed_oracle": 1.004902856498943,
+      "G_floor": 0.9872799580085341,
+      "oracle_vs_tc": 0.9921204499669324,
+      "seed_dist": {
+        "median_ms": 0.1836480051279068,
+        "min_ms": 0.18361599743366241,
+        "max_ms": 0.18367999792099,
+        "spread": 0.0003484954126400706,
+        "n": 7,
+        "samples_ms": [
+          0.1836480051279068,
+          0.18361599743366241,
+          0.18367999792099,
+          0.1836480051279068,
+          0.18367999792099,
+          0.1836480051279068,
+          0.18361599743366241
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.18275199830532074,
+        "min_ms": 0.18268799781799316,
+        "max_ms": 0.18278400599956512,
+        "spread": 0.0005253468222632574,
+        "n": 7,
+        "samples_ms": [
+          0.18268799781799316,
+          0.18278400599956512,
+          0.18278400599956512,
+          0.18275199830532074,
+          0.18278400599956512,
+          0.18275199830532074,
+          0.18275199830532074
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.18131199479103088,
+        "min_ms": 0.1812800019979477,
+        "max_ms": 0.18131199479103088,
+        "spread": 0.0001764516082902505,
+        "n": 7,
+        "samples_ms": [
+          0.18131199479103088,
+          0.18131199479103088,
+          0.1812800019979477,
+          0.1812800019979477,
+          0.1812959983944893,
+          0.18131199479103088,
+          0.18131199479103088
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            1
+          ],
+          "oracle": [
+            4
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "num_warps": {
+          "seed": 8,
+          "oracle": 4
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "layer_norm:8192x768": {
+      "kernel": "layer_norm",
+      "shape": [
+        8192,
+        768
+      ],
+      "source_hash": "17234f0c8bd4067c",
+      "effort": "quick",
+      "ts": "2026-06-04 16:45:28",
+      "autotune_s": 34.6,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 1.9073486328125e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          8
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "",
+          "",
+          "last",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.9073486328125e-06,
+      "seed_us": 21.536000072956085,
+      "oracle_us": 22.92799949645996,
+      "tc_us": 21.023999899625778,
+      "seed_oracle": 0.9392882303700854,
+      "G_floor": 0.9762258464154979,
+      "oracle_vs_tc": 0.9169574477211517,
+      "seed_dist": {
+        "median_ms": 0.021536000072956085,
+        "min_ms": 0.021503999829292297,
+        "max_ms": 0.021568000316619873,
+        "spread": 0.0029717908205221704,
+        "n": 7,
+        "samples_ms": [
+          0.021503999829292297,
+          0.021503999829292297,
+          0.021536000072956085,
+          0.021568000316619873,
+          0.021568000316619873,
+          0.021536000072956085,
+          0.021503999829292297
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.02292799949645996,
+        "min_ms": 0.02287999913096428,
+        "max_ms": 0.022975999861955643,
+        "spread": 0.0041870522112575,
+        "n": 7,
+        "samples_ms": [
+          0.022943999618291855,
+          0.022911999374628067,
+          0.02287999913096428,
+          0.02292799949645996,
+          0.022943999618291855,
+          0.022911999374628067,
+          0.022975999861955643
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.021023999899625778,
+        "min_ms": 0.02099199965596199,
+        "max_ms": 0.02112000063061714,
+        "spread": 0.006088326449118265,
+        "n": 7,
+        "samples_ms": [
+          0.02099199965596199,
+          0.02112000063061714,
+          0.021056000143289566,
+          0.021007999777793884,
+          0.021056000143289566,
+          0.021023999899625778,
+          0.021023999899625778
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            1
+          ],
+          "oracle": [
+            8
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "last",
+            "",
+            "",
+            "last",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "layer_norm:2048x16384": {
+      "kernel": "layer_norm",
+      "shape": [
+        2048,
+        16384
+      ],
+      "source_hash": "86af71adfa919c9f",
+      "effort": "quick",
+      "ts": "2026-06-03 18:24:01",
+      "autotune_s": 35.7,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 1.9073486328125e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          4096
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "",
+          "",
+          "",
+          "",
+          "last",
+          ""
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.9073486328125e-06,
+      "seed_us": 100.12800246477127,
+      "oracle_us": 95.96800059080124,
+      "tc_us": 99.04000163078308,
+      "seed_oracle": 1.0433478018543692,
+      "G_floor": 0.9891339005352575,
+      "oracle_vs_tc": 1.032010680863099,
+      "seed_dist": {
+        "median_ms": 0.10012800246477127,
+        "min_ms": 0.1000640019774437,
+        "max_ms": 0.10012800246477127,
+        "spread": 0.0006391866985471264,
+        "n": 7,
+        "samples_ms": [
+          0.1000640019774437,
+          0.10012800246477127,
+          0.10009600222110748,
+          0.10012800246477127,
+          0.10012800246477127,
+          0.10012800246477127,
+          0.10009600222110748
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.09596800059080124,
+        "min_ms": 0.09593600034713745,
+        "max_ms": 0.09603200107812881,
+        "spread": 0.0010003410553555434,
+        "n": 7,
+        "samples_ms": [
+          0.09596800059080124,
+          0.09603200107812881,
+          0.09600000083446503,
+          0.09596800059080124,
+          0.09600000083446503,
+          0.09596800059080124,
+          0.09593600034713745
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.09904000163078308,
+        "min_ms": 0.0989760011434555,
+        "max_ms": 0.09907200187444687,
+        "spread": 0.00096931269598773,
+        "n": 7,
+        "samples_ms": [
+          0.0989760011434555,
+          0.09907200187444687,
+          0.0990080013871193,
+          0.09907200187444687,
+          0.09904000163078308,
+          0.09907200187444687,
+          0.09904000163078308
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "last",
+            "last",
+            "",
+            "",
+            "",
+            "",
+            "last",
+            ""
+          ]
+        },
+        "num_warps": {
+          "seed": 16,
+          "oracle": 32
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        },
+        "reduction_loops": {
+          "seed": [
+            null
+          ],
+          "oracle": [
+            4096
+          ]
+        }
+      }
+    },
+    "layer_norm:32768x1024": {
+      "kernel": "layer_norm",
+      "shape": [
+        32768,
+        1024
+      ],
+      "source_hash": "c3daf59d5061f8ec",
+      "effort": "quick",
+      "ts": "2026-06-03 18:24:25",
+      "autotune_s": 20.7,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 2.384185791015625e-06,
+      "oracle_cfg": {
+        "block_sizes": [
+          8
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "tensor_descriptor",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 2.384185791015625e-06,
+      "seed_us": 96.12800180912018,
+      "oracle_us": 94.59199756383896,
+      "tc_us": 94.38400343060493,
+      "seed_oracle": 1.0162382049733603,
+      "G_floor": 0.9818575405116786,
+      "oracle_vs_tc": 0.9978011445091468,
+      "seed_dist": {
+        "median_ms": 0.09612800180912018,
+        "min_ms": 0.09609600156545639,
+        "max_ms": 0.09619200229644775,
+        "spread": 0.00099867602763647,
+        "n": 7,
+        "samples_ms": [
+          0.09616000205278397,
+          0.09612800180912018,
+          0.09619200229644775,
+          0.09614400193095207,
+          0.09612800180912018,
+          0.09609600156545639,
+          0.09612800180912018
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.09459199756383896,
+        "min_ms": 0.09455999732017517,
+        "max_ms": 0.09462399780750275,
+        "spread": 0.0006765951557834748,
+        "n": 7,
+        "samples_ms": [
+          0.09459199756383896,
+          0.09455999732017517,
+          0.09460799768567085,
+          0.09462399780750275,
+          0.09459199756383896,
+          0.09459199756383896,
+          0.09459199756383896
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.09438400343060493,
+        "min_ms": 0.09433600306510925,
+        "max_ms": 0.09455999732017517,
+        "spread": 0.002373222653461695,
+        "n": 7,
+        "samples_ms": [
+          0.09455999732017517,
+          0.09440000355243683,
+          0.09438400343060493,
+          0.09433600306510925,
+          0.09436800330877304,
+          0.09433600306510925,
+          0.09440000355243683
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            1
+          ],
+          "oracle": [
+            8
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "tensor_descriptor",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "sum:16384x1024": {
+      "kernel": "sum",
+      "shape": [
+        16384,
+        1024
+      ],
+      "source_hash": "84aedfe21231926b",
+      "effort": "quick",
+      "ts": "2026-06-03 18:24:46",
+      "autotune_s": 17.8,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 1.9073486328125e-05,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "last"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 1.9073486328125e-05,
+      "seed_us": 29.472000896930695,
+      "oracle_us": 28.76799926161766,
+      "tc_us": 34.52799841761589,
+      "seed_oracle": 1.0244716926231403,
+      "G_floor": 1.1715525708066785,
+      "oracle_vs_tc": 1.2002224452113093,
+      "seed_dist": {
+        "median_ms": 0.029472000896930695,
+        "min_ms": 0.029472000896930695,
+        "max_ms": 0.029503999277949333,
+        "spread": 0.0010857213641701205,
+        "n": 7,
+        "samples_ms": [
+          0.029472000896930695,
+          0.029503999277949333,
+          0.029503999277949333,
+          0.029472000896930695,
+          0.029472000896930695,
+          0.029472000896930695,
+          0.029472000896930695
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.02876799926161766,
+        "min_ms": 0.028736000880599022,
+        "max_ms": 0.02879999950528145,
+        "spread": 0.002224646354458636,
+        "n": 7,
+        "samples_ms": [
+          0.028736000880599022,
+          0.02879999950528145,
+          0.028736000880599022,
+          0.02876799926161766,
+          0.02876799926161766,
+          0.02876799926161766,
+          0.02876799926161766
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.03452799841761589,
+        "min_ms": 0.03452799841761589,
+        "max_ms": 0.034543998539447784,
+        "spread": 0.0004633955793895888,
+        "n": 7,
+        "samples_ms": [
+          0.03452799841761589,
+          0.03452799841761589,
+          0.03452799841761589,
+          0.03452799841761589,
+          0.034543998539447784,
+          0.03452799841761589,
+          0.03452799841761589
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": [
+            "first",
+            "first"
+          ],
+          "oracle": [
+            "first",
+            "last"
+          ]
+        },
+        "num_warps": {
+          "seed": 4,
+          "oracle": 8
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "sum:4096x28672": {
+      "kernel": "sum",
+      "shape": [
+        4096,
+        28672
+      ],
+      "source_hash": "39a9a7e063e8faac",
+      "effort": "quick",
+      "ts": "2026-06-03 18:25:34",
+      "autotune_s": 45.3,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 0.0001220703125,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          2048
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "tensor_descriptor",
+          "pointer",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 9.1552734375e-05,
+      "seed_us": 165.02399742603302,
+      "oracle_us": 160.51200032234192,
+      "tc_us": 165.27999937534332,
+      "seed_oracle": 1.02811002974625,
+      "G_floor": 1.0015513013458848,
+      "oracle_vs_tc": 1.029704938219113,
+      "seed_dist": {
+        "median_ms": 0.16502399742603302,
+        "min_ms": 0.16495999693870544,
+        "max_ms": 0.16515199840068817,
+        "spread": 0.001163476009413636,
+        "n": 7,
+        "samples_ms": [
+          0.1650879979133606,
+          0.16515199840068817,
+          0.16502399742603302,
+          0.16499200463294983,
+          0.16502399742603302,
+          0.16499200463294983,
+          0.16495999693870544
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.16051200032234192,
+        "min_ms": 0.16044799983501434,
+        "max_ms": 0.1605439931154251,
+        "spread": 0.000598044259731309,
+        "n": 7,
+        "samples_ms": [
+          0.16047999262809753,
+          0.16051200032234192,
+          0.16047999262809753,
+          0.16044799983501434,
+          0.16051200032234192,
+          0.16051200032234192,
+          0.1605439931154251
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.16527999937534332,
+        "min_ms": 0.16521599888801575,
+        "max_ms": 0.1653759926557541,
+        "spread": 0.000968016507399687,
+        "n": 7,
+        "samples_ms": [
+          0.16526400297880173,
+          0.1653759926557541,
+          0.1653120070695877,
+          0.16527999937534332,
+          0.16524800658226013,
+          0.16521599888801575,
+          0.1653120070695877
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "tensor_descriptor",
+            "pointer",
+            "tensor_descriptor"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": [
+            "first",
+            "first"
+          ],
+          "oracle": [
+            "",
+            "first"
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        },
+        "reduction_loops": {
+          "seed": [
+            null
+          ],
+          "oracle": [
+            2048
+          ]
+        }
+      }
+    },
+    "long_sum:256x65536": {
+      "kernel": "long_sum",
+      "shape": [
+        256,
+        65536
+      ],
+      "source_hash": "70f223335044ce4d",
+      "effort": "quick",
+      "ts": "2026-06-03 18:26:01",
+      "autotune_s": 24.3,
+      "seed_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "persistent",
+      "seed_correct": true,
+      "seed_maxerr": 0.000152587890625,
+      "oracle_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          4096
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "tensor_descriptor"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "looped",
+      "oracle_correct": true,
+      "oracle_maxerr": 0.000152587890625,
+      "seed_us": 30.432000756263733,
+      "oracle_us": 30.271999537944794,
+      "tc_us": 31.5839983522892,
+      "seed_oracle": 1.0052854525885673,
+      "G_floor": 1.0378548096542208,
+      "oracle_vs_tc": 1.0433403420444647,
+      "seed_dist": {
+        "median_ms": 0.030432000756263733,
+        "min_ms": 0.030400000512599945,
+        "max_ms": 0.030432000756263733,
+        "spread": 0.0010515326915270704,
+        "n": 7,
+        "samples_ms": [
+          0.030432000756263733,
+          0.030400000512599945,
+          0.030432000756263733,
+          0.030400000512599945,
+          0.030432000756263733,
+          0.030432000756263733,
+          0.030432000756263733
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.030271999537944794,
+        "min_ms": 0.030112000182271004,
+        "max_ms": 0.03030399978160858,
+        "spread": 0.006342481575982903,
+        "n": 7,
+        "samples_ms": [
+          0.030271999537944794,
+          0.030271999537944794,
+          0.03030399978160858,
+          0.030239999294281006,
+          0.030271999537944794,
+          0.03030399978160858,
+          0.030112000182271004
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.0315839983522892,
+        "min_ms": 0.03152000159025192,
+        "max_ms": 0.03161599859595299,
+        "spread": 0.0030394190320779074,
+        "n": 7,
+        "samples_ms": [
+          0.03161599859595299,
+          0.03152000159025192,
+          0.03155200183391571,
+          0.0315839983522892,
+          0.03155200183391571,
+          0.0315839983522892,
+          0.03161599859595299
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "tensor_descriptor"
+          ]
+        },
+        "num_warps": {
+          "seed": 32,
+          "oracle": 16
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        },
+        "reduction_loops": {
+          "seed": [
+            null
+          ],
+          "oracle": [
+            4096
+          ]
+        }
+      }
+    },
+    "kl_div:1024x256000": {
+      "kernel": "kl_div",
+      "shape": [
+        1024,
+        256000
+      ],
+      "source_hash": "a81305d77f6f4ea1",
+      "effort": "quick",
+      "ts": "2026-06-03 18:26:27",
+      "autotune_s": 22.4,
+      "seed_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 5.960464477539063e-08,
+      "oracle_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          1
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          false
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 16,
+        "num_stages": 3,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 5.960464477539063e-08,
+      "seed_us": 681.6959977149963,
+      "oracle_us": 679.0720224380493,
+      "tc_us": 715.008020401001,
+      "seed_oracle": 1.003864060350368,
+      "G_floor": 1.0488663902937152,
+      "oracle_vs_tc": 1.0529192733252828,
+      "seed_dist": {
+        "median_ms": 0.6816959977149963,
+        "min_ms": 0.6813439726829529,
+        "max_ms": 0.6820000112056732,
+        "spread": 0.0009623622918710661,
+        "n": 7,
+        "samples_ms": [
+          0.6820000112056732,
+          0.6817120015621185,
+          0.681439995765686,
+          0.6815999746322632,
+          0.6813439726829529,
+          0.6818080246448517,
+          0.6816959977149963
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 0.6790720224380493,
+        "min_ms": 0.6789119839668274,
+        "max_ms": 0.6791039705276489,
+        "spread": 0.00028271899662756,
+        "n": 7,
+        "samples_ms": [
+          0.6790720224380493,
+          0.6789759993553162,
+          0.6791039705276489,
+          0.6791039705276489,
+          0.6790400147438049,
+          0.6789119839668274,
+          0.6791039705276489
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 0.715008020401001,
+        "min_ms": 0.7147200107574463,
+        "max_ms": 0.715071976184845,
+        "spread": 0.0004922538172387037,
+        "n": 7,
+        "samples_ms": [
+          0.7150400280952454,
+          0.7149760127067566,
+          0.7149119973182678,
+          0.7147200107574463,
+          0.715008020401001,
+          0.7150400280952454,
+          0.715071976184845
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            ""
+          ]
+        },
+        "num_stages": {
+          "seed": 1,
+          "oracle": 3
+        },
+        "num_warps": {
+          "seed": 32,
+          "oracle": 16
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            false
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            1
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    },
+    "jsd:2048x256000": {
+      "kernel": "jsd",
+      "shape": [
+        2048,
+        256000
+      ],
+      "source_hash": "dd894a5e8a7494a7",
+      "effort": "full",
+      "ts": "2026-06-03 19:35:02",
+      "autotune_s": 477.5,
+      "seed_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "seed_codegen": "looped",
+      "seed_correct": true,
+      "seed_maxerr": 0.0,
+      "oracle_cfg": {
+        "block_sizes": [
+          2048,
+          4
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          1
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "last"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "oracle_codegen": "persistent",
+      "oracle_correct": true,
+      "oracle_maxerr": 0.0,
+      "seed_us": 1390.720009803772,
+      "oracle_us": 1344.7840213775635,
+      "tc_us": 1385.7920169830322,
+      "seed_oracle": 1.03415863640256,
+      "G_floor": 0.9964565169221696,
+      "oracle_vs_tc": 1.0304941127746752,
+      "seed_dist": {
+        "median_ms": 1.390720009803772,
+        "min_ms": 1.3903679847717285,
+        "max_ms": 1.5048320293426514,
+        "spread": 0.08230559980730666,
+        "n": 7,
+        "samples_ms": [
+          1.3903679847717285,
+          1.390720009803772,
+          1.3908799886703491,
+          1.3935999870300293,
+          1.390463948249817,
+          1.3905600309371948,
+          1.5048320293426514
+        ]
+      },
+      "oracle_dist": {
+        "median_ms": 1.3447840213775635,
+        "min_ms": 1.3410240411758423,
+        "max_ms": 1.3705759644508362,
+        "spread": 0.02197521892379539,
+        "n": 7,
+        "samples_ms": [
+          1.3705759644508362,
+          1.34607994556427,
+          1.344319999217987,
+          1.3413919806480408,
+          1.3447840213775635,
+          1.3410240411758423,
+          1.3541439771652222
+        ]
+      },
+      "tc_dist": {
+        "median_ms": 1.3857920169830322,
+        "min_ms": 1.3847039937973022,
+        "max_ms": 1.410912036895752,
+        "spread": 0.0189119599314091,
+        "n": 7,
+        "samples_ms": [
+          1.410912036895752,
+          1.3960959911346436,
+          1.3891839981079102,
+          1.3850560188293457,
+          1.385263979434967,
+          1.3857920169830322,
+          1.3847039937973022
+        ]
+      },
+      "field_diff_seed_vs_oracle": {
+        "atomic_indexing": {
+          "seed": null,
+          "oracle": []
+        },
+        "block_sizes": {
+          "seed": [
+            4096,
+            1
+          ],
+          "oracle": [
+            2048,
+            4
+          ]
+        },
+        "indexing": {
+          "seed": null,
+          "oracle": [
+            "pointer",
+            "pointer",
+            "pointer",
+            "pointer"
+          ]
+        },
+        "load_eviction_policies": {
+          "seed": null,
+          "oracle": [
+            "",
+            "last"
+          ]
+        },
+        "range_flattens": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_multi_buffers": {
+          "seed": null,
+          "oracle": [
+            null,
+            null
+          ]
+        },
+        "range_num_stages": {
+          "seed": null,
+          "oracle": [
+            0,
+            1
+          ]
+        },
+        "range_unroll_factors": {
+          "seed": null,
+          "oracle": [
+            0,
+            0
+          ]
+        },
+        "range_warp_specializes": {
+          "seed": null,
+          "oracle": []
+        }
+      }
+    }
+  },
+  "updated": "2026-06-04 16:45:28",
+  "source_hash_recipe": "ledger_v2_2026-06-03: sha256(src + to_triton_code(default_cfg) + knobdump); heuristic EXCLUDED"
+}

@@ -1,0 +1,992 @@
+GPU=0  helion=/home/dev/local/helion-reduction-heuristics-run2/helion/__init__.py
+kernels=['rms_norm', 'layer_norm', 'softmax', 'welford', 'sum', 'long_sum', 'cross_entropy', 'kl_div', 'jsd']  EPS=0.05  N_RUNS=7
+
+[OK ]       rms_norm(8192,768) b0 G= 0.967 persistent seed=    23.6us tc=    22.8us sp(s/t)=0.01/0.01 
+[OK ]      rms_norm(8192,1024) b0 G= 0.969 persistent seed=    29.0us tc=    28.1us sp(s/t)=0.01/0.00 
+[OK ]      rms_norm(8192,1536) b0 G= 1.004 persistent seed=    39.2us tc=    39.3us sp(s/t)=0.00/0.00 
+[OK ]      rms_norm(4096,2048) b0 G= 1.075 persistent seed=    26.8us tc=    28.8us sp(s/t)=0.00/0.00 
+[OK ]      rms_norm(8192,2560) b1 G= 0.990 persistent seed=    62.0us tc=    61.3us sp(s/t)=0.00/0.00 
+[OK ]      rms_norm(8192,3072) b1 G= 0.994 persistent seed=    73.0us tc=    72.6us sp(s/t)=0.00/0.00 
+[OK ]      rms_norm(4096,3584) b1 G= 1.006 persistent seed=    44.7us tc=    45.0us sp(s/t)=0.00/0.00 
+[OK ]      rms_norm(8192,4096) b1 G= 0.996 persistent seed=    94.8us tc=    94.3us sp(s/t)=0.00/0.00 
+[OK ]      rms_norm(4096,5120) b2 G= 0.986 persistent seed=    62.3us tc=    61.4us sp(s/t)=0.00/0.00 
+[OK ]      rms_norm(4096,7168) b2 G= 0.998 persistent seed=    84.4us tc=    84.3us sp(s/t)=0.00/0.00 
+[OK ]      rms_norm(4096,8192) b2 G= 0.996 persistent seed=    95.4us tc=    95.1us sp(s/t)=0.00/0.00 
+[OK ]     rms_norm(2048,12288) b3 G= 0.987 persistent seed=    74.2us tc=    73.2us sp(s/t)=0.00/0.00 
+[OK ]     rms_norm(2048,14336) b3 G= 0.986 persistent seed=    85.4us tc=    84.2us sp(s/t)=0.00/0.00 
+[OK ]     rms_norm(2048,16384) b3 G= 0.985 persistent seed=    96.6us tc=    95.2us sp(s/t)=0.00/0.00 
+[OK ]     rms_norm(16384,4096) b1 G= 0.993 persistent seed=   183.2us tc=   181.9us sp(s/t)=0.00/0.00 
+[OK ]     rms_norm(32768,2048) b0 G= 0.989 persistent seed=   183.6us tc=   181.7us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]     layer_norm(8192,768) b0 G= 0.980 persistent seed=    23.9us tc=    23.4us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(8192,1024) b0 G= 0.969 persistent seed=    29.7us tc=    28.7us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(8192,1536) b0 G= 1.006 persistent seed=    39.5us tc=    39.8us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(8192,2048) b0 G= 0.981 persistent seed=    51.7us tc=    50.7us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(4096,2560) b1 G= 1.052 persistent seed=    33.5us tc=    35.3us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(8192,3072) b1 G= 0.983 persistent seed=    74.4us tc=    73.1us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(8192,3584) b1 G= 0.985 persistent seed=    85.0us tc=    83.7us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(4096,4096) b1 G= 0.984 persistent seed=    51.7us tc=    50.9us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(4096,5120) b2 G= 0.975 persistent seed=    63.6us tc=    62.0us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(4096,7168) b2 G= 0.987 persistent seed=    85.6us tc=    84.5us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]    layer_norm(4096,8192) b2 G= 0.987 persistent seed=    96.4us tc=    95.2us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]   layer_norm(2048,12288) b3 G= 1.022 persistent seed=    75.1us tc=    76.7us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]   layer_norm(2048,14336) b3 G= 1.036 persistent seed=    86.8us tc=    89.9us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]   layer_norm(2048,16384) b3 G= 0.973 persistent seed=   100.3us tc=    97.6us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]   layer_norm(16384,2048) b0 G= 0.987 persistent seed=    96.3us tc=    95.0us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/layer_norm.py", line 49, in layer_norm_fwd
+    if bias is not None:
+       ^^^^^^^^^^^^^^^^
+
+[OK ]   layer_norm(32768,1024) b0 G= 0.984 persistent seed=    96.3us tc=    94.8us sp(s/t)=0.00/0.00 
+[OK ]      softmax(262144,128) b0 G= 0.919 persistent seed=   103.5us tc=    95.1us sp(s/t)=0.00/0.00 
+[OK ]      softmax(131072,256) b0 G= 0.796 persistent seed=   117.8us tc=    93.7us sp(s/t)=0.00/0.00 
+[OK ]       softmax(16384,512) b0 G= 0.943 persistent seed=    29.6us tc=    27.9us sp(s/t)=0.00/0.00 
+[OK ]       softmax(8192,1024) b0 G= 0.965 persistent seed=    29.2us tc=    28.2us sp(s/t)=0.00/0.00 
+[OK ]       softmax(8192,2048) b0 G= 1.080 persistent seed=    51.4us tc=    55.5us sp(s/t)=0.00/0.00 
+[OK ]       softmax(8192,2560) b1 G= 1.429 persistent seed=    63.3us tc=    90.5us sp(s/t)=0.00/0.00 
+[OK ]       softmax(4096,3072) b1 G= 1.247 persistent seed=    40.4us tc=    50.3us sp(s/t)=0.00/0.00 
+[OK ]       softmax(4096,4096) b1 G= 1.059 persistent seed=    52.7us tc=    55.8us sp(s/t)=0.00/0.00 
+[OK ]       softmax(4096,5120) b2 G= 1.132 persistent seed=    63.4us tc=    71.8us sp(s/t)=0.00/0.00 
+[OK ]       softmax(4096,8192) b2 G= 0.981 persistent seed=    97.9us tc=    96.0us sp(s/t)=0.00/0.00 
+[OK ]      softmax(4096,16384) b3 G= 0.908 persistent seed=   204.7us tc=   185.8us sp(s/t)=0.00/0.00 
+[OK ]      softmax(2048,24576) b4 G= 1.280 persistent seed=   144.1us tc=   184.4us sp(s/t)=0.00/0.00 
+[OK ]      softmax(2048,32768) b4 G= 1.215 persistent seed=   195.6us tc=   237.7us sp(s/t)=0.00/0.00 
+[OK ]      softmax(1024,65536) b4 G= 1.022     looped seed=   263.6us tc=   269.6us sp(s/t)=0.00/0.00 
+[OK ]      softmax(512,131072) b4 G= 1.000     looped seed=   275.7us tc=   275.6us sp(s/t)=0.00/0.00 
+[OK ]       welford(16384,768) b0 G= 0.908 persistent seed=    40.3us tc=    36.6us sp(s/t)=0.00/0.01 
+[OK ]      welford(16384,1024) b0 G= 0.942 persistent seed=    51.0us tc=    48.0us sp(s/t)=0.00/0.00 
+[OK ]      welford(16384,1536) b0 G= 0.958 persistent seed=    76.2us tc=    73.0us sp(s/t)=0.00/0.00 
+[OK ]      welford(16384,2048) b0 G= 1.002 persistent seed=    94.9us tc=    95.1us sp(s/t)=0.00/0.00 
+[OK ]      welford(16384,2560) b1 G= 0.955 persistent seed=   123.3us tc=   117.7us sp(s/t)=0.00/0.00 
+[OK ]       welford(8192,3072) b1 G= 0.979 persistent seed=    74.7us tc=    73.1us sp(s/t)=0.00/0.00 
+[OK ]      welford(16384,4096) b1 G= 0.978     looped seed=   186.3us tc=   182.2us sp(s/t)=0.00/0.00 
+[OK ]       welford(8192,5120) b2 G= 0.947     looped seed=   122.8us tc=   116.4us sp(s/t)=0.00/0.00 
+[OK ]       welford(8192,7168) b2 G= 0.960     looped seed=   167.6us tc=   160.9us sp(s/t)=0.00/0.00 
+[OK ]       welford(8192,8192) b2 G= 0.968     looped seed=   188.6us tc=   182.6us sp(s/t)=0.00/0.00 
+[OK ]      welford(8192,12288) b3 G= 0.951     looped seed=   290.9us tc=   276.7us sp(s/t)=0.00/0.00 
+[OK ]      welford(4096,16384) b3 G= 0.862     looped seed=   213.5us tc=   184.1us sp(s/t)=0.00/0.00 
+[OK ]     welford(262144,2048) b0 G= 0.981 persistent seed=  1432.9us tc=  1405.5us sp(s/t)=0.00/0.00 
+[OK ]      welford(65536,4096) b1 G= 0.916     looped seed=   772.3us tc=   707.4us sp(s/t)=0.00/0.00 
+[OK ]      welford(32768,8192) b2 G= 0.888     looped seed=   794.2us tc=   705.2us sp(s/t)=0.00/0.00 
+[OK ]          sum(16384,1024) b0 G= 1.174 persistent seed=    29.6us tc=    34.7us sp(s/t)=0.00/0.00 
+[OK ]          sum(16384,2048) b0 G= 0.996 persistent seed=    51.7us tc=    51.5us sp(s/t)=0.00/0.00 
+[OK ]          sum(16384,2560) b1 G= 0.966 persistent seed=    63.7us tc=    61.6us sp(s/t)=0.00/0.00 
+[OK ]           sum(8192,3072) b1 G= 0.980 persistent seed=    40.8us tc=    40.0us sp(s/t)=0.00/0.00 
+[OK ]           sum(8192,4096) b1 G= 0.983 persistent seed=    52.4us tc=    51.5us sp(s/t)=0.00/0.00 
+[OK ]           sum(8192,5120) b2 G= 1.001 persistent seed=    63.4us tc=    63.5us sp(s/t)=0.00/0.00 
+[OK ]           sum(8192,8192) b2 G= 1.002 persistent seed=    97.5us tc=    97.7us sp(s/t)=0.00/0.00 
+[OK ]          sum(4096,11008) b3 G= 0.999 persistent seed=    68.8us tc=    68.7us sp(s/t)=0.00/0.00 
+[OK ]          sum(4096,14336) b3 G= 0.997 persistent seed=    87.2us tc=    86.9us sp(s/t)=0.00/0.00 
+[OK ]          sum(4096,16384) b3 G= 0.994 persistent seed=    98.5us tc=    97.9us sp(s/t)=0.00/0.00 
+[OK ]          sum(4096,28672) b4 G= 1.003 persistent seed=   165.2us tc=   165.7us sp(s/t)=0.00/0.00 
+[OK ]          sum(2048,18944) b4 G= 0.997 persistent seed=    60.5us tc=    60.3us sp(s/t)=0.00/0.00 
+[OK ]          sum(32768,1024) b0 G= 1.101 persistent seed=    51.9us tc=    57.2us sp(s/t)=0.00/0.00 
+[OK ]          sum(16384,4096) b1 G= 0.978 persistent seed=    97.8us tc=    95.7us sp(s/t)=0.00/0.00 
+[OK ]      long_sum(256,65536) b0 G= 1.047 persistent seed=    30.7us tc=    32.1us sp(s/t)=0.00/0.01 
+[OK ]      long_sum(256,98304) b0 G= 1.053 persistent seed=    42.4us tc=    44.6us sp(s/t)=0.00/0.00 
+[OK ]     long_sum(256,131072) b0 G= 1.186 persistent seed=    54.3us tc=    64.4us sp(s/t)=0.00/0.00 
+[OK ]     long_sum(128,131072) b0 G= 1.052 persistent seed=    30.9us tc=    32.5us sp(s/t)=0.01/0.00 
+[OK ]     long_sum(128,196608) b1 G= 1.047 persistent seed=    42.6us tc=    44.6us sp(s/t)=0.00/0.00 
+[OK ]     long_sum(128,262144) b1 G= 1.350 persistent seed=    54.8us tc=    73.9us sp(s/t)=0.00/0.01 
+[OK ]      long_sum(64,262144) b1 G= 1.036 persistent seed=    31.4us tc=    32.5us sp(s/t)=0.01/0.01 
+[OK ]      long_sum(96,393216) b1 G= 1.011 persistent seed=    62.2us tc=    62.9us sp(s/t)=0.00/0.00 
+[OK ]      long_sum(64,524288) b1 G= 1.003 persistent seed=    56.4us tc=    56.6us sp(s/t)=0.00/0.00 
+[OK ]      long_sum(64,786432) b2 G= 1.200 persistent seed=    79.8us tc=    95.7us sp(s/t)=0.00/0.00 
+[OK ]     long_sum(64,1048576) b2 G= 1.497 persistent seed=   104.0us tc=   155.7us sp(s/t)=0.00/0.00 
+[OK ]     long_sum(16,2097152) b2 G= 0.734     looped seed=    76.8us tc=    56.4us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(8192,30522) b0 G= 1.143 persistent seed=   347.5us tc=   397.2us sp(s/t)=0.01/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(8192,32000) b0 G= 1.081 persistent seed=   351.8us tc=   380.1us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(8192,32064) b0 G= 1.085 persistent seed=   352.6us tc=   382.7us sp(s/t)=0.01/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(8192,50257) b0 G= 0.649     looped seed=  1045.3us tc=   678.2us sp(s/t)=0.01/0.08 *RERUN
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(4096,50304) b0 G= 0.689     looped seed=   441.5us tc=   304.1us sp(s/t)=0.01/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(4096,65536) b1 G= 0.906     looped seed=   421.2us tc=   381.7us sp(s/t)=0.01/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(8192,49152) b0 G= 1.052     looped seed=   539.1us tc=   567.0us sp(s/t)=0.01/0.01 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(4096,98304) b1 G= 0.592     looped seed=   955.5us tc=   565.5us sp(s/t)=0.00/0.02 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(4096,128000) b1 G= 0.532     looped seed=  1375.4us tc=   731.4us sp(s/t)=0.00/0.05 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(4096,128256) b1 G= 0.531     looped seed=  1380.4us tc=   733.0us sp(s/t)=0.00/0.06 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(8192,128256) b1 G= 0.520     looped seed=  2710.7us tc=  1410.1us sp(s/t)=0.00/0.13 *RERUN
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(2048,151936) b2 G= 0.541     looped seed=   840.9us tc=   455.3us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(2048,256000) b2 G= 0.545     looped seed=  1362.5us tc=   742.0us sp(s/t)=0.00/0.02 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/cross_entropy.py", line 79, in cross_entropy
+    return losses.mean()
+           ^^^^^^^^^^^^^
+
+[OK ] cross_entropy(16384,32000) b0 G= 1.092 persistent seed=   678.5us tc=   740.7us sp(s/t)=0.00/0.07 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]       kl_div(8192,30522) b0 G= 1.126     looped seed=   652.4us tc=   734.5us sp(s/t)=0.00/0.01 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]       kl_div(8192,32000) b0 G= 1.058     looped seed=   676.1us tc=   715.2us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]       kl_div(4096,32064) b0 G= 1.354     looped seed=   353.7us tc=   479.1us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]       kl_div(8192,50257) b0 G= 1.058     looped seed=  1087.7us tc=  1151.3us sp(s/t)=0.02/0.05 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]       kl_div(4096,50304) b0 G= 1.043     looped seed=   541.5us tc=   565.0us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]       kl_div(4096,65536) b1 G= 1.048     looped seed=   694.6us tc=   728.0us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]       kl_div(4096,49152) b0 G= 1.055     looped seed=   526.7us tc=   555.7us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]       kl_div(2048,98304) b1 G= 1.054     looped seed=   527.4us tc=   555.8us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]      kl_div(4096,128256) b1 G= 1.036     looped seed=  1343.8us tc=  1392.6us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]      kl_div(2048,128000) b1 G= 1.049     looped seed=   681.5us tc=   715.1us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]      kl_div(2048,151936) b2 G= 1.073     looped seed=   806.7us tc=   865.2us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]      kl_div(1024,256000) b2 G= 1.046     looped seed=   683.7us tc=   715.4us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^
+
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/kl_div.py", line 119, in kl_div_forward
+    final_loss = torch.sum(loss) / BT
+                 ^^^^^^^^^^^^^^^^^^^^
+
+[OK ]      kl_div(16384,32000) b0 G= 1.050     looped seed=  1324.7us tc=  1390.9us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]          jsd(8192,30522) b0 G= 0.847     looped seed=   803.4us tc=   680.5us sp(s/t)=0.00/0.01 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]          jsd(8192,32000) b0 G= 0.910     looped seed=   771.5us tc=   702.2us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]          jsd(8192,32064) b0 G= 0.900     looped seed=   777.2us tc=   699.5us sp(s/t)=0.00/0.01 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]          jsd(8192,50257) b0 G= 0.908     looped seed=  1291.0us tc=  1171.7us sp(s/t)=0.07/0.02 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]          jsd(8192,50304) b0 G= 0.915     looped seed=  1181.2us tc=  1080.8us sp(s/t)=0.02/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]          jsd(8192,65536) b1 G= 0.949     looped seed=  1470.8us tc=  1396.1us sp(s/t)=0.03/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]          jsd(4096,49152) b0 G= 0.964     looped seed=   571.7us tc=   551.2us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]          jsd(4096,98304) b1 G= 0.980     looped seed=  1096.5us tc=  1074.8us sp(s/t)=0.00/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]         jsd(8192,128256) b1 G= 0.964     looped seed=  2789.9us tc=  2690.5us sp(s/t)=0.05/0.01 *RERUN
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]         jsd(4096,128000) b1 G= 0.974     looped seed=  1421.6us tc=  1385.0us sp(s/t)=0.07/0.00 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]         jsd(4096,151936) b2 G= 0.980     looped seed=  1665.9us tc=  1632.8us sp(s/t)=0.06/0.02 
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]         jsd(2048,256000) b2 G= 0.996     looped seed=  1401.6us tc=  1396.4us sp(s/t)=0.03/0.01 *RERUN
+WARNING[TensorOperationInWrapper]: A tensor operation outside of the `hl.tile` or `hl.grid` loop will not be fused in the generated kernel.
+Use @helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper]) to suppress this warning.
+If this is not a tensor operation, please report this as a bug.
+While processing:
+  File "/home/dev/local/helion-reduction-heuristics-run2/examples/jsd.py", line 144, in jsd_forward
+    final_loss = torch.sum(
+                 ^^^^^^^^^^
+
+[OK ]         jsd(16384,32000) b0 G= 0.896     looped seed=  1520.3us tc=  1362.2us sp(s/t)=0.01/0.00 
+
+==========================================================================================
+RANKED FLOOR TABLE (G ascending — worst floor first):
+     G          kernel            shape band    codegen   seed_us     tc_us  flag
+ 0.520   cross_entropy   (8192, 128256)   b1     looped    2710.7    1410.1  FLOOR-LOSS
+ 0.531   cross_entropy   (4096, 128256)   b1     looped    1380.4     733.0  FLOOR-LOSS
+ 0.532   cross_entropy   (4096, 128000)   b1     looped    1375.4     731.4  FLOOR-LOSS
+ 0.541   cross_entropy   (2048, 151936)   b2     looped     840.9     455.3  FLOOR-LOSS
+ 0.545   cross_entropy   (2048, 256000)   b2     looped    1362.5     742.0  FLOOR-LOSS
+ 0.592   cross_entropy    (4096, 98304)   b1     looped     955.5     565.5  FLOOR-LOSS
+ 0.649   cross_entropy    (8192, 50257)   b0     looped    1045.3     678.2  FLOOR-LOSS
+ 0.689   cross_entropy    (4096, 50304)   b0     looped     441.5     304.1  FLOOR-LOSS
+ 0.734        long_sum    (16, 2097152)   b2     looped      76.8      56.4  FLOOR-LOSS
+ 0.796         softmax    (131072, 256)   b0 persistent     117.8      93.7  FLOOR-LOSS
+ 0.847             jsd    (8192, 30522)   b0     looped     803.4     680.5  FLOOR-LOSS
+ 0.862         welford    (4096, 16384)   b3     looped     213.5     184.1  FLOOR-LOSS
+ 0.888         welford    (32768, 8192)   b2     looped     794.2     705.2  FLOOR-LOSS
+ 0.896             jsd   (16384, 32000)   b0     looped    1520.3    1362.2  FLOOR-LOSS
+ 0.900             jsd    (8192, 32064)   b0     looped     777.2     699.5  FLOOR-LOSS
+ 0.906   cross_entropy    (4096, 65536)   b1     looped     421.2     381.7  FLOOR-LOSS
+ 0.908         softmax    (4096, 16384)   b3 persistent     204.7     185.8  FLOOR-LOSS
+ 0.908             jsd    (8192, 50257)   b0     looped    1291.0    1171.7  FLOOR-LOSS
+ 0.908         welford     (16384, 768)   b0 persistent      40.3      36.6  FLOOR-LOSS
+ 0.910             jsd    (8192, 32000)   b0     looped     771.5     702.2  FLOOR-LOSS
+ 0.915             jsd    (8192, 50304)   b0     looped    1181.2    1080.8  FLOOR-LOSS
+ 0.916         welford    (65536, 4096)   b1     looped     772.3     707.4  FLOOR-LOSS
+ 0.919         softmax    (262144, 128)   b0 persistent     103.5      95.1  FLOOR-LOSS
+ 0.942         welford    (16384, 1024)   b0 persistent      51.0      48.0  FLOOR-LOSS
+ 0.943         softmax     (16384, 512)   b0 persistent      29.6      27.9  FLOOR-LOSS
+ 0.947         welford     (8192, 5120)   b2     looped     122.8     116.4  FLOOR-LOSS
+ 0.949             jsd    (8192, 65536)   b1     looped    1470.8    1396.1  FLOOR-LOSS
+ 0.951         welford    (8192, 12288)   b3     looped     290.9     276.7  
+ 0.955         welford    (16384, 2560)   b1 persistent     123.3     117.7  
+ 0.958         welford    (16384, 1536)   b0 persistent      76.2      73.0  
+ 0.960         welford     (8192, 7168)   b2     looped     167.6     160.9  
+ 0.964             jsd    (4096, 49152)   b0     looped     571.7     551.2  
+ 0.964             jsd   (8192, 128256)   b1     looped    2789.9    2690.5  
+ 0.965         softmax     (8192, 1024)   b0 persistent      29.2      28.2  
+ 0.966             sum    (16384, 2560)   b1 persistent      63.7      61.6  
+ 0.967        rms_norm      (8192, 768)   b0 persistent      23.6      22.8  
+ 0.968         welford     (8192, 8192)   b2     looped     188.6     182.6  
+ 0.969      layer_norm     (8192, 1024)   b0 persistent      29.7      28.7  
+ 0.969        rms_norm     (8192, 1024)   b0 persistent      29.0      28.1  
+ 0.973      layer_norm    (2048, 16384)   b3 persistent     100.3      97.6  
+ 0.974             jsd   (4096, 128000)   b1     looped    1421.6    1385.0  
+ 0.975      layer_norm     (4096, 5120)   b2 persistent      63.6      62.0  
+ 0.978         welford    (16384, 4096)   b1     looped     186.3     182.2  
+ 0.978             sum    (16384, 4096)   b1 persistent      97.8      95.7  
+ 0.979         welford     (8192, 3072)   b1 persistent      74.7      73.1  
+ 0.980      layer_norm      (8192, 768)   b0 persistent      23.9      23.4  
+ 0.980             jsd   (4096, 151936)   b2     looped    1665.9    1632.8  
+ 0.980             jsd    (4096, 98304)   b1     looped    1096.5    1074.8  
+ 0.980             sum     (8192, 3072)   b1 persistent      40.8      40.0  
+ 0.981      layer_norm     (8192, 2048)   b0 persistent      51.7      50.7  
+ 0.981         welford   (262144, 2048)   b0 persistent    1432.9    1405.5  
+ 0.981         softmax     (4096, 8192)   b2 persistent      97.9      96.0  
+ 0.983      layer_norm     (8192, 3072)   b1 persistent      74.4      73.1  
+ 0.983             sum     (8192, 4096)   b1 persistent      52.4      51.5  
+ 0.984      layer_norm     (4096, 4096)   b1 persistent      51.7      50.9  
+ 0.984      layer_norm    (32768, 1024)   b0 persistent      96.3      94.8  
+ 0.985      layer_norm     (8192, 3584)   b1 persistent      85.0      83.7  
+ 0.985        rms_norm    (2048, 16384)   b3 persistent      96.6      95.2  
+ 0.986        rms_norm     (4096, 5120)   b2 persistent      62.3      61.4  
+ 0.986        rms_norm    (2048, 14336)   b3 persistent      85.4      84.2  
+ 0.987      layer_norm    (16384, 2048)   b0 persistent      96.3      95.0  
+ 0.987        rms_norm    (2048, 12288)   b3 persistent      74.2      73.2  
+ 0.987      layer_norm     (4096, 7168)   b2 persistent      85.6      84.5  
+ 0.987      layer_norm     (4096, 8192)   b2 persistent      96.4      95.2  
+ 0.989        rms_norm    (32768, 2048)   b0 persistent     183.6     181.7  
+ 0.990        rms_norm     (8192, 2560)   b1 persistent      62.0      61.3  
+ 0.993        rms_norm    (16384, 4096)   b1 persistent     183.2     181.9  
+ 0.994             sum    (4096, 16384)   b3 persistent      98.5      97.9  
+ 0.994        rms_norm     (8192, 3072)   b1 persistent      73.0      72.6  
+ 0.996        rms_norm     (8192, 4096)   b1 persistent      94.8      94.3  
+ 0.996             jsd   (2048, 256000)   b2     looped    1401.6    1396.4  
+ 0.996             sum    (16384, 2048)   b0 persistent      51.7      51.5  
+ 0.996        rms_norm     (4096, 8192)   b2 persistent      95.4      95.1  
+ 0.997             sum    (2048, 18944)   b4 persistent      60.5      60.3  
+ 0.997             sum    (4096, 14336)   b3 persistent      87.2      86.9  
+ 0.998        rms_norm     (4096, 7168)   b2 persistent      84.4      84.3  
+ 0.999             sum    (4096, 11008)   b3 persistent      68.8      68.7  
+ 1.000         softmax    (512, 131072)   b4     looped     275.7     275.6  
+ 1.001             sum     (8192, 5120)   b2 persistent      63.4      63.5  
+ 1.002             sum     (8192, 8192)   b2 persistent      97.5      97.7  
+ 1.002         welford    (16384, 2048)   b0 persistent      94.9      95.1  
+ 1.003        long_sum     (64, 524288)   b1 persistent      56.4      56.6  
+ 1.003             sum    (4096, 28672)   b4 persistent     165.2     165.7  
+ 1.004        rms_norm     (8192, 1536)   b0 persistent      39.2      39.3  
+ 1.006      layer_norm     (8192, 1536)   b0 persistent      39.5      39.8  
+ 1.006        rms_norm     (4096, 3584)   b1 persistent      44.7      45.0  
+ 1.011        long_sum     (96, 393216)   b1 persistent      62.2      62.9  
+ 1.022      layer_norm    (2048, 12288)   b3 persistent      75.1      76.7  
+ 1.022         softmax    (1024, 65536)   b4     looped     263.6     269.6  
+ 1.036        long_sum     (64, 262144)   b1 persistent      31.4      32.5  
+ 1.036      layer_norm    (2048, 14336)   b3 persistent      86.8      89.9  
+ 1.036          kl_div   (4096, 128256)   b1     looped    1343.8    1392.6  
+ 1.043          kl_div    (4096, 50304)   b0     looped     541.5     565.0  
+ 1.046          kl_div   (1024, 256000)   b2     looped     683.7     715.4  
+ 1.047        long_sum     (256, 65536)   b0 persistent      30.7      32.1  
+ 1.047        long_sum    (128, 196608)   b1 persistent      42.6      44.6  
+ 1.048          kl_div    (4096, 65536)   b1     looped     694.6     728.0  
+ 1.049          kl_div   (2048, 128000)   b1     looped     681.5     715.1  
+ 1.050          kl_div   (16384, 32000)   b0     looped    1324.7    1390.9  
+ 1.052      layer_norm     (4096, 2560)   b1 persistent      33.5      35.3  
+ 1.052        long_sum    (128, 131072)   b0 persistent      30.9      32.5  
+ 1.052   cross_entropy    (8192, 49152)   b0     looped     539.1     567.0  
+ 1.053        long_sum     (256, 98304)   b0 persistent      42.4      44.6  
+ 1.054          kl_div    (2048, 98304)   b1     looped     527.4     555.8  
+ 1.055          kl_div    (4096, 49152)   b0     looped     526.7     555.7  
+ 1.058          kl_div    (8192, 32000)   b0     looped     676.1     715.2  
+ 1.058          kl_div    (8192, 50257)   b0     looped    1087.7    1151.3  
+ 1.059         softmax     (4096, 4096)   b1 persistent      52.7      55.8  
+ 1.073          kl_div   (2048, 151936)   b2     looped     806.7     865.2  
+ 1.075        rms_norm     (4096, 2048)   b0 persistent      26.8      28.8  
+ 1.080         softmax     (8192, 2048)   b0 persistent      51.4      55.5  
+ 1.081   cross_entropy    (8192, 32000)   b0 persistent     351.8     380.1  
+ 1.085   cross_entropy    (8192, 32064)   b0 persistent     352.6     382.7  
+ 1.092   cross_entropy   (16384, 32000)   b0 persistent     678.5     740.7  
+ 1.101             sum    (32768, 1024)   b0 persistent      51.9      57.2  
+ 1.126          kl_div    (8192, 30522)   b0     looped     652.4     734.5  
+ 1.132         softmax     (4096, 5120)   b2 persistent      63.4      71.8  
+ 1.143   cross_entropy    (8192, 30522)   b0 persistent     347.5     397.2  
+ 1.174             sum    (16384, 1024)   b0 persistent      29.6      34.7  
+ 1.186        long_sum    (256, 131072)   b0 persistent      54.3      64.4  
+ 1.200        long_sum     (64, 786432)   b2 persistent      79.8      95.7  
+ 1.215         softmax    (2048, 32768)   b4 persistent     195.6     237.7  
+ 1.247         softmax     (4096, 3072)   b1 persistent      40.4      50.3  
+ 1.280         softmax    (2048, 24576)   b4 persistent     144.1     184.4  
+ 1.350        long_sum    (128, 262144)   b1 persistent      54.8      73.9  
+ 1.354          kl_div    (4096, 32064)   b0     looped     353.7     479.1  
+ 1.429         softmax     (8192, 2560)   b1 persistent      63.3      90.5  
+ 1.497        long_sum    (64, 1048576)   b2 persistent     104.0     155.7  
+
+PER-KERNEL GEOMEAN G (train):
+        rms_norm: 0.9950
+      layer_norm: 0.9929
+         softmax: 1.0531
+         welford: 0.9456
+             sum: 1.0108
+        long_sum: 1.0860
+   cross_entropy: 0.7442
+          kl_div: 1.0782
+             jsd: 0.9363
+         OVERALL: 0.9770
+
+FLOOR LOSSES (G < 0.95):
+  cross_entropy(8192,128256) G=0.520 looped band=b1
+  cross_entropy(4096,128256) G=0.531 looped band=b1
+  cross_entropy(4096,128000) G=0.532 looped band=b1
+  cross_entropy(2048,151936) G=0.541 looped band=b2
+  cross_entropy(2048,256000) G=0.545 looped band=b2
+  cross_entropy(4096,98304) G=0.592 looped band=b1
+  cross_entropy(8192,50257) G=0.649 looped band=b0
+  cross_entropy(4096,50304) G=0.689 looped band=b0
+  long_sum(16,2097152) G=0.734 looped band=b2
+  softmax(131072,256) G=0.796 persistent band=b0
+  jsd(8192,30522) G=0.847 looped band=b0
+  welford(4096,16384) G=0.862 looped band=b3
+  welford(32768,8192) G=0.888 looped band=b2
+  jsd(16384,32000) G=0.896 looped band=b0
+  jsd(8192,32064) G=0.900 looped band=b0
+  cross_entropy(4096,65536) G=0.906 looped band=b1
+  softmax(4096,16384) G=0.908 persistent band=b3
+  jsd(8192,50257) G=0.908 looped band=b0
+  welford(16384,768) G=0.908 persistent band=b0
+  jsd(8192,32000) G=0.910 looped band=b0
+  jsd(8192,50304) G=0.915 looped band=b0
+  welford(65536,4096) G=0.916 looped band=b1
+  softmax(262144,128) G=0.919 persistent band=b0
+  welford(16384,1024) G=0.942 persistent band=b0
+  softmax(16384,512) G=0.943 persistent band=b0
+  welford(8192,5120) G=0.947 looped band=b2
+  jsd(8192,65536) G=0.949 looped band=b1
+
+CORRECTNESS FAILURES:
+  (none)
+
+OOM / SKIPPED:
+  (none)
+
+[wrote /home/dev/local/helion-reduction-heuristics-run2/_lab/logs/run3/floor_sweep_merged.json]

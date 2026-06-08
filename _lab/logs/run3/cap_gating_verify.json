@@ -1,0 +1,431 @@
+[
+  {
+    "kernel": "long_sum",
+    "shape": [
+      128,
+      262144
+    ],
+    "row_kb": 1024.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        null
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "flat"
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 54.7,
+    "loop_us": 54.6,
+    "persist_spread": 0.009,
+    "loop_spread": 0.002,
+    "ratio_persist_over_loop": 1.002,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 0.000396728515625,
+    "loop_maxerr": 0.00030517578125,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  },
+  {
+    "kernel": "long_sum",
+    "shape": [
+      256,
+      131072
+    ],
+    "row_kb": 512.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        null
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "flat"
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 54.2,
+    "loop_us": 54.0,
+    "persist_spread": 0.003,
+    "loop_spread": 0.003,
+    "ratio_persist_over_loop": 1.004,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 0.000335693359375,
+    "loop_maxerr": 0.000152587890625,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  },
+  {
+    "kernel": "long_sum",
+    "shape": [
+      128,
+      393216
+    ],
+    "row_kb": 1536.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        null
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "flat"
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 77.7,
+    "loop_us": 78.8,
+    "persist_spread": 0.001,
+    "loop_spread": 0.001,
+    "ratio_persist_over_loop": 0.985,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 0.000732421875,
+    "loop_maxerr": 0.0003662109375,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  },
+  {
+    "kernel": "long_sum",
+    "shape": [
+      64,
+      524288
+    ],
+    "row_kb": 2048.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        null
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "flat"
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 57.7,
+    "loop_us": 57.6,
+    "persist_spread": 0.002,
+    "loop_spread": 0.002,
+    "ratio_persist_over_loop": 1.003,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 0.000701904296875,
+    "loop_maxerr": 0.000274658203125,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  },
+  {
+    "kernel": "sum",
+    "shape": [
+      256,
+      262144
+    ],
+    "row_kb": 1024.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        null
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "flat"
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 100.4,
+    "loop_us": 99.6,
+    "persist_spread": 0.0,
+    "loop_spread": 0.001,
+    "ratio_persist_over_loop": 1.008,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 0.00048828125,
+    "loop_maxerr": 0.000335693359375,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  },
+  {
+    "kernel": "sum",
+    "shape": [
+      32,
+      65536
+    ],
+    "row_kb": 256.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        null
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "flat"
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 10.4,
+    "loop_us": 10.6,
+    "persist_spread": 0.012,
+    "loop_spread": 0.0,
+    "ratio_persist_over_loop": 0.985,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 0.0001220703125,
+    "loop_maxerr": 0.0001220703125,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      65536
+    ],
+    "row_kb": 256.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        16384
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first",
+        "last",
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "persistent_interleaved",
+      "num_sm_multiplier": 32,
+      "maxnreg": 64
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 541.8,
+    "loop_us": 366.0,
+    "persist_spread": 0.008,
+    "loop_spread": 0.0,
+    "ratio_persist_over_loop": 1.48,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 0.0,
+    "loop_maxerr": 0.0,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      98304
+    ],
+    "row_kb": 384.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        16384
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first",
+        "last",
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "persistent_interleaved",
+      "num_sm_multiplier": 32,
+      "maxnreg": 64
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 1812.0,
+    "loop_us": 595.1,
+    "persist_spread": 0.002,
+    "loop_spread": 0.006,
+    "ratio_persist_over_loop": 3.045,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 9.5367431640625e-07,
+    "loop_maxerr": 9.5367431640625e-07,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      131072
+    ],
+    "row_kb": 512.0,
+    "seed_warps": 32,
+    "seed_cfg": {
+      "block_sizes": [
+        1
+      ],
+      "reduction_loops": [
+        16384
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first",
+        "last",
+        "first",
+        "first"
+      ],
+      "num_warps": 32,
+      "num_stages": 1,
+      "pid_type": "persistent_interleaved",
+      "num_sm_multiplier": 32,
+      "maxnreg": 64
+    },
+    "persist_warps": 32,
+    "loop_warps": 32,
+    "persist_rl": [
+      null
+    ],
+    "loop_rl": [
+      16384
+    ],
+    "persist_cg": "persistent",
+    "loop_cg": "looped",
+    "persist_us": 3243.3,
+    "loop_us": 975.1,
+    "persist_spread": 0.001,
+    "loop_spread": 0.001,
+    "ratio_persist_over_loop": 3.326,
+    "persist_correct": true,
+    "loop_correct": true,
+    "persist_maxerr": 0.0,
+    "loop_maxerr": 0.0,
+    "cfg_diff_keys": [
+      "reduction_loops"
+    ]
+  }
+]

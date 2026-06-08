@@ -1,0 +1,248 @@
+[
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      98304
+    ],
+    "length": 5,
+    "codegen": "looped",
+    "reread_evict": [
+      "first",
+      "first",
+      "last",
+      "first",
+      "first"
+    ],
+    "default_evict": [
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "matched_lever": true,
+    "other_diffs": [],
+    "default_us": 850.0800132751465,
+    "reread_us": 595.4239964485168,
+    "ratio_default_over_reread": 1.427688535137244,
+    "helps": true,
+    "reread_correct": true,
+    "default_correct": true,
+    "reread_maxerr": 0.0,
+    "default_maxerr": 0.0
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      128256
+    ],
+    "length": 5,
+    "codegen": "looped",
+    "reread_evict": [
+      "first",
+      "first",
+      "last",
+      "first",
+      "first"
+    ],
+    "default_evict": [
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "matched_lever": true,
+    "other_diffs": [],
+    "default_us": 1312.7039670944214,
+    "reread_us": 966.7199850082397,
+    "ratio_default_over_reread": 1.3578947238617733,
+    "helps": true,
+    "reread_correct": true,
+    "default_correct": true,
+    "reread_maxerr": 0.0,
+    "default_maxerr": 0.0
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      1024,
+      256000
+    ],
+    "length": 5,
+    "codegen": "looped",
+    "reread_evict": [
+      "first",
+      "first",
+      "last",
+      "first",
+      "first"
+    ],
+    "default_evict": [
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "matched_lever": true,
+    "other_diffs": [],
+    "default_us": 673.4399795532227,
+    "reread_us": 614.5280003547668,
+    "ratio_default_over_reread": 1.09586541079405,
+    "helps": true,
+    "reread_correct": true,
+    "default_correct": true,
+    "reread_maxerr": 0.0,
+    "default_maxerr": 0.0
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      16384,
+      2048
+    ],
+    "length": 4,
+    "codegen": "persistent",
+    "reread_evict": [
+      "last",
+      "first",
+      "first",
+      "first"
+    ],
+    "default_evict": [
+      "",
+      "",
+      "",
+      ""
+    ],
+    "matched_lever": true,
+    "other_diffs": [],
+    "default_us": 95.61599791049957,
+    "reread_us": 94.84799951314926,
+    "ratio_default_over_reread": 1.0080971491364332,
+    "helps": true,
+    "reread_correct": true,
+    "default_correct": true,
+    "reread_maxerr": 1.5497207641601562e-06,
+    "default_maxerr": 1.5497207641601562e-06
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      8192,
+      8192
+    ],
+    "length": 4,
+    "codegen": "looped",
+    "reread_evict": [
+      "last",
+      "first",
+      "first",
+      "first"
+    ],
+    "default_evict": [
+      "",
+      "",
+      "",
+      ""
+    ],
+    "matched_lever": true,
+    "other_diffs": [],
+    "default_us": 201.00799947977066,
+    "reread_us": 187.6000016927719,
+    "ratio_default_over_reread": 1.071471202910524,
+    "helps": true,
+    "reread_correct": true,
+    "default_correct": true,
+    "reread_maxerr": 1.5497207641601562e-06,
+    "default_maxerr": 1.5497207641601562e-06
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      8192,
+      12288
+    ],
+    "length": 4,
+    "codegen": "looped",
+    "reread_evict": [
+      "last",
+      "first",
+      "first",
+      "first"
+    ],
+    "default_evict": [
+      "",
+      "",
+      "",
+      ""
+    ],
+    "matched_lever": true,
+    "other_diffs": [],
+    "default_us": 360.51198840141296,
+    "reread_us": 291.3599908351898,
+    "ratio_default_over_reread": 1.2373421188269447,
+    "helps": true,
+    "reread_correct": true,
+    "default_correct": true,
+    "reread_maxerr": 1.1920928955078125e-06,
+    "default_maxerr": 1.1920928955078125e-06
+  },
+  {
+    "kernel": "softmax",
+    "shape": [
+      1024,
+      65536
+    ],
+    "length": 2,
+    "codegen": "looped",
+    "reread_evict": [
+      "last",
+      "first"
+    ],
+    "default_evict": [
+      "",
+      ""
+    ],
+    "matched_lever": true,
+    "other_diffs": [],
+    "default_us": 263.69599997997284,
+    "reread_us": 202.68799364566803,
+    "ratio_default_over_reread": 1.3009946728317654,
+    "helps": true,
+    "reread_correct": true,
+    "default_correct": true,
+    "reread_maxerr": 2.3283064365386963e-10,
+    "default_maxerr": 2.3283064365386963e-10
+  },
+  {
+    "kernel": "softmax",
+    "shape": [
+      512,
+      131072
+    ],
+    "length": 2,
+    "codegen": "looped",
+    "reread_evict": [
+      "last",
+      "first"
+    ],
+    "default_evict": [
+      "",
+      ""
+    ],
+    "matched_lever": true,
+    "other_diffs": [],
+    "default_us": 276.06400847435,
+    "reread_us": 256.3520073890686,
+    "ratio_default_over_reread": 1.0768942723953951,
+    "helps": true,
+    "reread_correct": true,
+    "default_correct": true,
+    "reread_maxerr": 2.3283064365386963e-10,
+    "default_maxerr": 2.3283064365386963e-10
+  }
+]

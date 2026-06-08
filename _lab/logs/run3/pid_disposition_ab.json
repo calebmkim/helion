@@ -1,0 +1,234 @@
+[
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      4096,
+      98304
+    ],
+    "tc_us": 566.7840242385864,
+    "arms": {
+      "flat_evict": {
+        "us": 733.568012714386,
+        "spread": 0.007590335728700587,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 595.1039791107178,
+        "spread": 0.00564612765705133,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      },
+      "blocked4": {
+        "us": 743.1039810180664,
+        "spread": 0.004306294203934543,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_blocked",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      8192,
+      128256
+    ],
+    "tc_us": 1402.2079706192017,
+    "arms": {
+      "flat_evict": {
+        "us": 2277.4239778518677,
+        "spread": 0.002901580299466872,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 1830.8000564575195,
+        "spread": 0.0020624612901898338,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      },
+      "blocked4": {
+        "us": 1881.983995437622,
+        "spread": 0.0030945905252765748,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_blocked",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "cross_entropy",
+    "shape": [
+      2048,
+      256000
+    ],
+    "tc_us": 741.7920231819153,
+    "arms": {
+      "flat_evict": {
+        "us": 1256.0160160064697,
+        "spread": 0.002726023530626621,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 1192.3999786376953,
+        "spread": 0.0006709271691612241,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      },
+      "blocked4": {
+        "us": 1198.4319686889648,
+        "spread": 0.0025900770065101814,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_blocked",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "softmax",
+    "shape": [
+      512,
+      131072
+    ],
+    "tc_us": 276.4799892902374,
+    "arms": {
+      "flat": {
+        "us": 275.7120132446289,
+        "spread": 0.0004062105463412947,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 276.2559950351715,
+        "spread": 0.00046334188924607747,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      65536,
+      4096
+    ],
+    "tc_us": 706.7840099334717,
+    "arms": {
+      "flat": {
+        "us": 778.5279750823975,
+        "spread": 0.0008837401309432921,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 804.7040104866028,
+        "spread": 0.0005567491979856145,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "welford",
+    "shape": [
+      32768,
+      8192
+    ],
+    "tc_us": 705.2800059318542,
+    "arms": {
+      "flat": {
+        "us": 774.6559977531433,
+        "spread": 0.0014045243164523935,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 728.3680140972137,
+        "spread": 0.0003075289561466409,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "rms_norm",
+    "shape": [
+      1,
+      131072
+    ],
+    "tc_us": 23.391999304294586,
+    "arms": {
+      "flat": {
+        "us": 21.15200087428093,
+        "spread": 0.003025653462422245,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 21.023999899625778,
+        "spread": 0.004566244836838699,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  },
+  {
+    "kernel": "layer_norm",
+    "shape": [
+      1,
+      131072
+    ],
+    "tc_us": 33.824000507593155,
+    "arms": {
+      "flat": {
+        "us": 27.168000116944313,
+        "spread": 0.0011778652652401059,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "flat",
+        "dropped": []
+      },
+      "interleaved32": {
+        "us": 26.976000517606735,
+        "spread": 0.0035587458907670776,
+        "codegen": "looped",
+        "correct": true,
+        "pid": "persistent_interleaved",
+        "dropped": []
+      }
+    }
+  }
+]

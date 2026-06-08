@@ -1,0 +1,6579 @@
+{
+ "rows": [
+  {
+   "kernel": "rms_norm",
+   "split": "test",
+   "M": 16384,
+   "N": 896,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 44.704001396894455,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 45.08800059556961,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 44.64000090956688,
+   "tc_error": null,
+   "mine_over_baseline": 1.008589817167951,
+   "mine_over_tc": 1.0100358350554317,
+   "baseline_over_tc": 1.0014337026438962
+  },
+  {
+   "kernel": "rms_norm",
+   "split": "test",
+   "M": 8192,
+   "N": 1280,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 33.344000577926636,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 32.83200040459633,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 33.72799977660179,
+   "tc_error": null,
+   "mine_over_baseline": 0.9846449086955317,
+   "mine_over_tc": 0.9734345535477901,
+   "baseline_over_tc": 0.9886148244420486
+  },
+  {
+   "kernel": "rms_norm",
+   "split": "test",
+   "M": 16384,
+   "N": 1536,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 71.58400118350983,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 73.2639990746975,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 71.9359964132309,
+   "tc_error": null,
+   "mine_over_baseline": 1.0234689017575436,
+   "mine_over_tc": 1.0184608920106977,
+   "baseline_over_tc": 0.9951068276346787
+  },
+  {
+   "kernel": "rms_norm",
+   "split": "test",
+   "M": 4096,
+   "N": 2560,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 33.504001796245575,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 32.09599852561951,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 33.63199904561043,
+   "tc_error": null,
+   "mine_over_baseline": 0.9579750717783256,
+   "mine_over_tc": 0.9543291935187125,
+   "baseline_over_tc": 0.9961941825345776
+  },
+  {
+   "kernel": "rms_norm",
+   "split": "test",
+   "M": 2048,
+   "N": 4096,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 28.48000079393387,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 26.27200074493885,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 2.86102294921875e-06,
+   "tc_us": 28.31999957561493,
+   "tc_error": null,
+   "mine_over_baseline": 0.922471910553271,
+   "mine_over_tc": 0.9276836560252099,
+   "baseline_over_tc": 1.0056497606185244
+  },
+  {
+   "kernel": "rms_norm",
+   "split": "test",
+   "M": 2048,
+   "N": 6144,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 40.22400081157684,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 38.40000182390213,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 39.583999663591385,
+   "tc_error": null,
+   "mine_over_baseline": 0.9546539640296111,
+   "mine_over_tc": 0.9700889791392588,
+   "baseline_over_tc": 1.0161681778856249
+  },
+  {
+   "kernel": "rms_norm",
+   "split": "test",
+   "M": 2048,
+   "N": 7168,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 45.53600028157234,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 45.1200008392334,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 45.56800052523613,
+   "tc_error": null,
+   "mine_over_baseline": 0.9908643833501711,
+   "mine_over_tc": 0.9901685463299048,
+   "baseline_over_tc": 0.9992977474698267
+  },
+  {
+   "kernel": "rms_norm",
+   "split": "test",
+   "M": 2048,
+   "N": 10240,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 2.86102294921875e-06,
+   "baseline_us": 63.00800293684006,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 62.880001962184906,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 61.85600161552429,
+   "tc_error": null,
+   "mine_over_baseline": 0.9979684965609296,
+   "mine_over_tc": 1.0165545835475343,
+   "baseline_over_tc": 1.018623921547277
+  },
+  {
+   "kernel": "layer_norm",
+   "split": "test",
+   "M": 16384,
+   "N": 896,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 45.504000037908554,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 45.791998505592346,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 45.1200008392334,
+   "tc_error": null,
+   "mine_over_baseline": 1.006329080244459,
+   "mine_over_tc": 1.0148935650234878,
+   "baseline_over_tc": 1.0085106203797154
+  },
+  {
+   "kernel": "layer_norm",
+   "split": "test",
+   "M": 8192,
+   "N": 1280,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 34.97600182890892,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 2.86102294921875e-06,
+   "mine_us": 33.215999603271484,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 34.68799963593483,
+   "tc_error": null,
+   "mine_over_baseline": 0.9496797194188522,
+   "mine_over_tc": 0.9575645742587464,
+   "baseline_over_tc": 1.0083026463329334
+  },
+  {
+   "kernel": "layer_norm",
+   "split": "test",
+   "M": 4096,
+   "N": 2048,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 29.184000566601753,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 27.03999914228916,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 28.863999992609024,
+   "tc_error": null,
+   "mine_over_baseline": 0.9265350403410356,
+   "mine_over_tc": 0.9368070658679698,
+   "baseline_over_tc": 1.0110864943900593
+  },
+  {
+   "kernel": "layer_norm",
+   "split": "test",
+   "M": 4096,
+   "N": 3584,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 45.88799923658371,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 45.60000076889992,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 45.1200008392334,
+   "tc_error": null,
+   "mine_over_baseline": 0.9937238826604977,
+   "mine_over_tc": 1.0106382961156584,
+   "baseline_over_tc": 1.0170212407594308
+  },
+  {
+   "kernel": "layer_norm",
+   "split": "test",
+   "M": 2048,
+   "N": 4096,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 29.279999434947968,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 2.384185791015625e-06,
+   "mine_us": 26.976000517606735,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 2.384185791015625e-06,
+   "tc_us": 28.991999104619026,
+   "tc_error": null,
+   "mine_over_baseline": 0.9213115108673386,
+   "mine_over_tc": 0.9304636227485569,
+   "baseline_over_tc": 1.0099337865350257
+  },
+  {
+   "kernel": "layer_norm",
+   "split": "test",
+   "M": 2048,
+   "N": 6144,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 44.12800073623657,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 39.744000881910324,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 40.25600105524063,
+   "tc_error": null,
+   "mine_over_baseline": 0.9006526518042264,
+   "mine_over_tc": 0.9872813950737998,
+   "baseline_over_tc": 1.09618440926814
+  },
+  {
+   "kernel": "layer_norm",
+   "split": "test",
+   "M": 2048,
+   "N": 7168,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 47.42399975657463,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 46.62400111556053,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 46.720001846551895,
+   "tc_error": null,
+   "mine_over_baseline": 0.9831309327530268,
+   "mine_over_tc": 0.9979451899144467,
+   "baseline_over_tc": 1.0150684478210201
+  },
+  {
+   "kernel": "layer_norm",
+   "split": "test",
+   "M": 2048,
+   "N": 10240,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.9073486328125e-06,
+   "baseline_us": 66.68800115585327,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.9073486328125e-06,
+   "mine_us": 64.06400352716446,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-06,
+   "tc_us": 64.80000168085098,
+   "tc_error": null,
+   "mine_over_baseline": 0.9606526274110931,
+   "mine_over_tc": 0.9886420040957496,
+   "baseline_over_tc": 1.0291357936115642
+  },
+  {
+   "kernel": "softmax",
+   "split": "test",
+   "M": 131072,
+   "N": 128,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 5.960464477539063e-08,
+   "baseline_us": 72.06399738788605,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     8,
+     128
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     8,
+     128
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 5.960464477539063e-08,
+   "mine_us": 51.04000121355057,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 5.960464477539063e-08,
+   "tc_us": 54.75199967622757,
+   "tc_error": null,
+   "mine_over_baseline": 0.7082593675566822,
+   "mine_over_tc": 0.9322034175075309,
+   "baseline_over_tc": 1.3161893230207455
+  },
+  {
+   "kernel": "softmax",
+   "split": "test",
+   "M": 8192,
+   "N": 896,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.4901161193847656e-08,
+   "baseline_us": 55.776000022888184,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     1024
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     1024
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.4901161193847656e-08,
+   "mine_us": 26.1439997702837,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.4901161193847656e-08,
+   "tc_us": 25.536000728607178,
+   "tc_error": null,
+   "mine_over_baseline": 0.46873206683081026,
+   "mine_over_tc": 1.0238094856018467,
+   "baseline_over_tc": 2.1842104648910072
+  },
+  {
+   "kernel": "softmax",
+   "split": "test",
+   "M": 8192,
+   "N": 1280,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.4901161193847656e-08,
+   "baseline_us": 80.79999685287476,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     2048
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     2048
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 7.450580596923828e-09,
+   "mine_us": 34.97600182890892,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 7.450580596923828e-09,
+   "tc_us": 51.392000168561935,
+   "tc_error": null,
+   "mine_over_baseline": 0.43287132662387623,
+   "mine_over_tc": 0.6805728851609246,
+   "baseline_over_tc": 1.5722290743278482
+  },
+  {
+   "kernel": "softmax",
+   "split": "test",
+   "M": 8192,
+   "N": 3072,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.1175870895385742e-08,
+   "baseline_us": 183.87199938297272,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     4096
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     4096
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 5.587935447692871e-09,
+   "mine_us": 75.71200281381607,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 3.725290298461914e-09,
+   "tc_us": 92.6399976015091,
+   "tc_error": null,
+   "mine_over_baseline": 0.41176472256725405,
+   "mine_over_tc": 0.8172712087007085,
+   "baseline_over_tc": 1.9848014264194829
+  },
+  {
+   "kernel": "softmax",
+   "split": "test",
+   "M": 4096,
+   "N": 7168,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.30385160446167e-08,
+   "baseline_us": 343.07199716567993,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     8192
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     8192
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 3.725290298461914e-09,
+   "mine_us": 85.56800335645676,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 3.725290298461914e-09,
+   "tc_us": 92.92799979448318,
+   "tc_error": null,
+   "mine_over_baseline": 0.2494170438374,
+   "mine_over_tc": 0.9207989362269329,
+   "baseline_over_tc": 3.691804385378011
+  },
+  {
+   "kernel": "softmax",
+   "split": "test",
+   "M": 2048,
+   "N": 16384,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 4.6566128730773926e-09,
+   "baseline_us": 710.8000218868256,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     16384
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     16384
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 9.313225746154785e-10,
+   "mine_us": 105.26399686932564,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 9.313225746154785e-10,
+   "tc_us": 107.84000158309937,
+   "tc_error": null,
+   "mine_over_baseline": 0.14809228141257133,
+   "mine_over_tc": 0.9761127162837743,
+   "baseline_over_tc": 6.59124639699766
+  },
+  {
+   "kernel": "softmax",
+   "split": "test",
+   "M": 2048,
+   "N": 40960,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 3.725290298461914e-09,
+   "baseline_us": 1742.4480319023132,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     65536
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     65536
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 2.3283064365386963e-10,
+   "mine_us": 317.440003156662,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 4.656612873077393e-10,
+   "tc_us": 323.8080143928528,
+   "tc_error": null,
+   "mine_over_baseline": 0.18218047100670065,
+   "mine_over_tc": 0.9803339912752593,
+   "baseline_over_tc": 5.381114593996204
+  },
+  {
+   "kernel": "softmax",
+   "split": "test",
+   "M": 512,
+   "N": 98304,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.862645149230957e-09,
+   "baseline_us": 3949.3759870529175,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     16384
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     16384
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.1641532182693481e-10,
+   "mine_us": 186.0639974474907,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.1641532182693481e-10,
+   "tc_us": 208.67200195789337,
+   "tc_error": null,
+   "mine_over_baseline": 0.04711225217792808,
+   "mine_over_tc": 0.8916577006101442,
+   "baseline_over_tc": 18.926238067384993
+  },
+  {
+   "kernel": "sum",
+   "split": "test",
+   "M": 16384,
+   "N": 1280,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 2.288818359375e-05,
+   "baseline_us": 40.47999903559685,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 2.288818359375e-05,
+   "mine_us": 33.88800099492073,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.9073486328125e-05,
+   "tc_us": 34.384001046419144,
+   "tc_error": null,
+   "mine_over_baseline": 0.8371541947202291,
+   "mine_over_tc": 0.9855746848416854,
+   "baseline_over_tc": 1.1772916997340703
+  },
+  {
+   "kernel": "sum",
+   "split": "test",
+   "M": 8192,
+   "N": 2560,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 3.0517578125e-05,
+   "baseline_us": 40.54399952292442,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 3.0517578125e-05,
+   "mine_us": 33.88800099492073,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 3.0517578125e-05,
+   "tc_us": 33.92000123858452,
+   "tc_error": null,
+   "mine_over_baseline": 0.8358327099860917,
+   "mine_over_tc": 0.9990565966245488,
+   "baseline_over_tc": 1.19528296115759
+  },
+  {
+   "kernel": "sum",
+   "split": "test",
+   "M": 8192,
+   "N": 7168,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 7.62939453125e-05,
+   "baseline_us": 88.639996945858,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 6.103515625e-05,
+   "mine_us": 83.00799876451492,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 6.866455078125e-05,
+   "tc_us": 83.00799876451492,
+   "tc_error": null,
+   "mine_over_baseline": 0.9364621121909205,
+   "mine_over_tc": 1.0,
+   "baseline_over_tc": 1.0678488611359065
+  },
+  {
+   "kernel": "sum",
+   "split": "test",
+   "M": 4096,
+   "N": 10240,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 7.62939453125e-05,
+   "baseline_us": 68.25599819421768,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 5.7220458984375e-05,
+   "mine_us": 61.37600168585777,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 61.63199990987778,
+   "tc_error": null,
+   "mine_over_baseline": 0.8992030489572014,
+   "mine_over_tc": 0.995846342413124,
+   "baseline_over_tc": 1.1074766078340137
+  },
+  {
+   "kernel": "sum",
+   "split": "test",
+   "M": 4096,
+   "N": 18432,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0001220703125,
+   "baseline_us": 110.1439967751503,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 7.62939453125e-05,
+   "mine_us": 105.18400371074677,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 105.56799918413162,
+   "tc_error": null,
+   "mine_over_baseline": 0.9549681034861215,
+   "mine_over_tc": 0.9963625769517986,
+   "baseline_over_tc": 1.0433464461426158
+  },
+  {
+   "kernel": "sum",
+   "split": "test",
+   "M": 2048,
+   "N": 24576,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.00018310546875,
+   "baseline_us": 79.32800054550171,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 9.1552734375e-05,
+   "mine_us": 72.67200201749802,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 73.27999919652939,
+   "tc_error": null,
+   "mine_over_baseline": 0.916095218810086,
+   "mine_over_tc": 0.9917030951733393,
+   "baseline_over_tc": 1.0825327704050898
+  },
+  {
+   "kernel": "sum",
+   "split": "test",
+   "M": 16384,
+   "N": 3072,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 3.814697265625e-05,
+   "baseline_us": 77.98399776220322,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 3.4332275390625e-05,
+   "mine_us": 72.80000299215317,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 3.814697265625e-05,
+   "tc_us": 71.96799665689468,
+   "tc_error": null,
+   "mine_over_baseline": 0.9335248907621072,
+   "mine_over_tc": 1.0115607822074728,
+   "baseline_over_tc": 1.0835927271116026
+  },
+  {
+   "kernel": "long_sum",
+   "split": "test",
+   "M": 160,
+   "N": 131072,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.00048828125,
+   "baseline_us": 49.50400069355965,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.000274658203125,
+   "mine_us": 35.711999982595444,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.00018310546875,
+   "tc_us": 36.19199991226196,
+   "tc_error": null,
+   "mine_over_baseline": 0.72139624034955,
+   "mine_over_tc": 0.9867374024416956,
+   "baseline_over_tc": 1.3678161144332766
+  },
+  {
+   "kernel": "long_sum",
+   "split": "test",
+   "M": 128,
+   "N": 229376,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.00103759765625,
+   "baseline_us": 53.69599908590317,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.00042724609375,
+   "mine_us": 46.46399989724159,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.000244140625,
+   "tc_us": 51.10400170087814,
+   "tc_error": null,
+   "mine_over_baseline": 0.8653158650220516,
+   "mine_over_tc": 0.9092047266514391,
+   "baseline_over_tc": 1.05072004733008
+  },
+  {
+   "kernel": "long_sum",
+   "split": "test",
+   "M": 96,
+   "N": 196608,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.00079345703125,
+   "baseline_us": 61.11999973654747,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.000453948974609375,
+   "mine_us": 33.055998384952545,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.000244140625,
+   "tc_us": 33.504001796245575,
+   "tc_error": null,
+   "mine_over_baseline": 0.5408376722421073,
+   "mine_over_tc": 0.986628361172568,
+   "baseline_over_tc": 1.824259684208724
+  },
+  {
+   "kernel": "long_sum",
+   "split": "test",
+   "M": 64,
+   "N": 294912,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0014495849609375,
+   "baseline_us": 48.96000027656555,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.00048828125,
+   "mine_us": 33.31200033426285,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.000274658203125,
+   "tc_us": 33.440001308918,
+   "tc_error": null,
+   "mine_over_baseline": 0.6803921598466057,
+   "mine_over_tc": 0.9961722198072697,
+   "baseline_over_tc": 1.4641147834975885
+  },
+  {
+   "kernel": "long_sum",
+   "split": "test",
+   "M": 128,
+   "N": 524288,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0032806396484375,
+   "baseline_us": 101.69599950313568,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0008544921875,
+   "mine_us": 98.04800152778625,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.00048828125,
+   "tc_us": 112.89600282907486,
+   "tc_error": null,
+   "mine_over_baseline": 0.9641284023641762,
+   "mine_over_tc": 0.868480717392904,
+   "baseline_over_tc": 0.9007936238194718
+  },
+  {
+   "kernel": "long_sum",
+   "split": "test",
+   "M": 48,
+   "N": 786432,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0030517578125,
+   "baseline_us": 157.80799835920334,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.001220703125,
+   "mine_us": 61.535999178886414,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.00048828125,
+   "tc_us": 62.39999830722809,
+   "tc_error": null,
+   "mine_over_baseline": 0.38994220710421706,
+   "mine_over_tc": 0.9861538597471149,
+   "baseline_over_tc": 2.5289744012849384
+  },
+  {
+   "kernel": "long_sum",
+   "split": "test",
+   "M": 8,
+   "N": 2097152,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": null,
+   "baseline_correct": false,
+   "baseline_maxerr": null,
+   "baseline_us": null,
+   "baseline_error": "CompilationError: at 6:16:\ndef _helion_longsum(x, out, _RDIM_SIZE_1: tl.constexpr):\n    # src[long_sum.py:71]: for tile_m in hl.tile(m):\n    pid_0 = tl.program_id(0)\n    offset_0 = pid_0\n    indices_0 = offset_0 + tl.zeros([1], tl.int32)\n    indices_1 = tl.arange(0, _RDIM_SIZE_1).to(tl.int32)\n                ^\nnumel (2097152) exceeds triton maximum tensor numel (1048576)",
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.000732421875,
+   "mine_us": 68.57600063085556,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.00048828125,
+   "tc_us": 32.67199918627739,
+   "tc_error": null,
+   "mine_over_baseline": null,
+   "mine_over_tc": 2.0989226964616923,
+   "baseline_over_tc": null
+  },
+  {
+   "kernel": "welford",
+   "split": "test",
+   "M": 16384,
+   "N": 896,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.3113021850585938e-06,
+   "baseline_us": 93.05600076913834,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     1024,
+     1024
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     1024,
+     1024
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.1920928955078125e-06,
+   "mine_us": 45.56800052523613,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 7.152557373046875e-07,
+   "tc_us": 45.024000108242035,
+   "tc_error": null,
+   "mine_over_baseline": 0.48968363295866657,
+   "mine_over_tc": 1.0120824541508144,
+   "baseline_over_tc": 2.066808825191514
+  },
+  {
+   "kernel": "welford",
+   "split": "test",
+   "M": 16384,
+   "N": 1280,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.5497207641601562e-06,
+   "baseline_us": 158.2079976797104,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     2048,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     2048,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.3113021850585938e-06,
+   "mine_us": 66.75200164318085,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 7.152557373046875e-07,
+   "tc_us": 62.591999769210815,
+   "tc_error": null,
+   "mine_over_baseline": 0.42192558291723803,
+   "mine_over_tc": 1.0664621978736706,
+   "baseline_over_tc": 2.5276073342129157
+  },
+  {
+   "kernel": "welford",
+   "split": "test",
+   "M": 8192,
+   "N": 3584,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 2.384185791015625e-06,
+   "baseline_us": 299.72800612449646,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     4096,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     4096,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.3113021850585938e-06,
+   "mine_us": 87.80799806118011,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 7.152557373046875e-07,
+   "tc_us": 83.93599838018417,
+   "tc_error": null,
+   "mine_over_baseline": 0.2929589369927205,
+   "mine_over_tc": 1.0461303821449517,
+   "baseline_over_tc": 3.5709113122940708
+  },
+  {
+   "kernel": "welford",
+   "split": "test",
+   "M": 16384,
+   "N": 5120,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 3.0994415283203125e-06,
+   "baseline_us": 603.9680242538452,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     8192,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     8192,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.3113021850585938e-06,
+   "mine_us": 235.77600717544556,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 7.152557373046875e-07,
+   "tc_us": 225.69599747657776,
+   "tc_error": null,
+   "mine_over_baseline": 0.3903782943918731,
+   "mine_over_tc": 1.0446618894954656,
+   "baseline_over_tc": 2.676024524167841
+  },
+  {
+   "kernel": "welford",
+   "split": "test",
+   "M": 8192,
+   "N": 14336,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 5.0067901611328125e-06,
+   "baseline_us": 1182.8800439834595,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     8192,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     8192,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.0728836059570312e-06,
+   "mine_us": 352.2239923477173,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 7.152557373046875e-07,
+   "tc_us": 326.55999064445496,
+   "tc_error": null,
+   "mine_over_baseline": 0.29776814152817216,
+   "mine_over_tc": 1.0785889344638186,
+   "baseline_over_tc": 3.622244236500271
+  },
+  {
+   "kernel": "welford",
+   "split": "test",
+   "M": 32768,
+   "N": 2560,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 2.0265579223632812e-06,
+   "baseline_us": 510.9280049800873,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     2,
+     4096,
+     4096
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     2,
+     4096,
+     4096
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.3113021850585938e-06,
+   "mine_us": 238.94399404525757,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 7.152557373046875e-07,
+   "tc_us": 226.9120067358017,
+   "tc_error": null,
+   "mine_over_baseline": 0.46766666089201764,
+   "mine_over_tc": 1.0530249037172588,
+   "baseline_over_tc": 2.2516569851456616
+  },
+  {
+   "kernel": "welford",
+   "split": "test",
+   "M": 16384,
+   "N": 7168,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     16,
+     16,
+     16
+    ],
+    "range_unroll_factors": [
+     0,
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 3.0994415283203125e-06,
+   "baseline_us": 843.2640135288239,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1,
+     8192,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1,
+     8192,
+     2048
+    ],
+    "load_eviction_policies": [
+     "last",
+     "first",
+     "first",
+     "first"
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.1920928955078125e-06,
+   "mine_us": 326.55999064445496,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 7.152557373046875e-07,
+   "tc_us": 313.02401423454285,
+   "tc_error": null,
+   "mine_over_baseline": 0.38725711687599806,
+   "mine_over_tc": 1.0432426133279662,
+   "baseline_over_tc": 2.693927542878491
+  },
+  {
+   "kernel": "cross_entropy",
+   "split": "test",
+   "M": 8192,
+   "N": 32768,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 426.41599476337433,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 359.51998829841614,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 378.6880075931549,
+   "tc_error": null,
+   "mine_over_baseline": 0.8431203161080297,
+   "mine_over_tc": 0.9493830834079858,
+   "baseline_over_tc": 1.1260351165424183
+  },
+  {
+   "kernel": "cross_entropy",
+   "split": "test",
+   "M": 4096,
+   "N": 49152,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 9.5367431640625e-07,
+   "baseline_us": 4072.4480152130127,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 9.5367431640625e-07,
+   "mine_us": 276.11199021339417,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 296.27200961112976,
+   "tc_error": null,
+   "mine_over_baseline": 0.067800003629746,
+   "mine_over_tc": 0.931954356997151,
+   "baseline_over_tc": 13.745638747846218
+  },
+  {
+   "kernel": "cross_entropy",
+   "split": "test",
+   "M": 2048,
+   "N": 50257,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 2348.736047744751,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 175.87200552225113,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 183.23199450969696,
+   "tc_error": null,
+   "mine_over_baseline": 0.07487942533650083,
+   "mine_over_tc": 0.959832402593553,
+   "baseline_over_tc": 12.818372981365172
+  },
+  {
+   "kernel": "cross_entropy",
+   "split": "test",
+   "M": 4096,
+   "N": 114688,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 11032.063961029053,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first",
+     "last",
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "persistent_interleaved",
+    "num_sm_multiplier": 32,
+    "maxnreg": 64
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first",
+     "last",
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "persistent_interleaved",
+    "num_sm_multiplier": 32,
+    "maxnreg": 64
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 781.440019607544,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 644.5920169353485,
+   "tc_error": null,
+   "mine_over_baseline": 0.07083352873659848,
+   "mine_over_tc": 1.2123017336187722,
+   "baseline_over_tc": 17.114800790552685
+  },
+  {
+   "kernel": "cross_entropy",
+   "split": "test",
+   "M": 1024,
+   "N": 128256,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 3065.3440952301025,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first",
+     "last",
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "persistent_interleaved",
+    "num_sm_multiplier": 8,
+    "maxnreg": 64
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first",
+     "last",
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "persistent_interleaved",
+    "num_sm_multiplier": 8,
+    "maxnreg": 64
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 270.1599895954132,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 200.6080001592636,
+   "tc_error": null,
+   "mine_over_baseline": 0.08813365847436239,
+   "mine_over_tc": 1.3467059607838767,
+   "baseline_over_tc": 15.28026844790094
+  },
+  {
+   "kernel": "cross_entropy",
+   "split": "test",
+   "M": 4096,
+   "N": 151936,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 14470.463752746582,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first",
+     "last",
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "persistent_interleaved",
+    "num_sm_multiplier": 32,
+    "maxnreg": 64
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first",
+     "last",
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "persistent_interleaved",
+    "num_sm_multiplier": 32,
+    "maxnreg": 64
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 1243.7119483947754,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 846.8480110168457,
+   "tc_error": null,
+   "mine_over_baseline": 0.08594831303583558,
+   "mine_over_tc": 1.4686365584083956,
+   "baseline_over_tc": 17.087439026244265
+  },
+  {
+   "kernel": "cross_entropy",
+   "split": "test",
+   "M": 1024,
+   "N": 250000,
+   "baseline_source": "heuristic",
+   "baseline_fired": [
+    "triton_reduction_tile"
+   ],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last",
+     "last",
+     "last"
+    ]
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 9.5367431640625e-07,
+   "baseline_us": 5769.631862640381,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first",
+     "last",
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "persistent_interleaved",
+    "num_sm_multiplier": 8,
+    "maxnreg": 64
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     16384
+    ],
+    "load_eviction_policies": [
+     "first",
+     "first",
+     "last",
+     "first",
+     "first"
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "persistent_interleaved",
+    "num_sm_multiplier": 8,
+    "maxnreg": 64
+   },
+   "mine_correct": true,
+   "mine_maxerr": 9.5367431640625e-07,
+   "mine_us": 606.2080264091492,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 383.4879994392395,
+   "tc_error": null,
+   "mine_over_baseline": 0.10506875323094317,
+   "mine_over_tc": 1.5807744369982504,
+   "baseline_over_tc": 15.045143188514642
+  },
+  {
+   "kernel": "kl_div",
+   "split": "test",
+   "M": 8192,
+   "N": 32768,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 5.960464477539063e-08,
+   "baseline_us": 1378.928005695343,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 5.960464477539063e-08,
+   "mine_us": 690.7200217247009,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 5.960464477539063e-08,
+   "tc_us": 728.4160256385803,
+   "tc_error": null,
+   "mine_over_baseline": 0.5009108661741888,
+   "mine_over_tc": 0.9482493484669939,
+   "baseline_over_tc": 1.8930500663909453
+  },
+  {
+   "kernel": "kl_div",
+   "split": "test",
+   "M": 8192,
+   "N": 49152,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 2889.280080795288,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 1028.3199548721313,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 5.960464477539063e-08,
+   "tc_us": 1066.912055015564,
+   "tc_error": null,
+   "mine_over_baseline": 0.3559087129376123,
+   "mine_over_tc": 0.9638282274888443,
+   "baseline_over_tc": 2.7080770783428254
+  },
+  {
+   "kernel": "kl_div",
+   "split": "test",
+   "M": 2048,
+   "N": 50257,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.1920928955078125e-07,
+   "baseline_us": 1384.1440081596375,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.1920928955078125e-07,
+   "mine_us": 295.1360046863556,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 333.45600962638855,
+   "tc_error": null,
+   "mine_over_baseline": 0.21322637163944336,
+   "mine_over_tc": 0.885082278220244,
+   "baseline_over_tc": 4.150904371795437
+  },
+  {
+   "kernel": "kl_div",
+   "split": "test",
+   "M": 4096,
+   "N": 114688,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 6466.559886932373,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 1191.5519833564758,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.1920928955078125e-07,
+   "tc_us": 1235.584020614624,
+   "tc_error": null,
+   "mine_over_baseline": 0.18426365860530644,
+   "mine_over_tc": 0.9643633807790384,
+   "baseline_over_tc": 5.2336059539809145
+  },
+  {
+   "kernel": "kl_div",
+   "split": "test",
+   "M": 1024,
+   "N": 128256,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 5.960464477539063e-08,
+   "baseline_us": 7214.816093444824,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 1.1920928955078125e-07,
+   "mine_us": 355.79200088977814,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 5.960464477539063e-08,
+   "tc_us": 483.64800214767456,
+   "tc_error": null,
+   "mine_over_baseline": 0.049314077626045186,
+   "mine_over_tc": 0.735642449281001,
+   "baseline_over_tc": 14.917493841403049
+  },
+  {
+   "kernel": "kl_div",
+   "split": "test",
+   "M": 4096,
+   "N": 151936,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 8493.375778198242,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 1588.0000591278076,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 5.960464477539063e-08,
+   "tc_us": 1611.7759943008423,
+   "tc_error": null,
+   "mine_over_baseline": 0.18696924527984102,
+   "mine_over_tc": 0.9852486106896335,
+   "baseline_over_tc": 5.269575802239508
+  },
+  {
+   "kernel": "kl_div",
+   "split": "test",
+   "M": 1024,
+   "N": 250000,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.1920928955078125e-07,
+   "baseline_us": 9704.17594909668,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     4096,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 684.1759979724884,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.1920928955078125e-07,
+   "tc_us": 682.4800074100494,
+   "tc_error": null,
+   "mine_over_baseline": 0.0705032556665644,
+   "mine_over_tc": 1.002485040651777,
+   "baseline_over_tc": 14.218989338490895
+  },
+  {
+   "kernel": "jsd",
+   "split": "test",
+   "M": 8192,
+   "N": 32768,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 1357.375979423523,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 704.9599885940552,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 712.8000259399414,
+   "tc_error": null,
+   "mine_over_baseline": 0.5193549902757609,
+   "mine_over_tc": 0.9890010703415059,
+   "baseline_over_tc": 1.9042872194534568
+  },
+  {
+   "kernel": "jsd",
+   "split": "test",
+   "M": 8192,
+   "N": 49152,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 2.9802322387695312e-08,
+   "baseline_us": 1968.9439535140991,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 1041.6640043258667,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 2.9802322387695312e-08,
+   "tc_us": 1056.480050086975,
+   "tc_error": null,
+   "mine_over_baseline": 0.5290470571631777,
+   "mine_over_tc": 0.9859760288328315,
+   "baseline_over_tc": 1.8636830419580617
+  },
+  {
+   "kernel": "jsd",
+   "split": "test",
+   "M": 2048,
+   "N": 50257,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 0.0,
+   "baseline_us": 2004.8320293426514,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 307.71198868751526,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 344.36801075935364,
+   "tc_error": null,
+   "mine_over_baseline": 0.15348517191657624,
+   "mine_over_tc": 0.8935556703103477,
+   "baseline_over_tc": 5.821771961111799
+  },
+  {
+   "kernel": "jsd",
+   "split": "test",
+   "M": 4096,
+   "N": 114688,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 1.4901161193847656e-08,
+   "baseline_us": 4223.296165466309,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 1221.0240364074707,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.4901161193847656e-08,
+   "tc_us": 1229.2799949645996,
+   "tc_error": null,
+   "mine_over_baseline": 0.2891163651727118,
+   "mine_over_tc": 0.9932839071725342,
+   "baseline_over_tc": 3.4355852065972403
+  },
+  {
+   "kernel": "jsd",
+   "split": "test",
+   "M": 2048,
+   "N": 128256,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 2.9802322387695312e-08,
+   "baseline_us": 4642.528057098389,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 698.384016752243,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.4901161193847656e-08,
+   "tc_us": 738.976001739502,
+   "tc_error": null,
+   "mine_over_baseline": 0.15043183544888208,
+   "mine_over_tc": 0.9450699550571223,
+   "baseline_over_tc": 6.282380004452345
+  },
+  {
+   "kernel": "jsd",
+   "split": "test",
+   "M": 8192,
+   "N": 151936,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 2.9802322387695312e-08,
+   "baseline_us": 6019.872188568115,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 3177.4399280548096,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 1.4901161193847656e-08,
+   "tc_us": 3173.983931541443,
+   "tc_error": null,
+   "mine_over_baseline": 0.527825147864243,
+   "mine_over_tc": 1.0010888512947476,
+   "baseline_over_tc": 1.8966296989552083
+  },
+  {
+   "kernel": "jsd",
+   "split": "test",
+   "M": 1024,
+   "N": 250000,
+   "baseline_source": "default",
+   "baseline_fired": [],
+   "baseline_intended_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_normalized_cfg": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "baseline_correct": true,
+   "baseline_maxerr": 8.940696716308594e-08,
+   "baseline_us": 9073.1840133667,
+   "baseline_error": null,
+   "mine_source": "heuristic_replayed",
+   "mine_intended_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_normalized_cfg": {
+    "block_sizes": [
+     2048,
+     1
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "mine_correct": true,
+   "mine_maxerr": 0.0,
+   "mine_us": 705.2800059318542,
+   "mine_error": null,
+   "tc_correct": true,
+   "tc_maxerr": 0.0,
+   "tc_us": 754.368007183075,
+   "tc_error": null,
+   "mine_over_baseline": 0.07773235998441443,
+   "mine_over_tc": 0.9349283098119142,
+   "baseline_over_tc": 12.027530233217803
+  }
+ ]
+}

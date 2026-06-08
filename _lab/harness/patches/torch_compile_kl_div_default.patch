@@ -1,0 +1,19 @@
+diff --git a/tritonbench/operators/kl_div/operator.py b/tritonbench/operators/kl_div/operator.py
+index 28178bf..23a258e 100644
+--- a/tritonbench/operators/kl_div/operator.py
++++ b/tritonbench/operators/kl_div/operator.py
+@@ -49,6 +49,14 @@ class Operator(BenchmarkOperator):
+         compiled = torch.compile(self.baseline_op, mode="max-autotune-no-cudagraphs")
+         return lambda: compiled(input, target)
+ 
++    @register_benchmark()
++    def torch_compile_kl_div_default(self, input, target) -> Callable:
++        # Product-A baseline-to-beat: torch.compile DEFAULT mode (no
++        # max-autotune). Cloned from torch_compile_kl_div with no `mode=` so
++        # Inductor uses its default codegen path. See _lab harness patches.
++        compiled = torch.compile(self.baseline_op)
++        return lambda: compiled(input, target)
++
+     @register_x_val(label="(B, T, V)")
+     def get_x_val(self, example_inputs) -> Tuple[int, int, int]:
+         input_tensor = example_inputs[0]

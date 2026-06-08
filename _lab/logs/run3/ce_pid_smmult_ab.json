@@ -1,0 +1,167 @@
+[
+  {
+    "shape": [
+      4096,
+      98304
+    ],
+    "tc_us": 566.2720203399658,
+    "oracle_us": 588.4,
+    "shipped_smmult": 32,
+    "arms": {
+      "flat_ref": {
+        "us": 730.783998966217,
+        "spread": 0.010312245295285575,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat",
+        "sm_mult_norm": null,
+        "maxnreg_norm": null
+      },
+      "shipped": {
+        "us": 595.5520272254944,
+        "spread": 0.006635904482768456,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 32,
+        "maxnreg_norm": 64
+      },
+      "smmult1": {
+        "us": 662.7839803695679,
+        "spread": 0.003162413992501576,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 1,
+        "maxnreg_norm": 64
+      },
+      "smmult32": {
+        "us": 595.3759849071503,
+        "spread": 0.006557175839242773,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 32,
+        "maxnreg_norm": 64
+      }
+    }
+  },
+  {
+    "shape": [
+      8192,
+      128256
+    ],
+    "tc_us": 1406.5279960632324,
+    "oracle_us": 1832.1,
+    "shipped_smmult": 32,
+    "arms": {
+      "flat_ref": {
+        "us": 2277.7440547943115,
+        "spread": 0.0017069045844838218,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat",
+        "sm_mult_norm": null,
+        "maxnreg_norm": null
+      },
+      "shipped": {
+        "us": 1831.3920497894287,
+        "spread": 0.003302418890269566,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 32,
+        "maxnreg_norm": 64
+      },
+      "smmult1": {
+        "us": 1858.6879968643188,
+        "spread": 0.0037359369232747588,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 1,
+        "maxnreg_norm": 64
+      },
+      "smmult32": {
+        "us": 1829.263985157013,
+        "spread": 0.00237035196888676,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 32,
+        "maxnreg_norm": 64
+      }
+    }
+  },
+  {
+    "shape": [
+      2048,
+      256000
+    ],
+    "tc_us": 742.2720193862915,
+    "oracle_us": 1171.9,
+    "shipped_smmult": 16,
+    "arms": {
+      "flat_ref": {
+        "us": 1256.0960054397583,
+        "spread": 0.0027768611575115522,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat",
+        "sm_mult_norm": null,
+        "maxnreg_norm": null
+      },
+      "shipped": {
+        "us": 1192.4960017204285,
+        "spread": 0.000912441457921004,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 16,
+        "maxnreg_norm": 64
+      },
+      "smmult1": {
+        "us": 1197.1200108528137,
+        "spread": 0.0012563021111820399,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 1,
+        "maxnreg_norm": 64
+      },
+      "smmult32": {
+        "us": 1192.3039555549622,
+        "spread": 0.0005233573395830269,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved",
+        "sm_mult_norm": 32,
+        "maxnreg_norm": 64
+      }
+    }
+  }
+]

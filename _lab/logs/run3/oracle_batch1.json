@@ -1,0 +1,14 @@
+[
+  {"kernel": "cross_entropy", "M": 8192, "N": 32000},
+  {"kernel": "cross_entropy", "M": 8192, "N": 49152},
+  {"kernel": "cross_entropy", "M": 8192, "N": 50257},
+  {"kernel": "cross_entropy", "M": 4096, "N": 98304},
+  {"kernel": "cross_entropy", "M": 8192, "N": 128256},
+  {"kernel": "cross_entropy", "M": 2048, "N": 256000},
+  {"kernel": "long_sum", "M": 16, "N": 2097152},
+  {"kernel": "welford", "M": 4096, "N": 16384},
+  {"kernel": "welford", "M": 32768, "N": 8192},
+  {"kernel": "welford", "M": 16384, "N": 768},
+  {"kernel": "jsd", "M": 8192, "N": 30522},
+  {"kernel": "softmax", "M": 131072, "N": 256}
+]

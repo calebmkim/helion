@@ -1,0 +1,112 @@
+[
+  {
+    "shape": [
+      4096,
+      98304
+    ],
+    "tc_us": 566.7200088500977,
+    "seed_us": 955.3439915180206,
+    "oracle_target_us": 588.4,
+    "arms": {
+      "seed_floor": {
+        "us": 955.3439915180206,
+        "spread": 0.0037013010814659648,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat"
+      },
+      "seed+pid": {
+        "us": 866.8799996376038,
+        "spread": 0.0033223016243379582,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved"
+      },
+      "seed+pid+maxnreg": {
+        "us": 849.888026714325,
+        "spread": 0.0038028565607586356,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved"
+      },
+      "seed+pipeline": {
+        "us": 955.3119838237762,
+        "spread": 0.00336643783982075,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat"
+      },
+      "seed+chunk": {
+        "us": 1018.0959701538086,
+        "spread": 0.003205994374039273,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat"
+      },
+      "seed+evict": {
+        "us": 733.135998249054,
+        "spread": 0.007005498626379992,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat"
+      },
+      "seed+indexing": {
+        "us": 955.8079838752747,
+        "spread": 0.004084517907030127,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat"
+      },
+      "seed+evict+pid+maxnreg": {
+        "us": 595.0240194797516,
+        "spread": 0.007959302990384555,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved"
+      },
+      "seed+evict+indexing": {
+        "us": 733.5039973258972,
+        "spread": 0.006085857036580476,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "flat"
+      },
+      "seed+evict+pid+maxnreg+indexing": {
+        "us": 594.2720174789429,
+        "spread": 0.008561688145609479,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved"
+      },
+      "full_bundle": {
+        "us": 590.175986289978,
+        "spread": 0.005828757431947248,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 9.5367431640625e-07,
+        "dropped_levers": [],
+        "pid": "persistent_interleaved"
+      }
+    }
+  }
+]

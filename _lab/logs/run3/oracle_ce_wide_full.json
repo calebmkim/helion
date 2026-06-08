@@ -1,0 +1,5 @@
+[
+  {"kernel": "cross_entropy", "M": 4096, "N": 98304},
+  {"kernel": "cross_entropy", "M": 8192, "N": 128256},
+  {"kernel": "cross_entropy", "M": 2048, "N": 256000}
+]

@@ -1,0 +1,23 @@
+diff --git a/examples/welford.py b/examples/welford.py
+index e6789bdc..1e339ede 100644
+--- a/examples/welford.py
++++ b/examples/welford.py
+@@ -49,7 +49,17 @@ def welford(
+ 
+         for tile_n in hl.tile(n):
+             chunk = x[tile_m, tile_n]
+-            Tn = chunk.size(-1)
++            # [BENCH-PATCH, applied identically to all 3 arms] Count of VALID
++            # columns in this tile. Helion masks out-of-bounds loads with other=0,
++            # so sum_x/sum_x2 are already correct over the valid columns; the
++            # per-chunk count/mean/M2 must divide by the TRUE valid count, NOT the
++            # constexpr tile width chunk.size(-1) (over-counts padding on the last
++            # tile when block_size does not divide n -> wrong mean/M2 at non-divisor
++            # N). This is the source-correctness fix caleb's branch already carries;
++            # it is independent of the config under test, so applying it to main's
++            # source keeps the welford comparison config-only and correct for every
++            # arm (baseline, mine, tc).
++            Tn = (tile_n.index < n).sum()
+             sum_x = torch.sum(chunk, dim=-1)
+             sum_x2 = torch.sum(chunk * chunk, dim=-1)
+             mean_c = sum_x / Tn

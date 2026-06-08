@@ -1,0 +1,157 @@
+[
+  {
+    "shape": [
+      4096,
+      98304
+    ],
+    "tc_us": 566.351979970932,
+    "seed_us": 955.8239877223969,
+    "oracle_us": 589.6160006523132,
+    "arms": {
+      "seed": {
+        "us": 955.8239877223969,
+        "spread": 0.002979658570239689,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          16384
+        ],
+        "norm_pid": "flat",
+        "norm_ns": 1
+      },
+      "full_oracle": {
+        "us": 589.6160006523132,
+        "spread": 0.005427251907200836,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          4096
+        ],
+        "norm_pid": "persistent_interleaved",
+        "norm_ns": 4
+      },
+      "seed+chunk": {
+        "us": 1018.1599855422974,
+        "spread": 0.003032919659358537,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          4096
+        ],
+        "norm_pid": "flat",
+        "norm_ns": 1
+      },
+      "seed+pidcluster": {
+        "us": 850.4319787025452,
+        "spread": 0.0037627872001455578,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          16384
+        ],
+        "norm_pid": "persistent_interleaved",
+        "norm_ns": 1
+      },
+      "seed+pipeline": {
+        "us": 955.3599953651428,
+        "spread": 0.003064832716621327,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          16384
+        ],
+        "norm_pid": "flat",
+        "norm_ns": 4
+      },
+      "seed+indexing": {
+        "us": 955.6959867477417,
+        "spread": 0.0036161779048639268,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          16384
+        ],
+        "norm_pid": "flat",
+        "norm_ns": 1
+      },
+      "seed+eviction": {
+        "us": 732.3200106620789,
+        "spread": 0.007100719004620678,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          16384
+        ],
+        "norm_pid": "flat",
+        "norm_ns": 1
+      },
+      "oracle-chunk": {
+        "us": 594.9119925498962,
+        "spread": 0.007234669746929331,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          16384
+        ],
+        "norm_pid": "persistent_interleaved",
+        "norm_ns": 4
+      },
+      "oracle-pidcluster": {
+        "us": 888.0959749221802,
+        "spread": 0.003387030330250558,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          4096
+        ],
+        "norm_pid": "flat",
+        "norm_ns": 4
+      },
+      "oracle-pipeline": {
+        "us": 589.2319977283478,
+        "spread": 0.006028168543920507,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          4096
+        ],
+        "norm_pid": "persistent_interleaved",
+        "norm_ns": 1
+      },
+      "oracle-indexing": {
+        "us": 621.2480068206787,
+        "spread": 0.0022921837216290574,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          4096
+        ],
+        "norm_pid": "persistent_interleaved",
+        "norm_ns": 4
+      },
+      "oracle-eviction": {
+        "us": 949.072003364563,
+        "spread": 0.0035234411867370447,
+        "codegen": "looped",
+        "correct": true,
+        "maxerr": 0.0,
+        "norm_rl": [
+          4096
+        ],
+        "norm_pid": "persistent_interleaved",
+        "norm_ns": 4
+      }
+    }
+  }
+]

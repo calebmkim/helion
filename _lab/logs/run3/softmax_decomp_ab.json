@@ -1,0 +1,156 @@
+[
+  {
+    "shape": [
+      1024,
+      65536
+    ],
+    "tc_us": 269.72800493240356,
+    "slots": [
+      0,
+      1
+    ],
+    "arms": {
+      "seed": {
+        "us": 263.839989900589,
+        "spread": 0.0006064610181338508,
+        "codegen": "looped",
+        "correct": true,
+        "ev": null,
+        "bs": [
+          1,
+          16384
+        ]
+      },
+      "evict": {
+        "us": 201.9519954919815,
+        "spread": 0.0014260554429873335,
+        "codegen": "looped",
+        "correct": true,
+        "ev": [
+          "last",
+          "first"
+        ],
+        "bs": [
+          1,
+          16384
+        ]
+      },
+      "evict+chunk": {
+        "us": 194.65599954128265,
+        "spread": 0.0006575752864375748,
+        "codegen": "looped",
+        "correct": true,
+        "ev": [
+          "last",
+          "first"
+        ],
+        "bs": [
+          1,
+          32768
+        ]
+      },
+      "evict+w16ns4": {
+        "us": 205.02400398254395,
+        "spread": 0.0009364828422679442,
+        "codegen": "looped",
+        "correct": true,
+        "ev": [
+          "last",
+          "first"
+        ],
+        "bs": [
+          1,
+          16384
+        ]
+      },
+      "chunk32768": {
+        "us": 261.29600405693054,
+        "spread": 0.001469608865054777,
+        "codegen": "looped",
+        "correct": true,
+        "ev": null,
+        "bs": [
+          1,
+          32768
+        ]
+      }
+    }
+  },
+  {
+    "shape": [
+      512,
+      131072
+    ],
+    "tc_us": 275.9679853916168,
+    "slots": [
+      0,
+      1
+    ],
+    "arms": {
+      "seed": {
+        "us": 275.7759988307953,
+        "spread": 0.00046414834937716045,
+        "codegen": "looped",
+        "correct": true,
+        "ev": null,
+        "bs": [
+          1,
+          16384
+        ]
+      },
+      "evict": {
+        "us": 256.25601410865784,
+        "spread": 0.0007491982636556851,
+        "codegen": "looped",
+        "correct": true,
+        "ev": [
+          "last",
+          "first"
+        ],
+        "bs": [
+          1,
+          16384
+        ]
+      },
+      "evict+chunk": {
+        "us": 258.5279941558838,
+        "spread": 0.0009283830330752667,
+        "codegen": "looped",
+        "correct": true,
+        "ev": [
+          "last",
+          "first"
+        ],
+        "bs": [
+          1,
+          32768
+        ]
+      },
+      "evict+w16ns4": {
+        "us": 255.77598810195923,
+        "spread": 0.0007507208341518672,
+        "codegen": "looped",
+        "correct": true,
+        "ev": [
+          "last",
+          "first"
+        ],
+        "bs": [
+          1,
+          16384
+        ]
+      },
+      "chunk32768": {
+        "us": 276.2239873409271,
+        "spread": 0.0004633955793895888,
+        "codegen": "looped",
+        "correct": true,
+        "ev": null,
+        "bs": [
+          1,
+          32768
+        ]
+      }
+    }
+  }
+]

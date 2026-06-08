@@ -1,0 +1,392 @@
+{
+  "gpu": "0",
+  "helion": "/tmp/v2-wt/helion/__init__.py",
+  "results": [
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        4096,
+        49152
+      ],
+      "rowKB": 192.0,
+      "mine_warps": 32,
+      "main_warps": null,
+      "mine_us": 671.2799966335297,
+      "main_us": 2437.7920627593994,
+      "ratio": 3.6315577329652764,
+      "mine_cg": "persistent",
+      "main_cg": "persistent",
+      "both_correct": true,
+      "mine_correct": true,
+      "main_correct": true,
+      "mine_maxerr": 1.9073486328125e-06,
+      "main_maxerr": 2.86102294921875e-06,
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        4096,
+        65536
+      ],
+      "rowKB": 256.0,
+      "mine_warps": 32,
+      "main_warps": null,
+      "mine_us": 822.6240277290344,
+      "main_us": 3346.8799591064453,
+      "ratio": 4.0685414555005925,
+      "mine_cg": "looped",
+      "main_cg": "persistent",
+      "both_correct": true,
+      "mine_correct": true,
+      "main_correct": true,
+      "mine_maxerr": 1.9073486328125e-06,
+      "main_maxerr": 2.86102294921875e-06,
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 32,
+        "maxnreg": 64
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        4096,
+        98304
+      ],
+      "rowKB": 384.0,
+      "mine_warps": 32,
+      "main_warps": null,
+      "mine_us": 1448.896050453186,
+      "main_us": 5537.471771240234,
+      "ratio": 3.821855798080354,
+      "mine_cg": "looped",
+      "main_cg": "persistent",
+      "both_correct": true,
+      "mine_correct": true,
+      "main_correct": true,
+      "mine_maxerr": 2.86102294921875e-06,
+      "main_maxerr": 2.86102294921875e-06,
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "persistent_interleaved",
+        "num_sm_multiplier": 32,
+        "maxnreg": 64
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        512
+      ],
+      "rowKB": 2.0,
+      "mine_warps": 4,
+      "main_warps": null,
+      "mine_us": 20.191999152302742,
+      "main_us": 20.287999883294106,
+      "ratio": 1.004754394563275,
+      "mine_cg": "persistent",
+      "main_cg": "persistent",
+      "both_correct": true,
+      "mine_correct": true,
+      "main_correct": true,
+      "mine_maxerr": 0.0,
+      "main_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        1024
+      ],
+      "rowKB": 4.0,
+      "mine_warps": 4,
+      "main_warps": null,
+      "mine_us": 25.567999109625816,
+      "main_us": 26.815999299287796,
+      "ratio": 1.0488110228849363,
+      "mine_cg": "persistent",
+      "main_cg": "persistent",
+      "both_correct": true,
+      "mine_correct": true,
+      "main_correct": true,
+      "mine_maxerr": 9.5367431640625e-07,
+      "main_maxerr": 9.5367431640625e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        2048
+      ],
+      "rowKB": 8.0,
+      "mine_warps": 8,
+      "main_warps": null,
+      "mine_us": 39.93599861860275,
+      "main_us": 41.4079986512661,
+      "ratio": 1.0368589764518288,
+      "mine_cg": "persistent",
+      "main_cg": "persistent",
+      "both_correct": true,
+      "mine_correct": true,
+      "main_correct": true,
+      "mine_maxerr": 0.0,
+      "main_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        8192,
+        2048
+      ],
+      "rowKB": 8.0,
+      "mine_warps": 8,
+      "main_warps": null,
+      "mine_us": 51.35999992489815,
+      "main_us": 49.75999891757965,
+      "ratio": 0.9688473323664696,
+      "mine_cg": "persistent",
+      "main_cg": "persistent",
+      "both_correct": true,
+      "mine_correct": true,
+      "main_correct": true,
+      "mine_maxerr": 1.9073486328125e-06,
+      "main_maxerr": 1.9073486328125e-06,
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        4096,
+        49152
+      ],
+      "rowKB": 192.0,
+      "mine_warps": 32,
+      "main_warps": null,
+      "mine_us": 275.9360074996948,
+      "main_us": 4089.2162322998047,
+      "ratio": 14.819436830129273,
+      "mine_cg": "persistent",
+      "main_cg": "persistent",
+      "both_correct": true,
+      "mine_correct": true,
+      "main_correct": true,
+      "mine_maxerr": 0.0,
+      "main_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "main_cfg": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "last",
+          "last",
+          "last",
+          "last"
+        ]
+      }
+    }
+  ]
+}

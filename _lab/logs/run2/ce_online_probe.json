@@ -1,0 +1,330 @@
+{
+  "perf": [
+    {
+      "shape": [
+        4096,
+        4096
+      ],
+      "tc_us": 47.26,
+      "tc_ok": true,
+      "online_us": 51.55,
+      "online_ok": true,
+      "online_seed": {
+        "block_sizes": [
+          1,
+          4096
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "existing_us": 51.52,
+      "existing_ok": true,
+      "existing_seed": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "G_online": 0.917,
+      "G_existing": 0.917,
+      "online_vs_existing(ex/on)": 0.999
+    },
+    {
+      "shape": [
+        4096,
+        16384
+      ],
+      "tc_us": 164.5,
+      "tc_ok": true,
+      "online_us": 141.95,
+      "online_ok": true,
+      "online_seed": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "existing_us": 142.02,
+      "existing_ok": true,
+      "existing_seed": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "G_online": 1.159,
+      "G_existing": 1.158,
+      "online_vs_existing(ex/on)": 1.0
+    },
+    {
+      "shape": [
+        8192,
+        32768
+      ],
+      "tc_us": 762.72,
+      "tc_ok": true,
+      "online_us": 486.9,
+      "online_ok": true,
+      "online_seed": {
+        "block_sizes": [
+          1,
+          32768
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "existing_us": 486.61,
+      "existing_ok": true,
+      "existing_seed": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          null
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "G_online": 1.566,
+      "G_existing": 1.567,
+      "online_vs_existing(ex/on)": 0.999
+    },
+    {
+      "shape": [
+        8192,
+        65536
+      ],
+      "tc_us": 1684.16,
+      "tc_ok": true,
+      "online_us": 1065.18,
+      "online_ok": true,
+      "online_seed": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "existing_us": 993.04,
+      "existing_ok": true,
+      "existing_seed": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "G_online": 1.581,
+      "G_existing": 1.696,
+      "online_vs_existing(ex/on)": 0.932
+    },
+    {
+      "shape": [
+        8192,
+        131072
+      ],
+      "tc_us": 3576.54,
+      "tc_ok": true,
+      "online_us": 2016.38,
+      "online_ok": true,
+      "online_seed": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "existing_us": 3576.61,
+      "existing_ok": true,
+      "existing_seed": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "G_online": 1.774,
+      "G_existing": 1.0,
+      "online_vs_existing(ex/on)": 1.774
+    },
+    {
+      "shape": [
+        4096,
+        128256
+      ],
+      "tc_us": 1751.52,
+      "tc_ok": true,
+      "online_us": 942.56,
+      "online_ok": true,
+      "online_seed": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "existing_us": 1686.69,
+      "existing_ok": true,
+      "existing_seed": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "G_online": 1.858,
+      "G_existing": 1.038,
+      "online_vs_existing(ex/on)": 1.789
+    },
+    {
+      "shape": [
+        2048,
+        151936
+      ],
+      "tc_us": 1066.53,
+      "tc_ok": true,
+      "online_us": 564.86,
+      "online_ok": true,
+      "online_seed": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "existing_us": 1097.95,
+      "existing_ok": true,
+      "existing_seed": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "G_online": 1.888,
+      "G_existing": 0.971,
+      "online_vs_existing(ex/on)": 1.944
+    },
+    {
+      "shape": [
+        8192,
+        50257
+      ],
+      "tc_us": 1354.26,
+      "tc_ok": true,
+      "online_us": 921.86,
+      "online_ok": true,
+      "online_seed": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "existing_us": 1118.02,
+      "existing_ok": true,
+      "existing_seed": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          16384
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "G_online": 1.469,
+      "G_existing": 1.211,
+      "online_vs_existing(ex/on)": 1.213
+    }
+  ],
+  "N_RUNS": 7,
+  "note": "G = tc_default_lat / seed_lat, median-of-7, fp32, H100 GPU3",
+  "fact_routing": {
+    "cross_entropy_online": {
+      "track": "T2 (manually-tiled hl.tile(v) inner loop; reduction axis is a block_sizes entry, is_t1=False)",
+      "num_load": 3,
+      "num_store": 1,
+      "num_reduction_ops": 2,
+      "num_tiled_accumulators": 0,
+      "is_structured_combine": false,
+      "note_num_load": "fact num_load=3 counts ALL distinct device loads (labels gather + label-logit gather + the single streaming row load), NOT 3 passes over the wide row. Generated Triton has exactly ONE inner for-loop and ONE tl.load(logits) inside it => the wide row is streamed ONCE (true single-pass online).",
+      "routing_wide": "num_load>=2 AND row_bytes(524288)>MULTILOAD_PERSIST_MAX_BYTES(131072) => seed goes LOOPED: block_sizes=[1,16384], num_warps=32, num_stages=1, pid_type=flat. So it IS looped by the multiload byte ceiling (intended).",
+      "routing_narrow": "narrow rows (<=131072 bytes) seed PERSISTENT: block_sizes=[1, next_pow2(V)], num_warps scales with rnumel."
+    },
+    "cross_entropy": {
+      "track": "T1 (rollable rdim; reduction_loops knob, is_t1=True)",
+      "num_load": 3,
+      "num_store": 1,
+      "num_reduction_ops": 2,
+      "note": "same num_load=3 / same MULTILOAD ceiling; wide rows also looped (reduction_loops=[16384])."
+    }
+  },
+  "regression": {
+    "shape": [
+      8192,
+      65536
+    ],
+    "G_online": 1.581,
+    "G_existing": 1.696,
+    "detail": "ONLY shape where online LOSES to existing (ex/on=0.932, ~6.8%). Root cause is a seed warp pick: at chunk=16384 the online kernel prefers num_warps=16 (938us) but the heuristic seeds num_warps=32 (1065us); the online-rescale recurrence is more register-heavy than the T1 rolled reduction so w32 over-subscribes at this row width. Online at its best config (w16, 938us) would BEAT existing (993us). Confined to this one mid-wide shape; not a correctness/structural issue."
+  },
+  "correctness_summary": {
+    "all_7_shapes_pass": true,
+    "rtol": 0.001,
+    "atol": 0.0001,
+    "max_abs_err_max": 9.5367431640625e-07,
+    "per_shape_max_abs": {
+      "4096x4096": 0.0,
+      "4096x16384": 0.0,
+      "8192x32768": 9.5e-07,
+      "8192x131072": 0.0,
+      "8192x65536": 0.0,
+      "2048x151936": 9.5e-07,
+      "8192x50257_nonpow2": 0.0
+    }
+  }
+}

@@ -1,0 +1,3737 @@
+{
+  "rows": [
+    {
+      "kernel": "softmax",
+      "M": 262144,
+      "N": 128,
+      "mine_us": 99.80800002813339,
+      "helion_default_us": 135.77599823474884,
+      "tc_default_us": 94.87999975681305,
+      "ratio_hd": 1.3603718960050994,
+      "ratio_tc": 0.9506251976802335,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.1920928955078125e-07,
+      "helion_default_maxerr": 5.960464477539063e-08,
+      "tc_maxerr": 1.1920928955078125e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          16,
+          128
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 131072,
+      "N": 256,
+      "mine_us": 106.33599758148193,
+      "helion_default_us": 146.7839926481247,
+      "tc_default_us": 93.85599941015244,
+      "ratio_hd": 1.3803791377012167,
+      "ratio_tc": 0.8826361866613752,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 5.960464477539063e-08,
+      "helion_default_maxerr": 4.470348358154297e-08,
+      "tc_maxerr": 5.960464477539063e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          8,
+          256
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 16384,
+      "N": 512,
+      "mine_us": 29.21600081026554,
+      "helion_default_us": 49.215998500585556,
+      "tc_default_us": 27.807999402284622,
+      "ratio_hd": 1.6845563094074352,
+      "ratio_tc": 0.9518071820601062,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.4901161193847656e-08,
+      "helion_default_maxerr": 2.9802322387695312e-08,
+      "tc_maxerr": 2.9802322387695312e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          512
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 8192,
+      "N": 1024,
+      "mine_us": 29.184000566601753,
+      "helion_default_us": 65.11999666690826,
+      "tc_default_us": 28.255999088287354,
+      "ratio_hd": 2.2313594915918333,
+      "ratio_tc": 0.9682017043483611,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 7.450580596923828e-09,
+      "helion_default_maxerr": 1.862645149230957e-08,
+      "tc_maxerr": 1.4901161193847656e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          1024
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 8192,
+      "N": 2048,
+      "mine_us": 51.44000053405762,
+      "helion_default_us": 127.45599448680878,
+      "tc_default_us": 55.904000997543335,
+      "ratio_hd": 2.4777603647655906,
+      "ratio_tc": 1.0867807235058284,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 7.450580596923828e-09,
+      "helion_default_maxerr": 1.4901161193847656e-08,
+      "tc_maxerr": 7.450580596923828e-09,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          2048
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 8192,
+      "N": 2560,
+      "mine_us": 63.19999694824219,
+      "helion_default_us": 154.59200739860535,
+      "tc_default_us": 90.55999666452408,
+      "ratio_hd": 2.446076184548061,
+      "ratio_tc": 1.4329114088199788,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 3.725290298461914e-09,
+      "helion_default_maxerr": 9.313225746154785e-09,
+      "tc_maxerr": 5.587935447692871e-09,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          4096
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 4096,
+      "N": 3072,
+      "mine_us": 41.02399945259094,
+      "helion_default_us": 153.43999862670898,
+      "tc_default_us": 50.49600079655647,
+      "ratio_hd": 3.7402496264175973,
+      "ratio_tc": 1.230889271410794,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 3.725290298461914e-09,
+      "helion_default_maxerr": 7.450580596923828e-09,
+      "tc_maxerr": 3.725290298461914e-09,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          4096
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 4096,
+      "N": 4096,
+      "mine_us": 52.73599922657013,
+      "helion_default_us": 197.28000462055206,
+      "tc_default_us": 51.93600058555603,
+      "ratio_hd": 3.74089820073336,
+      "ratio_tc": 0.9848301226345014,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 2.7939677238464355e-09,
+      "helion_default_maxerr": 7.450580596923828e-09,
+      "tc_maxerr": 3.725290298461914e-09,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          4096
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 4096,
+      "N": 5120,
+      "mine_us": 63.35999816656113,
+      "helion_default_us": 249.5039999485016,
+      "tc_default_us": 71.84000313282013,
+      "ratio_hd": 3.9378789010158117,
+      "ratio_tc": 1.1338384660928607,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 2.7939677238464355e-09,
+      "helion_default_maxerr": 7.450580596923828e-09,
+      "tc_maxerr": 1.862645149230957e-09,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          8192
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 4096,
+      "N": 8192,
+      "mine_us": 98.14400225877762,
+      "helion_default_us": 388.7999951839447,
+      "tc_default_us": 96.51199728250504,
+      "ratio_hd": 3.9615257808499647,
+      "ratio_tc": 0.9833713223558027,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.3969838619232178e-09,
+      "helion_default_maxerr": 6.51925802230835e-09,
+      "tc_maxerr": 1.3969838619232178e-09,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          8192
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 4096,
+      "N": 16384,
+      "mine_us": 204.3839991092682,
+      "helion_default_us": 784.2559814453125,
+      "tc_default_us": 185.69600582122803,
+      "ratio_hd": 3.837169175978556,
+      "ratio_tc": 0.9085643036172849,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 9.313225746154785e-10,
+      "helion_default_maxerr": 3.725290298461914e-09,
+      "tc_maxerr": 4.656612873077393e-10,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 2048,
+      "N": 24576,
+      "mine_us": 144.25599575042725,
+      "helion_default_us": 1054.0800094604492,
+      "tc_default_us": 184.83200669288635,
+      "ratio_hd": 7.307010041260814,
+      "ratio_tc": 1.2812778126231812,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 2.3283064365386963e-10,
+      "helion_default_maxerr": 3.4924596548080444e-09,
+      "tc_maxerr": 9.313225746154785e-10,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          32768
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 2048,
+      "N": 32768,
+      "mine_us": 195.90400159358978,
+      "helion_default_us": 1416.592001914978,
+      "tc_default_us": 238.78400027751923,
+      "ratio_hd": 7.231051894762984,
+      "ratio_tc": 1.2188827095675443,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 2.3283064365386963e-10,
+      "helion_default_maxerr": 2.7939677238464355e-09,
+      "tc_maxerr": 4.656612873077393e-10,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          32768
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 1024,
+      "N": 65536,
+      "mine_us": 202.27199792861938,
+      "helion_default_us": 2739.423990249634,
+      "tc_default_us": 270.33600211143494,
+      "ratio_hd": 13.54326856066533,
+      "ratio_tc": 1.3364974137786236,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 3.4924596548080444e-10,
+      "helion_default_maxerr": 2.0954757928848267e-09,
+      "tc_maxerr": 2.3283064365386963e-10,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "softmax",
+      "M": 512,
+      "N": 131072,
+      "mine_us": 256.28799200057983,
+      "helion_default_us": 5333.039999008179,
+      "tc_default_us": 276.5119969844818,
+      "ratio_hd": 20.80877827079824,
+      "ratio_tc": 1.0789112467815356,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 2.3283064365386963e-10,
+      "helion_default_maxerr": 2.0954757928848267e-09,
+      "tc_maxerr": 2.3283064365386963e-10,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          16384
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first"
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 16384,
+      "N": 768,
+      "mine_us": 40.511999279260635,
+      "helion_default_us": 79.58400249481201,
+      "tc_default_us": 39.712000638246536,
+      "ratio_hd": 1.964455072834521,
+      "ratio_tc": 0.9802527978069044,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.3113021850585938e-06,
+      "helion_default_maxerr": 1.1920928955078125e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          1024,
+          1024
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 16384,
+      "N": 1024,
+      "mine_us": 50.84799975156784,
+      "helion_default_us": 104.60799932479858,
+      "tc_default_us": 50.73599889874458,
+      "ratio_hd": 2.057268719239504,
+      "ratio_tc": 0.9977973400454203,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.3113021850585938e-06,
+      "helion_default_maxerr": 1.430511474609375e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          1024,
+          1024
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 16384,
+      "N": 1536,
+      "mine_us": 76.12799853086472,
+      "helion_default_us": 189.15200233459473,
+      "tc_default_us": 72.54400104284286,
+      "ratio_hd": 2.484657497699831,
+      "ratio_tc": 0.952921427632584,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.5497207641601562e-06,
+      "helion_default_maxerr": 1.7285346984863281e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 16384,
+      "N": 2048,
+      "mine_us": 94.71999853849411,
+      "helion_default_us": 261.3919973373413,
+      "tc_default_us": 94.68799829483032,
+      "ratio_hd": 2.7596283928479144,
+      "ratio_tc": 0.9996621595844853,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.5497207641601562e-06,
+      "helion_default_maxerr": 2.0265579223632812e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 16384,
+      "N": 2560,
+      "mine_us": 122.17599898576736,
+      "helion_default_us": 309.58399176597595,
+      "tc_default_us": 117.5680011510849,
+      "ratio_hd": 2.533918235463254,
+      "ratio_tc": 0.9622839356916635,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.1920928955078125e-06,
+      "helion_default_maxerr": 2.0265579223632812e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          4096,
+          4096
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 8192,
+      "N": 3072,
+      "mine_us": 74.81600344181061,
+      "helion_default_us": 261.6479992866516,
+      "tc_default_us": 72.92799651622772,
+      "ratio_hd": 3.497219675602596,
+      "ratio_tc": 0.9747646647945942,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.430511474609375e-06,
+      "helion_default_maxerr": 2.0265579223632812e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          4096,
+          4096
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 16384,
+      "N": 4096,
+      "mine_us": 185.2799952030182,
+      "helion_default_us": 483.7439954280853,
+      "tc_default_us": 182.3039948940277,
+      "ratio_hd": 2.6108808719367085,
+      "ratio_tc": 0.9839378217506453,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.430511474609375e-06,
+      "helion_default_maxerr": 2.4437904357910156e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          4096,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 8192,
+      "N": 5120,
+      "mine_us": 121.85599654912949,
+      "helion_default_us": 429.9840033054352,
+      "tc_default_us": 116.41599982976913,
+      "ratio_hd": 3.5286240766335673,
+      "ratio_tc": 0.9553571685151574,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.430511474609375e-06,
+      "helion_default_maxerr": 2.7418136596679688e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 8192,
+      "N": 7168,
+      "mine_us": 167.07199811935425,
+      "helion_default_us": 592.0480191707611,
+      "tc_default_us": 160.89600324630737,
+      "ratio_hd": 3.5436699496932396,
+      "ratio_tc": 0.9630339318224062,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.3113021850585938e-06,
+      "helion_default_maxerr": 3.0994415283203125e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 8192,
+      "N": 8192,
+      "mine_us": 187.96800076961517,
+      "helion_default_us": 657.8239798545837,
+      "tc_default_us": 182.49599635601044,
+      "ratio_hd": 3.4996593950097505,
+      "ratio_tc": 0.9708886385384736,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.4901161193847656e-06,
+      "helion_default_maxerr": 3.5762786865234375e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 8192,
+      "N": 12288,
+      "mine_us": 291.8879985809326,
+      "helion_default_us": 1023.472011089325,
+      "tc_default_us": 276.7679989337921,
+      "ratio_hd": 3.5063860661113955,
+      "ratio_tc": 0.9481993102811723,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.0728836059570312e-06,
+      "helion_default_maxerr": 3.933906555175781e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 4096,
+      "N": 16384,
+      "mine_us": 214.08000588417053,
+      "helion_default_us": 1132.5759887695312,
+      "tc_default_us": 184.67199802398682,
+      "ratio_hd": 5.290433284938899,
+      "ratio_tc": 0.8626307592868102,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.0728836059570312e-06,
+      "helion_default_maxerr": 4.649162292480469e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          1,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 262144,
+      "N": 2048,
+      "mine_us": 1432.800054550171,
+      "helion_default_us": 3158.3999395370483,
+      "tc_default_us": 1405.9200286865234,
+      "ratio_hd": 2.204354982753425,
+      "ratio_tc": 0.98123951365141,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.6689300537109375e-06,
+      "helion_default_maxerr": 2.0265579223632812e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          16,
+          2048,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "persistent",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 65536,
+      "N": 4096,
+      "mine_us": 772.6079821586609,
+      "helion_default_us": 1639.0399932861328,
+      "tc_default_us": 706.7039906978607,
+      "ratio_hd": 2.1214380787351788,
+      "ratio_tc": 0.9146993132575916,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.7881393432617188e-06,
+      "helion_default_maxerr": 2.6226043701171875e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          4,
+          4096,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 8,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "welford",
+      "M": 32768,
+      "N": 8192,
+      "mine_us": 778.0479788780212,
+      "helion_default_us": 1689.5359754562378,
+      "tc_default_us": 704.9919962882996,
+      "ratio_hd": 2.1715061555620534,
+      "ratio_tc": 0.9061034993046682,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.5497207641601562e-06,
+      "helion_default_maxerr": 3.814697265625e-06,
+      "tc_maxerr": 7.152557373046875e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          2,
+          8192,
+          2048
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_warps": 16,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 8192,
+      "N": 30522,
+      "mine_us": 652.5120139122009,
+      "helion_default_us": 964.8640155792236,
+      "tc_default_us": 726.751983165741,
+      "ratio_hd": 1.4786915719670586,
+      "ratio_tc": 1.1137756358054267,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 5.960464477539063e-08,
+      "helion_default_maxerr": 5.960464477539063e-08,
+      "tc_maxerr": 1.1920928955078125e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 8192,
+      "N": 32000,
+      "mine_us": 677.1199703216553,
+      "helion_default_us": 1895.8560228347778,
+      "tc_default_us": 715.9039974212646,
+      "ratio_hd": 2.7998820089949215,
+      "ratio_tc": 1.057277925330109,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 5.960464477539063e-08,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 4096,
+      "N": 32064,
+      "mine_us": 353.2159924507141,
+      "helion_default_us": 1825.7920145988464,
+      "tc_default_us": 483.39200019836426,
+      "ratio_hd": 5.169052516368176,
+      "ratio_tc": 1.368545056084385,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 0.0,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 8192,
+      "N": 50257,
+      "mine_us": 1088.4159803390503,
+      "helion_default_us": 1691.0399794578552,
+      "tc_default_us": 1151.968002319336,
+      "ratio_hd": 1.5536706645294593,
+      "ratio_tc": 1.0583894605815036,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 1.1920928955078125e-07,
+      "tc_maxerr": 5.960464477539063e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 4096,
+      "N": 50304,
+      "mine_us": 541.9520139694214,
+      "helion_default_us": 2853.8559675216675,
+      "tc_default_us": 566.2400126457214,
+      "ratio_hd": 5.265883129798076,
+      "ratio_tc": 1.0448157734453414,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.1920928955078125e-07,
+      "helion_default_maxerr": 1.1920928955078125e-07,
+      "tc_maxerr": 1.1920928955078125e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 4096,
+      "N": 65536,
+      "mine_us": 695.1360106468201,
+      "helion_default_us": 2573.5039710998535,
+      "tc_default_us": 728.3520102500916,
+      "ratio_hd": 3.70215890370177,
+      "ratio_tc": 1.04778345402127,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 1.1920928955078125e-07,
+      "tc_maxerr": 1.1920928955078125e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 4096,
+      "N": 49152,
+      "mine_us": 527.648001909256,
+      "helion_default_us": 2782.879948616028,
+      "tc_default_us": 558.8480234146118,
+      "ratio_hd": 5.274122025567005,
+      "ratio_tc": 1.0591303698535024,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.1920928955078125e-07,
+      "helion_default_maxerr": 1.1920928955078125e-07,
+      "tc_maxerr": 1.1920928955078125e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 2048,
+      "N": 98304,
+      "mine_us": 529.2159914970398,
+      "helion_default_us": 5519.872188568115,
+      "tc_default_us": 556.2880039215088,
+      "ratio_hd": 10.430282299205599,
+      "ratio_tc": 1.0511549402501765,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.1920928955078125e-07,
+      "helion_default_maxerr": 1.1920928955078125e-07,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 4096,
+      "N": 128256,
+      "mine_us": 1338.8959765434265,
+      "helion_default_us": 7231.967926025391,
+      "tc_default_us": 1391.871988773346,
+      "ratio_hd": 5.401441226745538,
+      "ratio_tc": 1.0395669366089855,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 0.0,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 2048,
+      "N": 128000,
+      "mine_us": 682.8799843788147,
+      "helion_default_us": 7168.255805969238,
+      "tc_default_us": 716.0959839820862,
+      "ratio_hd": 10.497094613909177,
+      "ratio_tc": 1.0486410502036996,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 0.0,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 2048,
+      "N": 151936,
+      "mine_us": 806.2879741191864,
+      "helion_default_us": 8405.311584472656,
+      "tc_default_us": 865.5040264129639,
+      "ratio_hd": 10.42470166277114,
+      "ratio_tc": 1.0734428072779665,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 0.0,
+      "tc_maxerr": 1.1920928955078125e-07,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 1024,
+      "N": 256000,
+      "mine_us": 683.5840046405792,
+      "helion_default_us": 14421.839714050293,
+      "tc_default_us": 716.1920070648193,
+      "ratio_hd": 21.097392004707796,
+      "ratio_tc": 1.0477015292968785,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 1.1920928955078125e-07,
+      "helion_default_maxerr": 1.1920928955078125e-07,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "kl_div",
+      "M": 16384,
+      "N": 32000,
+      "mine_us": 1325.3439664840698,
+      "helion_default_us": 2061.9200468063354,
+      "tc_default_us": 1391.0720348358154,
+      "ratio_hd": 1.555762201322187,
+      "ratio_tc": 1.049593215055041,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 0.0,
+      "tc_maxerr": 5.960464477539063e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 8192,
+      "N": 30522,
+      "mine_us": 676.0320067405701,
+      "helion_default_us": 1268.2240009307861,
+      "tc_default_us": 680.9279918670654,
+      "ratio_hd": 1.875982184697761,
+      "ratio_tc": 1.007242238647991,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 0.0,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 8192,
+      "N": 32000,
+      "mine_us": 700.1919746398926,
+      "helion_default_us": 1291.9520139694214,
+      "tc_default_us": 705.1040232181549,
+      "ratio_hd": 1.8451397056269745,
+      "ratio_tc": 1.0070152883154488,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 0.0,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 8192,
+      "N": 32064,
+      "mine_us": 700.0960111618042,
+      "helion_default_us": 1291.167974472046,
+      "tc_default_us": 696.0479915142059,
+      "ratio_hd": 1.8442727195793647,
+      "ratio_tc": 0.9942179078539805,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 1.4901161193847656e-08,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 8192,
+      "N": 50257,
+      "mine_us": 1150.272011756897,
+      "helion_default_us": 2196.0320472717285,
+      "tc_default_us": 1184.6240162849426,
+      "ratio_hd": 1.9091415115956474,
+      "ratio_tc": 1.0298642444369113,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 1.4901161193847656e-08,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 8192,
+      "N": 50304,
+      "mine_us": 1073.6160278320312,
+      "helion_default_us": 2022.5598812103271,
+      "tc_default_us": 1087.2639417648315,
+      "ratio_hd": 1.883876384832399,
+      "ratio_tc": 1.0127120996510826,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 2.9802322387695312e-08,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 8192,
+      "N": 65536,
+      "mine_us": 1371.3279962539673,
+      "helion_default_us": 2678.063988685608,
+      "tc_default_us": 1397.4720239639282,
+      "ratio_hd": 1.9528982096196013,
+      "ratio_tc": 1.0190647516723774,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 2.9802322387695312e-08,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 4096,
+      "N": 49152,
+      "mine_us": 538.9440059661865,
+      "helion_default_us": 1823.2640027999878,
+      "tc_default_us": 548.255980014801,
+      "ratio_hd": 3.3830304866854384,
+      "ratio_tc": 1.0172781846453984,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 1.4901161193847656e-08,
+      "tc_maxerr": 1.4901161193847656e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 4096,
+      "N": 98304,
+      "mine_us": 1047.8879809379578,
+      "helion_default_us": 3626.7839670181274,
+      "tc_default_us": 1064.4479990005493,
+      "ratio_hd": 3.4610416695225537,
+      "ratio_tc": 1.0158032331354434,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 2.9802322387695312e-08,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 8192,
+      "N": 128256,
+      "mine_us": 2675.0879287719727,
+      "helion_default_us": 5112.768173217773,
+      "tc_default_us": 2685.920000076294,
+      "ratio_hd": 1.911252380988031,
+      "ratio_tc": 1.0040492393494123,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 2.9802322387695312e-08,
+      "tc_maxerr": 1.4901161193847656e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 4096,
+      "N": 128000,
+      "mine_us": 1366.0800457000732,
+      "helion_default_us": 4734.4958782196045,
+      "tc_default_us": 1386.687994003296,
+      "ratio_hd": 3.4657528986841495,
+      "ratio_tc": 1.0150854617693077,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 1.4901161193847656e-08,
+      "tc_maxerr": 1.4901161193847656e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 4096,
+      "N": 151936,
+      "mine_us": 1619.551956653595,
+      "helion_default_us": 5603.328227996826,
+      "tc_default_us": 1638.096034526825,
+      "ratio_hd": 3.459801462359209,
+      "ratio_tc": 1.011450128411778,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 5.960464477539063e-08,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 2048,
+      "N": 256000,
+      "mine_us": 1354.7840118408203,
+      "helion_default_us": 9300.687789916992,
+      "tc_default_us": 1390.8480405807495,
+      "ratio_hd": 6.865070526835957,
+      "ratio_tc": 1.0266197625781892,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 8.940696716308594e-08,
+      "tc_maxerr": 1.4901161193847656e-08,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    },
+    {
+      "kernel": "jsd",
+      "M": 16384,
+      "N": 32000,
+      "mine_us": 1372.1919655799866,
+      "helion_default_us": 1684.4160556793213,
+      "tc_default_us": 1369.7760105133057,
+      "ratio_hd": 1.227536742621406,
+      "ratio_tc": 0.9982393461503327,
+      "mine_correct": true,
+      "helion_default_correct": true,
+      "mine_maxerr": 0.0,
+      "helion_default_maxerr": 0.0,
+      "tc_maxerr": 0.0,
+      "mine_cfg": {
+        "block_sizes": [
+          2048,
+          1
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "pid_type": "flat"
+      },
+      "helion_default_cfg": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "mine_codegen": "looped",
+      "note": ""
+    }
+  ]
+}
