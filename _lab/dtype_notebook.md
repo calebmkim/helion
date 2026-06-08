@@ -76,6 +76,21 @@ N5120 occ993 +302%). REMAINING RISK: softmax bf16 N5120 cliff is VIOLENT with no
 and occ993(-71%) → fine-occ sweep running (/tmp/softmax_cliff.json) to confirm occ<=496 has margin. If the
 cliff edge is < ~700, occ<=496 is safe; if it's near 500, must tighten. DECISION GATED ON THAT DATA.
 
+### ★ CLIFF DATA + CONSERVATIVE CAP DECISION ★ (/tmp/softmax_cliff.json)
+softmax bf16 N=5120 cliff is a KNIFE-EDGE: w4 = **+60% at occ496 → −70% at occ558** (62-SM gap, binary).
+First >10% regression at occ558. N=8192 cliffs even earlier (occ~186). So occ496 is the LAST safe point —
+shipping a cap AT 496 leaves only 62-SM margin to a −70% catastrophe = TOO RISKY for one data point.
+DECISION: ship the CONSERVATIVE cap **occ <= 496//ils** (bf16 occ<=248, fp32 occ<=124) — a 4.5× margin
+(max softmax fired occ=124 vs cliff 558). Validated on the coarse grid: fires 12 cells, 10 wins (softmax
++45-59%, ln +12-21%, welford +14-18%), worst −1.8% noise, ZERO danger admitted.
+FINAL candidate rule: **w4 IF input_load_itemsize>0 AND grid_rows>0 AND 4096 < rnumel*input_load_itemsize
+<= 10240 AND grid_rows//num_sm <= 496//input_load_itemsize**. Three warps rules now disjoint:
+narrow w1 (byte<=2048, occ<=512//ils) | GAP (2048,4096] | mid w4 (4096<byte<=10240, occ<=496//ils) |
+GAP (10240,16384/wide] | wide w8 (rnumel>16384, reread, !full_width, <=102400B).
+GATING BEFORE SHIP: coverage-gap sweep RUNNING (/tmp/midN_coverage.json) — bf16 N=3072/4096 + fp32
+N=1536/2560 (the fire range is UNTESTED except bf16 N5120). If fp32 regresses in-range, rule must drop
+fp32 (byte cap would then need an ils-aware floor). DO NOT write code until coverage confirms.
+
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
   - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
