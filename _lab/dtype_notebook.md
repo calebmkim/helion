@@ -7,7 +7,41 @@ authoritative manual is `_lab/prompts/{hillclimb-method,local-setup,gate-prompts
 Source of truth (method §6.1): THIS notebook + `_lab/ledger.json` key `dtype`. Trust the log
 over context. Wins AND rejections recorded as one-liners with evidence pointers.
 
-## ⟹⟹ FRESH-CONTEXT RESUME (newest, 2026-06-08, branch session 5fec6ded) — READ FIRST
+## ⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-08, D4 BUILD session) — READ FIRST
+**Human explicitly asked to BUILD D4 (the deferred narrow-N occupancy win). DONE + committed @ `3408c4f5`
+(NOT FOR PR MERGE pending gates). The genuine grid_rows//num_sm path the prior assessment said was
+needed is now built and measurement-validated; Path-A poison cell structurally excluded. GATES PENDING
+(Gate A/D/F) — do those next before banking as a confirmed win.**
+
+### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
+Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
+  - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
+  - `input_load_itemsize` = element size of the HBM **input row load** feeding the reduction
+    (`_input_load_itemsize()`, via `_accessed_tensor_fake` on reduction-fed loads) = **2 bf16 / 4 fp32**,
+    DISTINCT from `fact.itemsize` (=4 fp32-accumulator at BOTH dtypes for softmax/rms/ln — the exact
+    reason Path A's cap couldn't discriminate). kl_div/jsd → 0 (no single reduction-fed row load).
+`_num_warps(fact, num_sm)` NEW narrow branch (priority over the ramp):
+  **w1 IF `input_load_itemsize>0` AND `rnumel*ils <= 2048` AND `grid_rows//num_sm <= 512//ils`.**
+  (bf16: rnumel≤1024 AND occ≤256; fp32: rnumel≤512 AND occ≤128.) num_sm via `get_num_sm(env.device)`
+  threaded through `_persistent_looped`. Constants `NARROW_W1_MAX_BYTES=2048`, `NARROW_W1_OCC_BYTES=512`.
+
+### EVIDENCE (fresh CUDA-graph, /tmp/occ_results.json + /tmp/numwarps_gaps_results.json, num_sm=132)
+Threshold FIT across softmax/rms/ln/sum/welford/CE × bf16/fp32 × M-grid + an rnumel sweep (N 512..3072):
+  - **BYTE_CAP=2048 is the clean winner**: 9+ >3% wins (up to **+62%** softmax bf16), **worst regression
+    ~2.3%**, ZERO bad cells. 3072 → a −4.9% cell; 4096 → −9% cells. So 2048.
+  - The byte cap UNIFIES both axes: bf16 N=1536→3072B and fp32 N=768→3072B break at the same bytes;
+    2048B sits safely below (bf16 rnumel≤1024, fp32 rnumel≤512).
+  - occ cap 512//ils (bf16 256 / fp32 128) sits BELOW every measured crossover cliff (softmax bf16 ~496,
+    fp32 ~248).
+  - **Path-A poison cell softmax fp32 (32768,512) occ248 → w4 (NOT w1)** ✓ — fp32 occ cap=128 < 248.
+    THIS is the structural fix Path A lacked.
+  - **kl_div danger (bf16 V≥2048 = +27-46% w1 regression) EXCLUDED** by ils=0 guard ✓.
+  - **CE narrow-V BONUS win** (V≤1024 → w1 +13-35%) gained for free; CE wide-V w8 shipped win INTACT
+    (V=32000 bf16 → w8, fp32 → w32) ✓.
+Tests: 20 autotuner-heuristic pass, 22 reduction example tests pass. ruff+pyrefly clean (2 pyrefly errors
+pre-exist at L102/L3451, unrelated).
+
+## ⟹⟹ PRIOR FRESH-CONTEXT RESUME (2026-06-08, branch session 5fec6ded)
 **Run is in a banked, healthy state (HEAD on this branch ~a890a5c4+report edits). Two shipped wins
 intact (jsd correctness + CE bf16 wide-V w8 via full_width_output, gate-confirmed 3/3). All commits are
 `git log` on branch `reduction-pr-with-lab`. NO git push done.**
