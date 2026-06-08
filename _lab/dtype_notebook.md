@@ -27,6 +27,17 @@ parity (~5%), not tc.** See [[feedback-oracle-parity-not-tc-exemption]]. D4 alre
 shapes (welford (16384,896), rms/ln narrow). IN FLIGHT (task #6): fresh full-oracle re-audit of welford
 mid-N (5120/7168/14336) bf16 + jsd bf16 → /tmp/oracle_reaudit.json.
 
+### OPEN LEAD — welford mid-N seed↔oracle gap (NEW, from re-audit; UNCONFIRMED)
+Oracle re-audit agent (harness flaky, partial signal): welford bf16 (16384,5120) seed=w16 ~135us vs a
+quick-oracle candidate w2 blocks=[1,2048,1024] ~128us → seed loses ~5-9%. These mid-N welford shapes are
+ABOVE the D4 byte cap (N=5120 → 10240 B > 2048) so D4 does NOT fire — they stay ramp-w16. Hypothesis:
+welford's SERIAL recurrence (count/mean/M2 combine) is reduction-tree-bound across a WIDER byte range than
+the generic narrow-N effect → wants fewer warps even at mid-N. CAUTION: oracle ALSO shrank block_sizes
+(8192→2048/1024), so the w16→w2 gain may be COUPLED to smaller blocks — matched-lever A/B (perturb DOWN
+from the full candidate, warps-only vs warps+blocks) is running: /tmp/welford_midN.py → welford_midN_result.json.
+If confirmed + warps-carried, the faithful key is welford's Band-C structure (non_reduction_loop_block_ids,
+already a fact), NOT a byte cap. DO NOT bank until the A/B separates warps from blocks + a fresh full oracle.
+
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
   - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
