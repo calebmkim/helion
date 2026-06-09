@@ -3482,6 +3482,14 @@
         "sha": "ff4ab2d6",
         "verdict": "faithful=True. The extended _input_load_itemsize Band-B fallback is a faithful HBM-load-width property.",
         "confirmed": "Reads genuine compiler provenance (fake.element_size()+shape[-1] from FX meta['val']), DIVERGES from fact.itemsize at bf16 (kl_div: input_load=2 vs fact.itemsize=4) so it faithfully captures the pre-promotion HBM load width NOT the fp32 accumulator. dim-match (inner==size_hint) robust. num_carried_2d_tiles>=1 faithfully = Band-B (kl=1,jsd=2; CE/softmax/rms=0). Row-reductions UNCHANGED (source-1 fed-load priority). Branch fires w8 for bf16 Band-B, w32 for fp32 \u2014 correct."
+      },
+      {
+        "gate": "E_freeze_TEST_firewall",
+        "sha": "bf802056",
+        "verdict": "PASS \u2014 overfit=false, zero fences. SOLE sanctioned TEST-split read (TEST never benched before).",
+        "train_test_gap": "14 TEST shapes fired the rules: mean -11.4% vs prior ramp (matches TRAIN benefit direction), 13/14 within 5% of cell-best (92.9%). R1 narrow-w1, R2 CE-w8, R3 Band-B-w8 all generalize to held-out TEST. One edge outlier: CE (4096,49152) w8 +12% off best (w16) \u2014 upper byte-cap-boundary trade, single cell, bounded.",
+        "fences": "NONE. All 5 constants (2048, 262144, 102400, 16384, input_load_itemsize<=2) are round/structural workload thresholds; TRAIN straddles both sides of each. TEST shapes are INTERPOLATION within TRAIN N-envelopes, not extrapolation. No dtype-kind/kernel-identity branch.",
+        "test_read": "58 TEST shapes bf16, CUDA-graph (warmup+run-twice). Single sanctioned read, frozen champion bf802056."
       }
     ],
     "results": [
@@ -3961,7 +3969,7 @@
       }
     ],
     "_RUN_SUMMARY": {
-      "sha": "d424baba",
+      "sha": "bf802056",
       "shipped_wins": [
         "jsd bf16/fp16 correctness fix (true fp32 no-op)",
         "CE bf16 wide-V num_warps=8 +35-49% (re-read scalar-output, full_width_output fact), Gate A+D 3/3",
@@ -3987,7 +3995,8 @@
       ],
       "production_diff": "examples/jsd.py +6/-1; full_width_output fact (device_ir +43, config_spec +7); w8 gate+docstring (triton.py +32)",
       "tests": "20 autotuner-heuristic + 23 example pass, lint clean",
-      "gate_kills": "4 warps proxies gate-killed before the faithful win -- gates worked"
+      "gate_kills": "4 warps proxies gate-killed before the faithful win -- gates worked",
+      "status": "FROZEN CHAMPION \u2014 4 gate-confirmed wins, Gate E firewall PASS, no overfit"
     }
   },
   "skeptic_verdicts": [
