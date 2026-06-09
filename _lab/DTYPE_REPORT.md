@@ -42,10 +42,18 @@ opposite extents (wide-V w8 via `full_width_output`; narrow-N w1 via `grid_rows`
   `grid_rows` (product of static M-axis extents → occupancy `grid_rows//num_sm`) and
   `input_load_itemsize` (the **HBM input-row-load** element width = 2 bf16/fp16, 4 fp32 — read via
   `_accessed_tensor_fake` on the reduction-fed load; DISTINCT from `fact.itemsize`, the fp32-promoted
-  accumulator width = 4 at BOTH dtypes for softmax/rms/ln). Rule: **w1 IF `input_load_itemsize>0` AND
-  `rnumel*input_load_itemsize<=2048` AND `grid_rows//num_sm <= 512//input_load_itemsize`** (bf16:
-  rnumel≤1024 & occ≤256; fp32: rnumel≤512 & occ≤128). Both caps key on the input-load byte width, so they
-  scale ~2× with dtype FAITHFULLY (no dtype-kind branch). This STRUCTURALLY fixes the two refuted paths:
+  accumulator width = 4 at BOTH dtypes for softmax/rms/ln). Rule (final, byte-scaled occ cap @ `d1e2f2b4`):
+  **w1 IF `input_load_itemsize>0` AND `grid_rows>0` AND `row_bytes <= 2048` AND `(grid_rows//num_sm) *
+  row_bytes <= 262144`** where `row_bytes = rnumel*input_load_itemsize`. The occ ceiling is a
+  RESIDENT-PRESSURE PRODUCT, not a flat occ: the cliff sits at a roughly CONSTANT `occ*row_bytes` (~256-500
+  KiB on H100), so a 512-byte row fires to occ≤512, a 1 KiB row to occ≤256, a 2 KiB row only to occ≤128.
+  (An initial FLAT occ cap `512//input_load_itemsize` shipped a regression — it mis-fired w1 into the 2 KiB
+  cliff: softmax bf16 (32768,1024) occ248/256 +18-30%, in-curriculum layer_norm/sum (32768,1024) +2.5%. The
+  D4 gates had missed this exact byte=2048/occ~248 corner — the overfit-gate's classic blind spot — and a
+  later deep cliff-verification caught it; the product cap fixes it AND unlocks a safe new firing at the
+  tiny-row/high-occ end, softmax (131072,128) occ992 +1.0%, while still excluding the tiny-row cliffs where
+  occ*row_bytes>262144.) Both caps key on the input-load byte width, so they scale ~2× with dtype
+  FAITHFULLY (no dtype-kind branch). This STRUCTURALLY fixes the two refuted paths:
   the dtype-faithful occ cap excludes the Path-A poison cell softmax fp32 (32768,512) occ248 (fp32 cap
   128 < 248 → stays w4, no +19.6% regression), and the `input_load_itemsize==0` guard excludes kl_div/jsd
   (where forcing w1 regresses up to +46%). The earlier "4× crossover" worry was an artifact of the wrong
@@ -304,14 +312,23 @@ fact-building effort, deferred (D5) with the full mechanism documented. Controls
 conjunction is faithful, not a fence: sum (1 reduction → w32), layer_norm (full-width output → w32),
 kl_div/jsd (streaming not persistent → warp-neutral) all correctly excluded.
 
-## The warps lever — overall finding (3 attempts, all gate-killed or deferred)
-The reduction `num_warps` ramp is genuinely dtype-suboptimal in several regimes, but the optimum is a
-multi-dimensional function (extent × itemsize × occupancy/M × reduction-tree-count × output-width) that
-no simple seed-ramp captures cleanly. Three faithful-looking ramps were built and rejected by the
-gates/measurement (narrow-N occupancy-flip; wide byte-ramp fp32 under-warp; num_load false-proxy). The
-honest conclusion: improving it needs either richer facts (occupancy grid_rows//num_sm, reduction-tree
-count, output-width) or per-shape autotune — a research effort, not a ramp tweak. Net warps change
-shipped: NONE (logic AST-identical to baseline; fp32 provably non-regressed). The gates worked.
+## The warps lever — overall finding (UPDATED 2026-06-09: two bands shipped, mid-band is a proven ceiling)
+The reduction `num_warps` optimum follows a `f(byte, occ)` surface: it grows monotonically with BOTH the
+per-program row bytes AND occupancy, and the few-warps cliff sits at a roughly CONSTANT resident-pressure
+product `occ*row_bytes` (~256-500 KiB on H100, ncu-proven = latency-hiding capacity). The seed now captures
+the cleanly-separable regions of that surface, in THREE disjoint, faithful, gate-confirmed bands:
+- **NARROW (row_bytes≤2048): w1** — D4, shipped. `occ*row_bytes≤262144` cap (the resident-pressure product,
+  which is why it's faithful across the whole narrow byte range and why a flat occ cap had a corner bug).
+- **WIDE-V re-read scalar-output (rnumel>16384, ≤102400 B): w8** — the CE win, shipped.
+- **MID (2048<row_bytes≤10240): PROVEN CEILING, deferred.** A w4 rule was built and GATE-KILLED (validated
+  vs ramp not cell-best); a fresh vs-cell-best sweep (980 measurements) then proved NO clean rule exists —
+  best-warps is KERNEL-DIVERGENT within every (byte, occ) bucket (e.g. byte(2048,4096] occ62: {w1,w2,w4,w8}
+  all appear, no mode; rms_norm fp32 wants w8 at low occ while softmax wants w1) and no faithful fact
+  separates them (they've converged in byte/occ/row_reread space). Every candidate rule has a cell >5%
+  (worst +21.8%). This is the multi-dimensional ceiling — capturing mid-N needs per-shape autotune, not a
+  seed ramp. Earlier honest-but-now-superseded line "net warps change shipped: NONE" no longer holds: two
+  bands ship (D4 + CE-w8); fp32 is provably non-regressed outside the firing zones. The gates worked
+  throughout (killed 3 narrow byte-ramps, the num_load proxy, AND the mid-N w4; caught the D4 corner).
 
 ## Mechanistic discoveries (hard-won, reusable — validated by measurement/ncu this run + the fork)
 - **Cross-warp reduction overhead governs narrow-row warps.** At a narrow reduction extent the
