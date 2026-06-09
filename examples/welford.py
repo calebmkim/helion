@@ -48,7 +48,13 @@ def welford(
         acc_m2 = torch.zeros_like(acc_cnt)
 
         for tile_n in hl.tile(n):
-            chunk = x[tile_m, tile_n]
+            # Upcast the loaded chunk to fp32 before the sum / sum-of-squares. At
+            # bf16/fp16 an input-width accumulator loses precision badly, and in fp16
+            # sum_x*sum_x (a per-tile partial ~ (W/2)^2) overflows 65504 -> negative
+            # variance -> rsqrt(neg) -> NaN. Accumulating in fp32 (what torch
+            # layer_norm does) fixes both. The HBM load is still x.dtype, so no extra
+            # bandwidth; no-op at fp32 input.
+            chunk = x[tile_m, tile_n].to(torch.float32)
             # Count of VALID columns. OOB loads are masked to 0, so sum_x/sum_x2 are
             # already correct; only the divisor must use the true valid count, NOT the
             # constexpr tile width chunk.size(-1) (over-counts last-tile padding at

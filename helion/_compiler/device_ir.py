@@ -1127,6 +1127,11 @@ class DeviceIR:
                 non_reduction_loop_block_ids=non_reduction_loop_block_ids,
                 row_reread=row_reread,
                 reread_buffer_name=reread_buffer_name,
+                full_width_output=self._has_full_width_output_store(
+                    red_block_id, size_hint
+                ),
+                grid_rows=self._grid_rows(m_block_ids),
+                input_load_itemsize=self._input_load_itemsize(red_block_id, size_hint),
             )
         )
 
@@ -1195,6 +1200,71 @@ class DeviceIR:
                             itemsize = in_val.element_size()
                             break
         return num_load, itemsize
+
+    def _input_load_itemsize(self, red_block_id: int, size_hint: int) -> int:
+        """Element size (bytes) of the HBM *input row load* over the reduction extent — the
+        dtype-faithful per-byte signal, distinct from ``ReductionFact.itemsize``.
+
+        ``itemsize`` (``_count_reduction_workload``) reads the reduction *input* node, which
+        Helion promotes to fp32 for the norm/softmax family (rms_norm/layer_norm/softmax
+        reduce ``x.to(fp32)``), so it is 4 at BOTH bf16 and fp32 there and cannot tell the
+        dtypes apart. This reads the actual ``hl.load`` of the row from HBM (the store
+        buffer's element size, pre-promotion): 2 for a bf16/fp16 row, 4 for fp32 — a
+        faithful, dtype-AGNOSTIC workload property (the HBM-load width), NOT a dtype-kind
+        branch. Used to dtype-scale the warps levers (a 2 B/elem row behaves differently from
+        a 4 B row at the same element extent).
+
+        Two sources, in order:
+        1. The MIN element size over loads whose value FEEDS the reduction over
+           ``red_block_id`` (the reduced row; a broadcast weight shares the dtype). This is
+           the row-reduction case (softmax/rms/ln/sum/cross_entropy).
+        2. Fallback for Band-B (kl_div/jsd): those carry ``[M_BLOCK, R_BLOCK]`` 2-D tiles and
+           have no single reduction-fed row load, but they DO stream the ``[M, N]`` input
+           rows from HBM. So if (1) is empty, take the MIN element size over rank>=2 loads
+           whose inner (reduction) dim equals ``size_hint`` — the wide input rows. This keeps
+           the signal dtype-faithful for Band-B (bf16 rows -> 2, fp32 -> 4).
+        0 if neither source finds a load (no wide input row — the lever declines).
+        """
+        from ..language.memory_ops import load as _load_op
+
+        fed_sizes: list[int] = []
+        row_sizes: list[int] = []
+        for graph_info in self.graphs:
+            graph = graph_info.graph
+            redset = _reduction_node_ids(graph, red_block_id)
+            for node in graph.find_nodes(
+                op="call_function", target=_load_op, sort=False
+            ):
+                fake = _accessed_tensor_fake(node)
+                if fake is None:
+                    continue
+                if redset:
+                    feeds, _bypass = _classify_load_dataflow(node, redset)
+                    if feeds:
+                        fed_sizes.append(fake.element_size())
+                # Band-B fallback candidate: a wide input row (rank>=2, inner dim == extent).
+                if fake.ndim >= 2 and int(fake.shape[-1]) == int(size_hint):
+                    row_sizes.append(fake.element_size())
+        if fed_sizes:
+            return min(fed_sizes)
+        return min(row_sizes) if row_sizes else 0
+
+    def _grid_rows(self, m_block_ids: tuple[int, ...]) -> int:
+        """Product of the static M-axis (non-reduction grid) extents — the program count
+        the reduction launches, the numerator of the occupancy ``grid_rows // num_sm``.
+        0 if any extent is not a statically-resolvable size (a dynamic/jagged grid has no
+        compile-time occupancy, so the occupancy-gated lever declines). Computed at fact
+        time so the seed needs no env walk; the existing ``persistent_interleaved`` branch
+        computes the same product at emit time.
+        """
+        env = CompileEnvironment.current()
+        grid_rows = 1
+        for mbid in m_block_ids:
+            size = env.block_sizes[mbid].size
+            if not isinstance(size, (int, torch.SymInt)):
+                return 0
+            grid_rows *= env.size_hint(size)
+        return grid_rows
 
     def _count_carried_2d_tiles(self, red_block_id: int) -> int:
         """Count 2-D ``[M_BLOCK, R_BLOCK]`` tiles carried across the inner reduction
@@ -1327,6 +1397,43 @@ class DeviceIR:
         }
         reread_buffer_name = next((nm for nm in first_seen if nm in hbm_reread), None)
         return row_reread, reread_buffer_name
+
+    def _has_full_width_output_store(self, red_block_id: int, size_hint: int) -> bool:
+        """True iff some store writes a tensor over the reduction extent — i.e. the
+        reduction's result is written back FULL-WIDTH ([M, N]: layer_norm/softmax/welford/
+        rms_norm normalize and store the whole row) rather than collapsed to a per-row
+        scalar ([M]: cross_entropy loss, sum). Distinguishes two reductions that are
+        otherwise identical on every other fact but want opposite num_warps at a wide
+        half-precision row (a full-width store is occupancy/store-bound -> more warps; a
+        scalar-output reduction is reduction-tree-bound -> fewer warps). Faithful: keys on
+        the store's indexed extent, not kernel identity.
+
+        A store is full-width iff its target is rank>=2 and the inner store dim is sized to
+        the reduction extent and written by a tile / full slice (not a bare-int scalar).
+        Keyed on the extent-SIZE match, not the reduction ``block_id`` — welford's apply
+        loop stores over a different block_id (its normalize tile) than the combine, yet is
+        still a full-width [M, N] write. ``red_block_id`` is accepted for signature symmetry.
+        """
+        from ..language.memory_ops import store as _store_op
+
+        for gi in self.graphs:
+            for node in gi.graph.find_nodes(
+                op="call_function", target=_store_op, sort=False
+            ):
+                index_list = node.args[1] if len(node.args) >= 2 else None
+                if not isinstance(index_list, (list, tuple)) or not index_list:
+                    continue
+                target_val = node.args[0].meta.get("val")
+                if not isinstance(target_val, torch.Tensor) or target_val.ndim < 2:
+                    continue  # a rank-1 store ([M]) is a per-row scalar output
+                if int(target_val.shape[-1]) != int(size_hint):
+                    continue  # inner store dim is not the reduction-width dim
+                last = index_list[-1]
+                # full slice ``out[..., :]`` or a tile ``out[..., tile_n]`` -> full-width;
+                # a bare int (single column) is a scalar-ish store.
+                if not isinstance(last, int):
+                    return True
+        return False
 
     def reread_eviction_slot_for_config(
         self,
@@ -1465,6 +1572,11 @@ class DeviceIR:
             non_reduction_loop_block_ids=non_reduction_loop_block_ids,
             row_reread=row_reread,
             reread_buffer_name=reread_buffer_name,
+            full_width_output=self._has_full_width_output_store(
+                rdim.block_id, size_hint
+            ),
+            grid_rows=self._grid_rows(m_block_ids),
+            input_load_itemsize=self._input_load_itemsize(rdim.block_id, size_hint),
         )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:

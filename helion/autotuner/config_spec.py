@@ -110,6 +110,24 @@ class ReductionFact(NamedTuple):
       ``row_reread``) — the *which buffer*, not *which slot*. Config-independent; the seed
       resolves the slot at emit time via ``reread_eviction_slot_for_config``. See
       ``_analyze_reread``.
+    - ``full_width_output``: True iff a store writes the result back over the reduction
+      axis ([M, N] full-width: layer_norm/softmax/welford/rms_norm normalize the row),
+      False for a per-row scalar output ([M]: cross_entropy loss, sum). Two reductions
+      identical on every other fact can want opposite ``num_warps`` at a wide half-precision
+      row — full-width is store/occupancy-bound (more warps), scalar-output is
+      reduction-tree-bound (fewer warps). See ``_has_full_width_output_store``.
+    - ``grid_rows``: product of the static M-axis (non-reduction grid) extents — the
+      program count the reduction launches. With ``num_sm`` it yields the occupancy
+      ``grid_rows // num_sm`` that gates the narrow-row fewer-warps lever (a narrow row
+      under-occupies until enough rows are resident). 0 if not statically known. See the
+      fact builders.
+    - ``input_load_itemsize``: element size (bytes) of the HBM *input row load* feeding
+      the reduction — 2 for a bf16/fp16 row, 4 for fp32. The dtype-faithful per-byte
+      signal, distinct from ``itemsize`` (which is the fp32-promoted reduction-input width
+      = 4 at BOTH dtypes for the norm/softmax family). Scales the occupancy threshold of
+      the fewer-warps lever (a 2 B/elem row stays few-warp to ~2x the occupancy of a 4 B
+      row). 0 when no single reduction-fed row load exists (kl_div/jsd). A faithful HBM
+      workload property, NOT a dtype-kind branch. See ``_input_load_itemsize``.
     """
 
     block_id: int
@@ -122,6 +140,9 @@ class ReductionFact(NamedTuple):
     non_reduction_loop_block_ids: tuple[int, ...] = ()
     row_reread: bool = False
     reread_buffer_name: str | None = None
+    full_width_output: bool = True
+    grid_rows: int = 0
+    input_load_itemsize: int = 0
 
 
 class MemoryOpFact(NamedTuple):

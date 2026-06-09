@@ -342,22 +342,170 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # itemsize), not next_pow2 (vocab sizes sharing a next_pow2 split at the crossover).
     # 240 KiB sits in the measured dead-zone (most impactful on re-read kernels like CE).
     ROW_PERSIST_MAX_BYTES = 245760
+    # Per-row ELEMENT ceiling for a FULL-WIDTH-output row (one that stores the whole [M, N] row
+    # back): above this width the persistent fp32 row tile + the full-width store spill, so the
+    # row must loop. Keyed on ELEMENTS (the resident fp32 tile width), NOT the HBM-input bytes —
+    # the byte cap (size_hint*itemsize) undercounts a half-precision full-width T1 row 2x (its
+    # resident tile is fp32-promoted), which is exactly why log_softmax bf16 at N~98304 wrongly
+    # persisted (196 KB input row < the 240 KB byte cap) and spilled ~16x.
+    #   81920 is the MEASURED stable bf16 persist-vs-loop crossover: persist wins at and below
+    # 81920 (N=73728 persist +37% stable over 4 fresh procs, N=81920 +16%), loop wins decisively
+    # at and above 86016 (N=86016 loop +36%, N=98304 +135%, N=131072 +313%). Above it the
+    # persistent fp32 row tile (81920 elems * 4 B = 320 KiB resident) — already past the H100's
+    # 228 KiB max shared memory, so it lives in registers and spills as the width grows — loses
+    # to the streamed looped chunk. It is keyed to that measured spill crossover, not to the
+    # curriculum (no curriculum log_softmax shape lies in the (65536, 81920] band; the band is
+    # honored only so a non-curriculum full-width kernel there still gets the faster persist).
+    # The fp32 crossover is a touch lower (~77k) so 81920 lets fp32 N=81920 persist when loop is
+    # ~9% faster — a small, bounded edge trade on a non-curriculum width (fp32 wide full-width is
+    # already looped by the byte cap at the curriculum's N>=98304). Only gates full_width_output
+    # rows (scalar re-read rows like cross_entropy persist far past this, read-bound); the
+    # existing full-width 9 reduce x.to(fp32) (itemsize 4) and top out at N=16384 or already loop,
+    # so it is a no-op for them and steers only half-precision full-width T1 rows (log_softmax).
+    FULL_WIDTH_PERSIST_MAX_ELEMS = 81920
     # Band-C (welford reduce-then-apply) combine-tile cap, in bytes. The combine is a
-    # serial scalar recurrence (count/mean/M2) that prefers persistent; 32 KiB keeps it
-    # so for the welford shapes (N<=8192).
+    # serial scalar recurrence (count/mean/M2) that prefers persistent; this is the
+    # FLOOR of the combine tile (32 KiB / itemsize = 8192 elems) — the spill-safe budget
+    # validated at the raised-M_BLOCK (huge-M) welford shapes.
     STRUCTURED_COMBINE_CAP_BYTES = 32768
+    # Band-C combine cap is M_BLOCK-AWARE (raise-only). The real spill driver is the
+    # per-program footprint ``M_BLOCK * combine_tile * itemsize`` (the combine carries one
+    # [M_BLOCK]-wide scalar per stat), NOT the per-row tile bytes alone — so the prior flat
+    # ``STRUCTURED_COMBINE_CAP_BYTES`` cap was too tight at SMALL M_BLOCK (it throttled the
+    # combine tile of a small-M wide-N row that has register headroom to spare). A small
+    # M_BLOCK affords a WIDER combine tile (fewer combine-loop trips, more ILP); a raised
+    # M_BLOCK (huge-M) must stay narrow. So the combine tile is bounded by this per-program
+    # byte budget DIVIDED by M_BLOCK, but never BELOW the validated floor above (raise-only,
+    # so huge-M is byte-for-byte unchanged — the welford(262144,5120) 7.3x valley is
+    # untouched). 256 KiB matches the resident-pressure scale of NARROW_W1_OCC_BYTE_LIMIT;
+    # it is a hardware footprint ceiling, not a curriculum value. The combine tile shrinks
+    # 65536->16384->8192 as M_BLOCK grows 1->4->8 (footprint pinned at 256 KiB), reaching the
+    # 8192-elem floor at M_BLOCK>=8 (huge-M, where it is byte-identical to the old flat cap).
+    # CUDA-graph-validated: at M_BLOCK=1 wide-N, welford +1-11% and groupnorm +1-16.5%; the
+    # M_BLOCK=4/8 transition tiles are flat-to-faster; welford huge-M (M_BLOCK>=16) zero-regression.
+    STRUCTURED_COMBINE_PROG_BYTES = 262144
+
+    # A wide half-precision REDUCTION-BOUND row (re-read for multiple reductions, no
+    # full-width output store) whose reduction-tree footprint is <= this many bytes prefers
+    # w8 over w32: the cross-warp shared-memory reduction tree dominates and grows ~linearly
+    # with warp count, so fewer warps win once the half-precision row is small enough in
+    # bytes for 8 warps to cover. cross_entropy bf16 V<=~50k lives here (+35-49%).
+    REREAD_W8_MAX_BYTES = 102400
+
+    # Band-B (carries [M_BLOCK, R_BLOCK] 2-D accumulator tiles: kl_div, jsd) at a WIDE
+    # half-precision row prefers w8 over the ramp's w32 — the SAME reduction-tree-overhead
+    # mechanism as the re-read scalar-output case above, but reached via a different kernel
+    # structure (a streaming 2-D-tile reduction, NOT re-read). Gated on the half-precision
+    # INPUT-LOAD width (``input_load_itemsize <= 2``): at fp32 the 2-D-tile footprint is
+    # heavier and w32 stays optimal (kl_div fp32 wide-V w8 regresses 5.6-7.3%) — so the byte
+    # signal faithfully excludes fp32 without a dtype-kind branch. jsd/kl_div bf16 at V>=16384
+    # are ~+6-15% faster at w8 (oracle-confirmed; seed w32 avg +10.8% off-optimal).
+    BANDB_W8_MAX_INPUT_ITEMSIZE = 2
+
+    # NARROW-row single-warp (occupancy-gated). A narrow reduction extent wants ONE warp:
+    # the cross-warp reduction tree (shared-mem + __syncthreads) is pure overhead when each
+    # warp's slice is tiny, and w1 reduces in-register via shuffle (0 shared traffic, 0
+    # barriers). The win INVERTS to a >10% (up to 6x) regression past an occupancy ceiling
+    # (the SMs saturate, so more warps amortize), so it is gated on BOTH a row-byte cap and
+    # an occupancy cap, both keyed on the INPUT-LOAD byte width (``input_load_itemsize``:
+    # 2 bf16/fp16, 4 fp32) — faithful and dtype-AGNOSTIC (the HBM-load element size IS a
+    # workload property), NOT ``itemsize`` (the fp32-promoted accumulator width = 4 at BOTH
+    # dtypes for the norm/softmax family, which cannot discriminate — the bug that admitted
+    # softmax fp32 (32768,512) at +19.6% in an earlier fixed-occ attempt).
+    #   - row cap: ``rnumel * input_load_itemsize <= NARROW_W1_MAX_BYTES`` (bf16 rnumel<=1024,
+    #     fp32 rnumel<=512). Above it the row is wide enough that 1 warp under-utilizes.
+    #   - occ cap: the per-program saturation point DROPS as the resident row grows (a wider
+    #     row saturates the SMs' latency-hiding at lower occupancy — measured: a 1 KiB row is
+    #     safe to occ~496 but a 2 KiB row cliffs by occ~200). So the cap is on the PRODUCT
+    #     ``occ * row_bytes <= NARROW_W1_OCC_BYTE_LIMIT`` (i.e. ``occ <= LIMIT // row_bytes``),
+    #     not a flat occ: 256 KiB gives a 512-byte row occ<=512, a 1 KiB row occ<=256, a 2 KiB
+    #     row occ<=128 (below softmax's ~200 cliff at 2 KiB). A flat occ cap mis-fired w1 into
+    #     that 2 KiB cliff (softmax bf16 (32768,1024) +18-30%).
+    # CUDA-graph-fit across softmax/rms_norm/layer_norm/sum/welford/cross_entropy x bf16/fp32:
+    # in the fired zone w1 beats the ramp by up to +62% (softmax bf16) with worst regression
+    # ~4.7% vs the cell-best (a small upper-edge trade; no fact separates the edge from the
+    # core). Disabled when input_load_itemsize==0 (kl_div/jsd: 2-D carried tiles, no single
+    # reduction-fed row load — and forcing w1 there regresses up to +46%).
+    NARROW_W1_MAX_BYTES = 2048
+    # occ * row_bytes ceiling (256 KiB): the resident-pressure product above which w1 cliffs.
+    NARROW_W1_OCC_BYTE_LIMIT = 262144
 
     @classmethod
-    def _num_warps(cls, fact: ReductionFact) -> int:
+    def _num_warps(cls, fact: ReductionFact, num_sm: int = 0) -> int:
         """Scale num_warps with the reduction extent (pow2, per NumWarpsFragment):
         rnumel <= 1024 -> 4, <= 4096 -> 8, <= 16384 -> 16, > 16384 -> 32. Too few
         under-occupies the SM, too many wastes the reduction tree.
+
+        NARROW-row single-warp refinement at the LOW end (the occupancy-gated lever): a
+        narrow row at low/moderate occupancy wants ONE warp (the cross-warp reduction tree
+        is pure overhead — see ``NARROW_W1_MAX_BYTES``). Fires only when the row-byte cap AND
+        the resident-pressure cap (``occ * row_bytes <= NARROW_W1_OCC_BYTE_LIMIT``) hold; both
+        key on ``input_load_itemsize`` (faithful, no dtype-kind branch) and the occ ceiling
+        scales DOWN as the row grows (a wider row cliffs at lower occupancy). Needs ``num_sm``
+        (0 disables it, e.g. an off-device caller). Disjoint from the wide-row w8/w32 branch
+        below (``NARROW_W1_MAX_BYTES`` << the rnumel>16384 region), so the two never interact.
+
+        One dtype-aware refinement at the WIDE end (rnumel > 16384): a REDUCTION-BOUND row
+        — re-read (``row_reread``, i.e. live across >=2 reductions, e.g. cross_entropy's
+        amax+sum) AND with a per-row SCALAR output (``not full_width_output``: it does NOT
+        store the whole [M, N] row back, so the kernel is not store/occupancy-bound) — over
+        a wide half-precision row whose reduction-tree footprint is <= ``REREAD_W8_MAX_BYTES``
+        (size_hint * itemsize) prefers w8 over w32. ncu: at w32 the cross-warp shared-memory
+        reduction tree is ~4x costlier (bank conflicts) and throttles the read pipeline;
+        fewer warps win because the kernel is reduction-tree-bound on a tiny output.
+        CUDA-graph-validated M-stable (occ 15-124) and zero-regression: cross_entropy bf16 at
+        V=32000/50257 is ~35-49% faster. Excluded by faithful facts (NOT kernel identity):
+        sum/long_sum (not re-read -> single reduction, want w32); layer_norm/softmax/welford/
+        rms_norm (full_width_output -> store/occupancy-bound, want w32 — keying on num_load
+        instead regressed layer_norm ~32%); kl_div/jsd (streaming, not re-read). The mechanism
+        is dtype-AGNOSTIC (not an fp32-vs-half switch): the byte cap simply means a 4-byte fp32
+        row hits the cap at half the extent of a 2-byte row, so realistic fp32 vocabs (V>=30522
+        -> >cap) stay w32 while the common bf16 vocabs (V~32k/50k -> <=cap) get w8; fp32 CE in
+        V in [16384,25600] does fire w8 and also benefits. (The NARROW-row fewer-warps want,
+        the opposite low-extent regime, is the occupancy-gated w1 branch above.)
         """
+        rnumel = fact.size_hint
+        # NARROW-row single-warp: a narrow row at low/moderate occupancy. Both caps key on
+        # the input-load byte width (dtype-faithful), and the occupancy needs num_sm; an
+        # input_load_itemsize of 0 (kl_div/jsd, or unknown) disables it.
+        ils = fact.input_load_itemsize
+        row_bytes = rnumel * ils
+        if (
+            num_sm > 0
+            and ils > 0
+            and fact.grid_rows > 0
+            and row_bytes <= cls.NARROW_W1_MAX_BYTES
+        ):
+            # grid_rows==0 means a dynamic/jagged M-grid: occupancy is unknown at compile
+            # time, so the lever DECLINES (an unknown occ must not assume the best-case low
+            # occ — that would wrongly fire w1 on a possibly-saturated grid).
+            # Cap the resident-pressure PRODUCT occ * row_bytes (a wider row saturates the SM
+            # latency-hiding at lower occupancy), so the safe occupancy ceiling scales down as
+            # the row grows: occ <= LIMIT // row_bytes.
+            occ = fact.grid_rows // num_sm
+            if occ * row_bytes <= cls.NARROW_W1_OCC_BYTE_LIMIT:
+                return 1
         # >16384 (not >=) so sum's widest in-sample row (16384) stays w16, excluding the
         # tiny-rnumel w32 regression.
         warps32_min_elems = 16384
-        rnumel = fact.size_hint
         if rnumel > warps32_min_elems:
+            # Reduction-bound (re-read, scalar output) wide rows want fewer warps; the byte cap
+            # caps the resident-row footprint (so wide fp32, 4 B/elem, hits it sooner than bf16)
+            # and full-width/non-reread kernels stay on the w32 default.
+            if (
+                fact.row_reread
+                and not fact.full_width_output
+                and rnumel * max(1, fact.itemsize) <= cls.REREAD_W8_MAX_BYTES
+            ):
+                return 8
+            # Band-B (2-D-tile streaming reduction: kl_div, jsd) at a wide half-precision row
+            # — same reduction-tree-overhead win, reached via a different structure. Gated on
+            # the input-load width so fp32 (heavier tiles, w32-optimal) is faithfully excluded.
+            if (
+                fact.num_carried_2d_tiles >= 1
+                and 0 < fact.input_load_itemsize <= cls.BANDB_W8_MAX_INPUT_ITEMSIZE
+            ):
+                return 8
             return 32
         if rnumel <= 1024:
             return 4
@@ -403,9 +551,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
 
         # Per-row valid bytes below which the loop tile stays persistent at next_pow2(N).
         persist_max_bytes = 12288
-        # Looped chunk (bytes) above that threshold. Do NOT raise without re-gating:
-        # 4096 is a regression valley at the large-M / N~5120 class.
+        # Looped chunk (bytes) above that threshold — the FLOOR of the widened chunk below.
+        # Do NOT lower without re-gating: a 4096-elem chunk is a ~6x regression valley at the
+        # large-M / N~5120 welford class (M_BLOCK=16).
         loop_chunk_bytes = 8192
+        # Half-precision wide looped rows afford a WIDER normalize chunk (M-aware, raise-only).
+        # Keyed on input_load_itemsize<=2 (the bf16/fp16 HBM-load width — the SAME dtype-faithful
+        # workload signal the w8/narrow-warp levers use, NOT a dtype-kind branch). At fp32
+        # (input_load_itemsize 4) the normalize-tile optimum is NON-MONOTONIC in width (measured:
+        # helps N~16k, regresses N~20k), so it is not faithfully width-keyable and is left at the
+        # floor for the autotuner to refine. The footprint is M_BLOCK*chunk*itemsize, so the
+        # budget divides by M_BLOCK (huge-M keeps the floor — the 7.3x valley is untouched), and
+        # it only fires when the row spans >= 2 widened chunks (np2_n > raised), so a row that
+        # would collapse to a single persistent chunk stays at the floor. CUDA-graph-validated:
+        # welford+groupnorm bf16/fp16 small-M wide-N -2 to -20%, zero welford regression.
+        normalize_prog_bytes = 16384
 
         loop_block: int | None = None
         if non_reduction_loop_ids:
@@ -423,6 +583,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     loop_block = np2_n
                 else:
                     loop_chunk_elems = max(1, loop_chunk_bytes // itemsize)
+                    if 0 < fact.input_load_itemsize <= 2:
+                        m_block = 1
+                        for mbid in fact.m_block_ids:
+                            m_idx = spec.block_sizes.block_id_to_index(mbid)
+                            m_block *= cls._block_floor(
+                                cast("BlockSizeSpec", spec.block_sizes[m_idx])
+                            )
+                        raised = max(
+                            1, normalize_prog_bytes // max(1, m_block) // itemsize
+                        )
+                        # Only widen when the row spans >= 2 widened chunks (else a wide
+                        # chunk just collapses the loop to one persistent pass, which is slower
+                        # for these half-precision rows — measured at np2_n == raised).
+                        if np2_n > raised:
+                            loop_chunk_elems = max(loop_chunk_elems, raised)
                     loop_block = min(np2_n, _np2(loop_chunk_elems))
 
         red_idx = (
@@ -486,18 +661,45 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         tighter), so only rms_norm/layer_norm/softmax/cross_entropy/welford are steered.
         """
         from ..._utils import next_power_of_2 as _np2
+        from ...runtime import get_num_sm
 
-        # Persistent iff BOTH: the element cap (None => no cap, a compile limit) AND the
-        # byte ceiling (a residency limit) — distinct limits.
+        # Persistent iff ALL of: the element cap (None => no cap, a compile limit), the byte
+        # ceiling (a residency limit), AND — for a FULL-WIDTH-output row — a per-row ELEMENT
+        # ceiling (a distinct spill limit). These are independent.
+        #
+        # The byte ceiling (``size_hint * itemsize``) keys on the HBM re-read footprint and is
+        # correct for a SCALAR-output re-read row (cross_entropy holds only a per-row scalar
+        # accumulator, so its residency is read-bound and it persists fine well past a 240 KB
+        # input row — measured: CE bf16 N~98304 persistent is ~40% FASTER than looped). But a
+        # FULL-WIDTH-output row (layer_norm/softmax/welford/log_softmax store the whole [M, N]
+        # row) holds the fp32-promoted row tile resident to feed the store, so it spills at a
+        # row WIDTH (element count), independent of the input dtype — the persist-vs-loop
+        # crossover is faithfully ELEMENT-keyed (~80k elems, measured monotonic across bf16 +
+        # fp32), NOT input-byte-keyed. The byte cap alone undercounts a half-precision full-width
+        # T1 row (itemsize 2) 2x: log_softmax bf16 at N~98304 had a 196 KB *input* row under the
+        # 240 KB byte cap, so it persisted — but its fp32 resident tile is ~384 KB and spilled
+        # ~16x (2.4x slower than the looped oracle). So a full-width row also caps at
+        # ``FULL_WIDTH_PERSIST_MAX_ELEMS`` elements. Gated on ``full_width_output`` so the scalar
+        # re-read kernels are untouched; every existing full-width kernel reduces ``x.to(fp32)``
+        # and tops out at N=16384 (rms/ln/welford) or already loops (softmax T2 at N>61440), so
+        # this is a no-op for the 9 and steers only the half-precision full-width T1 rows
+        # (log_softmax) onto the looped path the oracle confirms is up to 2.4x faster there.
         element_cap = env.backend.max_tensor_numel
-        can_persist = (element_cap is None or fact.size_hint <= element_cap) and (
-            fact.size_hint * max(1, fact.itemsize) <= cls.ROW_PERSIST_MAX_BYTES
+        can_persist = (
+            (element_cap is None or fact.size_hint <= element_cap)
+            and (fact.size_hint * max(1, fact.itemsize) <= cls.ROW_PERSIST_MAX_BYTES)
+            and (
+                not fact.full_width_output
+                or fact.size_hint <= cls.FULL_WIDTH_PERSIST_MAX_ELEMS
+            )
         )
 
         if can_persist:
+            # num_sm feeds the occupancy-gated narrow-row w1 branch in _num_warps.
+            num_sm = max(1, get_num_sm(env.device))
             # Persistent: T1 encodes the extent as reduction_loops=None; T2 as the full
             # pow2 R_BLOCK so the inner `for tile_n` runs once.
-            return True, _np2(fact.size_hint), cls._num_warps(fact)
+            return True, _np2(fact.size_hint), cls._num_warps(fact, num_sm)
         # Looped: exceeds the 2**20 or byte cap. Fixed chunk + high streaming warps.
         return False, cls.LOOPED_CHUNK, cls.LOOPED_NUM_WARPS
 
@@ -598,6 +800,14 @@ class TritonReductionTileHeuristic(_TritonReductionSeedBase):
         # few-long-rows class (cross_entropy at large V) and is NOT generalized — it beats
         # 'flat' there, but the sm_mult formula and maxnreg=64 are unvalidated beyond it;
         # re-validate them before relying on it elsewhere.
+        # The win is GRID-TAIL QUANTIZATION (ncu-confirmed): num_sm_multiplier rounds a ragged
+        # final wave to whole even waves, which only pays off at low occupancy. WS1 measured a
+        # regression at high occupancy (CE bf16 V=131072 +18-22% at >=46 waves) — but an
+        # occupancy gate to fix it is NOT yet safe: the interleaved-vs-flat crossover is
+        # DTYPE-dependent (at 62 waves CE bf16/fp16 prefer flat by ~1.5-2.6% but CE fp32 prefers
+        # interleaved by ~24%), so a flat wave threshold regresses fp32. The faithful fix needs a
+        # dtype/footprint-aware boundary (occ * row_bytes, via input_load_itemsize) — deferred to
+        # WS2; the regression is off the WS1 curriculum (V=131072 large-M is not a CE shape).
         # ~one resident program per row + a register cap to hide the re-read latency;
         # num_sm_multiplier sizes the grid to the row count.
         if fact.row_reread and not persistent:
@@ -673,15 +883,30 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
             )
             r_block = min(r_block, _np2(max(1, cap)))
         elif non_reduction_loop_ids:
-            # Band C (welford): the combine is a serial scalar recurrence that prefers
-            # persistent, so cap its tile by the spill-safe budget; normalize tile(s) are
-            # widened separately in _build_block_sizes.
+            # Band C (welford, groupnorm): the combine is a serial scalar recurrence that
+            # prefers persistent, so cap its tile; normalize tile(s) are widened separately
+            # in _build_block_sizes.
             #
-            # TODO(reductions): these per-N caps are a PROXY — the real spill driver is
-            # the coupled M_BLOCK * tile * itemsize, so the principled seed is
-            # block-M-aware. Do NOT LOOSEN without a full-M-range A/B: raising the
-            # normalize cap (2048->4096) once regressed welford(262144,5120) ~7.3x.
-            cap = cls.STRUCTURED_COMBINE_CAP_BYTES // max(1, fact.itemsize)
+            # The cap is M_BLOCK-AWARE: the spill driver is the per-program combine
+            # footprint ``M_BLOCK * tile * itemsize`` (one [M_BLOCK]-wide scalar per
+            # combine stat), so the byte budget is divided by M_BLOCK. A small M_BLOCK
+            # (small-M wide-N) affords a WIDER combine tile (fewer combine trips); a raised
+            # M_BLOCK (huge-M) keeps the narrow validated floor. Raise-only via max(floor,
+            # budget // M_BLOCK), so huge-M is byte-identical to before (the
+            # welford(262144,5120) 7.3x valley is untouched). M_BLOCK is the seed's floored
+            # block_sizes[0] (= the raised autotuner_min), known here before _build_block_sizes.
+            itemsize = max(1, fact.itemsize)
+            m_block = 1
+            for mbid in fact.m_block_ids:
+                m_idx = spec.block_sizes.block_id_to_index(mbid)
+                m_block *= cls._block_floor(
+                    cast("BlockSizeSpec", spec.block_sizes[m_idx])
+                )
+            floor_elems = cls.STRUCTURED_COMBINE_CAP_BYTES // itemsize
+            budget_elems = (
+                cls.STRUCTURED_COMBINE_PROG_BYTES // max(1, m_block) // itemsize
+            )
+            cap = max(floor_elems, budget_elems)
             r_block = min(r_block, _np2(max(1, cap)))
 
         seed: dict[str, Any] = {
