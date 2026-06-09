@@ -4102,6 +4102,36 @@
           "val_geo": 1.107
         },
         "verdict": "bf16 val + fp32 FAIL bar driven by CATASTROPHIC outliers (G=0.39 at (2048,98304)) at wide-N LOOPED full-width shapes. fp16 milder (no NaN, no acc_excluded)."
+      },
+      "l2_norm": {
+        "bf16": {
+          "train": 1.103,
+          "val": 1.129
+        },
+        "fp32": {
+          "train": 1.033,
+          "val": 1.033
+        },
+        "fp16": {
+          "train": 1.097,
+          "val": 1.127
+        },
+        "verdict": "CLEARS bar all 3 dtypes. ROW_PERSIST byte-boundary on streamed single-load (num_load==1) generalizes; no fix. 1 minor loser (16384,1024) within geomean."
+      },
+      "argmax": {
+        "bf16": {
+          "train": 1.029,
+          "val": 1.019
+        },
+        "fp32": {
+          "train": 1.008,
+          "val": 0.988
+        },
+        "fp16": {
+          "train": 1.024,
+          "val": 1.019
+        },
+        "verdict": "TIE-to-WIN with tc (geomean ~0.99-1.03). int64 exact-index acc path PASSES (any_acc_fail=false all dtypes). _num_warps element ramp generalizes to op-variety integer reduction. fp32 val 0.99 = tie (within noise). Losers at extreme-vocab/tiny-N (warp ramp trails tc there) but geomean clears. No fix (coverage probe, bounded)."
       }
     },
     "lever_verdicts": {
@@ -4128,6 +4158,16 @@
       "lever4_persist_cap_element_vs_byte": {
         "status": "NEW \u2014 surfaced by hunt, in progress",
         "finding": "ROW_PERSIST_MAX_BYTES is byte-keyed but the persist-vs-loop crossover is ELEMENT-keyed (~76-84K elems, monotonic). For full_width_output rows the persistent next_pow2(N) tile + full-width store spills; byte cap (bf16 122880 elem) too loose -> log_softmax (2048,98304) persists & spills 16x (2.4x vs oracle). Fix: element/full-width-aware persist cap."
+      },
+      "lever4_full_width_persist_cap": {
+        "verdict": "OVERFIT (byte-keyed persist cap) -> FAITHFULLY FIXED (element/full_width-keyed, cap at measured SMEM-spill crossover)",
+        "fix": "FULL_WIDTH_PERSIST_MAX_ELEMS=81920 (320KiB fp32 resident ~ H100 228KiB SMEM spill boundary), gated on full_width_output. Forces wide half-precision full-width T1 rows (log_softmax) to loop instead of catastrophically persisting.",
+        "gates": "Gate A 2/3 PASS; lone refuter correctly flagged 65536<true-crossover -> RAISED to 81920 (the measured stable boundary). Now faithful (no curriculum shape in the honored (65536,81920] band).",
+        "result": "log_softmax bf16 val 0.89->1.18, fp16 1.11->1.19. CE + the 9 byte-identical (behavior oracle).",
+        "no_regression": "behavior oracle: only welford(lever-2) changes; full-width 9 (itemsize=4, byte cap 61440<81920 so element cap never binds) + CE (full_width=False, clause tautological) byte-identical."
+      },
+      "coverage_l2norm_argmax": {
+        "verdict": "GENERALIZE (no fix). l2_norm: ROW_PERSIST streamed boundary clean. argmax: warp ramp + int64 acc path work, tie-to-win tc."
       }
     },
     "gate_verdicts": [
@@ -4220,6 +4260,12 @@
         "pass_consensus": "log_softmax bf16 (2048,98304) persist=1100us->loop=466us=2.36x win (OLD reconstructed by disabling cap BEFORE bind); fp16 1.23x. CE byte-IDENTICAL (full_width=False makes the clause a tautology) + CE persist genuinely faster (N=98304 1.48x, N=50257 6.8x) so keeping CE persistent is correct. The 9 byte-identical.",
         "refuter_a8e538": "Axis-4 faithfulness: 65536 is closer to a curriculum value than the true ~84k cliff. Dense sweep shows the crossover is NOISY/non-monotonic in the 69632-81920 band (N=73728 persist +37%, 77824 loop +65%, 81920 persist +2.6%) but DECISIVELY loop from 86016+ (1.58-4.13x). My cap=65536 is BELOW the noisy band, so it is conservative-safe: never loops a decisive-persist shape (worst 81920 +2.6%, NOT in curriculum); curriculum log_softmax wide N in {65536(persist),98304,131072,128256,114688(loop)} all correct.",
         "action": "Strengthen the constant justification: 65536 elem x 4B(fp32 resident) = 256KB ~ H100 228KB SMEM spill boundary (hardware, not curriculum). Consider whether the value should be the measured cliff. GateD pending."
+      },
+      {
+        "gate": "D",
+        "lever": "lever4",
+        "sha": "6802bf60",
+        "note": "GateD ran on cap=65536; the value was then raised to 81920 per Gate-A refuter. See lever4 final."
       }
     ],
     "results": {

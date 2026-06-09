@@ -15,11 +15,11 @@ Each verified to fire its intended heuristic branch (facts dumped). Wired into
 ## Initial untuned transfer perf (the overfit-generalization signal) — seed-vs-tc geomean
 | sibling | bf16 (tr/val) | fp32 (tr/val) | fp16 (tr/val) | initial verdict |
 |---|---|---|---|---|
-| logsumexp | 1.21 / 1.29 | 1.18 / 1.16 | 1.23 / ~1.23 | CLEARS bar out of the gate (no climb) |
-| groupnorm | 0.96 / **0.78** | 1.02 / 1.05 | 0.95 / 0.89 | **FAILS bar (overfit signal)** → climbed |
-| log_softmax | (pending) | (pending) | (pending) | — |
-| l2_norm | (pending) | (pending) | (pending) | — |
-| argmax | (pending) | (pending) | (pending) | — |
+| logsumexp | 1.21 / 1.29 | 1.18 / 1.16 | 1.23 / ~1.23 | CLEARS out of the gate (no climb) — lever 1 generalizes |
+| groupnorm | 0.96 / **0.78** | 1.02 / 1.05 | 0.95 / 0.89 | **FAILED (overfit signal)** → climbed → after fix **1.12/1.10, 1.04/1.08, 1.11/1.08** (clears) |
+| log_softmax | 1.02 / **0.89** | 0.90 / 0.96 | 1.08 / 1.11 | **FAILED (overfit signal)** → lever-4 fix → bf16 val **1.18**, fp16 **1.19** (clears); fp32 ~oracle-bound |
+| l2_norm | 1.10 / 1.13 | 1.03 / 1.03 | 1.10 / 1.13 | CLEARS all dtypes (no climb) — ROW_PERSIST streamed boundary generalizes |
+| argmax | 1.03 / 1.02 | 1.01 / 0.99 | 1.02 / 1.02 | TIE-to-WIN tc (no climb); int64 exact-index acc path works; warp ramp generalizes |
 
 ## Per-lever verdicts (the primary deliverable)
 
