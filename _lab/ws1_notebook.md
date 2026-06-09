@@ -39,7 +39,20 @@ Stretch: row_max/row_mean (only after core + verdicts banked).
   grid_rows (M-grid product → occupancy = grid_rows//num_sm).
 
 ## Per-shape / per-lever status
-(table appended as work proceeds)
+
+### LEVER 1 — REREAD_W8 / w8 branch — VERDICT: GENERALIZES (pending Gate A + D)
+logsumexp initial transfer (seed-vs-tc, CUDA-graph geomean, all CLEAR done-bar out of the gate):
+| dtype | train geo | val geo | losers |
+|---|---|---|---|
+| bf16 | 1.213 | 1.293 | [2048,151936] (huge, not w8 window) |
+| fp32 | 1.178 | 1.158 | [8192,24576] train only |
+| fp16 | 1.234 | ~1.23 | none |
+→ logsumexp DONE out of the gate (no climb). The w8 lever GENERALIZES — matched A/B (revert
+num_warps 8→32 from seed): logsumexp bf16 w8 beats w32 by **+4.5–47.7%** at V∈{24576,32000,40960,49152,50257}.
+CE control: w8 beats w32 +48.8/56.8%. fp32 byte-cap boundary EXACT: V=24576 fp32 (98304≤102400)→w8 +5.4%;
+V=32000 fp32 (128000>cap)→w32 (correctly not fired); V=16384 fp32→w16 (ramp, rnumel not >16384).
+NOT a CE-identity fence — fires on row_reread AND not full_width_output AND byte-cap; benefit transfers
+to logsumexp (no target gather). NEXT: Gate A (adversarial verify) + Gate D (divergence test on the facts).
 
 ## Tried-and-rejected (first-class data)
 (none yet)
