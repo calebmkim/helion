@@ -72,8 +72,29 @@ bf16 1.02/0.89, fp32 0.90/0.96, fp16 1.08/1.11 (wide-N losers).
   (bf16: N=16384 loop −44%, 24576–49152 persist +45–135%, 65536 loop −18%, 81920 persist +175%, 98304
   loop −79%) — **no faithful constant separates good/bad persist; any cap would be curriculum-fit** (the
   exact overfit being hunted). **Flagged, not chased:** the wide-full-width-looped regime is genuinely
-  hard for a single static *seed* and is correctly left to the autotuner (the oracle loops these and
-  beats tc). This is a seed-coverage limit, not a heuristic overfit.
+  hard for a single static *seed*. **[CORRECTED — see Lever 4.]**
+- **Gate A (3 skeptics) MAJORITY-REFUTED my first lever-3 verdict** on two counts, both correct: (1) my
+  "the persist crossover is non-monotonic / unkeyable" claim was a **GPU-contention artifact in my own
+  sweep** — on an idle GPU the crossover is **monotonic and element-keyed** (~80k elems); (2) the lever
+  is shape-dependent even on CE (regresses CE bf16 V=131072). **Gate F PASSED** the lever's mechanism:
+  persistent_interleaved helps via **grid-tail quantization** (rounds the grid to 132×N even waves vs
+  flat's ragged tail), not register-occupancy (store is chunked, maxnreg harmless) — so the lever
+  **generalizes** (kept). But the refutation surfaced the real fix → **Lever 4**.
+
+### Lever 4 — full-width-output persist cap (NEW; surfaced by the lever-3 adversarial hunt)
+**VERDICT: OVERFIT → FAITHFULLY FIXED** (`FULL_WIDTH_PERSIST_MAX_ELEMS=65536`, element-keyed, full_width-gated).
+- The persist decision used `size_hint × itemsize ≤ ROW_PERSIST_MAX_BYTES` (an HBM-input-byte cap). For a
+  **full-width-output** row the persistent pass holds the **fp32-promoted** row tile resident to feed the
+  store, so it spills at a row **WIDTH (elements)**, not input bytes. The byte cap undercounts a
+  half-precision full-width T1 row 2× → log_softmax bf16 N≈98304 persisted a 196 KB input row (fp32
+  resident 384 KB), spilling ~16× (2.4× slower than the looped oracle).
+- **Fix:** a full-width row also caps persist at 65536 elements (just below the measured ~80k crossover,
+  monotonic across bf16+fp32). **Gated on `full_width_output`** → scalar re-read rows (cross_entropy)
+  keep the byte cap and persist far past it (CE bf16 N≤98304 persist is ~40% faster than loop — kept
+  byte-identical, verified). The existing full-width 9 (rms/ln/softmax/welford) reduce `x.to(fp32)`
+  (itemsize 4) and top out at N=16384 or already loop → byte-identical (behavior oracle confirmed).
+- **Result:** log_softmax bf16 val 0.89→**1.18**, fp16 1.11→**1.19** (clears tc). Surgical: only the
+  half-precision full-width T1 sibling (log_softmax) is steered; the 9 + CE unchanged.
 
 ## Overfit hunt (beyond the named suspects)
 - Gate-E periodic audit (during-climb): no curriculum fence found; new constants (262144, 16384) are
