@@ -3435,6 +3435,17 @@
         "midN_ceiling": "Within every byte sub-band x occ bucket, best_num_warps is KERNEL-DIVERGENT (byte(2048,4096] occ62: {w1:8,w2:8,w4:5,w8:3} \u2014 no mode; rms fp32 wants w8 at low occ while softmax wants w1). No faithful fact separates them (converged in byte/occ/row_reread space, diverge in behavior). EVERY candidate mid-N rule has a cell >5% (worst +21.8%). This is the multi-dim ceiling the orig D4 assessment predicted beyond narrow-N. Anti-giving-up: ran fresh full vs-cell-best sweep (warmup-hardened), no clean rule exists -> legit stop for the GENERAL mid-N w4 rule.",
         "salvage": "Raising NARROW_W1_MAX_BYTES 2048->2560 (keep occ<=512//ils): 34 new cells ALL kernels x bf16/fp32, worst +2.9% vs best, ZERO >5%. Wins: softmax bf16 +59-85%, welford +35-65%, ln +13-28%, sum +17-29%. Clean because at byte<=2560 even sum/rms want w1/w2 (the +11.8% sum regression that killed mid-N was at byte4096+ w4). Implement + re-gate.",
         "lesson": "validated vs CELL-BEST this time (the killed rule's error). The mid-N WIN was real but only the narrow slice (byte<=2560) is gate-clean; w4 at byte 4096-10240 is kernel-divergent."
+      },
+      {
+        "gate": "D4_corner_fix_byte_scaled_occ_cap",
+        "sha": "d1e2f2b4",
+        "verdict": "VALIDATED \u2014 byte-scaled occ cap (occ*row_bytes<=262144) fixes the byte~2048 corner AND is safe at the tiny-row/high-occ end.",
+        "corner_fixed": "softmax bf16 (32768,1024) occ248/256 +18-30% landmine + in-curric layer_norm/sum (32768,1024) +2.5% -> now w4 (occ*byte=507904>262144, excluded).",
+        "new_firing_safe": "softmax (131072,128) bf16/fp16 occ992 byte256 -> w1 NEWLY fires (occ*byte=253952<=262144), MEASURED +1.0% vs best = safe win/tie. This is a TEST-split curriculum shape, verified directly.",
+        "tiny_row_cliff_excluded": "softmax (262144,128) occ1985 [+12%], (131072,256) occ992 [+13.7%], (262144,256) occ1985 [+49.9%] ALL have occ*byte>262144 -> rule does NOT fire w1 (gets ramp). The product cap stays below the ~250-500K occ*byte cliff for ALL byte sizes \u2014 the resident-pressure mechanism holds.",
+        "mechanism": "The cliff is at a roughly CONSTANT occ*row_bytes product (resident pressure across waves), so a single product cap (262144=256KiB) is faithful across the whole narrow byte range \u2014 better than the flat occ cap that ignored row width.",
+        "worst_fired_reg": "+4.7% (one layer_norm byte2048 occ124 cell, bounded principled upper-edge trade). All other fired cells <=+2.3% (swept data) / +1.0% (the new high-occ firing).",
+        "tests": "20 heuristic pass, lint clean. config-diff vs flat-cap: 6 cells (4 corner-fix + 2 new-win), no other changes."
       }
     ],
     "results": [
