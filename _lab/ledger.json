@@ -4134,6 +4134,26 @@
         "finding": "NO strong curriculum overfit. New constants STRUCTURED_COMBINE_PROG_BYTES=262144 (=256KiB SM scale, matches NARROW_W1_OCC_BYTE_LIMIT) + normalize 16384 are hardware-aligned per-program footprint budgets, not curriculum values. input_load_itemsize<=2 is a faithful HBM-load-width gate not dtype-kind. WS1 sibling splits are interpolation-fair (every val/test N-band covered by train).",
         "flagged_divergence_tests": "(1) normalize gate fires on fp16 too \u2014 CONFIRM fp16 covered (it is: isolated sweep tested fp16 8192x8192 -5.1%, 8192x12288 -10.6% faster; groupnorm fp16 1.11/1.08 clears). (2) edge-N normalize threshold N in [9000-11000] (non-pow2, minor). (3) REREAD_W8 V=51200 edge \u2014 already swept by lever-1 GateD (mechanism-driven).",
         "verdict": "PASS (no fence; minor edge divergence tests queued, low risk)"
+      },
+      {
+        "gate": "A",
+        "lever": "lever2_band_c_caps",
+        "sha": "338b6ec6",
+        "n_skeptics": 3,
+        "results": "2 PASS, 1 REFUTE",
+        "majority_refute": false,
+        "skeptic_pass_1": "adf04e: PASS. groupnorm beats tc all 3 dtypes (bf16 1.11/1.08, held-out test 1.18); welford all 23 changed configs worst +0.66%. EXPLICITLY caught the +110% as a batched-process artifact (isolated=-1.78%).",
+        "skeptic_pass_2": "a782008: PASS. groupnorm bf16 1.106/1.079 test 1.174 etc all>1.0; welford no-regression; caught batched 65536x16384 +48% as contention artifact (isolated 0.986/0.994).",
+        "skeptic_refute": "a06128: REFUTED claiming normalize widen regresses welford +15-51%. ADJUDICATION: this is a SELF-INFLICTED measurement bug \u2014 it did NOT run the isolated re-bench the claim disclosed as mandatory, so its +50% are batched-process/warmup artifacts. REFUTED BY: (1) my isolated both-orderings re-bench of its exact contested shapes (8192,6144)=-1.6/-1.8%, (8192,5120)=-1.0/-0.7%, (512,8192)=-3.3%, (8192,8192)=-4.8% NEW FASTER; (2) plain do_bench (8192,6144) NEW 80.7us < OLD 82.14us; (3) the other 2 skeptics independently caught the same artifact class. A +50% slowdown from doubling a normalize tile on a mem-bound kernel is physically implausible.",
+        "verdict": "NOT majority-refuted (2/3 confirm + GateD faithful + my quadruple-confirmed evidence). Lone refuter ran a buggy harness. LEVER-2 FIX CONFIRMED."
+      },
+      {
+        "gate": "D",
+        "lever": "lever2_band_c_caps",
+        "sha": "338b6ec6",
+        "refuted": false,
+        "finding": "BOTH keys FAITHFUL. M_BLOCK is DEVICE-derived (size_hint//ceil((n_cus*64)^(1/ndims)), n_cus=132 H100), NOT a curriculum constant. 262144 budget holds per-program footprint PINNED at 256KiB across M=8..131072 (combine 65536->16384->8192 as M_BLOCK 1->4->8) \u2014 a byte ceiling not an N-fence. input_load_itemsize<=2 faithful HBM-width gate; fp32 exclusion confirmed (fp32 normalize-width measurably non-monotonic). Divergence cases constructed.",
+        "verdict": "FAITHFUL"
       }
     ],
     "results": {

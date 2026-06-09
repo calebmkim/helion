@@ -357,9 +357,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # byte budget DIVIDED by M_BLOCK, but never BELOW the validated floor above (raise-only,
     # so huge-M is byte-for-byte unchanged — the welford(262144,5120) 7.3x valley is
     # untouched). 256 KiB matches the resident-pressure scale of NARROW_W1_OCC_BYTE_LIMIT;
-    # it is a hardware footprint ceiling, not a curriculum value. CUDA-graph-validated: at
-    # M_BLOCK=1 wide-N, welford +1-11% and groupnorm +1-16.5%; at M_BLOCK>=4 the tile is
-    # unchanged (welford huge-M zero-regression).
+    # it is a hardware footprint ceiling, not a curriculum value. The combine tile shrinks
+    # 65536->16384->8192 as M_BLOCK grows 1->4->8 (footprint pinned at 256 KiB), reaching the
+    # 8192-elem floor at M_BLOCK>=8 (huge-M, where it is byte-identical to the old flat cap).
+    # CUDA-graph-validated: at M_BLOCK=1 wide-N, welford +1-11% and groupnorm +1-16.5%; the
+    # M_BLOCK=4/8 transition tiles are flat-to-faster; welford huge-M (M_BLOCK>=16) zero-regression.
     STRUCTURED_COMBINE_PROG_BYTES = 262144
 
     # A wide half-precision REDUCTION-BOUND row (re-read for multiple reductions, no

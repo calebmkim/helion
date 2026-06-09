@@ -52,6 +52,13 @@ Each verified to fire its intended heuristic branch (facts dumped). Wired into
   *improves* the family-of-one too.
 - **Rejected en route (logged):** a flat normalize widen (2048→4096 for all) regressed welford fp32
   mid-N +5–10% — the dtype-faithful gate (`input_load_itemsize≤2`) was the fix.
+- **GATES: Gate A 2/3 PASS (not majority-refuted), Gate D PASS (faithful).** The lone refuter ran a
+  *batched-process* harness that produced phantom +15–51% welford "regressions"; the other two
+  skeptics independently identified it as a contention artifact (their isolated re-bench: -1.8% to
+  -13%), one validated the OLD-config reconstruction against the true parent commit, and my own
+  quadruple-confirmed re-bench (isolated CUDA-graph both-orderings + plain do_bench) shows NEW
+  faster-or-flat. Gate D: M_BLOCK is device-derived (n_cus=132), the 262144 budget pins per-program
+  footprint at 256 KiB (not an N-fence), `input_load_itemsize` is a faithful HBM-load-width gate.
 
 ### Lever 3 — persistent_interleaved + maxnreg=64 (T1 tail; family-of-one: cross_entropy)
 (pending — log_softmax full-width looped probe)
