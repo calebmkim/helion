@@ -7,7 +7,27 @@ authoritative manual is `_lab/prompts/{hillclimb-method,local-setup,gate-prompts
 Source of truth (method §6.1): THIS notebook + `_lab/ledger.json` key `dtype`. Trust the log
 over context. Wins AND rejections recorded as one-liners with evidence pointers.
 
-## ⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-08, D4 BUILD session) — READ FIRST
+## ⟹⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-09, mid-N session) — READ FIRST
+**STATE: D4 narrow-N w1 SHIPPED + gate-confirmed (intact). Mid-N w4 BUILT then KILLED by Gate A 3/3,
+REVERTED @ `88ac87e4`. Branch tip is the solid D4-only state + lab notes. Rebuilding mid-N correctly.**
+
+### MID-N w4: KILLED + REVERTED (the gate worked) — KEY LESSON
+Built mid-N w4 (byte(2048,10240]->w4, occ<=448//ils). Gate A KILLED 3/3. Real findings (ledger
+`midN_A_adversarial_verify`):
+  - byte(2048,4096] (bf16 N=1280-2048) wants **w2 NOT w4** (softmax bf16 (8192,2560) w4 +4.8% vs best w2).
+  - **sum** is warp-INSENSITIVE (single-load num_load==1); w4 regresses it +11.8% vs its best w2 → MUST exclude.
+  - layer_norm bf16 (8192,4096) w4 −2% vs prior w8 (small LOSS); softmax fp32 (8192,2560) −2.6%.
+**MY METHODOLOGICAL ERROR (the lesson):** I validated w4 vs the RAMP (w16), reported "worst −2.0%", but the
+correct bar is w4 vs the CELL-BEST. w2 beats w4 by 3-12% in the lower sub-band, and the ramp's actual pick
+for rnumel<=4096 is w8 (not w16) so some "wins vs w16" were ties/losses vs w8. ALWAYS A/B vs cell-best (the
+oracle answer key), never vs the thing you're replacing. Also: COLD-LAUNCH noise nearly gave a false +98%
+(welford 173us cold vs 60us stable) — warm up >=10x + run-twice-discard-first.
+Cliff exclusion + fact faithfulness were CONFIRMED by all 3 skeptics (mechanism is sound; the rule SHAPE
+was wrong). REBUILD (running /tmp/midN_rebuild.json, vs-cell-best, warmup-hardened): byte sub-band split
+(2048,4096]->w2 / (4096,10240]->w4, EXCLUDE single-load (sum), re-validate vs best, re-gate. The mid-N win
+is REAL (softmax +22-32% confirmed) — just needs the correct multi-step shape.
+
+## ⟹⟹⟹ FRESH-CONTEXT RESUME (2026-06-08, D4 BUILD session)
 **Human asked to BUILD D4 (deferred narrow-N occupancy win) — DONE, GATE-CONFIRMED, BANKED.**
 Branch `reduction-pr-with-lab` tip ~`e70e0a79`. D4 = SHIPPED WIN #3. Commits:
 `3408c4f5` D4 code → `7b9f476d` notebook → `f1869309` gate verdicts → `d666933e` report →

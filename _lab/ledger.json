@@ -3418,6 +3418,15 @@
         "track_correlation": "T1(rollable: rms/ln) = 1 HBM read = NO cliff (roller fuses reduce+apply). T2(user-tiled: softmax/welford) = 2 HBM reads = cliff-prone. The occ cap directly gates the ncu mechanism (stay below SM saturation where w4 can't hide latency) \u2014 it is MECHANISM-JUSTIFIED, not a fitted fence.",
         "decision": "Ship the occ+byte-cap mid-N w4 rule (occ cap is the principled lever). T1/T2 refinement (extend welford to occ~993, +9%) documented as low-value future work \u2014 softmax (the big win) MUST stay capped regardless.",
         "artifacts": "/tmp/cliff_mechanism_final.json, /tmp/ncu_*.txt, /tmp/structural_analysis.txt"
+      },
+      {
+        "gate": "midN_A_adversarial_verify",
+        "sha": "093ff835",
+        "verdict": "KILLED 3/3 \u2014 mid-N w4 rule REVERTED. Gates worked.",
+        "real_findings": "(1) softmax bf16 (8192,2560) w4 is +3.9-4.8% vs best w2 (>3% bar) \u2014 the byte(2048,4096] sub-band wants w2 NOT w4 (already flagged in deferred pile). (2) sum bf16 (8192,2560) w4 +11.8% vs best w2 \u2014 real regression. (3) layer_norm bf16 (8192,4096) w4 -1.8/-2.0% vs prior w8 (small LOSS, not the claimed win). (4) softmax fp32 (8192,2560) w4 -2.6% vs prior w8.",
+        "my_error": "The coverage sweep compared w4 vs w16(ramp) and reported 'worst -2.0%' \u2014 but the CORRECT bar is w4 vs CELL-BEST. w2 beats w4 by >3-12% in the lower byte sub-band, and the ramp's actual pick for rnumel<=4096 is w8 (not w16), so some 'wins vs w16' were losses vs w8. Single-arm (vs-ramp) validation MISSED the vs-best regressions.",
+        "noise_note": "skeptic1's welford +98.6% was COLD-LAUNCH noise (173us cold vs 60us stable, +1.7% vs best on stable per skeptic3). Cliff exclusion + faithfulness CONFIRMED by all 3 (softmax bf16 N5120/8192 + fp32 N5120 correctly got w16; input_load_itemsize keying faithful, no identity smuggling). The kill is on the FIRED-ZONE sub-optimality (w4 where w2 wins), not the mechanism.",
+        "action": "REVERT mid-N w4 commit. REBUILD with the byte sub-band split: (2048,4096]->w2, (4096,10240]->w4, EXCLUDE sum (warp-insensitive, w4 regresses it +11.8%), re-validate vs CELL-BEST (not vs-ramp), re-gate. The mid-N WIN is real but the rule shape was wrong."
       }
     ],
     "results": [
@@ -3917,5 +3926,20 @@
       "tests": "20 autotuner-heuristic + 23 example pass, lint clean",
       "gate_kills": "4 warps proxies gate-killed before the faithful win -- gates worked"
     }
-  }
+  },
+  "skeptic_verdicts": [
+    {
+      "id": "skeptic3_midN_w4_093ff835",
+      "commit": "093ff835",
+      "claim": "mid-N num_warps=4 rule makes the seed FASTER on mid-width reductions at low/moderate occupancy (softmax bf16 (8192,2560)/(8192,3072) +12 to +59%, welford bf16 (16384,2560), layer_norm bf16 (8192,4096)) vs the prior ramp w8/w16, with NO fired-zone shape regressing more than ~3% vs its best num_warps, AND it does NOT fire on the cliff shapes",
+      "refuted": true,
+      "axis_that_failed": "NOISE and OVERFIT",
+      "raw_numbers": "softmax bf16 (8192,2560): shipped w4=32.62us, prior w8=43.18us, best w2=31.40us \u2192 +3.9% vs best (>3% threshold). layer_norm bf16 (8192,4096): shipped w4=48.58us, prior w8=47.69us \u2192 -1.8% vs prior (NO WIN, claimed gain regresses). welford bf16 (16384,2560): w4=60.70us, w8=64.91us, w2=59.67us \u2192 +1.7% vs best (PASS). softmax bf16 (8192,3072): w4=35.95us, w8=44.00us \u2192 +22.4% win (PASS). Held-out softmax bf16 (8192,3584): w4=42.33us, w8=45.77us \u2192 +8.1% win, +0.0% vs best (PASS). Cliff shapes: softmax bf16 (131072,5120) shipped w16, softmax bf16 (16384,8192) shipped w16, softmax fp32 (16384,5120) shipped w16 \u2014 all correctly did NOT fire w4 (PASS).",
+      "repro_command": "cd /tmp && PYTHONPATH=/home/dev/local/helion-pr-with-lab /home/dev/helion/.venv/bin/python refute_final.py",
+      "reasoning": "REFUTED on NOISE axis (fired-zone regression >3%) and implied NO-WIN axis. Commit 093ff835's mid-N w4 rule claims 'zero >3% regressions' in the fired zone, but softmax bf16 (8192,2560) \u2014 a CLAIMED GAIN shape \u2014 regresses 3.9% vs cell-best w2 (32.62us vs 31.40us), exceeding the 3% bar. The 32.4% speedup vs prior w8 is real, but the claim explicitly promised no >3% regression vs the cell-best. Additionally, layer_norm bf16 (8192,4096), another CLAIMED GAIN shape, does NOT win vs prior: w4=48.58us vs prior w8=47.69us = -1.8% regression, contradicting the claim's wins. The rule DOES correctly fire w4 on mid-N shapes, DOES correctly exclude cliff shapes (all got w16), and DOES generalize to held-out shapes. The mechanism is faithful (input_load_itemsize keying, no kernel-identity smuggling). But the fired-zone regression bar and the layer_norm win claim fail under CUDA-graph device time (CALLS_PER_GRAPH=50, REPS=21, median). Measurement protocol: multiple rounds (3x) with stable CUDA-graph device time eliminated first-run noise. H100 num_sm=132, foreground GPU, no source edits.",
+      "verdict": "CLAIM REFUTED: 2 violations (softmax bf16 (8192,2560) fired-zone regression 3.9% > 3%, layer_norm bf16 (8192,4096) NO WIN -1.8%)",
+      "date": "2026-06-09",
+      "measurement_artifact": "/tmp/refute_final.json"
+    }
+  ]
 }
