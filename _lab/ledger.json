@@ -4175,7 +4175,13 @@
         "evidence": "softmax (65536,512)->w2, (131072,512)->w4, (262144,512)->w8 (wants MORE warps as occ grows \u2014 occ cap correctly declines w1). argmax (65536,512)->w2, (131072,512)->w2, (262144,512)->w1 (wants FEWER warps even at extreme occ). OPPOSITE preferences at the SAME shape. The seed gives argmax w4 (NARROW_W1 declines via occ cap) at (65536,512) = +59% slow vs w2.",
         "faithful_property": "argmax reduction is compute-trivial (max+index compare, no fp32 accumulate, no exp/div) -> memory-bound, 1 warp saturates bandwidth even at high occupancy. softmax needs warps for the arithmetic. The faithful fact would be reduction-op arithmetic-weight (a NEW fact).",
         "scope": "Building a new reduction-fact family is OUT of WS1 scope (task). argmax is a coverage-probe sibling, not a perf target. So: BANK the overfit finding + the faithful separator, FLAG for WS2 (add a compute-weight fact so the warp levers stop overfitting to compute-heavy reductions). Do NOT widen the occ cap (would regress softmax, which correctly wants more warps at high occ \u2014 verified).",
-        "no_regression_note": "NOT touching the occ cap is the correct no-regression call: softmax/rms/welford (the 9) genuinely want the current occ-gated behavior (softmax (262144,512) wants w8). A blanket change would regress them."
+        "no_regression_note": "NOT touching the occ cap is the correct no-regression call: softmax/rms/welford (the 9) genuinely want the current occ-gated behavior (softmax (262144,512) wants w8). A blanket change would regress them.",
+        "divergence_test_row_max": {
+          "finding": "row_max (compute-trivial amax, NO index, NO fp32-accumulate) authored as a 2nd compute-trivial probe. At high-occ tiny-N (65536/131072/262144, 512) row_max WANTS w1 BUT w1\u2248w2\u2248w4 (40.5\u224840.6) \u2014 only w8 worse. So the SEED w4 is FINE for row_max (~0% off w1).",
+          "REFINES lever-5": "The clean compute-trivial->fewer-warps framing is PARTIALLY REFUTED: row_max w4 is fine, but argmax w4 is +59% vs w1 at the SAME (65536,512). Both are amax-based; the difference is the INDEX tracking (argmax) makes its w4 codegen much slower than row_max w4. So the argmax tiny-N loss is more ARGMAX-CODEGEN-specific (the index reduction at >1 warp), NOT a clean compute-weight warp-ramp overfit. row_max correctly takes the ramp and is fine.",
+          "revised_verdict": "The _num_warps ramp does NOT cleanly overfit to compute-heavy (row_max, compute-trivial, is fine on the ramp). The argmax-specific tiny-N w4 slowness is an argmax index-reduction codegen issue at >1 warp \u2014 a kernel/codegen finding, NOT a faithful heuristic-lever overfit. Downgraded from lever-overfit to argmax-codegen-observation. The honest separator (compute-trivial) did NOT survive the row_max divergence test.",
+          "acc": "row_max acc max_abs=0.0 (exact)."
+        }
       }
     },
     "gate_verdicts": [
