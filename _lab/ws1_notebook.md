@@ -107,6 +107,19 @@ the proper method) shows ALL are FASTER-or-FLAT: (65536,16384) -1.7%, (4096,1638
 timer (method §5), re-benched full verbatim configs in isolation → artifacts confirmed. Running full
 isolated no-regression sweep next.
 
+### LEVER 2 — FINAL VERDICT: OVERFIT → FAITHFULLY GENERALIZED (both sub-levers). Pending Gate A + D.
+Isolated no-regression sweep (24 changed welford shapes, fresh process each): ALL faster-or-flat,
+**0 regressions** (bf16/fp16 wide-N -8 to -12.6%, fp32 -1.8 to -2.2%, unchanged +0.0%).
+groupnorm after BOTH fixes CLEARS THE BAR all 3 dtypes:
+| dtype | initial | combine-only | BOTH FIXES |
+|---|---|---|---|
+| bf16 | 0.96/0.78 | 1.00/0.95 | **1.12/1.10** |
+| fp32 | 1.02/1.05 | 1.03/1.07 | **1.04/1.08** |
+| fp16 | 0.95/0.89 | ~1.0 | **1.11/1.08** |
+Both Band-C caps were M-unaware overfit (tuned at huge-M); fixed faithfully (M_BLOCK-aware footprint
++ input_load_itemsize for the dtype-dependent normalize optimum). The fix IMPROVES welford (the
+family-of-one) too. Commits a11d28fc (combine) + 6d7cf8cc (normalize). NEXT: Gate A + Gate D.
+
 ### LEVER 1 — REREAD_W8 / w8 branch — VERDICT: GENERALIZES (pending Gate A + D)
 logsumexp initial transfer (seed-vs-tc, CUDA-graph geomean, all CLEAR done-bar out of the gate):
 | dtype | train geo | val geo | losers |

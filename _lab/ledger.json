@@ -4080,7 +4080,13 @@
           "train_geo": 0.954,
           "val_geo": 0.888
         },
-        "verdict": "FAILS bar bf16/fp16, marginal fp32 -> OVERFIT SIGNAL. losers cluster wide-N small-M (M-unaware proxy regime). climb required."
+        "verdict": "FAILS bar bf16/fp16, marginal fp32 -> OVERFIT SIGNAL. losers cluster wide-N small-M (M-unaware proxy regime). climb required.",
+        "post_climb": {
+          "bf16": "1.10-1.12",
+          "fp32": "1.04-1.08",
+          "fp16": "1.08-1.11",
+          "status": "CLEARED after lever-2 fix"
+        }
       }
     },
     "lever_verdicts": {
@@ -4091,6 +4097,14 @@
         "sibling": "logsumexp",
         "done_bar": "CLEARED out of the gate (seed-vs-tc geomean bf16 1.21-1.46, fp32 ~1.31, fp16 1.23-1.43); no climb needed",
         "caveat": "report SEED-vs-tc (Product A configs=[seed]) not \"out of the gate default\"; fp32 (8192,24576) per-shape loss tc/seed=0.912 at fp32 w8 boundary (within geomean, noted)"
+      },
+      "lever2_combine_normalize_caps": {
+        "verdict": "OVERFIT -> FAITHFULLY GENERALIZED (both sub-levers)",
+        "combine_cap": "STRUCTURED_COMBINE_CAP was M-unaware (too tight at small M_BLOCK for the WHOLE Band-C family incl welford). Fixed: M-aware raise-only (STRUCTURED_COMBINE_PROG_BYTES=262144 // M_BLOCK, floor 8192). Helps welford+groupnorm small-M wide-N; huge-M valley untouched.",
+        "normalize_cap": "loop_chunk_bytes was also M-unaware. Fixed: M-aware width-gated widening to 4096, GATED on input_load_itemsize<=2 (faithful: bf16/fp16 monotonic; fp32 NON-MONOTONIC so left to autotuner). raise-only, np2(N)>raised guard.",
+        "sibling": "groupnorm",
+        "done_bar": "CLEARED all 3 dtypes after climb (bf16 1.10-1.12, fp32 1.04-1.08, fp16 1.08-1.11)",
+        "faithful_property": "per-program combine/normalize footprint = M_BLOCK*tile*itemsize (the code-TODO spill driver), + input_load_itemsize for the dtype-dependent normalize optimum"
       }
     },
     "gate_verdicts": [
@@ -4134,6 +4148,21 @@
         "finding": "remaining gap REACHABLE not ceiling. oracle beats seed 1.26-1.45x; oracle/tc 1.003-1.249 (oracle BEATS tc every shape). Answer-key field diff: combine tile (bs[1]) ALREADY matches oracle (32768) thanks to combine fix; the gap is the NORMALIZE tile (bs[2]) which seed keeps at 2048 but oracle wants 4096-8192 at small-M wide-N.",
         "rows": "bf16 (512,20480) s/o=1.38 oracle_bs=[1,32768,4096]; (1024,24576) 1.28 [1,32768,8192]; (512,32768) 1.33 [1,32768,8192]w32; (384,40960) 1.45 [1,16384,8192]; (768,20480) 1.26 [1,32768,8192]w32. fp16 similar.",
         "next_lever": "normalize-tile cap (loop_chunk_bytes=8192 -> tile 2048 fp32) is the SECOND M-unaware overfit sub-lever. Make M-aware (raise-only) like combine. TODO WARNS: flat 2048->4096 regressed welford(262144,5120) 7.3x -> MUST be M-aware."
+      },
+      "groupnorm_after_both_fixes": {
+        "bf16": {
+          "train_geo": 1.121,
+          "val_geo": 1.103
+        },
+        "fp32": {
+          "train_geo": 1.042,
+          "val_geo": 1.08
+        },
+        "fp16": {
+          "train_geo": 1.111,
+          "val_geo": 1.079
+        },
+        "verdict": "ALL 3 DTYPES CLEAR THE BAR (geomean beats tc). bf16 val 0.776(initial)->0.951(combine)->1.103(both)."
       }
     },
     "no_regression_checks": [
@@ -4143,6 +4172,12 @@
         "behavior_oracle": "only welford changed (18 wide-N configs 8192->16384); all huge-M (262144,*) byte-identical; other 8 kernels byte-identical",
         "welford_before_after_cudagraph": "15 changed shapes (train+val+robustness, 3 dtypes) ALL faster (-1.6 to -9.1%) or flat (+0.7% noise). 0 regressions >3%. NO-REGRESSION PASS",
         "note": "edit IMPROVES welford too at small-M wide-N (not just non-regressing). welford-vs-tc unchanged broadly (welford is pre-existing codegen-bound, not caused by edit)."
+      },
+      {
+        "edit": "dtype-faithful normalize cap (input_load_itemsize<=2, M-aware, width-gated)",
+        "sha": "6d7cf8cc",
+        "behavior_oracle": "only welford changed (30 configs); huge-M + other 8 byte-identical",
+        "welford_isolated_before_after": "24 changed shapes ALL faster-or-flat (bf16/fp16 wide-N -8 to -12.6%, mid-N -0.2 to -5.1%; fp32 combine-only -1.8 to -2.2%; unchanged shapes +0.0%). 0 regressions. ARTIFACT NOTE: batched script gave phantom +20-110% regressions; isolated re-bench (proper method) confirmed all OK."
       }
     ],
     "tried_rejected": [
