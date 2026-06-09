@@ -52,13 +52,35 @@ num_warps 8→32 from seed): logsumexp bf16 w8 beats w32 by **+4.5–47.7%** at 
 CE control: w8 beats w32 +48.8/56.8%. fp32 byte-cap boundary EXACT: V=24576 fp32 (98304≤102400)→w8 +5.4%;
 V=32000 fp32 (128000>cap)→w32 (correctly not fired); V=16384 fp32→w16 (ramp, rnumel not >16384).
 NOT a CE-identity fence — fires on row_reread AND not full_width_output AND byte-cap; benefit transfers
-to logsumexp (no target gather). NEXT: Gate A (adversarial verify) + Gate D (divergence test on the facts).
+to logsumexp (no target gather).
+**GATES PASSED → VERDICT BANKED: GENERALIZES (no code change).**
+- Gate A 3/3 skeptics PASS (no refute). All confirm w8 beats w32 +4.4-58.9% via faithful facts; w32 arm
+  IS the ramp default with branch removed (monkeypatch REREAD_W8=0 → w32 verified); softmax/rms (full_width)
+  and sum (not reread) correctly fenced out. Skeptic-1 framing caveat: say "SEED-vs-tc" (Product A
+  configs=[seed]), not "out of the gate default" (EFFORT=none default_config=w4 loses tc — but seed is the
+  correct arm per task). fp32 (8192,24576) per-shape loss tc/seed=0.912 at fp32 w8 boundary (within geomean).
+- Gate D FAITHFUL: synthetic `amax_plus_sum` kernel (neither CE nor logsumexp) ALSO earns w8 → not identity.
+  **BOUNDARY SWEEP resolves overfit-audit red-flag #1**: bf16 cap V=51200 — V≤cap w8 wins (+4-26%), V>cap
+  w32 genuinely wins (+18-26%). The cap is a real hardware crossover, NOT a curriculum fence (it lands near
+  the train/val vocab split only because both reflect the same ~50k real-model vocab regime).
 
 ## Tried-and-rejected (first-class data)
 (none yet)
 
 ## Deferred hard-pile
 (none yet)
+
+## Overfit-hunt leads (from constant audit — Gate-E periodic raw material)
+- **REREAD_W8_MAX_BYTES=102400** flagged: bf16 crossover at V=51200 sits near train(≤50k)/val(≥65k)
+  vocab split. FRAMING CAVEAT: a heuristic boundary need not = curriculum split by luck. But MUST
+  run a w8-vs-w32 BOUNDARY SWEEP (V=49152,51200,65536,98304) to confirm w32 genuinely wins past the
+  cap (mechanism-driven), not that the cap was fit to fence train. → divergence test, part of lever-1.
+- **ROW_PERSIST_MAX_BYTES=245760** flagged: persistent-vs-looped boundary bf16 N=122880 / fp32 61440.
+  l2_norm sibling probes exactly this. Run a boundary sweep too.
+- **STRUCTURED_COMBINE_CAP_BYTES=32768** + **persist_max_bytes=12288**: code self-flags as M-unaware
+  proxy (welford 7.3x regression when loosened). groupnorm sibling = the divergence test. lever-2.
+- Power-of-2 thresholds (LOOPED_CHUNK 16384, loop_chunk_bytes 8192, NARROW_W1 2048/262144,
+  warps32_min_elems 16384) look hardware-faithful; lower priority but verify w/ held-out where cheap.
 
 ---
 ## LOG

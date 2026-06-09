@@ -4052,9 +4052,53 @@
         "fact": "int64 out"
       }
     },
-    "initial_transfer": {},
-    "lever_verdicts": {},
-    "gate_verdicts": [],
+    "initial_transfer": {
+      "logsumexp": {
+        "bf16": {
+          "train_geo": 1.213,
+          "val_geo": 1.293
+        },
+        "fp32": {
+          "train_geo": 1.178,
+          "val_geo": 1.158
+        },
+        "fp16": {
+          "train_geo": 1.234
+        },
+        "verdict": "clears bar all 3 dtypes, no climb"
+      }
+    },
+    "lever_verdicts": {
+      "lever1_REREAD_W8_w8branch": {
+        "verdict": "GENERALIZES",
+        "code_change": "none (lever faithful as-is)",
+        "evidence": "Gate A 3/3 pass + Gate D faithful. w8 beats w32 on logsumexp +4.4-58.9%; CE control +48.8-56.8%; held-out shapes win; synthetic divergence kernel earns w8; boundary sweep shows cap is mechanism-driven.",
+        "sibling": "logsumexp",
+        "done_bar": "CLEARED out of the gate (seed-vs-tc geomean bf16 1.21-1.46, fp32 ~1.31, fp16 1.23-1.43); no climb needed",
+        "caveat": "report SEED-vs-tc (Product A configs=[seed]) not \"out of the gate default\"; fp32 (8192,24576) per-shape loss tc/seed=0.912 at fp32 w8 boundary (within geomean, noted)"
+      }
+    },
+    "gate_verdicts": [
+      {
+        "gate": "A",
+        "lever": "lever1_w8_branch",
+        "sha": "b9cbf03c",
+        "n_skeptics": 3,
+        "majority_refute": false,
+        "part1_lever_generalizes": "CONFIRMED by all 3 \u2014 w8 beats w32 on logsumexp +4.4-51.7% via faithful facts (row_reread,not full_width,byte cap); w32 arm IS ramp default with branch removed (monkeypatch REREAD_W8_MAX_BYTES=0 -> w32); does NOT fire on softmax/rms (full_width) or sum (not reread); no identity smuggling",
+        "part2_framing_caveat": "skeptic1: \"out of the gate\" wording wrong \u2014 EFFORT=none default_config()=w4/loop4096 loses tc; the SEED (configs=[seed], Product A) is correct arm and DOES beat tc bf16/fp16. fp32 seed geo~1.31 but per-shape LOSS at (8192,24576) tc/seed=0.912 (~9% slower) at fp32 w8 boundary",
+        "verdict": "LEVER GENERALIZES (part1). Framing corrected: report SEED-vs-tc not out-of-gate. fp32 (8192,24576) w8-boundary loss to investigate (divergence test queued)."
+      },
+      {
+        "gate": "D",
+        "lever": "lever1_w8_branch",
+        "sha": "b9cbf03c",
+        "refuted": false,
+        "divergence_test": "synthetic amax_plus_sum kernel (neither CE nor logsumexp) ALSO earns w8 -> faithful, not identity. logsumexp ReductionFact fingerprint (row_reread=T, full_width=F, itemsize=2) == cross_entropy; softmax (full_width=T) correctly fenced out.",
+        "boundary_sweep": "bf16 cap V=51200: V<=cap w8 wins (40960 +26.4%, 49152 +4.3%, 51200 +10.5%); V>cap w32 wins (65536 +24.5%, 81920 +17.8%, 98304 +25.5%). CAP IS MECHANISM-DRIVEN not curriculum-fit -> resolves overfit-audit red-flag #1.",
+        "verdict": "FAITHFUL. row_reread/full_width_output/REREAD_W8 cap all faithful workload properties."
+      }
+    ],
     "results": {},
     "no_regression_checks": [],
     "tried_rejected": [],
