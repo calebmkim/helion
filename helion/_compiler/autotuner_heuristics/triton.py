@@ -342,6 +342,15 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # itemsize), not next_pow2 (vocab sizes sharing a next_pow2 split at the crossover).
     # 240 KiB sits in the measured dead-zone (most impactful on re-read kernels like CE).
     ROW_PERSIST_MAX_BYTES = 245760
+    # Per-row ELEMENT ceiling for a FULL-WIDTH-output row (one that stores the whole [M, N] row
+    # back): above this width the persistent fp32 row tile + the full-width store spill. The
+    # crossover is element-keyed (measured monotonic ~80k elems across bf16+fp32 on log_softmax),
+    # NOT input-byte-keyed (the byte cap undercounts a half-precision row 2x). 65536 = 2**16 sits
+    # just below the measured ~80k cliff and keeps the N=65536 persist win while looping the
+    # N>=86k spill zone. Only gates full_width_output rows (scalar re-read rows persist far past
+    # this); the existing full-width 9 top out at N=16384 or already loop, so it is a no-op for
+    # them and steers only half-precision full-width T1 rows (log_softmax wide-N).
+    FULL_WIDTH_PERSIST_MAX_ELEMS = 65536
     # Band-C (welford reduce-then-apply) combine-tile cap, in bytes. The combine is a
     # serial scalar recurrence (count/mean/M2) that prefers persistent; this is the
     # FLOOR of the combine tile (32 KiB / itemsize = 8192 elems) — the spill-safe budget
@@ -642,11 +651,35 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         from ..._utils import next_power_of_2 as _np2
         from ...runtime import get_num_sm
 
-        # Persistent iff BOTH: the element cap (None => no cap, a compile limit) AND the
-        # byte ceiling (a residency limit) — distinct limits.
+        # Persistent iff ALL of: the element cap (None => no cap, a compile limit), the byte
+        # ceiling (a residency limit), AND — for a FULL-WIDTH-output row — a per-row ELEMENT
+        # ceiling (a distinct spill limit). These are independent.
+        #
+        # The byte ceiling (``size_hint * itemsize``) keys on the HBM re-read footprint and is
+        # correct for a SCALAR-output re-read row (cross_entropy holds only a per-row scalar
+        # accumulator, so its residency is read-bound and it persists fine well past a 240 KB
+        # input row — measured: CE bf16 N~98304 persistent is ~40% FASTER than looped). But a
+        # FULL-WIDTH-output row (layer_norm/softmax/welford/log_softmax store the whole [M, N]
+        # row) holds the fp32-promoted row tile resident to feed the store, so it spills at a
+        # row WIDTH (element count), independent of the input dtype — the persist-vs-loop
+        # crossover is faithfully ELEMENT-keyed (~80k elems, measured monotonic across bf16 +
+        # fp32), NOT input-byte-keyed. The byte cap alone undercounts a half-precision full-width
+        # T1 row (itemsize 2) 2x: log_softmax bf16 at N~98304 had a 196 KB *input* row under the
+        # 240 KB byte cap, so it persisted — but its fp32 resident tile is ~384 KB and spilled
+        # ~16x (2.4x slower than the looped oracle). So a full-width row also caps at
+        # ``FULL_WIDTH_PERSIST_MAX_ELEMS`` elements. Gated on ``full_width_output`` so the scalar
+        # re-read kernels are untouched; every existing full-width kernel reduces ``x.to(fp32)``
+        # and tops out at N=16384 (rms/ln/welford) or already loops (softmax T2 at N>61440), so
+        # this is a no-op for the 9 and steers only the half-precision full-width T1 rows
+        # (log_softmax) onto the looped path the oracle confirms is up to 2.4x faster there.
         element_cap = env.backend.max_tensor_numel
-        can_persist = (element_cap is None or fact.size_hint <= element_cap) and (
-            fact.size_hint * max(1, fact.itemsize) <= cls.ROW_PERSIST_MAX_BYTES
+        can_persist = (
+            (element_cap is None or fact.size_hint <= element_cap)
+            and (fact.size_hint * max(1, fact.itemsize) <= cls.ROW_PERSIST_MAX_BYTES)
+            and (
+                not fact.full_width_output
+                or fact.size_hint <= cls.FULL_WIDTH_PERSIST_MAX_ELEMS
+            )
         )
 
         if can_persist:

@@ -4122,11 +4122,12 @@
         "faithful_property": "per-program combine/normalize footprint = M_BLOCK*tile*itemsize (the code-TODO spill driver), + input_load_itemsize for the dtype-dependent normalize optimum"
       },
       "lever3_persistent_interleaved_maxnreg": {
-        "verdict": "GENERALIZES (neutral-to-helpful on full-width; NOT overfit)",
-        "evidence": "A/B: reverting pid->flat makes log_softmax +1.7-7.7% slower (lever helps). maxnreg->None +0.6-5.9% (helps/noop). Oracle prefers flat ONLY coupled with smaller reduction_loops+more stages, not pid alone. CE control: bundle helps +1.8-20.2%. The lever is NOT the source of log_softmax wide-N losses.",
-        "sibling": "log_softmax",
-        "done_bar": "bf16/fp16 train clear (1.02/1.08); bf16 val (0.89)/fp32 (0.90/0.96) FAIL due to UNKEYABLE wide-full-width-looped persist spikes (separate from the lever; flagged, not chased per bounded-climb + faithfulness).",
-        "note": "persistent_interleaved+maxnreg=64 KEPT as-is (generalizes). Code OVERFIT NOTE on it can be softened (it generalizes to full-width)."
+        "verdict": "GENERALIZES (Gate F mechanism: grid-tail quantization) \u2014 KEPT. Refined: helps bf16 full-width, neutral fp32; shape-dependent on CE (a219e4: V=131072 -14-17%) \u2014 flagged.",
+        "correction": "My earlier UNKEYABLE claim was WRONG (Gate A majority-refute). The wide full-width persist catastrophe IS keyable via an ELEMENT cap. NEW LEVER to fix."
+      },
+      "lever4_persist_cap_element_vs_byte": {
+        "status": "NEW \u2014 surfaced by hunt, in progress",
+        "finding": "ROW_PERSIST_MAX_BYTES is byte-keyed but the persist-vs-loop crossover is ELEMENT-keyed (~76-84K elems, monotonic). For full_width_output rows the persistent next_pow2(N) tile + full-width store spills; byte cap (bf16 122880 elem) too loose -> log_softmax (2048,98304) persists & spills 16x (2.4x vs oracle). Fix: element/full-width-aware persist cap."
       }
     },
     "gate_verdicts": [
@@ -4176,6 +4177,38 @@
         "refuted": false,
         "finding": "BOTH keys FAITHFUL. M_BLOCK is DEVICE-derived (size_hint//ceil((n_cus*64)^(1/ndims)), n_cus=132 H100), NOT a curriculum constant. 262144 budget holds per-program footprint PINNED at 256KiB across M=8..131072 (combine 65536->16384->8192 as M_BLOCK 1->4->8) \u2014 a byte ceiling not an N-fence. input_load_itemsize<=2 faithful HBM-width gate; fp32 exclusion confirmed (fp32 normalize-width measurably non-monotonic). Divergence cases constructed.",
         "verdict": "FAITHFUL"
+      },
+      {
+        "gate": "A",
+        "lever": "lever3",
+        "sha": "4a17d308",
+        "skeptic": "a219e4",
+        "refuted": true,
+        "findings_I_must_act_on": [
+          "My coarse persist-vs-loop sweep falsely showed NON-monotonicity (zigzag). Skeptics finer sweep (86016,90112,94208,...) shows MONOTONIC clean crossover ~84K elem bf16 / ~76K fp32; persist never recovers above it. My UNKEYABLE conclusion was WRONG (artifact in my probe).",
+          "An ELEMENT cap (~76K) cleanly separates good/bad persist. ROW_PERSIST_MAX_BYTES=245760 (BYTE cap) is the CULPRIT: bf16=122880 elem (too loose, persists bad 84-120K region -> 98304 catastrophe); fp32=61440 elem (too tight). Crossover scales with ELEMENTS (next_pow2 tile footprint) not bytes. The byte cap is non-faithful for the persist decision -> a REAL keyable fix exists (connects to ROW_PERSIST overfit-audit flag).",
+          "persistent_interleaved+maxnreg REGRESSES cross_entropy bf16 V=131072 by 14-17% WHERE IT FIRES (looped). CE wins at V=32000/50257 are PERSISTENT (lever off, those are w8). Lever is SHAPE-DEPENDENT on CE too (helps V>=160K, hurts 131072) -> may be partially overfit."
+        ],
+        "verdict": "REFUTED \u2014 my lever-3 verdict was premature on 2 counts: (a) the persist crossover IS keyable (element cap), I wrongly called it unkeyable from a noisy sweep; (b) the lever is not uniformly helpful even on CE. MUST re-investigate the element-cap fix + the maxnreg/interleaved CE shape-dependence."
+      },
+      {
+        "gate": "A",
+        "lever": "lever3",
+        "sha": "4a17d308",
+        "n_skeptics": 3,
+        "results": "2 REFUTE, 1 PASS",
+        "majority_refute": true,
+        "consensus": "(1) The persist-vs-loop crossover IS KEYABLE \u2014 both refuters independently found it MONOTONIC in ELEMENTS (~76-84K), and ROW_PERSIST_MAX_BYTES (byte cap) is the culprit (my unkeyable claim REFUTED). (2) lever helps bf16 log_softmax but neutral-to-slightly-harmful fp32; a219e4 found it regresses CE bf16 V=131072 by 14-17% where it fires. AGREED sub-claim (all 3): the (2048,98304) catastrophe is a PERSISTENT shape (lever off), caused by persisting a wide full-width row \u2014 NOT the lever.",
+        "action": "There IS a faithful fix: make the persist cap element-keyed / full-width-aware so wide full-width re-read rows loop instead of catastrophically persisting. Connects to ROW_PERSIST audit flag. RE-OPEN lever-3 / new-lever investigation."
+      },
+      {
+        "gate": "F",
+        "lever": "lever3_persistent_interleaved",
+        "sha": "4a17d308",
+        "refuted": false,
+        "mechanism": "CONFIRMED sound. ncu (4096x65536 fp32): the lever helps via GRID-TAIL QUANTIZATION \u2014 persistent_interleaved+num_sm_multiplier rounds grid to 132*32=4224=32.0 EVEN waves vs flat ragged 31.03 (idle SMs ~3%). NOT register-occupancy (thread-capped at 1 block/SM regardless; ptxas picks 50-52 regs < 64 cap). Store is CHUNKED (range(0,N,16384)) so per-program regs bounded by chunk not row -> maxnreg=64 harmless. Kernel bandwidth-bound (3-pass re-read 2.3:1 > store).",
+        "boundary": "lever helps memory-bound full-width LOOPED rows (grid quantization is output-shape-agnostic); correctly off for persistent rows. Generalizes to full-width.",
+        "verdict": "persistent_interleaved+maxnreg lever GENERALIZES (mechanism sound). The wide-N catastrophe is SEPARATE (the byte persist-cap), confirmed."
       }
     ],
     "results": {
