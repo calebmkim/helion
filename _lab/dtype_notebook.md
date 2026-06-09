@@ -117,6 +117,29 @@ that separates softmax(cliff) from welford/rms(safe), so the rule can extend the
 safe kernels INSTEAD of capping everyone at occ224. NOTE: the conservative-cap rule is ALREADY safe
 (caps occ<=224 bf16 << 558 cliff) — the separator is UPSIDE (lets welford win to occ993), not a blocker.
 
+### ★★ MID-N w4 IMPLEMENTED + ncu-MECHANISM-PROVEN (HEAD 093ff835) — Gate A running ★★
+ncu SMOKING GUN (softmax_two_pass bf16 N5120 across cliff M65536->67584): long-scoreboard stalls
+0.92->3.62 inst/issue (4x), DRAM 71%->28%, SM 53%->11% — IDENTICAL load/store sector counts. So the cliff
+is PURE LATENCY-HIDING capacity, NOT bandwidth: w4 has too few warps to hide the HBM-load latency of the
+two-pass row RE-STREAM once SMs saturate; w8 recovers (stalls 0.69). Wider rows cliff at LOWER occ (N8192
+cliffs occ~124-186) -> byte cap excludes them.
+STRUCTURAL: softmax does 2 full-row HBM reads (two hl.tile(n) passes, debug_barrier between); rms/ln do 1
+(T1 roller fuses reduce+apply, load-once-reuse); welford does 2 with evict_last/first L2 hints (milder).
+Cliff-proneness tracks the HBM-re-stream count. T1(rms/ln)=1 read=NO cliff; T2(softmax/welford)=2=cliff.
+But the OCC CAP directly gates the ncu mechanism (stay below SM saturation) -> MECHANISM-JUSTIFIED, not a
+fence. T1/T2 refinement (extend welford to occ~993, +9%) documented as LOW-VALUE future work (the big win,
+softmax, MUST stay capped regardless).
+RULE (constants MID_W4_MAX_BYTES=10240, MID_W4_OCC_BYTES=448):
+  **w4 IF input_load_itemsize>0 AND grid_rows>0 AND 2048 < rnumel*ils <= 10240 AND grid_rows//num_sm <= 448//ils**
+  (bf16 rnumel 1025-5120 & occ<=224; fp32 513-2560 & occ<=112.)
+Three warps rules now DISJOINT: narrow w1 (byte<=2048) | mid w4 (2048<byte<=10240) | wide w8 (rnumel>16384).
+CONFIG-PROOF (cfg_d4only vs cfg_midN, 777 cells): 156 diffs, ALL w8/w16->w4 in the predicted band, ZERO
+non-warp/anomaly diffs, ZERO err changes. Fires across ln/rms/softmax/sum/welford x bf16/fp16/fp32 on real
+model dims (Phi-2 2560, Llama-7B 4096, GPT2 1280). Coverage-validated (bf16+fp32, rnumel 2560-5120): 39
+wins (softmax +45-59%, welford +14-31%, ln +12-21%), worst -2.0% noise, 0 regressions >3%. 20 heuristic +
+17 example tests pass, ruff+pyrefly clean. Tightened to occ cap 448 (not 496) to exclude the one -4.3%
+softmax fp32 N2560 occ124 boundary cell (logged). GATE A (3 skeptics) running -> wf_702d2326.
+
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
   - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
