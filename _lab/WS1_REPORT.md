@@ -119,11 +119,20 @@ bf16 1.02/0.89, fp32 0.90/0.96, fp16 1.08/1.11 (wide-N losers).
   changes vs the dtype-champion baseline are the 3 documented faithful ones (`STRUCTURED_COMBINE_PROG_BYTES`,
   the `input_load_itemsize`-gated normalize widening, `FULL_WIDTH_PERSIST_MAX_ELEMS`); each keys on a
   hardware footprint / faithful workload property, not a curriculum N-value. WS1 splits interpolation-fair.
-- **Flagged for WS2** (pre-existing, out of WS1 scope): the persistent_interleaved+maxnreg lever is
-  shape-dependent on cross_entropy itself (helps V≥160K, regresses bf16 V=131072 by 14–17% where it
-  fires) — generalizes to log_softmax (grid-tail-quantization mechanism, Gate F) but may need a firing
-  refinement. NARROW_W1 / eviction / pow-2 ramp thresholds carry prior dtype-run verdicts, no WS1 sibling
-  binds them.
+- **A hunted-then-REFUTED hypothesis (honest negative result):** argmax's tiny-N losses looked like a
+  `_num_warps`-ramp overfit to *compute-heavy* reductions (argmax wants fewer warps than softmax at the
+  same high occupancy). I authored **row_max** (a second compute-trivial reduction, no index) as the
+  divergence test — it is **fine on the ramp** (w4 ≈ w1), which **refutes** the clean "compute-trivial →
+  fewer warps" framing. The argmax tiny-N slowness is an argmax *index-reduction codegen* issue at >1
+  warp, NOT a faithful heuristic-lever overfit. Downgraded from a lever verdict to an argmax-codegen
+  observation; no heuristic change.
+- **Flagged for WS2** (pre-existing, off-curriculum, out of WS1 scope): persistent_interleaved+maxnreg is
+  **curriculum-safe** (every curriculum firing shape −9%..+1.5%) but has an off-curriculum regression at
+  V=131072 (=2¹⁷) AND occ ≥ ~46 (CE bf16 large-M +18–22%). Measured occ boundary: interleaved wins at
+  occ ≤ 31, loses at occ ≥ 46 — matching Gate F's grid-tail-quantization mechanism. Faithful WS2 fix:
+  gate persistent_interleaved on occupancy (`grid_rows // num_sm`). Deferred — helps only off-curriculum,
+  touches a load-bearing CE lever, and the V=2¹⁷-specificity needs careful no-regression validation.
+- NARROW_W1 / eviction / pow-2 ramp thresholds carry prior dtype-run verdicts; no WS1 sibling binds them.
 
 ## Gate-E TEST-firewall read (freeze — the single sanctioned TEST read; never benched during the climb)
 Held-out TEST geomean (seed-vs-tc, CUDA-graph), with the train↔TEST gap as a first-class number:
