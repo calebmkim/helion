@@ -4421,6 +4421,11 @@
         "attempt": "full_width-aware persist cap / looped-chunk lever for wide full-width T1 re-read (log_softmax)",
         "result": "NOT PURSUED \u2014 the persist-vs-loop crossover for full-width log_softmax is WILDLY NON-MONOTONIC (bf16: N=16384 LOOP -44%, 24576-49152 persist +45-135%, 65536 LOOP -18%, 81920 persist +175%, 98304 LOOP -79%). persist time itself non-monotonic (2048,49152=163us but 2048,98304=2587us, 16x spike from a maximally-spilling next_pow2 tile). NO clean faithful cap separates good/bad persist \u2014 any constant would be curriculum-fit (the exact overfit being hunted).",
         "verdict": "The wide-full-width-looped regime is genuinely hard for a SEED (single static config) and correctly left to the autotuner (oracle loops these, beats tc). Flag log_softmax wide-N as a seed-coverage limit, NOT a heuristic overfit. Bounded-climb: do not chase."
+      },
+      {
+        "attempt": "persistent_interleaved occupancy gate (interleaved only when grid_rows//num_sm <= 40 waves) to fix the off-curriculum CE bf16 V=131072 large-M +18-22% regression",
+        "result": "REJECTED by no-regression backstop. Net-positive across the CE bf16 curriculum (occ<=31 wins kept, occ=62 (8192,128256) bf16 +1.5%/fp16 +2.6% flat better), BUT REGRESSES CE fp32 (8192,128256) by 24.3% \u2014 at occ=62 fp32 PREFERS interleaved (1817us) over flat (2259us). My curriculum sweep only tested bf16 and MISSED fp32 (the classic dont-sweep-all-dtypes footgun, caught by the backstop dtype check).",
+        "lesson": "The interleaved-vs-flat crossover is DTYPE-dependent: fp32 tolerates higher occupancy before interleaved stops helping. A flat wave-threshold cannot capture it. The faithful fix needs a dtype/footprint-aware boundary (occ * row_bytes via input_load_itemsize) \u2014 too involved for bounded WS1 scope without risking the 9. Reverted; the OVERFIT NOTE now documents this. WS2."
       }
     ],
     "step0": {

@@ -800,6 +800,14 @@ class TritonReductionTileHeuristic(_TritonReductionSeedBase):
         # few-long-rows class (cross_entropy at large V) and is NOT generalized — it beats
         # 'flat' there, but the sm_mult formula and maxnreg=64 are unvalidated beyond it;
         # re-validate them before relying on it elsewhere.
+        # The win is GRID-TAIL QUANTIZATION (ncu-confirmed): num_sm_multiplier rounds a ragged
+        # final wave to whole even waves, which only pays off at low occupancy. WS1 measured a
+        # regression at high occupancy (CE bf16 V=131072 +18-22% at >=46 waves) — but an
+        # occupancy gate to fix it is NOT yet safe: the interleaved-vs-flat crossover is
+        # DTYPE-dependent (at 62 waves CE bf16/fp16 prefer flat by ~1.5-2.6% but CE fp32 prefers
+        # interleaved by ~24%), so a flat wave threshold regresses fp32. The faithful fix needs a
+        # dtype/footprint-aware boundary (occ * row_bytes, via input_load_itemsize) — deferred to
+        # WS2; the regression is off the WS1 curriculum (V=131072 large-M is not a CE shape).
         # ~one resident program per row + a register cap to hide the re-read latency;
         # num_sm_multiplier sizes the grid to the row count.
         if fact.row_reread and not persistent:
