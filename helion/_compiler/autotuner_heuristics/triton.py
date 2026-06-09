@@ -359,22 +359,28 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # warp's slice is tiny, and w1 reduces in-register via shuffle (0 shared traffic, 0
     # barriers). The win INVERTS to a >10% (up to 6x) regression past an occupancy ceiling
     # (the SMs saturate, so more warps amortize), so it is gated on BOTH a row-byte cap and
-    # an occupancy cap. Both caps key on the INPUT-LOAD byte width (``input_load_itemsize``:
-    # 2 bf16/fp16, 4 fp32) so they scale ~2x with dtype — the measured crossover shift —
-    # WITHOUT a dtype-kind branch (faithful: the HBM-load element size IS a workload
-    # property). NOT ``itemsize`` (the fp32-promoted accumulator width = 4 at BOTH dtypes
-    # for the norm/softmax family, which cannot discriminate — the bug that admitted softmax
-    # fp32 (32768,512) at +19.6% in an earlier fixed-occ attempt).
+    # an occupancy cap, both keyed on the INPUT-LOAD byte width (``input_load_itemsize``:
+    # 2 bf16/fp16, 4 fp32) — faithful and dtype-AGNOSTIC (the HBM-load element size IS a
+    # workload property), NOT ``itemsize`` (the fp32-promoted accumulator width = 4 at BOTH
+    # dtypes for the norm/softmax family, which cannot discriminate — the bug that admitted
+    # softmax fp32 (32768,512) at +19.6% in an earlier fixed-occ attempt).
     #   - row cap: ``rnumel * input_load_itemsize <= NARROW_W1_MAX_BYTES`` (bf16 rnumel<=1024,
     #     fp32 rnumel<=512). Above it the row is wide enough that 1 warp under-utilizes.
-    #   - occ cap: ``grid_rows // num_sm <= NARROW_W1_OCC_BYTES // input_load_itemsize``
-    #     (bf16 occ<=256, fp32 occ<=128). Above it the cliff: w32 wins by up to 6x.
+    #   - occ cap: the per-program saturation point DROPS as the resident row grows (a wider
+    #     row saturates the SMs' latency-hiding at lower occupancy — measured: a 1 KiB row is
+    #     safe to occ~496 but a 2 KiB row cliffs by occ~200). So the cap is on the PRODUCT
+    #     ``occ * row_bytes <= NARROW_W1_OCC_BYTE_LIMIT`` (i.e. ``occ <= LIMIT // row_bytes``),
+    #     not a flat occ: 256 KiB gives a 512-byte row occ<=512, a 1 KiB row occ<=256, a 2 KiB
+    #     row occ<=128 (below softmax's ~200 cliff at 2 KiB). A flat occ cap mis-fired w1 into
+    #     that 2 KiB cliff (softmax bf16 (32768,1024) +18-30%).
     # CUDA-graph-fit across softmax/rms_norm/layer_norm/sum/welford/cross_entropy x bf16/fp32:
     # in the fired zone w1 beats the ramp by up to +62% (softmax bf16) with worst regression
-    # ~2.3% vs the cell-best. Disabled when input_load_itemsize==0 (kl_div/jsd: 2-D carried
-    # tiles, no single reduction-fed row load — and forcing w1 there regresses up to +46%).
+    # ~4.7% vs the cell-best (a small upper-edge trade; no fact separates the edge from the
+    # core). Disabled when input_load_itemsize==0 (kl_div/jsd: 2-D carried tiles, no single
+    # reduction-fed row load — and forcing w1 there regresses up to +46%).
     NARROW_W1_MAX_BYTES = 2048
-    NARROW_W1_OCC_BYTES = 512
+    # occ * row_bytes ceiling (256 KiB): the resident-pressure product above which w1 cliffs.
+    NARROW_W1_OCC_BYTE_LIMIT = 262144
 
     @classmethod
     def _num_warps(cls, fact: ReductionFact, num_sm: int = 0) -> int:
@@ -384,11 +390,12 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
 
         NARROW-row single-warp refinement at the LOW end (the occupancy-gated lever): a
         narrow row at low/moderate occupancy wants ONE warp (the cross-warp reduction tree
-        is pure overhead — see ``NARROW_W1_MAX_BYTES``). Fires only when BOTH the row-byte
-        cap and the occupancy cap (both keyed on ``input_load_itemsize`` so they scale ~2x
-        with dtype, faithfully, no dtype-kind branch) hold; needs ``num_sm`` (0 disables it,
-        e.g. an off-device caller). Disjoint from the wide-row w8/w32 branch below
-        (``NARROW_W1_MAX_BYTES`` << the rnumel>16384 region), so the two never interact.
+        is pure overhead — see ``NARROW_W1_MAX_BYTES``). Fires only when the row-byte cap AND
+        the resident-pressure cap (``occ * row_bytes <= NARROW_W1_OCC_BYTE_LIMIT``) hold; both
+        key on ``input_load_itemsize`` (faithful, no dtype-kind branch) and the occ ceiling
+        scales DOWN as the row grows (a wider row cliffs at lower occupancy). Needs ``num_sm``
+        (0 disables it, e.g. an off-device caller). Disjoint from the wide-row w8/w32 branch
+        below (``NARROW_W1_MAX_BYTES`` << the rnumel>16384 region), so the two never interact.
 
         One dtype-aware refinement at the WIDE end (rnumel > 16384): a REDUCTION-BOUND row
         — re-read (``row_reread``, i.e. live across >=2 reductions, e.g. cross_entropy's
@@ -414,17 +421,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         # the input-load byte width (dtype-faithful), and the occupancy needs num_sm; an
         # input_load_itemsize of 0 (kl_div/jsd, or unknown) disables it.
         ils = fact.input_load_itemsize
+        row_bytes = rnumel * ils
         if (
             num_sm > 0
             and ils > 0
             and fact.grid_rows > 0
-            and rnumel * ils <= cls.NARROW_W1_MAX_BYTES
+            and row_bytes <= cls.NARROW_W1_MAX_BYTES
         ):
             # grid_rows==0 means a dynamic/jagged M-grid: occupancy is unknown at compile
             # time, so the lever DECLINES (an unknown occ must not assume the best-case low
             # occ — that would wrongly fire w1 on a possibly-saturated grid).
+            # Cap the resident-pressure PRODUCT occ * row_bytes (a wider row saturates the SM
+            # latency-hiding at lower occupancy), so the safe occupancy ceiling scales down as
+            # the row grows: occ <= LIMIT // row_bytes.
             occ = fact.grid_rows // num_sm
-            if occ <= cls.NARROW_W1_OCC_BYTES // ils:
+            if occ * row_bytes <= cls.NARROW_W1_OCC_BYTE_LIMIT:
                 return 1
         # >16384 (not >=) so sum's widest in-sample row (16384) stays w16, excluding the
         # tiny-rnumel w32 regression.
