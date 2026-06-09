@@ -3446,6 +3446,13 @@
         "mechanism": "The cliff is at a roughly CONSTANT occ*row_bytes product (resident pressure across waves), so a single product cap (262144=256KiB) is faithful across the whole narrow byte range \u2014 better than the flat occ cap that ignored row width.",
         "worst_fired_reg": "+4.7% (one layer_norm byte2048 occ124 cell, bounded principled upper-edge trade). All other fired cells <=+2.3% (swept data) / +1.0% (the new high-occ firing).",
         "tests": "20 heuristic pass, lint clean. config-diff vs flat-cap: 6 cells (4 corner-fix + 2 new-win), no other changes."
+      },
+      {
+        "gate": "D4_bytescaled_A_adversarial_verify",
+        "sha": "d1e2f2b4",
+        "verdict": "SURVIVES 3/3 NOT-refuted. Revised D4 (byte-scaled occ cap occ*row_bytes<=262144) gate-confirmed.",
+        "confirmed": "Corner FIXED (softmax/ln bf16 (32768,1024) occ248/256 -> w4, w1 would be +11-33%). Big wins preserved (softmax (8192,512) w1 -20-26% vs w4, welford -17-20%). New firing safe (softmax (131072,128) occ992 w1 = cell-best +0-1.1%). Tiny-row high-occ cliffs excluded (262144,128/131072,256/262144,256 -> w4, w1 would +18-50%). fp32 Path-A poison still excluded (softmax fp32 (32768,512) -> w4). Worst fired-zone reg +2.5% (ln corner). 3 skeptics, warmup-hardened CUDA-graph (2x cold-discard, 10 warmup, 21 reps).",
+        "mechanism_confirmed": "All 3 skeptics independently confirm the byte-scaled cap is faithful: safe occ ceiling scales DOWN with row width (512B->occ512, 1024B->occ256, 2048B->occ128), matching the measured cliff-moves-with-bytes (constant occ*row_bytes resident-pressure product)."
       }
     ],
     "results": [
