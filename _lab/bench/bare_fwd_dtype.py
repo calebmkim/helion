@@ -48,6 +48,11 @@ from examples.kl_div import kl_div_forward  # noqa: E402
 from examples.jsd import jsd_forward  # noqa: E402
 from examples.sum import sum_kernel  # noqa: E402
 from examples.long_sum import longsum  # noqa: E402
+from examples.logsumexp import logsumexp  # noqa: E402
+from examples.log_softmax import log_softmax  # noqa: E402
+from examples.groupnorm import groupnorm, eager_groupnorm  # noqa: E402
+from examples.l2_norm import l2_norm  # noqa: E402
+from examples.argmax import argmax  # noqa: E402
 
 EPS = 1e-5
 LONG = torch.int64
@@ -180,6 +185,27 @@ def b_longsum(m, n, dt):
     x = torch.randn(m, n, device="cuda", dtype=dt); return (x,), torch.sum(x, dim=-1), _first
 
 
+def b_logsumexp(m, n, dt):
+    x = torch.randn(m, n, device="cuda", dtype=dt); return (x,), torch.logsumexp(x, dim=-1), _first
+
+
+def b_logsoftmax(m, n, dt):
+    x = torch.randn(m, n, device="cuda", dtype=dt); return (x,), torch.nn.functional.log_softmax(x, dim=-1), _first
+
+
+def b_groupnorm(m, n, dt):
+    w = torch.randn(n, device="cuda", dtype=dt); b = torch.randn(n, device="cuda", dtype=dt); x = torch.randn(m, n, device="cuda", dtype=dt)
+    a = (w, b, x, EPS); return a, eager_groupnorm(*a), _first
+
+
+def b_l2norm(m, n, dt):
+    x = torch.randn(m, n, device="cuda", dtype=dt); return (x,), torch.linalg.vector_norm(x, dim=-1), _first
+
+
+def b_argmax(m, n, dt):
+    x = torch.randn(m, n, device="cuda", dtype=dt); return (x,), torch.argmax(x, dim=-1), _first
+
+
 KERNELS = {
     "rms_norm": (rms_norm_fwd, b_rms, lambda a: rms_norm_pytorch(*a)),
     "layer_norm": (layer_norm_fwd, b_ln, lambda a: torch.nn.functional.layer_norm(a[0], a[1], a[2], a[3], a[4])),
@@ -190,6 +216,12 @@ KERNELS = {
     "welford": (welford, b_welford, lambda a: eager_layer_norm(*a)),
     "kl_div": (kl_div_forward, b_kl, lambda a: torch.nn.KLDivLoss(reduction="batchmean").to("cuda")(a[0], a[1])),
     "jsd": (jsd_forward, b_jsd, lambda a: _jsd_ref(a[0], a[1])),
+    # WS1 fortify siblings
+    "logsumexp": (logsumexp, b_logsumexp, lambda a: torch.logsumexp(a[0], dim=-1)),
+    "log_softmax": (log_softmax, b_logsoftmax, lambda a: torch.nn.functional.log_softmax(a[0], dim=-1)),
+    "groupnorm": (groupnorm, b_groupnorm, lambda a: eager_groupnorm(*a)),
+    "l2_norm": (l2_norm, b_l2norm, lambda a: torch.linalg.vector_norm(a[0], dim=-1)),
+    "argmax": (argmax, b_argmax, lambda a: torch.argmax(a[0], dim=-1)),
 }
 
 
@@ -218,11 +250,29 @@ def bench(kn: str, dt_name: str, split: str, arms: list[str], explicit_shapes=No
             # footgun #7: record the NORMALIZED running config (proves configs=[seed] ran, no autotune)
             norm_cfg = str(k_seed.bind(args)._config)
             tol = _tol(kn, dt_name)
-            diff_t = (out.float() - ref.float()).abs()
-            max_abs = float(diff_t.max())
-            denom = ref.float().abs().clamp_min(1e-12)
-            max_rel = float((diff_t / denom).max())
-            acc = bool(torch.allclose(out.float(), ref.float(), rtol=tol, atol=tol))
+            if kn == "argmax":
+                # int64 INDEX output: float allclose is wrong. Compare indices by exact
+                # equality; for tie rows where helion and torch pick different equal-max
+                # positions, fall back to the GATHERED max VALUE matching (the index is
+                # not unique but the value is). x is args[0]. (Logged choice, §6.0.)
+                x0 = args[0]
+                idx_eq = out.long() == ref.long()
+                mism = ~idx_eq
+                acc = True
+                max_abs, max_rel = 0.0, 0.0
+                if bool(mism.any()):
+                    rows_idx = torch.nonzero(mism, as_tuple=True)[0]
+                    v_h = x0[rows_idx, out.long()[rows_idx]].float()
+                    v_t = x0[rows_idx, ref.long()[rows_idx]].float()
+                    vdiff = (v_h - v_t).abs()
+                    max_abs = float(vdiff.max())
+                    acc = bool(torch.allclose(v_h, v_t, rtol=tol, atol=tol))
+            else:
+                diff_t = (out.float() - ref.float()).abs()
+                max_abs = float(diff_t.max())
+                denom = ref.float().abs().clamp_min(1e-12)
+                max_rel = float((diff_t / denom).max())
+                acc = bool(torch.allclose(out.float(), ref.float(), rtol=tol, atol=tol))
             row.update({"seed_cfg": norm_cfg, "acc": acc, "tol": tol,
                         "max_abs": round(max_abs, 6), "max_rel": round(max_rel, 6)})
             if "seed" in arms:

@@ -4013,5 +4013,64 @@
       "date": "2026-06-09",
       "measurement_artifact": "/tmp/refute_final.json"
     }
-  ]
+  ],
+  "ws1": {
+    "meta": {
+      "created": "2026-06-09",
+      "branch": "reduction-pr-with-lab",
+      "task": "WS1 fortify reduction seed: sibling kernels + overfit hunt",
+      "baseline_sha": "1b167075947eb2d6988c9faa72dba8bb51361938"
+    },
+    "siblings_authored": {
+      "logsumexp": {
+        "file": "examples/logsumexp.py",
+        "probes": "lever1 w8 branch",
+        "fact": "row_reread=T full_width=F",
+        "fires": "V<=51200 bf16->w8",
+        "idiom": "reduce in-dtype (no pre-fp32) like cross_entropy"
+      },
+      "log_softmax": {
+        "file": "examples/log_softmax.py",
+        "probes": "lever3 persistent_interleaved+maxnreg",
+        "fact": "row_reread=T full_width=T",
+        "fires": "wide->persistent_interleaved+maxnreg=64"
+      },
+      "groupnorm": {
+        "file": "examples/groupnorm.py",
+        "probes": "lever2 STRUCTURED_COMBINE_CAP+normalize-tile",
+        "fact": "Band-C nrl=(2,) num_load=4",
+        "idiom": "welford-idiomatic, 2-moment combine"
+      },
+      "l2_norm": {
+        "file": "examples/l2_norm.py",
+        "probes": "ROW_PERSIST_MAX_BYTES boundary",
+        "fact": "num_load=1 row_reread=F streamed"
+      },
+      "argmax": {
+        "file": "examples/argmax.py",
+        "probes": "_num_warps element ramp + int64 acc path",
+        "fact": "int64 out"
+      }
+    },
+    "initial_transfer": {},
+    "lever_verdicts": {},
+    "gate_verdicts": [],
+    "results": {},
+    "no_regression_checks": [],
+    "tried_rejected": [],
+    "step0": {
+      "status": "PASS",
+      "shape": "cross_entropy bf16 (8192,50257)",
+      "env_helion_in_worktree": true,
+      "seed_beats_tc_cg": 1.7867,
+      "seed_us": 360.224,
+      "tc_us": 631.84,
+      "default_us": 827.424,
+      "acc_max_abs": 0.0,
+      "normalized_seed_cfg": "block_sizes=[1], num_stages=1, num_warps=8, pid_type='flat', reduction_loops=[None]",
+      "w8_branch_fired": true,
+      "crosscheck_handrolled_us": 360.272,
+      "crosscheck_delta_pct": 0.01
+    }
+  }
 }
