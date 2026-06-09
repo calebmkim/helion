@@ -4209,6 +4209,17 @@
         "mechanism": "CONFIRMED sound. ncu (4096x65536 fp32): the lever helps via GRID-TAIL QUANTIZATION \u2014 persistent_interleaved+num_sm_multiplier rounds grid to 132*32=4224=32.0 EVEN waves vs flat ragged 31.03 (idle SMs ~3%). NOT register-occupancy (thread-capped at 1 block/SM regardless; ptxas picks 50-52 regs < 64 cap). Store is CHUNKED (range(0,N,16384)) so per-program regs bounded by chunk not row -> maxnreg=64 harmless. Kernel bandwidth-bound (3-pass re-read 2.3:1 > store).",
         "boundary": "lever helps memory-bound full-width LOOPED rows (grid quantization is output-shape-agnostic); correctly off for persistent rows. Generalizes to full-width.",
         "verdict": "persistent_interleaved+maxnreg lever GENERALIZES (mechanism sound). The wide-N catastrophe is SEPARATE (the byte persist-cap), confirmed."
+      },
+      {
+        "gate": "A",
+        "lever": "lever4_full_width_persist_cap",
+        "sha": "6802bf60",
+        "n_skeptics": 3,
+        "results": "2 PASS, 1 REFUTE",
+        "majority_refute": false,
+        "pass_consensus": "log_softmax bf16 (2048,98304) persist=1100us->loop=466us=2.36x win (OLD reconstructed by disabling cap BEFORE bind); fp16 1.23x. CE byte-IDENTICAL (full_width=False makes the clause a tautology) + CE persist genuinely faster (N=98304 1.48x, N=50257 6.8x) so keeping CE persistent is correct. The 9 byte-identical.",
+        "refuter_a8e538": "Axis-4 faithfulness: 65536 is closer to a curriculum value than the true ~84k cliff. Dense sweep shows the crossover is NOISY/non-monotonic in the 69632-81920 band (N=73728 persist +37%, 77824 loop +65%, 81920 persist +2.6%) but DECISIVELY loop from 86016+ (1.58-4.13x). My cap=65536 is BELOW the noisy band, so it is conservative-safe: never loops a decisive-persist shape (worst 81920 +2.6%, NOT in curriculum); curriculum log_softmax wide N in {65536(persist),98304,131072,128256,114688(loop)} all correct.",
+        "action": "Strengthen the constant justification: 65536 elem x 4B(fp32 resident) = 256KB ~ H100 228KB SMEM spill boundary (hardware, not curriculum). Consider whether the value should be the measured cliff. GateD pending."
       }
     ],
     "results": {
