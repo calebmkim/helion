@@ -4266,6 +4266,14 @@
         "lever": "lever4",
         "sha": "6802bf60",
         "note": "GateD ran on cap=65536; the value was then raised to 81920 per Gate-A refuter. See lever4 final."
+      },
+      {
+        "gate": "E_final_audit",
+        "sha": "36a17eb4",
+        "mode": "final whole-heuristic overfit audit (post all 4 fixes)",
+        "verdict": "PASS \u2014 no curriculum fence",
+        "finding": "Only 3 constant changes vs dtype-champion baseline (all faithful): STRUCTURED_COMBINE_PROG_BYTES=262144, normalize_prog_bytes=16384 (input_load_itemsize<=2 gated), FULL_WIDTH_PERSIST_MAX_ELEMS=81920. 81920 confirmed keyed to the measured spill crossover, not curriculum (no shape in (65536,81920] band). Splits interpolation-fair.",
+        "minor_fixed": "comment SMEM framing tightened; WS1_REPORT 65536->81920 stale-value fixed. Gate-D mechanism analysis (element-vs-byte, full_width gate) is value-independent & passed; audit confirms 81920 not a fence."
       }
     ],
     "results": {
@@ -4365,6 +4373,25 @@
       "w8_branch_fired": true,
       "crosscheck_handrolled_us": 360.272,
       "crosscheck_delta_pct": 0.01
-    }
+    },
+    "completeness_critic": {
+      "verdict": "GAPS-REMAIN",
+      "actionable": [
+        "Gate E TEST-firewall read NOT done (task 8 \u2014 do at freeze)",
+        "final no-regression on the 9 not fully measured at freeze (have behavior-oracle byte-identical + welford isolated faster-or-flat; confirm)",
+        "NARROW_W1 lever unprobed by any sibling (has prior dtype-run verdict; low risk)",
+        "eviction stream/reread no explicit WS1 verdict (inherited, low risk)"
+      ],
+      "out_of_scope": [
+        "Band-B BANDB_* = WS2",
+        "off-sm90 fallback",
+        "pow-2 ramp thresholds (audit low-risk)",
+        "LOOPED_NUM_WARPS=32 only l2_norm robustness reaches it"
+      ]
+    },
+    "notable_findings_for_WS2": [
+      "persistent_interleaved+maxnreg lever REGRESSES cross_entropy bf16 V=131072 by 14-17% WHERE IT FIRES (looped re-read) \u2014 a219e4 lever-3 finding. This is PRE-EXISTING heuristic behavior (not introduced by WS1), shape-dependent on CE (helps V>=160K, hurts V=131072). The lever generalizes to log_softmax (grid-quantization mechanism, Gate F) but is non-monotonic on CE itself. FLAGGED for WS2: the lever may need a faithful firing refinement (e.g. gate on grid-tail-evenness benefit).",
+      "NARROW_W1, eviction stream/reread, pow-2 ramp thresholds, LOOPED_NUM_WARPS: no WS1 sibling exercises them as binding constraints (have prior dtype-run verdicts / inherited). Out of WS1 scope."
+    ]
   }
 }

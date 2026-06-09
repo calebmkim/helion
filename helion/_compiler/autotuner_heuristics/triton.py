@@ -348,13 +348,14 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # the byte cap (size_hint*itemsize) undercounts a half-precision full-width T1 row 2x (its
     # resident tile is fp32-promoted), which is exactly why log_softmax bf16 at N~98304 wrongly
     # persisted (196 KB input row < the 240 KB byte cap) and spilled ~16x.
-    #   81920 elems * 4 B (fp32 resident) = 320 KiB, the point at which the persistent row tile
-    # decisively exceeds the H100's 228 KiB max shared memory and a meaningful register budget,
-    # so persist must spill. This is the MEASURED stable bf16 crossover: persist wins at and
-    # below 81920 (N=73728 persist +37%, N=81920 +16%), loop wins decisively at and above 86016
-    # (N=86016 loop +36%, N=98304 +135%, N=131072 +313%). It is a hardware spill boundary, not a
-    # curriculum value (no curriculum log_softmax shape lies in the (65536, 81920] band; the band
-    # is honored only so a non-curriculum full-width kernel there still gets the faster persist).
+    #   81920 is the MEASURED stable bf16 persist-vs-loop crossover: persist wins at and below
+    # 81920 (N=73728 persist +37% stable over 4 fresh procs, N=81920 +16%), loop wins decisively
+    # at and above 86016 (N=86016 loop +36%, N=98304 +135%, N=131072 +313%). Above it the
+    # persistent fp32 row tile (81920 elems * 4 B = 320 KiB resident) — already past the H100's
+    # 228 KiB max shared memory, so it lives in registers and spills as the width grows — loses
+    # to the streamed looped chunk. It is keyed to that measured spill crossover, not to the
+    # curriculum (no curriculum log_softmax shape lies in the (65536, 81920] band; the band is
+    # honored only so a non-curriculum full-width kernel there still gets the faster persist).
     # The fp32 crossover is a touch lower (~77k) so 81920 lets fp32 N=81920 persist when loop is
     # ~9% faster — a small, bounded edge trade on a non-curriculum width (fp32 wide full-width is
     # already looped by the byte cap at the curriculum's N>=98304). Only gates full_width_output

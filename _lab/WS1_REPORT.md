@@ -88,8 +88,9 @@ bf16 1.02/0.89, fp32 0.90/0.96, fp16 1.08/1.11 (wide-N losers).
   store, so it spills at a row **WIDTH (elements)**, not input bytes. The byte cap undercounts a
   half-precision full-width T1 row 2× → log_softmax bf16 N≈98304 persisted a 196 KB input row (fp32
   resident 384 KB), spilling ~16× (2.4× slower than the looped oracle).
-- **Fix:** a full-width row also caps persist at 65536 elements (just below the measured ~80k crossover,
-  monotonic across bf16+fp32). **Gated on `full_width_output`** → scalar re-read rows (cross_entropy)
+- **Fix:** a full-width row also caps persist at **81920 elements** (`FULL_WIDTH_PERSIST_MAX_ELEMS`, the
+  measured stable bf16 crossover; raised from an initial 65536 after a Gate-A faithfulness refute showed
+  65536 mis-looped the (65536, 81920] band where persist stably wins). **Gated on `full_width_output`** → scalar re-read rows (cross_entropy)
   keep the byte cap and persist far past it (CE bf16 N≤98304 persist is ~40% faster than loop — kept
   byte-identical, verified). The existing full-width 9 (rms/ln/softmax/welford) reduce `x.to(fp32)`
   (itemsize 4) and top out at N=16384 or already loop → byte-identical (behavior oracle confirmed).
