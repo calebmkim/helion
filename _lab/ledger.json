@@ -4168,6 +4168,14 @@
       },
       "coverage_l2norm_argmax": {
         "verdict": "GENERALIZE (no fix). l2_norm: ROW_PERSIST streamed boundary clean. argmax: warp ramp + int64 acc path work, tie-to-win tc."
+      },
+      "lever5_warp_ramp_occ_cap_vs_compute_trivial": {
+        "status": "OVERFIT FINDING (faithful separator identified; faithful fix needs a new fact = WS2 scope)",
+        "finding": "The _num_warps ramp + NARROW_W1 occ-cap are tuned for COMPUTE-HEAVY reductions (softmax exp/sum, welford). They do NOT generalize to argmax (compute-TRIVIAL index/compare reduction). DECISIVE separator A/B at identical high-occ tiny-N (bf16, occ from grid_rows/132):",
+        "evidence": "softmax (65536,512)->w2, (131072,512)->w4, (262144,512)->w8 (wants MORE warps as occ grows \u2014 occ cap correctly declines w1). argmax (65536,512)->w2, (131072,512)->w2, (262144,512)->w1 (wants FEWER warps even at extreme occ). OPPOSITE preferences at the SAME shape. The seed gives argmax w4 (NARROW_W1 declines via occ cap) at (65536,512) = +59% slow vs w2.",
+        "faithful_property": "argmax reduction is compute-trivial (max+index compare, no fp32 accumulate, no exp/div) -> memory-bound, 1 warp saturates bandwidth even at high occupancy. softmax needs warps for the arithmetic. The faithful fact would be reduction-op arithmetic-weight (a NEW fact).",
+        "scope": "Building a new reduction-fact family is OUT of WS1 scope (task). argmax is a coverage-probe sibling, not a perf target. So: BANK the overfit finding + the faithful separator, FLAG for WS2 (add a compute-weight fact so the warp levers stop overfitting to compute-heavy reductions). Do NOT widen the occ cap (would regress softmax, which correctly wants more warps at high occ \u2014 verified).",
+        "no_regression_note": "NOT touching the occ cap is the correct no-regression call: softmax/rms/welford (the 9) genuinely want the current occ-gated behavior (softmax (262144,512) wants w8). A blanket change would regress them."
       }
     },
     "gate_verdicts": [
@@ -4366,6 +4374,12 @@
         "verdict_persistent_interleaved": "NOT catastrophically overfit. A/B: reverting pid->flat (single flip) makes log_softmax SLOWER (+1.7-7.7%); oracle prefers flat ONLY as part of a coupled bundle (flat + smaller reduction_loops + more num_stages). So persistent_interleaved is neutral-to-mildly-suboptimal on full-width, NOT the 2-3x loss source.",
         "real_gap": "The 2-3x log_softmax wide-N losses are a BROADER codegen gap on wide FULL-WIDTH LOOPED re-read: (a) LOOPED_CHUNK=16384 too big at some shapes (oracle wants 2048-8192), (b) num_stages=1 too few (oracle wants 2-4). These are NOT the named lever-3 suspect. oracle/tc 0.945-1.25 -> mostly REACHABLE (oracle beats tc at 3/4 shapes), some near tc.",
         "scope_decision": "lever-3 SUSPECT (persistent_interleaved+maxnreg) verdict = GENERALIZES (neutral-to-helpful on full-width, not overfit). The separate wide-full-width chunk/stages gap is a NEW lever surfaced by the hunt \u2014 evaluate if a bounded fix clears the bar."
+      },
+      "persistent_interleaved_occ_boundary": {
+        "measured": "CE bf16 V=131072 M-sweep interleaved-vs-flat: occ<=31 (M<=4096) interleaved WINS -9.8 to -12.4%; occ>=46 (M>=6144) interleaved LOSES +17.8 to +21.6%. Matches Gate-F grid-tail-quantization mechanism (helps only at low waves).",
+        "curriculum_safe": "ALL curriculum interleaved-firing shapes (CE V in {128256,151936,256000} occ 7-62; log_softmax occ 3-31) are interleaved -9.2 to +1.5% = fine-to-helpful. NO banked/curriculum shape regresses.",
+        "off_curriculum_regression": "The +18-22% regression is at V=131072 (=2^17) AND occ>=46 \u2014 NOT a CE curriculum vocab (CE vocabs skip 131072; log_softmax V=131072 fires only at curriculum occ<=15 where it WINS -7%). So the regression is off-curriculum + partly V=2^17-specific (V=128256 at occ=62 is only +1.5%, not +18%).",
+        "WS2_fix": "Faithful direction (Gate-F-grounded): gate persistent_interleaved on occupancy (grid_rows//num_sm below ~32-40 waves, where grid-tail quantization benefit exceeds the interleave+maxnreg overhead). Deferred to WS2: (a) it helps only off-curriculum, (b) touches a load-bearing CE lever, (c) the V=2^17-specificity suggests occ is not the sole driver \u2014 needs the careful no-regression validation a real fix deserves. The grid_rows fact + num_sm are already available for it."
       }
     },
     "no_regression_checks": [
