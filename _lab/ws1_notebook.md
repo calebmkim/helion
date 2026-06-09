@@ -40,6 +40,43 @@ Stretch: row_max/row_mean (only after core + verdicts banked).
 
 ## Per-shape / per-lever status
 
+### LEVER 2 — STRUCTURED_COMBINE_CAP_BYTES + normalize-tile (Band-C) — VERDICT: OVERFIT (combine cap), climbing
+groupnorm initial transfer (seed-vs-tc CUDA-graph geomean) — FAILS the bar at bf16/fp16, marginal fp32:
+| dtype | train geo | val geo | losers (wide-N small-M) |
+|---|---|---|---|
+| bf16 | 0.963 | **0.776** | (4096,8192)(1024,10240)(512,16384)(512,20480)(1024,24576)(512,32768); val min 0.425! |
+| fp32 | 1.016 | 1.051 | (1024,10240)(512,20480)(1024,24576)(512,32768)(768,20480)(512,24576) |
+| fp16 | 0.954 | 0.888 | (4096,8192)(1024,10240)(512,16384)(512,20480)(1024,24576)(512,32768) |
+→ **OVERFIT SIGNAL CONFIRMED** — Band-C caps tuned on welford do NOT transfer to groupnorm. Losers
+cluster at WIDE-N + SMALL-M (the code's self-flagged M-unaware proxy regime).
+**Lever-2 A/B localizes the culprit = the COMBINE cap (STRUCTURED_COMBINE_CAP_BYTES):**
+- COMBINE R_BLOCK cap (A): uncapping 8192→full HELPS groupnorm at every wide-N shape (-1% to **-17.4%**),
+  i.e. the cap COSTS groupnorm 1-17%. groupnorm's lighter 2-moment combine affords a wider combine tile;
+  the welford-tuned 32768-byte cap throttles it. Welford never sees this (welford curriculum N≤8192 →
+  combine "already full", cap inert for welford).
+- NORMALIZE tile cap (B): mostly HELPS groupnorm too (uncapping costs +6 to +62%) — so the normalize cap
+  GENERALIZES (keep it). Exception fp32 (512,32768) where uncap helps -17.4% (edge).
+- WELFORD control: normalize cap helps +100-110% at (262144,5120) [the 7.3× valley]; combine cap inert
+  (already full at N≤8192). So narrowing the COMBINE cap is SAFE for welford (it never binds in-curriculum).
+**FIX HYPOTHESIS — REVISED after decisive A/B:** the combine cap is NOT welford-vs-groupnorm overfit.
+The wide-N small-M combine A/B shows the cap HURTS *welford too* (-9.8% bf16 / -11.5% fp32 at (512,16384)).
+welford & groupnorm get IDENTICAL configs at the same (M,N) — same itemsize=4, same cap. The cap is simply
+**MISTUNED: too tight at small M_BLOCK** because welford's TRAINING focused on huge-M (where M_BLOCK is
+raised and the cap is correct). The real spill driver (per the code's own TODO) is **M_BLOCK × tile × itemsize**.
+**THE FIX (M-aware, RAISE-ONLY combine cap):**
+  combine_R = min(np2(N), max(STRUCTURED_COMBINE_CAP_BYTES//itemsize, COMBINE_PROG_BUDGET_BYTES // M_BLOCK // itemsize))
+with COMBINE_PROG_BUDGET_BYTES = 262144 (a per-program resident-pressure ceiling, same 256 KiB scale as
+NARROW_W1_OCC_BYTE_LIMIT — NOT a curriculum fence). M_BLOCK = the seed's floored block_sizes[0] (= raised
+autotuner_min, computable at seed time via _block_floor). Raise-only: never below the validated 8192-elem floor.
+**A/B validation (budget=262144):**
+- WELFORD (no-regression control): every shape improves or flat. M_BLOCK=1 wide-N gains -1 to -11%; M_BLOCK≥4
+  huge-M stays R=8192 (UNCHANGED → the 7.3× valley shape (262144,5120) is +0.0%, untouched). Worst +0.6% (noise).
+- GROUPNORM (sibling): gains everywhere -1.1 to -16.5%; FIXES the (512,40960) partial-tile cliff that budget
+  128k caused (+29.8%) — 256k lets it reach full R=65536.
+Budget 262144 chosen over 524288 (which helped fp32 (131072,16384) M_BLOCK=8 but risks unvalidated bf16
+huge-M); 262144 keeps M_BLOCK≥4 safely at 8192. Faithful (M-coupling), raise-only (welford-safe), Pareto-clean.
+NEXT: implement; behavior-oracle the 9 (only welford/groupnorm configs should change); re-run groupnorm transfer; Gate A/C/D.
+
 ### LEVER 1 — REREAD_W8 / w8 branch — VERDICT: GENERALIZES (pending Gate A + D)
 logsumexp initial transfer (seed-vs-tc, CUDA-graph geomean, all CLEAR done-bar out of the gate):
 | dtype | train geo | val geo | losers |

@@ -56,9 +56,7 @@ def log_softmax(x: torch.Tensor) -> torch.Tensor:
 def check(m: int, n: int) -> None:
     """Verify log_softmax against ``torch.nn.functional.log_softmax``."""
     x = torch.randn([m, n], device=DEVICE, dtype=torch.float32)
-    run_example(
-        log_softmax, lambda x: torch.nn.functional.log_softmax(x, dim=-1), (x,)
-    )
+    run_example(log_softmax, lambda x: torch.nn.functional.log_softmax(x, dim=-1), (x,))
 
 
 # %%

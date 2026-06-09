@@ -4066,6 +4066,21 @@
           "train_geo": 1.234
         },
         "verdict": "clears bar all 3 dtypes, no climb"
+      },
+      "groupnorm": {
+        "bf16": {
+          "train_geo": 0.963,
+          "val_geo": 0.776
+        },
+        "fp32": {
+          "train_geo": 1.016,
+          "val_geo": 1.051
+        },
+        "fp16": {
+          "train_geo": 0.954,
+          "val_geo": 0.888
+        },
+        "verdict": "FAILS bar bf16/fp16, marginal fp32 -> OVERFIT SIGNAL. losers cluster wide-N small-M (M-unaware proxy regime). climb required."
       }
     },
     "lever_verdicts": {
@@ -4101,7 +4116,12 @@
     ],
     "results": {},
     "no_regression_checks": [],
-    "tried_rejected": [],
+    "tried_rejected": [
+      {
+        "note": "lever-2 A/B localization (NOT a rejection, a finding)",
+        "detail": "COMBINE cap (STRUCTURED_COMBINE_CAP_BYTES=32768) is the groupnorm overfit culprit: uncapping combine R_BLOCK 8192->full helps groupnorm -1 to -17.4% at wide-N. NORMALIZE cap GENERALIZES (keep). welford: combine cap inert (N<=8192 already full), normalize cap load-bearing (+100-110% at 262144,5120). So narrowing combine cap is welford-safe."
+      }
+    ],
     "step0": {
       "status": "PASS",
       "shape": "cross_entropy bf16 (8192,50257)",

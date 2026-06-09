@@ -343,9 +343,24 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # 240 KiB sits in the measured dead-zone (most impactful on re-read kernels like CE).
     ROW_PERSIST_MAX_BYTES = 245760
     # Band-C (welford reduce-then-apply) combine-tile cap, in bytes. The combine is a
-    # serial scalar recurrence (count/mean/M2) that prefers persistent; 32 KiB keeps it
-    # so for the welford shapes (N<=8192).
+    # serial scalar recurrence (count/mean/M2) that prefers persistent; this is the
+    # FLOOR of the combine tile (32 KiB / itemsize = 8192 elems) — the spill-safe budget
+    # validated at the raised-M_BLOCK (huge-M) welford shapes.
     STRUCTURED_COMBINE_CAP_BYTES = 32768
+    # Band-C combine cap is M_BLOCK-AWARE (raise-only). The real spill driver is the
+    # per-program footprint ``M_BLOCK * combine_tile * itemsize`` (the combine carries one
+    # [M_BLOCK]-wide scalar per stat), NOT the per-row tile bytes alone — so the prior flat
+    # ``STRUCTURED_COMBINE_CAP_BYTES`` cap was too tight at SMALL M_BLOCK (it throttled the
+    # combine tile of a small-M wide-N row that has register headroom to spare). A small
+    # M_BLOCK affords a WIDER combine tile (fewer combine-loop trips, more ILP); a raised
+    # M_BLOCK (huge-M) must stay narrow. So the combine tile is bounded by this per-program
+    # byte budget DIVIDED by M_BLOCK, but never BELOW the validated floor above (raise-only,
+    # so huge-M is byte-for-byte unchanged — the welford(262144,5120) 7.3x valley is
+    # untouched). 256 KiB matches the resident-pressure scale of NARROW_W1_OCC_BYTE_LIMIT;
+    # it is a hardware footprint ceiling, not a curriculum value. CUDA-graph-validated: at
+    # M_BLOCK=1 wide-N, welford +1-11% and groupnorm +1-16.5%; at M_BLOCK>=4 the tile is
+    # unchanged (welford huge-M zero-regression).
+    STRUCTURED_COMBINE_PROG_BYTES = 262144
 
     # A wide half-precision REDUCTION-BOUND row (re-read for multiple reductions, no
     # full-width output store) whose reduction-tree footprint is <= this many bytes prefers
@@ -786,15 +801,30 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
             )
             r_block = min(r_block, _np2(max(1, cap)))
         elif non_reduction_loop_ids:
-            # Band C (welford): the combine is a serial scalar recurrence that prefers
-            # persistent, so cap its tile by the spill-safe budget; normalize tile(s) are
-            # widened separately in _build_block_sizes.
+            # Band C (welford, groupnorm): the combine is a serial scalar recurrence that
+            # prefers persistent, so cap its tile; normalize tile(s) are widened separately
+            # in _build_block_sizes.
             #
-            # TODO(reductions): these per-N caps are a PROXY — the real spill driver is
-            # the coupled M_BLOCK * tile * itemsize, so the principled seed is
-            # block-M-aware. Do NOT LOOSEN without a full-M-range A/B: raising the
-            # normalize cap (2048->4096) once regressed welford(262144,5120) ~7.3x.
-            cap = cls.STRUCTURED_COMBINE_CAP_BYTES // max(1, fact.itemsize)
+            # The cap is M_BLOCK-AWARE: the spill driver is the per-program combine
+            # footprint ``M_BLOCK * tile * itemsize`` (one [M_BLOCK]-wide scalar per
+            # combine stat), so the byte budget is divided by M_BLOCK. A small M_BLOCK
+            # (small-M wide-N) affords a WIDER combine tile (fewer combine trips); a raised
+            # M_BLOCK (huge-M) keeps the narrow validated floor. Raise-only via max(floor,
+            # budget // M_BLOCK), so huge-M is byte-identical to before (the
+            # welford(262144,5120) 7.3x valley is untouched). M_BLOCK is the seed's floored
+            # block_sizes[0] (= the raised autotuner_min), known here before _build_block_sizes.
+            itemsize = max(1, fact.itemsize)
+            m_block = 1
+            for mbid in fact.m_block_ids:
+                m_idx = spec.block_sizes.block_id_to_index(mbid)
+                m_block *= cls._block_floor(
+                    cast("BlockSizeSpec", spec.block_sizes[m_idx])
+                )
+            floor_elems = cls.STRUCTURED_COMBINE_CAP_BYTES // itemsize
+            budget_elems = (
+                cls.STRUCTURED_COMBINE_PROG_BYTES // max(1, m_block) // itemsize
+            )
+            cap = max(floor_elems, budget_elems)
             r_block = min(r_block, _np2(max(1, cap)))
 
         seed: dict[str, Any] = {
