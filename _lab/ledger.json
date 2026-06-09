@@ -3427,6 +3427,14 @@
         "my_error": "The coverage sweep compared w4 vs w16(ramp) and reported 'worst -2.0%' \u2014 but the CORRECT bar is w4 vs CELL-BEST. w2 beats w4 by >3-12% in the lower byte sub-band, and the ramp's actual pick for rnumel<=4096 is w8 (not w16), so some 'wins vs w16' were losses vs w8. Single-arm (vs-ramp) validation MISSED the vs-best regressions.",
         "noise_note": "skeptic1's welford +98.6% was COLD-LAUNCH noise (173us cold vs 60us stable, +1.7% vs best on stable per skeptic3). Cliff exclusion + faithfulness CONFIRMED by all 3 (softmax bf16 N5120/8192 + fp32 N5120 correctly got w16; input_load_itemsize keying faithful, no identity smuggling). The kill is on the FIRED-ZONE sub-optimality (w4 where w2 wins), not the mechanism.",
         "action": "REVERT mid-N w4 commit. REBUILD with the byte sub-band split: (2048,4096]->w2, (4096,10240]->w4, EXCLUDE sum (warp-insensitive, w4 regresses it +11.8%), re-validate vs CELL-BEST (not vs-ramp), re-gate. The mid-N WIN is real but the rule shape was wrong."
+      },
+      {
+        "gate": "midN_rebuild_vs_cell_best (anti-giving-up satisfied)",
+        "sha": "88ac87e4",
+        "verdict": "MID-N w4 NOT cleanly shippable (confirmed by fresh 196-cell vs-cell-best sweep). SALVAGEABLE WIN: extend D4 narrow w1 cap 2048->2560.",
+        "midN_ceiling": "Within every byte sub-band x occ bucket, best_num_warps is KERNEL-DIVERGENT (byte(2048,4096] occ62: {w1:8,w2:8,w4:5,w8:3} \u2014 no mode; rms fp32 wants w8 at low occ while softmax wants w1). No faithful fact separates them (converged in byte/occ/row_reread space, diverge in behavior). EVERY candidate mid-N rule has a cell >5% (worst +21.8%). This is the multi-dim ceiling the orig D4 assessment predicted beyond narrow-N. Anti-giving-up: ran fresh full vs-cell-best sweep (warmup-hardened), no clean rule exists -> legit stop for the GENERAL mid-N w4 rule.",
+        "salvage": "Raising NARROW_W1_MAX_BYTES 2048->2560 (keep occ<=512//ils): 34 new cells ALL kernels x bf16/fp32, worst +2.9% vs best, ZERO >5%. Wins: softmax bf16 +59-85%, welford +35-65%, ln +13-28%, sum +17-29%. Clean because at byte<=2560 even sum/rms want w1/w2 (the +11.8% sum regression that killed mid-N was at byte4096+ w4). Implement + re-gate.",
+        "lesson": "validated vs CELL-BEST this time (the killed rule's error). The mid-N WIN was real but only the narrow slice (byte<=2560) is gate-clean; w4 at byte 4096-10240 is kernel-divergent."
       }
     ],
     "results": [

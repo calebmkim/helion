@@ -7,9 +7,27 @@ authoritative manual is `_lab/prompts/{hillclimb-method,local-setup,gate-prompts
 Source of truth (method §6.1): THIS notebook + `_lab/ledger.json` key `dtype`. Trust the log
 over context. Wins AND rejections recorded as one-liners with evidence pointers.
 
-## ⟹⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-09, mid-N session) — READ FIRST
-**STATE: D4 narrow-N w1 SHIPPED + gate-confirmed (intact). Mid-N w4 BUILT then KILLED by Gate A 3/3,
-REVERTED @ `88ac87e4`. Branch tip is the solid D4-only state + lab notes. Rebuilding mid-N correctly.**
+## ⟹⟹⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-09, D4-corner fix) — READ FIRST
+**STATE: branch tip ~`c1327b8b` = D4 narrow-N w1 + lab notes. Mid-N w4 DEFERRED (killed by Gate A, fresh
+vs-cell-best sweep confirms no clean rule — kernel-divergent best-warps; legit ceiling). NOW FIXING a
+NEWLY-FOUND D4 corner regression.**
+
+### ⚠ D4 UPPER-CORNER REGRESSION FOUND (in-curriculum) — FIX IN PROGRESS
+The cliff-moves-with-bytes finding (wider rows cliff at LOWER occ) bit D4 itself. D4 fires w1 for
+byte<=2048 at occ<=512//ils (bf16 occ<=256). But softmax bf16 byte=2048 (N=1024) MEASURED: occ124 w1 fine,
+occ248 w1 **+18.3%** vs best (w2), occ256 w1 **+30.5%** vs best (w8). The byte=2048 cliff is at occ~200, NOT
+~496 like byte=1024. IN-CURRICULUM shapes in this corner: layer_norm TRAIN (32768,1024), sum TRAIN
+(32768,1024) [byte2048 occ248] — D4 fires w1 on them. D4's gates PASSED because no gate/skeptic happened to
+measure this exact byte=2048 occ~248 corner (the overfit-gate's exact worry). Measuring layer_norm/sum at the
+corner now (/tmp/d4_incurriculum_corner.py) to size the fix.
+FIX OPTIONS (decide on data): (1) lower NARROW_W1_OCC_BYTES 512->~256 (bf16 occ cap 256->128) — protects
+byte2048 but loses byte<=1024 wins at occ 128-256; (2) byte-SCALED occ cap (wider row -> lower occ cap,
+matches the mechanism) — preserves byte<=1024 to high occ, tightens byte2048. The big D4 wins are byte<=1024
+(softmax (8192,512) +26%) at low occ — those are SAFE; only the byte~2048 upper edge at occ>~200 regresses.
+D4 narrow win is REAL; this is a cap-tightening to make it genuinely regression-free, NOT a revert.
+
+## ⟹⟹⟹⟹ FRESH-CONTEXT RESUME (2026-06-09, mid-N session)
+**Mid-N w4 BUILT then KILLED by Gate A 3/3, REVERTED @ `88ac87e4`. Rebuilt vs-cell-best: no clean rule.**
 
 ### MID-N w4: KILLED + REVERTED (the gate worked) — KEY LESSON
 Built mid-N w4 (byte(2048,10240]->w4, occ<=448//ils). Gate A KILLED 3/3. Real findings (ledger
