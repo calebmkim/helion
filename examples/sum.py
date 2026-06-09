@@ -42,7 +42,12 @@ def sum_kernel(x: torch.Tensor) -> torch.Tensor:
     out = torch.empty([m], dtype=x.dtype, device=x.device)
 
     for tile_m in hl.tile(m):
-        out[tile_m] = x[tile_m, :].sum(-1)
+        # Reduce in fp32 even for bf16/fp16 inputs. An input-width (bf16/fp16)
+        # accumulator loses small addends as the running sum grows (and can overflow
+        # fp16), giving a result far less accurate than torch.sum / torch.compile,
+        # which upcast the accumulator to fp32. The HBM load stays x.dtype, so this
+        # costs no extra bandwidth; it is a true no-op at fp32 input.
+        out[tile_m] = x[tile_m, :].to(torch.float32).sum(-1).to(out.dtype)
 
     return out
 

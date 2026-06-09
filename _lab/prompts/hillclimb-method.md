@@ -144,11 +144,17 @@ complementary tools — use both:
 **(a) Run the autotune oracle and compare it to tc.** This is the cleanest reachability test:
 - **oracle BEATS tc** → a beating config exists and is reachable; its winning config is your
   **answer key**. Go climb toward it (Step 3).
-- **oracle CANNOT beat tc** → Helion's codegen can't express the optimal Triton here. This is a
-  **kernel/codegen finding, not a seed-heuristic failure** — **document it and move on; do not burn
-  knob-turns** (and per the Step 3 invariant, a `seed ≈ oracle < tc` shape is *done*). **But** this
-  exemption is a ceiling-claim: it's valid only on a **converged** oracle (search-finished, not
-  truncated/OOM) that is genuinely ≤ tc — route it through anti-giving-up (§5), never self-certify.
+- **oracle CANNOT beat tc** → Helion's codegen can't express the optimal Triton here, so the *tc*
+  bar is unreachable — **but this is NOT permission to stop tuning the seed.** The goal just
+  **switches target**: chase the **Helion oracle** instead of tc, i.e. drive `seed ≤ oracle × 1.05`
+  for this shape (Step 3 mechanics, measured against the oracle's config/latency instead of tc's).
+  The shape is **done/exempt only once `seed ≈ oracle`** (within ~5%); while `seed < oracle` there
+  is still reachable perf on the table, so the shape **stays on the worklist even though tc is out
+  of reach** (real miss: jsd — the oracle was ~18% faster than the seed, yet it was waved off as
+  "exempt" because *both* lose to tc). "Helion can't beat tc here" is a real, document-worthy
+  kernel/codegen finding, but it bounds the **tc bar only** — never the **seed-vs-oracle** bar. This
+  ceiling-claim is valid only on a **converged** oracle (search-finished, not truncated/OOM)
+  genuinely ≤ tc — route it through anti-giving-up (§5), never self-certify.
 
 **(b) Optionally read the generated Triton** to *understand the mechanism* of the gap:
 - Helion: `Kernel.to_triton_code(config)` (or `HELION_PRINT_OUTPUT_CODE=1`).
@@ -183,10 +189,15 @@ at full), but a quick *parity/win* is **suspect** and must be full-confirmed (a 
   config, run it as `configs=[that_config]` through the **same** bare-forward harness as the seed arm
   — never hand-roll (you'd reintroduce the §4 footguns).
 
-**The round-one bar — BEAT tc on every reachable shape.** Per-shape (`seed ≤ tc × 1.03`), **never**
-an aggregate geomean — declaring done on a good geomean while individual shapes lag is a classic
-failure. A shape the oracle also can't beat tc on is **exempt** (codegen-bound, Step 2a) — flag it,
-don't chase it.
+**The round-one bar — per shape, hit the BEST REACHABLE target** (per-shape, **never** an aggregate
+geomean — declaring done on a good geomean while individual shapes lag is a classic failure):
+- **tc reachable** (oracle ≥ tc) → the bar is **beat tc**: `seed ≤ tc × 1.03`.
+- **tc unreachable** (oracle < tc, codegen-bound per Step 2a) → the bar **drops to the oracle, it
+  does NOT disappear**: `seed ≤ oracle × 1.05`. Document the "can't beat tc" finding, then still
+  climb the seed to the oracle. A shape is **exempt (stop tuning) ONLY when `seed ≈ oracle`**; a
+  codegen-bound shape with `seed < oracle` is **live worklist, not exempt**. Never conflate "Helion
+  can't beat tc" with "the seed is optimal" — they are independent (jsd: oracle ~18% faster than the
+  seed, yet both lose tc).
 
 **Invariant that ties it together:** the oracle searches the *same codegen* the seed emits, so a
 source/codegen ceiling caps the oracle *too*. Therefore:
@@ -196,8 +207,9 @@ source/codegen ceiling caps the oracle *too*. Therefore:
   Step 2a (oracle ≤ tc). Never self-certify this ceiling without that fresh-oracle confirmation.
 
 ### Step 4 — After consistently beating tc: chase the oracle, then beat it (overtime)
-Only once round one holds (seed beats tc on every reachable shape) does the *oracle-parity* bar
-engage: push `seed ≤ oracle × 1.03` (per-shape) everywhere. Beyond parity, hunt configs that *beat*
+Only once round one holds (seed beats tc on every reachable shape, **and** is within ~5% of the
+oracle on the tc-unreachable ones) does the broader *oracle-parity* bar engage: push `seed ≤ oracle
+× 1.03` (per-shape) everywhere — including the shapes that already beat tc. Beyond parity, hunt configs that *beat*
 the oracle (couplings its bounded stochastic search under-samples). A win must come from **theory +
 the answer-key diff**, never from cherry-picking an observed search winner (p-hacking). "No clean
 rule / noise / stuck / done / ceiling" is **not an exit** — it's the trigger to run a fresh oracle

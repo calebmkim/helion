@@ -58,6 +58,17 @@ USE_CG = os.environ.get("HELION_LAB_NO_CG", "0") != "1"
 
 DTYPES = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}
 
+# fp16 is intentionally NOT benchmarked for these loss/divergence kernels. At realistic
+# vocab sizes (V >= ~30k) the softmax / exp(log_softmax) probabilities (~1/V) underflow
+# fp16's 5-bit exponent (min normal ~6e-5) to 0, so log(0) = -inf and 0 * -inf = NaN ->
+# the whole row is NaN. bf16 shares fp32's 8-bit exponent and is safe. Real mixed-
+# precision training keeps loss kernels in bf16/fp32 (autocast runs softmax/log/loss in
+# fp32) for exactly this reason, so fp16-wide-V is not a real workload. (Empirically,
+# 2026-06-08: kl_div NaNs at every test vocab >= 32768; jsd NaNs at the widest V >= ~115k.
+# torch's own KLDivLoss avoids NaN via fp32/masking; the Helion examples don't guard it
+# because the regime is out of scope.) These kernels ARE benchmarked at bf16 and fp32.
+FP16_UNSUPPORTED = {"kl_div", "jsd"}
+
 # Per-dtype accuracy tolerance (rtol=atol). fp32 tight; half-precision floors are MEASURED
 # per kernel (see _lab/dtype_notebook.md) — these are the justified defaults; a kernel that
 # needs looser is recorded explicitly. Multi-pass losses (kl_div/jsd/welford) compound.
@@ -185,6 +196,12 @@ KERNELS = {
 def bench(kn: str, dt_name: str, split: str, arms: list[str], explicit_shapes=None) -> dict:
     fn, build, tc_ref = KERNELS[kn]
     dt = DTYPES[dt_name]
+    if dt_name == "fp16" and kn in FP16_UNSUPPORTED:
+        return {"kernel": kn, "dtype": dt_name, "split": split, "rows": [],
+                "skipped": "fp16 unsupported for this loss kernel: at realistic vocab the "
+                           "softmax/exp probabilities (~1/V) underflow fp16's 5-bit exponent "
+                           "-> log(0)=-inf -> NaN. Real training keeps loss kernels in "
+                           "bf16/fp32 (see FP16_UNSUPPORTED note). Benchmarked at bf16/fp32."}
     shapes = explicit_shapes if explicit_shapes else SH.SHAPES[kn][split]
     rows = []
     for (m, n) in shapes:
@@ -249,13 +266,22 @@ def bench(kn: str, dt_name: str, split: str, arms: list[str], explicit_shapes=No
     # Headline G uses CUDA-graph (G_cg) where available, else do_bench G_seed.
     def _g(r):
         return r.get("G_cg") or r.get("G_seed")
-    gs = [_g(r) for r in rows if _g(r)]
+    # ACCURACY GATE: only fold shapes that PASS the accuracy check into the headline G.
+    # A kernel that returns wrong/NaN output (input-width half accumulator, fp16
+    # underflow, ...) is not a valid perf comparison vs torch, so its timing must NOT
+    # count as a win/loss. Failing shapes are still timed and kept per-row, but are
+    # excluded from geo/median/min/max and the loser list, and surfaced in
+    # acc_fail_excluded so they can never be silently reported as wins.
+    valid = [r for r in rows if r.get("acc") is True]
+    gs = [_g(r) for r in valid if _g(r)]
     return {"kernel": kn, "dtype": dt_name, "split": split, "rows": rows,
             "median_G": round(st.median(gs), 4) if gs else None,
             "geo_G": round(st.geometric_mean(gs), 4) if gs else None,
             "min_G": round(min(gs), 4) if gs else None,
             "max_G": round(max(gs), 4) if gs else None,
-            "losers_vs_tc": [r["shape"] for r in rows if _g(r) and _g(r) < 1 / 1.03],
+            "losers_vs_tc": [r["shape"] for r in valid if _g(r) and _g(r) < 1 / 1.03],
+            "n_valid": len(gs), "n_total": len(rows),
+            "acc_fail_excluded": [r["shape"] for r in rows if r.get("acc") is not True],
             "any_acc_fail": any(r.get("acc") is False for r in rows)}
 
 
@@ -280,9 +306,13 @@ def main() -> None:
             r = bench(kn, a.dtype, a.split, arms, explicit)
         except Exception as e:  # noqa: BLE001
             sys.stderr.write(f"  {kn} FAILED: {e}\n"); out.append({"kernel": kn, "error": str(e)}); continue
-        sys.stderr.write(f"  median_G={r['median_G']} geo={r['geo_G']} "
-                         f"({r['min_G']}-{r['max_G']}) losers={r['losers_vs_tc']} "
-                         f"acc_fail={r['any_acc_fail']}\n")
+        if r.get("skipped"):
+            sys.stderr.write(f"  SKIPPED: {r['skipped']}\n")
+        else:
+            sys.stderr.write(f"  median_G={r['median_G']} geo={r['geo_G']} "
+                             f"({r['min_G']}-{r['max_G']}) losers={r['losers_vs_tc']} "
+                             f"n_valid={r['n_valid']}/{r['n_total']} "
+                             f"acc_excluded={r['acc_fail_excluded']}\n")
         out.append(r)
         json.dump(out, open(a.out, "w"), indent=2)
     print(json.dumps(out, indent=2))
