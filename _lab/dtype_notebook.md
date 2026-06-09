@@ -103,6 +103,20 @@ there. This 2D coherence is the Gate-F mechanism for mid-N (same cross-warp-tree
 per-program work = byte AND saturation = occ). A future unified `warps=clamp(f(byte,occ))` could replace
 the bands, but incremental band-rules are gate-able now.
 
+### ★ USER DIRECTIVE (2026-06-09): understand the cliff + build a PRINCIPLED separator — don't settle for caps ★
+softmax CLIFFS (N5120 bf16: +59% occ496 → −71% occ993) but welford does NOT (w4 wins at ALL occ incl
+occ993 +9.3%) at IDENTICAL N/byte/occ AND identical existing facts AND identical IR load-counts
+(total_row_load_nodes=2, reduction_fed=1, loop_graphs_loading_row=2 for BOTH). So the separator is a
+deeper property. HYPOTHESIS (testing via ncu): softmax is bandwidth/latency-bound (2nd pass re-STREAMS the
+[M,N] row from HBM + recomputes exp) → needs warps to hide HBM latency once SMs saturate → cliff; welford
+is COMPUTE-bound (serial count/mean/M2 recurrence) → latency not the bottleneck → flat, no cliff.
+Deep mechanism experiment RUNNING (/tmp/cliff_mechanism.json): ncu warp-stall + DRAM throughput at the
+cliff, generated-Triton structural diff, off-curriculum learning shapes (N3072/4096, fine M around cliff).
+GOAL: a faithful ReductionFact property (e.g. full-row HBM re-stream count, or compute-vs-bandwidth-bound)
+that separates softmax(cliff) from welford/rms(safe), so the rule can extend the win to high occ for the
+safe kernels INSTEAD of capping everyone at occ224. NOTE: the conservative-cap rule is ALREADY safe
+(caps occ<=224 bf16 << 558 cliff) — the separator is UPSIDE (lets welford win to occ993), not a blocker.
+
 ### D4 IMPLEMENTATION (HEAD 3408c4f5) — what was built
 Two faithful `ReductionFact` fields (device_ir builders T1+T2; config_spec):
   - `grid_rows` = product of static M-axis extents (occupancy numerator); `_grid_rows()`.
