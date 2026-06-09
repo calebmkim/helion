@@ -4114,12 +4114,46 @@
         "verdict": "FAITHFUL. row_reread/full_width_output/REREAD_W8 cap all faithful workload properties."
       }
     ],
-    "results": {},
-    "no_regression_checks": [],
+    "results": {
+      "groupnorm_after_combine_fix": {
+        "bf16": {
+          "train_geo": 1.002,
+          "val_geo": 0.951
+        },
+        "fp32": {
+          "train_geo": 1.025,
+          "val_geo": 1.067
+        },
+        "fp16": {
+          "train_geo": 0.995,
+          "val_geo": 0.936
+        },
+        "note": "combine fix lifted bf16 val 0.776->0.951, fp32 clears; bf16/fp16 val still <1 with wide-N small-M losers"
+      },
+      "groupnorm_oracle_quick": {
+        "finding": "remaining gap REACHABLE not ceiling. oracle beats seed 1.26-1.45x; oracle/tc 1.003-1.249 (oracle BEATS tc every shape). Answer-key field diff: combine tile (bs[1]) ALREADY matches oracle (32768) thanks to combine fix; the gap is the NORMALIZE tile (bs[2]) which seed keeps at 2048 but oracle wants 4096-8192 at small-M wide-N.",
+        "rows": "bf16 (512,20480) s/o=1.38 oracle_bs=[1,32768,4096]; (1024,24576) 1.28 [1,32768,8192]; (512,32768) 1.33 [1,32768,8192]w32; (384,40960) 1.45 [1,16384,8192]; (768,20480) 1.26 [1,32768,8192]w32. fp16 similar.",
+        "next_lever": "normalize-tile cap (loop_chunk_bytes=8192 -> tile 2048 fp32) is the SECOND M-unaware overfit sub-lever. Make M-aware (raise-only) like combine. TODO WARNS: flat 2048->4096 regressed welford(262144,5120) 7.3x -> MUST be M-aware."
+      }
+    },
+    "no_regression_checks": [
+      {
+        "edit": "M-aware combine cap (STRUCTURED_COMBINE_PROG_BYTES=262144, raise-only)",
+        "sha": "a11d28fc",
+        "behavior_oracle": "only welford changed (18 wide-N configs 8192->16384); all huge-M (262144,*) byte-identical; other 8 kernels byte-identical",
+        "welford_before_after_cudagraph": "15 changed shapes (train+val+robustness, 3 dtypes) ALL faster (-1.6 to -9.1%) or flat (+0.7% noise). 0 regressions >3%. NO-REGRESSION PASS",
+        "note": "edit IMPROVES welford too at small-M wide-N (not just non-regressing). welford-vs-tc unchanged broadly (welford is pre-existing codegen-bound, not caused by edit)."
+      }
+    ],
     "tried_rejected": [
       {
         "note": "lever-2 A/B localization (NOT a rejection, a finding)",
         "detail": "COMBINE cap (STRUCTURED_COMBINE_CAP_BYTES=32768) is the groupnorm overfit culprit: uncapping combine R_BLOCK 8192->full helps groupnorm -1 to -17.4% at wide-N. NORMALIZE cap GENERALIZES (keep). welford: combine cap inert (N<=8192 already full), normalize cap load-bearing (+100-110% at 262144,5120). So narrowing combine cap is welford-safe."
+      },
+      {
+        "attempt": "M-aware normalize-tile cap (STRUCTURED_NORMALIZE_PROG_BYTES=16384, raise-only, 2048->4096 at M_BLOCK=1)",
+        "result": "REJECTED by no-regression backstop. Helps wide-N (N>=10240) welford+groupnorm -8 to -13%, BUT REGRESSES welford mid-N M_BLOCK=1: fp32 (8192,5120)+6.6%,(8192,7168)+9.4%,(8192,8192)+9.7%,(8192,6144)+5.0%; fp16 (16384,4096)+14.8%. The widening helps genuinely-wide rows but hurts narrow-ish looped rows (N in [4096,8192]). My wide-N-only sweep MISSED these interior shapes (the classic endpoint-sweep footgun).",
+        "lesson": "normalize widening needs a faithful WIDTH gate (fire only at genuinely-wide rows, not just looped) \u2014 M_BLOCK-awareness alone is insufficient because the mid-N M_BLOCK=1 shapes also widen. Combine fix alone is Pareto-clean; normalize fix deferred unless a clean width-separator found."
       }
     ],
     "step0": {

@@ -528,8 +528,10 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
 
         # Per-row valid bytes below which the loop tile stays persistent at next_pow2(N).
         persist_max_bytes = 12288
-        # Looped chunk (bytes) above that threshold. Do NOT raise without re-gating:
-        # 4096 is a regression valley at the large-M / N~5120 class.
+        # Looped chunk (bytes) above that threshold — the FLOOR of the M-aware budget below.
+        # Do NOT lower without re-gating: a 4096-elem chunk is a ~6x regression valley at the
+        # large-M / N~5120 welford class (M_BLOCK=16); the M-aware budget keeps this floor
+        # there and only widens at small M_BLOCK.
         loop_chunk_bytes = 8192
 
         loop_block: int | None = None
