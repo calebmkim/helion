@@ -1,10 +1,20 @@
 # bf16/fp16 reduction-seed dtype climb — REPORT (living; updated as the climb proceeds)
 
-## EXECUTIVE SUMMARY (milestone banked @ f1869309 — D4 narrow-N w1 SHIPPED)
-The bf16/fp16 frontier is **transfer + correctness + THREE gate-confirmed perf wins** (jsd correctness,
-CE wide-V w8, and — newest — D4 narrow-N occupancy-gated w1, +20-60% on a broad narrow-row class). The
-inherited fp32 champion transfers free; on top of that the warps lever yielded two faithful wins at
-opposite extents (wide-V w8 via `full_width_output`; narrow-N w1 via `grid_rows` + `input_load_itemsize`):
+## EXECUTIVE SUMMARY (milestone banked @ bd9d9098 — FOUR gate-confirmed wins; warps `f(byte,occ)` surface)
+The bf16/fp16 frontier is **transfer + correctness + FOUR gate-confirmed wins**. The inherited fp32
+champion transfers free; on top of it, the central result is that the reduction `num_warps` ramp was
+systematically OVER-WARPED, and the true optimum follows a faithful `f(byte, occ)` surface (the few-warps
+cliff sits at a roughly CONSTANT resident-pressure product `occ*row_bytes`, ncu-proven = latency-hiding
+capacity). The seed now captures the cleanly-separable regions of that surface via faithful workload facts:
+1. **jsd correctness** (true fp32 no-op);
+2. **CE wide-V w8** (+35-49%) — re-read scalar-output, `full_width_output` fact;
+3. **D4 narrow-N w1** (+20-60%) — `grid_rows` + `input_load_itemsize`, byte-scaled occ cap (occ*row_bytes
+   ≤256KiB), corner regression found-and-fixed, Gate A+D+F+E;
+4. **Band-B wide-V w8** (jsd/kl_div bf16/fp16, +6-15%) — `num_carried_2d_tiles` + the Band-B `input_load_
+   itemsize` fallback; surfaced by the oracle-parity reframe (jsd was wrongly filed "exempt"). Gate A
+   (resolved after a cold-launch artifact in one skeptic) + Gate D faithful.
+DEFERRED — **mid-N w4 (rnumel 4k-16k): a PROVEN ceiling** — best-warps is kernel-divergent within every
+(byte,occ) bucket with no faithful separator (gate-killed + fresh 980-measurement vs-cell-best sweep).
 - **The inherited fp32 champion's configs transfer to bf16/fp16 for FREE.** The seed already beats
   torch.compile-default on the large majority of curriculum shapes at bf16 (geo G_cg: softmax 1.31,
   CE 1.19, layer_norm 1.09, kl_div 1.08, sum 1.07, rms_norm 1.06) and fp16 tracks bf16 (transfer
