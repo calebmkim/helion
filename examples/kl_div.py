@@ -101,8 +101,12 @@ def kl_div_forward(
                 kl_loss += prob_true * (y_true_val - y_pred_val)
 
             else:
-                # KL(P || Q) = y_true * (log(y_true) - y_pred) when y_pred in log-space
-                log_true = torch.log(torch.clamp(y_true_val, min=eps))
+                # KL(P || Q) = y_true * (log(y_true) - y_pred) when y_pred in log-space.
+                # Clamp+log in fp32: at fp16 the eps (1e-10) underflows to 0, so the
+                # clamp is a no-op, log(0) = -inf, and y_true*(-inf) = 0*-inf = NaN.
+                # In fp32 the eps is representable, so log_true stays finite and the
+                # 0*log0 term is 0. fp32 no-op (the .to is identity when already fp32).
+                log_true = torch.log(torch.clamp(y_true_val.to(torch.float32), min=eps))
                 kl_loss += y_true_val * (log_true - y_pred_val)
 
             if reduction == "none":

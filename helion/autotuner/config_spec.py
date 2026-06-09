@@ -94,8 +94,13 @@ class ReductionFact(NamedTuple):
     - ``block_id`` / ``size_hint``: the reduction axis and its extent (rnumel).
     - ``m_block_ids``: the non-reduction (kept) tile block_ids.
     - ``static_rnumel``: the extent if statically known, else None.
-    - ``itemsize``: bytes/element of the reduced tensor; byte caps key on
-      ``size_hint * itemsize``.
+    - ``itemsize``: bytes/element of the reduced tile (the reduction INPUT, post any
+      ``.to(fp32)`` upcast); byte caps key on ``size_hint * itemsize``.
+    - ``hbm_itemsize``: bytes/element of the row as LOADED FROM HBM, before any upcast
+      (2 for a bf16/fp16 input, 4 for fp32) — the true global-memory traffic width. Differs
+      from ``itemsize`` for kernels that ``.to(fp32)`` before reducing (then ``itemsize``
+      reads the 4B accumulator while ``hbm_itemsize`` reads the 2B load). Lets a heuristic
+      distinguish equal-extent bf16 vs fp32 rows by real HBM bytes without a dtype branch.
     - ``num_load``: device loads over this rdim (the ``== 1`` stream-eviction gate).
     - ``num_carried_2d_tiles``: 2-D ``[M_BLOCK, R_BLOCK]`` tiles carried across the inner
       loop (1-D per-row scalars do not count). The Band-B signal — routes (``>= 1``) and
@@ -122,6 +127,7 @@ class ReductionFact(NamedTuple):
     non_reduction_loop_block_ids: tuple[int, ...] = ()
     row_reread: bool = False
     reread_buffer_name: str | None = None
+    hbm_itemsize: int = 0
 
 
 class MemoryOpFact(NamedTuple):

@@ -69,7 +69,9 @@ def longsum(x: torch.Tensor) -> torch.Tensor:
     out = torch.empty([m], dtype=x.dtype, device=x.device)
 
     for tile_m in hl.tile(m):
-        out[tile_m] = x[tile_m, :].sum(-1)
+        # Reduce in fp32 to match torch.sum's accumulation semantics (see sum.py).
+        # fp32 no-op when x is already fp32.
+        out[tile_m] = x[tile_m, :].to(torch.float32).sum(-1).to(x.dtype)
     return out
 
 

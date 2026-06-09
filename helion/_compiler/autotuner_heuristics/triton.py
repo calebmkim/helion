@@ -296,6 +296,12 @@ class TritonSplitJoinRotateHeuristic(AutotunerHeuristic):
         return Config(block_sizes=[1] * len(env.config_spec.block_sizes))
 
 
+# B200 / sm100 hardware target. The dedicated B200 reduction heuristics gate on this;
+# the sm90 heuristics defer when it matches so exactly one (the B200-tuned) reduction
+# seed fires on sm100 — no competing narrow seed.
+_B200_TARGET: tuple[tuple[str, str | None], ...] = (("cuda", "sm100"),)
+
+
 def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> bool:
     """Gate: exactly one ``ReductionFact`` and no ``matmul_facts``. Admits both tracks
     (T1 rollable, T2 user-tiled); excludes GEMMs and multi-axis manual reductions."""
@@ -327,6 +333,10 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     """
 
     backend = "triton"
+    # sm90 (H100) is the originally-tuned target. B200 (sm100) is served by the dedicated
+    # sm100-gated subclasses below (TritonB200Reduction*Heuristic), which re-derive the
+    # constants for 148 SMs / half-precision rather than reuse the H100-tuned ones. The
+    # sm90 classes keep this target untouched, so the H100 path is byte-identical.
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
     # Looped-fallback chunk (pow2) for rows above the structural cap (rnumel > 2**20).
@@ -521,6 +531,10 @@ class TritonReductionTileHeuristic(_TritonReductionSeedBase):
     def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
         if not _triton_reduction_eligible(env, device_ir):
             return False
+        # Defer to the dedicated B200 heuristic on sm100 (else two T1 seeds would be
+        # collected — this narrow one plus the B200-tuned one). Unchanged elsewhere.
+        if matches_hardware(env, _B200_TARGET):
+            return False
         spec = env.config_spec
         return _is_t1_reduction(spec, spec.reduction_facts[0])
 
@@ -642,6 +656,9 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
     def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
         if not _triton_reduction_eligible(env, device_ir):
             return False
+        # Defer to the dedicated B200 heuristic on sm100 (see T1 note). Unchanged elsewhere.
+        if matches_hardware(env, _B200_TARGET):
+            return False
         spec = env.config_spec
         return not _is_t1_reduction(spec, spec.reduction_facts[0])
 
@@ -707,3 +724,271 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
             if ev is not None:
                 seed["load_eviction_policies"] = ev
         return Config(**seed)
+
+
+# --------------------------------------------------------------------------- #
+# B200 (sm100) dedicated reduction seed heuristics.
+#
+# These subclass the H100 T1/T2 heuristics but gate on sm100 and re-derive the
+# constants for B200 (148 SMs, and 2B-or-4B reduction-input widths at half precision)
+# rather than reuse the H100-tuned values. The sm90 classes above defer on sm100, so on
+# B200 exactly one reduction seed fires — the B200-tuned one — and it is the promoted
+# compiler default. Sibling precedent: ``TritonB200MatmulHeuristic`` in this file.
+#
+# Because ``HARDWARE_TARGETS`` is ``sm100`` here, the inherited ``get_seed_config`` takes
+# its rich branch (the ``matches_hardware`` check passes) and never the sm90 fallback —
+# so the full persistent-vs-looped / num_warps-ramp / eviction logic runs on B200. B200
+# constants are overridden as class attributes / method overrides as the climb tunes them
+# (initially the H100 values = the step-1 baseline).
+# --------------------------------------------------------------------------- #
+
+
+def _b200_num_warps(fact: ReductionFact) -> int:
+    """B200 num_warps ramp keyed on per-row reduction-input BYTES
+    (``size_hint * itemsize``) AND the load structure (re-read vs streamed).
+
+    Two faithful workload properties, no dtype branch:
+
+    * **Bytes, not elements.** The H100 ramp (``_TritonReductionSeedBase._num_warps``:
+      <=1024->4, <=4096->8, <=16384->16, >16384->32, keyed on the element extent)
+      systematically over-provisions warps on B200's 148 SMs — measured ~1 step too high
+      across the mid band on every T1 kernel. Keying on bytes (``size_hint * itemsize``)
+      is the fix and generalizes across dtype for free: an fp32 row (4B) carries twice
+      the bytes of a bf16/fp16 row (2B) at the same extent and correctly wants more warps.
+
+    * **Re-read / 2-D-carry vs streamed.** At equal bytes a row kept resident across passes
+      wants *fewer* warps than a single streamed pass (sum, long_sum), whose bandwidth
+      saturation wants more. Two faithful properties put a kernel on the fewer-warps ladder:
+      ``row_reread`` (genuine cross-pass liveness from ``_analyze_reread`` — the norms /
+      cross_entropy) and ``num_carried_2d_tiles >= 1`` (Band-B kl_div/jsd carry
+      ``[M_BLOCK, R_BLOCK]`` accumulators across the inner loop → high register pressure,
+      so they too want fewer warps even though their input row is not re-read). ``num_load``
+      is NOT used (it counts distinct one-shot loads too: a fused ``(a[i]+b[i]).sum()`` has
+      ``num_load==2`` but is a single streamed pass).
+
+    Band-B additionally caps at ``w16``: the carried 2-D tiles make w32 spill (measured —
+    kl_div/jsd never prefer w32, w16 is best/near-best across all curriculum V; w32 is ~7%
+    slower and costs 6 tc-wins).
+
+    Thresholds fit to B200 sweeps (``_lab/logs/b200/warp_map.json``): the re-read ramp gives
+    tc-wins 65 -> 86 / 99 on T1, generalizes to T2 softmax/welford; the Band-B cap recovers
+    kl_div/jsd (tc-wins 20 -> 26 / 28 vs the streamed w32).
+    """
+    kb = (fact.size_hint * max(1, fact.itemsize)) / 1024.0
+    if fact.row_reread or fact.num_carried_2d_tiles >= 1:
+        # Resident-across-passes (re-read row, or Band-B 2-D carry): fewer warps per byte.
+        if kb <= 8:
+            w = 2
+        elif kb <= 24:
+            w = 4
+        elif kb <= 32:
+            w = 8
+        elif kb <= 192:
+            w = 16
+        else:
+            w = 32
+        # Band-B (carried 2-D accumulators) caps at w16 — w32 spills the carried tiles.
+        if fact.num_carried_2d_tiles >= 1:
+            w = min(w, 16)
+        return w
+    # Single streamed pass (sum, long_sum): more warps to saturate bandwidth.
+    if kb <= 2:
+        return 2
+    if kb <= 4:
+        return 4
+    if kb <= 64:
+        return 8
+    return 32
+
+
+class TritonB200ReductionTileHeuristic(TritonReductionTileHeuristic):
+    """B200 (sm100) T1 inner-reduction seed (sum, long_sum, rms_norm, layer_norm,
+    softmax-row, cross_entropy). Re-tunes the H100 T1 constants for B200."""
+
+    name = "triton_b200_reduction_tile"
+    promote_seed_to_default = True
+    HARDWARE_TARGETS = _B200_TARGET
+
+    # Wide low-HBM-width re-read rows loop a fixed chunk instead of persisting the whole
+    # row: at <=2B HBM width (bf16/fp16) a wide persistent row under-utilizes, and the
+    # looped chunk streams + pipelines better. Keyed on TRUE HBM bytes (hbm_itemsize), not
+    # the fp32-cast itemsize — an fp32 row at the same extent carries 2x the HBM traffic
+    # AND 2x the reduction-tree compute, so it persists longer (it is NOT looped by this
+    # rule). Threshold + chunk from a B200 persist-vs-loop sweep: improved 12 / regressed 0
+    # on the affected wide bf16/fp16 norms (e.g. layer_norm 2048x16384 bf16 0.77->1.17).
+    #
+    # UPPER bound: only the MID-wide norm band loops. A very wide re-read row (the vocab
+    # reductions: cross_entropy at V>=30k) instead wants to PERSIST the whole row at high
+    # warps — looping it is catastrophic (CE 8192x30522 bf16: persist 1.99 vs loop@4096
+    # 1.11). The norms top out at hbm_bytes ~32KB (16384*2B); CE starts at ~61KB, so a
+    # 48KB ceiling cleanly separates "mid-wide norm -> loop" from "huge-vocab -> persist".
+    B200_LOOP_HBM_MIN_BYTES = 16384
+    B200_LOOP_HBM_MAX_BYTES = 49152
+    B200_LOOP_CHUNK = 4096
+
+    # Under-occupied looped streamed reductions (a single streamed pass over a wide row with
+    # FEW rows — long_sum, and few-row wide `sum` — so gridM << SM count) leave SMs idle on a
+    # flat grid. A persistent_interleaved grid (num_sm_multiplier sized to ~fill the SMs)
+    # recovers them. Keyed ONLY on faithful workload properties (NOT kernel identity):
+    # num_load==1 & not row_reread (single streamed pass), grid_rows < num_sm (the occupancy
+    # property), and a per-row work window in ELEMENTS (size_hint): below it the reduction is
+    # too cheap for the grid imbalance to matter; at the >=2**20 structural tail a handful of
+    # rows already saturate compute. Measured net-positive on BOTH long_sum (gridM=64 N=786432
+    # 0.89->1.95, gridM=48 0.54->1.00, gridM=96 N=393216 0.64->1.00, held-out VAL validated) AND
+    # few-row wide sum (16x393216 bf16 0.54->1.29; others tie; all correct) — it generalizes to
+    # any single-streamed under-occupied reduction, as the occupancy mechanism predicts.
+    B200_INTERLEAVE_RNUMEL_MIN = 196608
+    B200_INTERLEAVE_RNUMEL_MAX = 1048576
+
+    @classmethod
+    def _num_warps(cls, fact: ReductionFact) -> int:
+        return _b200_num_warps(fact)
+
+    @classmethod
+    def get_seed_config(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> Config | None:
+        config = super().get_seed_config(env, device_ir)
+        if config is None:
+            return config
+        fact = env.config_spec.reduction_facts[0]
+        # Flip a wide low-HBM-width re-read row from persistent to a looped chunk. Only
+        # when the seed is currently persistent (reduction_loops=[None]) — never override
+        # a row that already loops for a structural reason (rnumel>2**20 / byte cap).
+        rl = config.get("reduction_loops")
+        hbm_bytes = fact.hbm_itemsize * fact.size_hint
+        if (
+            fact.row_reread
+            and fact.hbm_itemsize <= 2
+            and cls.B200_LOOP_HBM_MIN_BYTES <= hbm_bytes <= cls.B200_LOOP_HBM_MAX_BYTES
+            and isinstance(rl, list)
+            and len(rl) == 1
+            and rl[0] is None
+        ):
+            chunk = min(cls.B200_LOOP_CHUNK, fact.size_hint)
+            config = Config(**{**dict(config), "reduction_loops": [chunk]})
+
+        # Grid-occupancy: a looped streamed reduction (long_sum) with too few rows to fill
+        # the SMs gets a persistent_interleaved grid sized to the SM count. Only on the
+        # flat-grid looped streamed path (single load, not re-read, currently looping), and
+        # only in the work window where it pays (see the constants above).
+        if (
+            config.get("pid_type") == "flat"
+            and fact.num_load == 1
+            and not fact.row_reread
+            and isinstance(config.get("reduction_loops"), list)
+            and config["reduction_loops"]
+            and config["reduction_loops"][0]
+            and cls.B200_INTERLEAVE_RNUMEL_MIN
+            <= fact.size_hint
+            <= cls.B200_INTERLEAVE_RNUMEL_MAX
+        ):
+            from ..._utils import next_power_of_2 as _np2
+            from ...runtime import get_num_sm
+
+            grid_rows = 1
+            for _mbid in fact.m_block_ids:
+                # pyrefly: ignore [bad-argument-type]
+                grid_rows *= env.size_hint(env.block_sizes[_mbid].size)
+            num_sm = max(1, get_num_sm(env.device))
+            if grid_rows < num_sm:
+                sm_mult = min(32, max(1, _np2(-(-num_sm // max(1, grid_rows)))))
+                config = Config(
+                    **{
+                        **dict(config),
+                        "pid_type": "persistent_interleaved",
+                        "num_sm_multiplier": sm_mult,
+                    }
+                )
+        return config
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return False
+        if not _triton_reduction_eligible(env, device_ir):
+            return False
+        spec = env.config_spec
+        return _is_t1_reduction(spec, spec.reduction_facts[0])
+
+
+class TritonB200ReductionUserTileHeuristic(TritonReductionUserTileHeuristic):
+    """B200 (sm100) T2 user-tiled inner-reduction seed (softmax_two_pass, kl_div, jsd,
+    welford). Re-tunes the H100 T2 constants for B200."""
+
+    name = "triton_b200_reduction_user_tile"
+    promote_seed_to_default = True
+    HARDWARE_TARGETS = _B200_TARGET
+
+    @classmethod
+    def _num_warps(cls, fact: ReductionFact) -> int:
+        return _b200_num_warps(fact)
+
+    @classmethod
+    def get_seed_config(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> Config | None:
+        config = super().get_seed_config(env, device_ir)
+        if config is None:
+            return config
+        fact = env.config_spec.reduction_facts[0]
+        # Band-B (carried 2-D [M_BLOCK, R_BLOCK] accumulators) caps num_warps at 16: the
+        # carried tiles spill at w32. _num_warps already applies this on the persistent
+        # path, but the shared `_persistent_looped` looped branch returns the fixed
+        # LOOPED_NUM_WARPS (32) and bypasses it, so re-apply the cap here to catch the
+        # large-V looped Band-B kernels (kl_div/jsd at wide vocab). Measured: w16 beats
+        # w32 on every curriculum kl_div/jsd shape (tc-wins 20->26/28).
+        if fact.num_carried_2d_tiles >= 1 and config.get("num_warps", 0) > 16:
+            config = Config(**{**dict(config), "num_warps": 16})
+        # Band-C (welford: non-empty non_reduction_loop, no 2-D carry): pack 2 rows/program
+        # to fill the SM behind the serial scalar combine recurrence. Three FAITHFUL gates:
+        #  - SINGLE-PASS combine: the combine resident state is M_BLOCK * combine_R_BLOCK
+        #    (block_sizes[1]). 2 rows is spill-safe only when the combine is a single
+        #    resident pass, i.e. ``size_hint <= combine_R_BLOCK`` (no remainder loop). The
+        #    moment the combine loops (size_hint > R_BLOCK) the doubled state spills — this
+        #    is the TRUE physical boundary (verified: M2 wins through the single-pass N, and
+        #    spills the instant a remainder iteration appears, e.g. bf16 N=8192 ok / N=9216
+        #    spill, both R_BLOCK=8192). Replaces an earlier memorized ``size_hint<12288``
+        #    cutoff that a held-out N=10240 fell through (gate E).
+        #  - hbm_itemsize <= 2: an fp32 row carries 2x the combine compute, so M2 hurts
+        #    fp32-narrow welford (it stays M1).
+        #  - M_BLOCK floor == 1: large-M shapes carry a raised autotuner_min and packing
+        #    more is catastrophic (262144x2048 16->32 measured -88%).
+        elif fact.num_carried_2d_tiles == 0 and fact.non_reduction_loop_block_ids:
+            bs = list(config.get("block_sizes", []))
+            combine_r_block = bs[1] if len(bs) >= 2 else 0
+            floor1 = (
+                bs
+                and bs[0] == 1
+                and cls._block_floor(env.config_spec.block_sizes[0]) == 1
+            )
+            if floor1 and combine_r_block > 0:
+                if fact.size_hint <= combine_r_block and fact.hbm_itemsize <= 2:
+                    # SINGLE-PASS combine (size_hint <= combine_R_BLOCK): 2 resident rows fit,
+                    # so pack 2 to fill the SM behind the serial combine. hbm<=2 (fp32 carries
+                    # 2x the combine compute, M2 hurts it). Replaces an earlier memorized
+                    # size_hint<12288 fence that a held-out N=10240 fell through (gate E).
+                    bs[0] = 2
+                    config = Config(**{**dict(config), "block_sizes": bs})
+                elif fact.size_hint > combine_r_block:
+                    # WIDE combine (loops a remainder): M2 alone spills, but the COUPLED
+                    # bundle M2 + HALVED combine tile + fewer warps fits and wins — halving
+                    # the resident tile makes room for 2 rows, w8 matches the smaller tile.
+                    # Tested as a UNIT (oracle answer-key): wide welford 8192x12288 bf16
+                    # 0.77->1.02, 16384 fp16 0.86->0.95, fp32 16384 1.00->1.03. Applies at
+                    # all dtypes (the halving offsets fp32's heavier tile too).
+                    bs[0] = 2
+                    bs[1] = max(1, combine_r_block // 2)
+                    config = Config(
+                        **{**dict(config), "block_sizes": bs, "num_warps": 8}
+                    )
+        return config
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return False
+        if not _triton_reduction_eligible(env, device_ir):
+            return False
+        spec = env.config_spec
+        return not _is_t1_reduction(spec, spec.reduction_facts[0])

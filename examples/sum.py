@@ -42,7 +42,11 @@ def sum_kernel(x: torch.Tensor) -> torch.Tensor:
     out = torch.empty([m], dtype=x.dtype, device=x.device)
 
     for tile_m in hl.tile(m):
-        out[tile_m] = x[tile_m, :].sum(-1)
+        # Reduce in fp32 to match torch.sum's accumulation semantics (torch sums bf16/
+        # fp16 in fp32). Without the upcast the persistent reduction accumulates at the
+        # native half width, losing ~2.5x accuracy vs torch at bf16. fp32 no-op when x
+        # is already fp32. Keeps the fast persistent path (no looped reduction needed).
+        out[tile_m] = x[tile_m, :].to(torch.float32).sum(-1).to(x.dtype)
 
     return out
 

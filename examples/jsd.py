@@ -99,11 +99,19 @@ def jsd_forward(
                     dX[tile_bt, tile_X] = 0.0
                 continue
         intermediate_loss = hl.zeros([tile_bt, block_size_n], dtype=torch.float32)
-        intermediate_dX = hl.zeros([tile_bt, block_size_n], dtype=_input.dtype)
+        # Accumulate dX in fp32 (matching intermediate_loss): the per-tile updates are
+        # fp32-valued, and dX is summed into the fp32 `dX` output, so an `_input.dtype`
+        # accumulator only forces a half<-fp32 control-flow mismatch at bf16/fp16 (the
+        # branch assigns fp32 values). fp32 no-op: `_input.dtype == torch.float32` there.
+        intermediate_dX = hl.zeros([tile_bt, block_size_n], dtype=torch.float32)
         for tile_v in hl.tile(V, block_size=block_size_n):
-            # Load log probabilities and convert to float32
-            X = _input[tile_bt, tile_v]
-            Y = target[tile_bt, tile_v]
+            # Load log probabilities and convert to float32. The fp32 upcast is required at
+            # fp16: over a wide vocab (V>=128k) the per-class probability M ~ 1/V approaches
+            # fp16's smallest normal (~6e-5), so exp(X)/the mixture M underflows to 0 ->
+            # log(0) = -inf -> NaN. In fp32 (min normal ~1e-38) M stays representable. fp32
+            # no-op when the inputs are already fp32.
+            X = _input[tile_bt, tile_v].to(torch.float32)
+            Y = target[tile_bt, tile_v].to(torch.float32)
 
             if beta == 0.0:  # Forward KL: KL(P || Q)
                 Y_max = torch.amax(Y, dim=0)

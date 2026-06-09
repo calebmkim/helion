@@ -1113,6 +1113,7 @@ class DeviceIR:
         (
             num_load,
             itemsize,
+            hbm_itemsize,
         ) = self._count_reduction_workload(all_graph_ids, red_block_id, size_hint)
         row_reread, reread_buffer_name = self._analyze_reread(red_block_id)
         spec.reduction_facts.append(
@@ -1127,6 +1128,7 @@ class DeviceIR:
                 non_reduction_loop_block_ids=non_reduction_loop_block_ids,
                 row_reread=row_reread,
                 reread_buffer_name=reread_buffer_name,
+                hbm_itemsize=hbm_itemsize,
             )
         )
 
@@ -1158,14 +1160,23 @@ class DeviceIR:
 
     def _count_reduction_workload(
         self, graph_ids: set[int], red_block_id: int, size_hint: int
-    ) -> tuple[int, int]:
-        """Digest the ``(num_load, itemsize)`` workload properties over
+    ) -> tuple[int, int, int]:
+        """Digest the ``(num_load, itemsize, hbm_itemsize)`` workload properties over
         ``red_block_id``. Shared by the T1 (``_build_reduction_fact``) and T2
         (``register_user_tiled_reductions``) fact builders so both digest the same way;
         only the graph set and axis differ.
 
-        ``itemsize`` (bytes/element of the reduced tile; the byte caps key on
-        ``size_hint * itemsize``) is read from the tensor reduced over ``red_block_id``.
+        ``itemsize`` (bytes/element of the reduced tile; byte caps key on
+        ``size_hint * itemsize``) is read from the tensor reduced over ``red_block_id`` —
+        this is the post-``.to(fp32)`` accumulator width for kernels that upcast.
+
+        ``hbm_itemsize`` is the true HBM-load width: BFS the reduction's data inputs back
+        to their ``hl.load`` nodes (through ``convert_element_type`` upcasts and multi-input
+        compute like ``yp*yt`` alike) and take the min loaded element size. The load's
+        ``meta['val']`` carries the pre-upcast HBM dtype (``new_empty`` preserves it), so a
+        bf16/fp16 row reads 2 even when ``itemsize`` reads 4. Stopping AT the load (not
+        recursing into its index args) excludes unrelated loads like cross_entropy's int64
+        labels. Falls back to ``itemsize`` when no upcast/load is on the path.
         """
 
         from ..language.memory_ops import load as _load_op
@@ -1173,6 +1184,7 @@ class DeviceIR:
 
         num_load = 0
         itemsize = 0
+        hbm_itemsize = 0
         for graph_id in sorted(graph_ids):
             graph = self.graphs[graph_id].graph
             for node in graph.nodes:
@@ -1194,7 +1206,26 @@ class DeviceIR:
                         if isinstance(in_val, torch.Tensor):
                             itemsize = in_val.element_size()
                             break
-        return num_load, itemsize
+                    # hbm_itemsize: BFS the data path back to the hl.load(s), min width.
+                    seen: set[torch.fx.Node] = set()
+                    stack = list(node.all_input_nodes)
+                    while stack:
+                        cur = stack.pop()
+                        if cur in seen:
+                            continue
+                        seen.add(cur)
+                        if cur.target is _load_op:
+                            lv = cur.meta.get("val")
+                            if isinstance(lv, torch.Tensor):
+                                es = lv.element_size()
+                                hbm_itemsize = (
+                                    es if hbm_itemsize == 0 else min(hbm_itemsize, es)
+                                )
+                            continue  # don't recurse past the load (skip its index args)
+                        stack.extend(cur.all_input_nodes)
+        if hbm_itemsize == 0:
+            hbm_itemsize = itemsize
+        return num_load, itemsize, hbm_itemsize
 
     def _count_carried_2d_tiles(self, red_block_id: int) -> int:
         """Count 2-D ``[M_BLOCK, R_BLOCK]`` tiles carried across the inner reduction
@@ -1446,6 +1477,7 @@ class DeviceIR:
         (
             num_load,
             itemsize,
+            hbm_itemsize,
         ) = self._count_reduction_workload(used_graphs, rdim.block_id, size_hint)
         row_reread, reread_buffer_name = self._analyze_reread(rdim.block_id)
         # A T1 reduction may be followed by a normalize loop; capture its tile(s) so the
@@ -1465,6 +1497,7 @@ class DeviceIR:
             non_reduction_loop_block_ids=non_reduction_loop_block_ids,
             row_reread=row_reread,
             reread_buffer_name=reread_buffer_name,
+            hbm_itemsize=hbm_itemsize,
         )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:
