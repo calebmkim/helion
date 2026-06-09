@@ -26,6 +26,7 @@ from __future__ import annotations
 TRAFFIC = {
     "rms_norm": 2, "layer_norm": 2, "softmax": 2, "welford": 2,  # read x + write y
     "sum": 1, "long_sum": 1, "cross_entropy": 1,                  # read-dominated
+    "logsumexp": 1, "log_softmax": 2, "groupnorm": 2,            # WS1 fortify siblings
     "kl_div": 2, "jsd": 2,                                        # read two MxN inputs
     # transfer kernels (fact-distinct probes):
     "tv_distance": 2, "argmax": 1, "l2_norm": 1, "minmax_normalize": 2,
@@ -40,10 +41,19 @@ SUM_BANDS = [2048, 4096, 8192, 16384, 1 << 30]
 LONGSUM_BANDS = [131072, 524288, 1 << 30]            # long/xlong/huge
 VOCAB_BANDS = [50304, 128256, 1 << 30]               # small/med/large vocab
 
+# WS1 fortify-sibling bands (each straddles the lever boundary it probes).
+LOGSUMEXP_BANDS = [16384, 51200, 131072, 1 << 30]    # non-w8 / w8-window / wide / huge
+LOGSOFTMAX_BANDS = [49152, 1 << 30]                  # persistent / looped(interleaved)
+GROUPNORM_BANDS = [8192, 32768, 1 << 30]             # below-combine-cap / mid / wide
+L2NORM_BANDS = [61440, 262144, 1 << 30]              # persistent / looped / huge
+ARGMAX_BANDS = [4096, 16384, 1 << 30]                # feature / wide-feature / vocab
+
 BANDS = {
     "rms_norm": NORM_BANDS, "layer_norm": NORM_BANDS, "softmax": NORM_BANDS,
     "welford": NORM_BANDS, "sum": SUM_BANDS, "long_sum": LONGSUM_BANDS,
     "cross_entropy": VOCAB_BANDS, "kl_div": VOCAB_BANDS, "jsd": VOCAB_BANDS,
+    "logsumexp": LOGSUMEXP_BANDS, "log_softmax": LOGSOFTMAX_BANDS,
+    "groupnorm": GROUPNORM_BANDS, "l2_norm": L2NORM_BANDS, "argmax": ARGMAX_BANDS,
 }
 
 
@@ -267,6 +277,122 @@ SHAPES = {
             (262144, 4096), (8192, 1024),
         ],
     },
+
+    # ======================  WS1 FORTIFY SIBLINGS  ======================
+    # Probe kernels for the overfit hunt (ws1-fortify-task.md). Same train/val/test
+    # discipline as the main family; l2_norm + argmax were moved here from TRANSFER.
+
+    # ---- logsumexp : LM-loss primitive (= cross_entropy minus the target gather).
+    #      Probes the w8 lever; bands straddle the bf16 w8 byte boundary (V~51200).
+    "logsumexp": {
+        "train": [
+            (8192, 8192), (16384, 8192), (8192, 12288), (16384, 16384),    # non-w8
+            (8192, 32000), (8192, 40960), (8192, 49152), (8192, 24576), (4096, 50257),  # w8-window
+            (4096, 65536), (4096, 128256),                                 # wide
+            (2048, 151936),                                                # huge
+        ],
+        "val": [
+            (16384, 12288), (8192, 16384), (4096, 32000), (8192, 50304),
+            (4096, 98304), (2048, 131072),
+        ],
+        "test": [
+            (16384, 10240), (8192, 50257), (4096, 32064), (8192, 65536),
+            (2048, 128000), (1024, 151936),
+        ],
+        "robustness": [
+            (1, 50257), (16, 128256), (128, 151936),
+            (2048, 50261), (2048, 32003), (4, 256000),
+        ],
+    },
+
+    # ---- log_softmax : full-width LM log-probs. Probes persistent_interleaved
+    #      (fires only on wide LOOPED rows); bands = persistent / looped.
+    "log_softmax": {
+        "train": [
+            (8192, 8192), (4096, 16384), (8192, 16384), (4096, 32768), (4096, 49152),   # persistent
+            (4096, 65536), (8192, 65536), (2048, 98304), (2048, 131072), (512, 131072),
+            (1024, 131072), (4096, 128256),                                # looped
+        ],
+        "val": [
+            (8192, 32768), (2048, 49152), (1024, 98304), (256, 131072),
+            (2048, 65536), (4096, 98304),
+        ],
+        "test": [
+            (4096, 8192), (512, 98304), (8192, 98304), (2048, 128256),
+            (1024, 65536), (2048, 114688),
+        ],
+        "robustness": [
+            (16, 4096), (128, 8192), (2048, 2047),
+            (1, 131072), (4096, 8191), (2048, 49153),
+        ],
+    },
+
+    # ---- groupnorm : diffusion-UNet / ResNet GroupNorm (M = B*G, N = (C/G)*spatial).
+    #      The welford BANDMATE; small-M regime stresses the M-unaware Band-C caps.
+    "groupnorm": {
+        "train": [
+            (8192, 2048), (4096, 4096), (2048, 4096), (4096, 8192),        # below combine-cap
+            (1024, 10240), (512, 16384), (512, 20480), (1024, 24576), (512, 32768),  # mid
+            (512, 40960), (256, 65536), (256, 49152),                      # wide
+        ],
+        "val": [
+            (2048, 8192), (8192, 4096), (768, 20480), (512, 24576),
+            (256, 57344), (384, 40960),
+        ],
+        "test": [
+            (4096, 6144), (512, 12288), (1024, 16384), (512, 28672),
+            (256, 40960), (384, 49152),
+        ],
+        "robustness": [
+            (32, 2048), (64, 512), (256, 1543),
+            (16, 4096), (512, 4095), (128, 8191),
+        ],
+    },
+
+    # ---- l2_norm : streamed single-load reduction (sqrt(sum(x*x))). Probes the
+    #      ROW_PERSIST byte boundary; bands = persistent / looped / huge. (from TRANSFER)
+    "l2_norm": {
+        "train": [
+            (16384, 1024), (8192, 4096), (8192, 8192), (4096, 16384), (2048, 32768),
+            (16384, 2048), (8192, 2560),                                   # persistent
+            (512, 131072), (256, 262144), (1024, 98304),                   # looped
+            (128, 1048576), (64, 786432),                                  # huge
+        ],
+        "val": [
+            (4096, 5120), (8192, 3072), (16384, 1280),
+            (512, 98304), (256, 196608), (128, 524288),
+        ],
+        "test": [
+            (8192, 6144), (2048, 16384), (1024, 65536),
+            (256, 131072), (64, 1048576), (96, 524288),
+        ],
+        "robustness": [
+            (1, 4096), (16, 4096), (2048, 1023), (2048, 2047),
+            (4, 2097152), (1, 1000003),
+        ],
+    },
+
+    # ---- argmax : index-carrying reduction (greedy decode / MoE routing / classes).
+    #      Probes op-variety + the int64-output accuracy path; bands = feature/wide/vocab. (from TRANSFER)
+    "argmax": {
+        "train": [
+            (16384, 1024), (8192, 4096), (32768, 2048), (65536, 256), (32768, 1024),  # feature
+            (8192, 8192), (4096, 16384), (8192, 12288),                    # wide-feature
+            (8192, 32000), (4096, 50257), (4096, 128256), (2048, 151936),  # vocab
+        ],
+        "val": [
+            (8192, 2560), (16384, 1000), (32768, 512),
+            (8192, 16384), (4096, 65536), (2048, 128000),
+        ],
+        "test": [
+            (16384, 768), (65536, 512), (8192, 10240),
+            (4096, 12288), (4096, 32064), (1024, 151936),
+        ],
+        "robustness": [
+            (1, 32000), (16, 128256), (128, 151936),
+            (2048, 1023), (8, 256000), (4096, 999),
+        ],
+    },
 }
 
 
@@ -284,19 +410,8 @@ TRANSFER = {
         (8192, 32000), (8192, 50257), (4096, 128256), (4096, 151936),
         (8192, 65536), (2048, 256000), (131072, 256), (65536, 4096),
     ],
-    # op-variety probe: row argmax — a NON-additive reduction op (max+index). Flips
-    # num_reduction_ops / the op-agnostic claim — no in-sample kernel uses argmax.
-    "argmax": [
-        (16384, 1024), (8192, 4096), (8192, 8192), (4096, 16384),
-        (8192, 32000), (4096, 128256), (32768, 2048), (8192, 2560),
-    ],
-    # single-pass STREAMED num_load=1 reduction with NO apply pass — distinct from
-    # the 2-load norms and from welford/standardize (which both have an apply pass).
-    # Probes the streamed-load eviction='first' policy on an unseen kernel.
-    "l2_norm": [
-        (16384, 1024), (8192, 4096), (8192, 8192), (4096, 16384),
-        (2048, 32768), (8192, 2560), (4096, 5120), (16384, 768),
-    ],
+    # NOTE: argmax + l2_norm MOVED to SHAPES (WS1 fortify siblings, now tuned with
+    # train/val/test) — see the "WS1 FORTIFY SIBLINGS" block above.
     # structured-combine probe with a NON-additive (max,min) combine — different
     # combine arity/recurrence than welford(3-stat) and standardize(2-moment).
     "minmax_normalize": [
