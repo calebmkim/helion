@@ -3459,6 +3459,29 @@
         "sha": "ff4ab2d6 (vs pre-Band-B 169f5bbb)",
         "verdict": "CLEAN. 52 diffs, ALL jsd/kl_div bf16/fp16 wide-V (rnumel>16384) w32->w8. ZERO non-warp diffs, ZERO err changes, ZERO fp32 changes (fp32 jsd/kl_div stay w32, danger avoided), no other kernel touched (CE/softmax/rms/ln/sum/welford unchanged). Band-B fires exactly where intended.",
         "fact_extension_safe": "_input_load_itemsize extended with Band-B fallback (widest rank>=2 input-row load over the extent when no reduction-fed row load). Verified across all 9 kernels: row-reduction kernels UNCHANGED (fed-load path priority -> sum/rms/ln/softmax/CE/welford same 2/4 as before, D4 unaffected); kl_div/jsd now report 2 bf16/4 fp32 (was 0). Gate A+D running wf_faee8f12."
+      },
+      {
+        "gate": "BandB_w8_A_adversarial_verify (CONTRADICTORY \u2014 re-measuring)",
+        "sha": "ff4ab2d6",
+        "status": "NOT-A-VERDICT: skeptics CONTRADICT each other; re-measuring cleanly before accept/kill.",
+        "skeptic1": "NOT refuted: jsd/kl_div bf16 w8 within 5% of cell-best, +12-15% vs w32. fp32 excluded, narrow excluded, faithful.",
+        "skeptic2": "refuted: claims w2/w4 beat seed-w8 +16-132% vs cell-best \u2014 BUT internally inconsistent (admits 'typo in my calc', sees UNEXPLAINED 3.7x variance in seed-w8 time 673us vs 2175us for similar shapes). Raised a REAL question though: is the Band-B win carried by num_warps or by the seed's block_sizes? Suspected cold-launch/measurement instability (the welford +98% phantom class).",
+        "resolution": "Running a clean MATCHED-LEVER A/B (/tmp/bandb_resolve.py): hold ALL seed fields, vary ONLY num_warps {2,4,8,16,32}, heavy warmup (15 calls) + run-twice-discard-first, REPS=21. Definitively answers: is SEED-w8 within ~5% of the per-cell best (varying only warps)? If yes -> skeptic2's instability was the artifact, win stands. If w2/w4 genuinely beat w8 -> refine (jsd (8192,32000) oracle wanted w4, consistent with w4 sometimes best)."
+      },
+      {
+        "gate": "BandB_w8_A_RESOLVED (clean matched-lever re-measurement)",
+        "sha": "ff4ab2d6",
+        "verdict": "CONFIRMED \u2014 Band-B w8 SURVIVES. Skeptic2's refutation was a COLD-LAUNCH ARTIFACT.",
+        "clean_AB": "Matched-lever (hold seed block_sizes, vary ONLY num_warps, 15-call warmup + run-twice-discard-cold, REPS=21) across jsd+kl_div bf16 x V {30522,32000,40960,50257}: SEED-w8 vs cell-best = +0.0% (6 of 8 cells w8 IS best), worst +1.2% (jsd 32000, w4 best by a hair), kl_div all +0.0-0.5%. Win vs prior seed-w32: jsd +12-15%, kl_div +5-8%.",
+        "skeptic2_debunked": "Skeptic2 claimed +16-132% regressions + '3.7x variance in seed-w8 time (673 vs 2175us)' \u2014 that variance is the COLD-LAUNCH noise artifact (it did not warmup/run-twice; the same class as the earlier welford +98% phantom, already in memory [[feedback-ab-vs-cell-best-not-vs-ramp]]). With proper warmup, w8 is stable and best-or-tied everywhere. Gate A's CONTRADICTION correctly triggered re-measurement (a non-verdict is not a verdict); the clean re-measure confirms.",
+        "gateD": "(see workflow result) fact-integrity on the extended input_load_itemsize Band-B fallback \u2014 check separately.",
+        "note": "jsd (8192,32000) marginally prefers w4 (+1.2% for w8) \u2014 within tolerance, consistent with the oracle's w4 pick there; not worth a finer split. Band-B w8 BANKED as win #4."
+      },
+      {
+        "gate": "BandB_w8_D_fact_integrity",
+        "sha": "ff4ab2d6",
+        "verdict": "faithful=True. The extended _input_load_itemsize Band-B fallback is a faithful HBM-load-width property.",
+        "confirmed": "Reads genuine compiler provenance (fake.element_size()+shape[-1] from FX meta['val']), DIVERGES from fact.itemsize at bf16 (kl_div: input_load=2 vs fact.itemsize=4) so it faithfully captures the pre-promotion HBM load width NOT the fp32 accumulator. dim-match (inner==size_hint) robust. num_carried_2d_tiles>=1 faithfully = Band-B (kl=1,jsd=2; CE/softmax/rms=0). Row-reductions UNCHANGED (source-1 fed-load priority). Branch fires w8 for bf16 Band-B, w32 for fp32 \u2014 correct."
       }
     ],
     "results": [
@@ -3941,7 +3964,9 @@
       "sha": "d424baba",
       "shipped_wins": [
         "jsd bf16/fp16 correctness fix (true fp32 no-op)",
-        "CE bf16 wide-V num_warps=8 +49% (V=32k/50k GPT2/Llama2) via faithful full_width_output fact, Gate A+D 3/3"
+        "CE bf16 wide-V num_warps=8 +35-49% (re-read scalar-output, full_width_output fact), Gate A+D 3/3",
+        "D4 narrow-N occupancy-gated num_warps=1 +20-60% (grid_rows + input_load_itemsize facts, byte-scaled occ cap occ*row_bytes<=256KiB), Gate A+D+F+E confirmed (incl corner-fix re-gate)",
+        "Band-B wide-V num_warps=8 +6-15% (jsd/kl_div bf16/fp16; num_carried_2d_tiles + input_load_itemsize Band-B fallback), Gate A(resolved)+D confirmed"
       ],
       "bf16_geo_G_cg": {
         "softmax": 1.31,
@@ -3958,7 +3983,7 @@
       "fp16": "transfer confirmed bf16~fp16; wide-V kl/jsd kernel-authoring NaN documented",
       "all_losers": "oracle-confirmed codegen/occupancy-bound exempt",
       "deferred": [
-        "D4 narrow-N occupancy-gated w1 (10-20%, needs grid_rows//num_sm)"
+        "mid-N w4 (rnumel 4k-16k): PROVEN CEILING \u2014 kernel-divergent best-warps, no faithful separator (gate-killed + fresh vs-cell-best sweep)"
       ],
       "production_diff": "examples/jsd.py +6/-1; full_width_output fact (device_ir +43, config_spec +7); w8 gate+docstring (triton.py +32)",
       "tests": "20 autotuner-heuristic + 23 example pass, lint clean",
