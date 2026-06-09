@@ -3923,6 +3923,12 @@
         "finding": "The mid-N byte band (2048,4096] (bf16 rnumel 1025-2048, N=1280/1536) currently gets w4 but the OPTIMUM is w1-w2: softmax bf16 (8192,1280) w4 leaves +62.6% vs w1 (+23% vs w2); rms_norm wants w2 (w4 leaves +0.5-6%). The shipped w4 is still a WIN over the ramp's w8 (no regression) but suboptimal in this sub-band.",
         "refinement": "Split mid band: byte(2048,4096]->w2, byte(4096,10240]->w4. The f(byte,occ) surface is finer than 3 flat bands. NEEDS its own occ-sweep first (does w2 cliff at high occ in this sub-band, like w1/w4 do? only have occ62/124 data). Then gate. Est softmax +20-62% additional on N=1280/1536 shapes.",
         "status": "DEFERRED to after mid-N w4 Gate A lands \u2014 refine as a follow-up, don't rush into the in-flight commit."
+      },
+      {
+        "id": "bandB_wide_V_w8_jsd_kl_div_CANDIDATE",
+        "finding": "jsd bf16 NOT exempt (oracle-parity reframe): (8192,30522) seed w32->oracle w8 +15.2%; (8192,32000) ->w4 +20.6% (oracle beats tc 14%). ROOT: jsd/kl_div are Band-B (num_carried_2d_tiles: jsd=2 kl_div=1, row_reread=0) so the shipped CE-w8 rule (needs row_reread + scalar output) excludes them. They're a DISTINCT wide-reduction regime that ALSO wants fewer warps than the ramp's w32.",
+        "candidate_rule": "num_carried_2d_tiles>=1 AND rnumel>16384 -> w8 (faithful, keys on existing Band-B fact, distinct from CE path). Potential +15-20% on jsd/kl_div wide-V.",
+        "status": "Band-B w8 sweep running (/tmp/bandb_w8.json): validate w8 within ~5% of cell-best across jsd+kl_div x bf16/fp32 x V range, check for cliff/divergence, then gate like CE-w8. The (8192,32000) wanting w4+r1024+s3 (not just w8) suggests it may be finer than a flat w8 \u2014 sweep will tell."
       }
     ],
     "_RUN_SUMMARY": {
