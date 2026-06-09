@@ -3854,6 +3854,12 @@
         "decision": "REJECTED \u2014 keep occ cap 512//input_load_itemsize (fp32 cap=128).",
         "evidence": "The only fp32 cell near a regression is softmax fp32 (16384,512) occ124: -0.5%/-0.7% in two sweeps, -0.3% in a direct CUDA-graph A/B \u2014 BELOW the 0.1-1.5% noise floor (gate skeptics' measured spread). Across ALL 22 D4-firing fp32 cells: 17 wins, 0 real regressions (>1%), mean +6.5%, worst -0.7% (noise). Tightening to occ<=96 to exclude that one sub-noise cell would DROP a +9.8% cross_entropy fp32 win + a +3.7% welford fp32 win at occ124 \u2014 a strictly worse trade (chase noise, lose real wins).",
         "principle": "no-separator-first check done: softmax (re-read two-pass) crosses earliest, but its fp32 occ124 'regression' is noise, so no separator is warranted; a structure-aware tighter cap would sacrifice real wins. Current cap is net +6.5% on fp32 with no real regression."
+      },
+      {
+        "id": "midN_separator_transcendental_op_count",
+        "decision": "REJECTED as the cliff separator (does NOT distinguish).",
+        "evidence": "Op census over device graphs: rms_norm transcendental=1, layer_norm=3, softmax=4 (3x exp+div), welford=6 (5x div+rsqrt). welford has the MOST expensive ops yet is SAFE (no cliff); softmax cliffs with fewer. So a 'transcendental/expensive-op count' fact would fail the divergence test (welford>softmax but opposite cliff behavior).",
+        "real_distinction": "NOT op-count but WHERE the expensive work sits: softmax recomputes exp over the FULL [M,N] row RE-STREAMED from HBM in its 2nd pass (latency-exposed) -> needs warps to hide HBM latency at SM saturation -> cliff. welford's divs are on SMALL resident reduced scalars (count/mean/M2), latency-hidden -> compute-bound -> flat. Separator must capture 'expensive/transcendental work on a re-streamed HBM row' or 'bandwidth- vs compute-bound', NOT raw op count. ncu mechanism study running."
       }
     ],
     "deferred_hard_pile": [
