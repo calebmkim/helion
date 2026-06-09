@@ -3408,6 +3408,16 @@
         "shipped_wins_intact": "cross_entropy wide-V, kl_div, jsd, long_sum NOT in diff list -> byte-identical. CE w8 wide-V win + jsd correctness fix untouched.",
         "rescued_exempt": "D4 rescues 3 previously-'exempt' losers: welford bf16/fp16 (16384,896) w4->w1, layer_norm/rms_norm narrow (16384,896)/(8192,768) \u2014 seed\u2194oracle gap closers per the oracle-parity reframe.",
         "fires_on": "layer_norm, rms_norm, softmax, sum, welford across bf16/fp16/fp32 at narrow N (768-1024) \u2014 broader than the dtype curriculum's 6 shapes; real model dims (Qwen 896/1024, GPT2 768)."
+      },
+      {
+        "gate": "midN_F_mechanism (ncu-proven)",
+        "sha": "ae1ca3c4",
+        "verdict": "MECHANISM FOUND \u2014 the mid-N w4 cliff is pure LATENCY-HIDING capacity (ncu smoking gun).",
+        "ncu_evidence": "softmax_two_pass bf16 N5120 at the cliff (M65536->67584): long-scoreboard stalls 0.92->3.62 inst/issue (4x), DRAM throughput 71%->28%, SM throughput 53%->11% \u2014 with IDENTICAL global load/store sector counts. So NOT bandwidth: w4 has too few warps to hide HBM load latency once SMs saturate; w8 recovers (stalls 0.69, dram 57%). Pure occupancy/latency-hiding.",
+        "structural_separator": "cliff-proneness tracks # of full-row HBM RE-STREAMS: softmax does 2 (two hl.tile(n) passes, debug_barrier between, each tl.load's the [M,N] row) -> 30720 B/row; rms/ln do 1 (rolled reduce+apply, load once reuse) -> 20480 B/row. welford does 2 BUT with evict_last/evict_first L2 hints -> milder. Wider N cliffs at LOWER occ + more violently (HBM-latency hypothesis confirmed: N3072 cliff M69632 mild, N5120 M67584 5x).",
+        "track_correlation": "T1(rollable: rms/ln) = 1 HBM read = NO cliff (roller fuses reduce+apply). T2(user-tiled: softmax/welford) = 2 HBM reads = cliff-prone. The occ cap directly gates the ncu mechanism (stay below SM saturation where w4 can't hide latency) \u2014 it is MECHANISM-JUSTIFIED, not a fitted fence.",
+        "decision": "Ship the occ+byte-cap mid-N w4 rule (occ cap is the principled lever). T1/T2 refinement (extend welford to occ~993, +9%) documented as low-value future work \u2014 softmax (the big win) MUST stay capped regardless.",
+        "artifacts": "/tmp/cliff_mechanism_final.json, /tmp/ncu_*.txt, /tmp/structural_analysis.txt"
       }
     ],
     "results": [
@@ -3872,6 +3882,12 @@
         "data": "bf16 CE: 32KB->w8, 64KB->w8, 100KB->w8(36% faster), 131KB->w32, 256KB->w16, 400KB->w16 (NON-MONOTONIC). fp32 CE: 64KB->tie, 96KB->w16, 128KB->w16, 201KB->w32.",
         "why_not_shippable_cleanly": "NOT byte-separable: at ~96-100KB bytes, bf16(V50k)->w8 but fp32(V24-32k)->w16 (same bytes, diff warps; only itemsize+elemcount differ). bf16 optimum non-monotonic in bytes (w8@100KB,w32@131KB) = register-pressure/persist-boundary artifact, not a clean law. A rnumel-in-[32k,50k]&itemsize==2 rule = curriculum FENCE (fact-integrity would reject). fp32 V=24-32k at a w8 byte-rule regress 6-22%.",
         "route_to_capture": "Needs a register-pressure / persist-tile-footprint fact (why w8 beats w32 at 100KB bf16 but not 131KB) OR a full-oracle answer-key sweep across the bf16 V range to map the non-monotonic boundary precisely. THE #1 future climb - biggest single win found (35-49% on the most common CE vocabs)."
+      },
+      {
+        "id": "midN_lower_subband_wants_w2_not_w4",
+        "finding": "The mid-N byte band (2048,4096] (bf16 rnumel 1025-2048, N=1280/1536) currently gets w4 but the OPTIMUM is w1-w2: softmax bf16 (8192,1280) w4 leaves +62.6% vs w1 (+23% vs w2); rms_norm wants w2 (w4 leaves +0.5-6%). The shipped w4 is still a WIN over the ramp's w8 (no regression) but suboptimal in this sub-band.",
+        "refinement": "Split mid band: byte(2048,4096]->w2, byte(4096,10240]->w4. The f(byte,occ) surface is finer than 3 flat bands. NEEDS its own occ-sweep first (does w2 cliff at high occ in this sub-band, like w1/w4 do? only have occ62/124 data). Then gate. Est softmax +20-62% additional on N=1280/1536 shapes.",
+        "status": "DEFERRED to after mid-N w4 Gate A lands \u2014 refine as a follow-up, don't rush into the in-flight commit."
       }
     ],
     "_RUN_SUMMARY": {
