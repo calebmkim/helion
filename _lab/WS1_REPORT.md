@@ -61,7 +61,19 @@ Each verified to fire its intended heuristic branch (facts dumped). Wired into
   footprint at 256 KiB (not an N-fence), `input_load_itemsize` is a faithful HBM-load-width gate.
 
 ### Lever 3 — persistent_interleaved + maxnreg=64 (T1 tail; family-of-one: cross_entropy)
-(pending — log_softmax full-width looped probe)
+**VERDICT: GENERALIZES (not overfit) — kept as-is, no code change.** log_softmax initial transfer:
+bf16 1.02/0.89, fp32 0.90/0.96, fp16 1.08/1.11 (wide-N losers).
+- **Matched A/B:** reverting `pid→flat` makes log_softmax **+1.7–7.7% SLOWER** (the lever HELPS the
+  full-width store); `maxnreg→None` is +0.6–5.9% (helps/noop). The lever is neutral-to-helpful on a
+  full-width store — NOT the source of the wide-N losses. CE control: bundle helps +1.8–20.2%.
+- **The wide-N losses are a SEPARATE, UN-keyable issue** (surfaced by the hunt): the T1 seed *persists*
+  a wide full-width re-read row (e.g. log_softmax (2048,98304): 196 KB ≤ ROW_PERSIST cap → persistent),
+  which spills 16×. But the persist-vs-loop crossover for full-width rows is **wildly non-monotonic**
+  (bf16: N=16384 loop −44%, 24576–49152 persist +45–135%, 65536 loop −18%, 81920 persist +175%, 98304
+  loop −79%) — **no faithful constant separates good/bad persist; any cap would be curriculum-fit** (the
+  exact overfit being hunted). **Flagged, not chased:** the wide-full-width-looped regime is genuinely
+  hard for a single static *seed* and is correctly left to the autotuner (the oracle loops these and
+  beats tc). This is a seed-coverage limit, not a heuristic overfit.
 
 ## Overfit hunt (beyond the named suspects)
 - Gate-E periodic audit (during-climb): no curriculum fence found; new constants (262144, 16384) are

@@ -4087,6 +4087,21 @@
           "fp16": "1.08-1.11",
           "status": "CLEARED after lever-2 fix"
         }
+      },
+      "log_softmax": {
+        "bf16": {
+          "train_geo": 1.024,
+          "val_geo": 0.89
+        },
+        "fp32": {
+          "train_geo": 0.898,
+          "val_geo": 0.96
+        },
+        "fp16": {
+          "train_geo": 1.081,
+          "val_geo": 1.107
+        },
+        "verdict": "bf16 val + fp32 FAIL bar driven by CATASTROPHIC outliers (G=0.39 at (2048,98304)) at wide-N LOOPED full-width shapes. fp16 milder (no NaN, no acc_excluded)."
       }
     },
     "lever_verdicts": {
@@ -4105,6 +4120,13 @@
         "sibling": "groupnorm",
         "done_bar": "CLEARED all 3 dtypes after climb (bf16 1.10-1.12, fp32 1.04-1.08, fp16 1.08-1.11)",
         "faithful_property": "per-program combine/normalize footprint = M_BLOCK*tile*itemsize (the code-TODO spill driver), + input_load_itemsize for the dtype-dependent normalize optimum"
+      },
+      "lever3_persistent_interleaved_maxnreg": {
+        "verdict": "GENERALIZES (neutral-to-helpful on full-width; NOT overfit)",
+        "evidence": "A/B: reverting pid->flat makes log_softmax +1.7-7.7% slower (lever helps). maxnreg->None +0.6-5.9% (helps/noop). Oracle prefers flat ONLY coupled with smaller reduction_loops+more stages, not pid alone. CE control: bundle helps +1.8-20.2%. The lever is NOT the source of log_softmax wide-N losses.",
+        "sibling": "log_softmax",
+        "done_bar": "bf16/fp16 train clear (1.02/1.08); bf16 val (0.89)/fp32 (0.90/0.96) FAIL due to UNKEYABLE wide-full-width-looped persist spikes (separate from the lever; flagged, not chased per bounded-climb + faithfulness).",
+        "note": "persistent_interleaved+maxnreg=64 KEPT as-is (generalizes). Code OVERFIT NOTE on it can be softened (it generalizes to full-width)."
       }
     },
     "gate_verdicts": [
@@ -4191,6 +4213,22 @@
           "val_geo": 1.079
         },
         "verdict": "ALL 3 DTYPES CLEAR THE BAR (geomean beats tc). bf16 val 0.776(initial)->0.951(combine)->1.103(both)."
+      },
+      "lever3_ab_surprise": {
+        "finding": "persistent_interleaved+maxnreg lever GENERALIZES to log_softmax full-width store \u2014 reverting it (C: ->flat) makes log_softmax +1.7 to +7.7% SLOWER (bundle HELPS), maxnreg->None +0.6 to +5.9% (helps); only 2 fp32 shapes marginally prefer flat (-1 to -1.2%). NOT the cause of the G=0.39 losses.",
+        "implication": "lever-3 is NOT the overfit culprit. The wide-N looped full-width log_softmax losses vs tc are a SEPARATE issue (codegen on wide full-width looped re-read). Need oracle to know if reachable or ceiling.",
+        "CE_control": "bundle helps CE +1.8 to +20.2% (consistent with known tuning)."
+      },
+      "log_softmax_oracle": {
+        "bf16 (2048,98304)": "seed=1096 oracle=457 tc=432 seed/oracle=2.40 oracle/tc=0.945. seed_pid=FLAT. oracle: flat reduction_loops=[2048] (seed LOOPED_CHUNK=16384 TOO BIG). oracle slightly loses tc.",
+        "bf16 (1024,98304)": "seed=541 oracle=177 tc=221 seed/oracle=3.06 oracle/tc=1.25. seed_pid=FLAT. oracle: flat reduction_loops=[16384] num_stages=4 (seed num_stages=1 too few). oracle BEATS tc.",
+        "bf16 (2048,131072)": "seed=670 oracle=482 tc=574 seed/oracle=1.39 oracle/tc=1.19. seed_pid=persistent_interleaved. oracle: flat reduction_loops=[8192] num_stages=2.",
+        "bf16 (4096,128256)": "seed=1420 oracle=964 tc=1121 seed/oracle=1.47 oracle/tc=1.16. seed_pid=persistent_interleaved. oracle: flat reduction_loops=[16384]."
+      },
+      "lever3_diagnosis": {
+        "verdict_persistent_interleaved": "NOT catastrophically overfit. A/B: reverting pid->flat (single flip) makes log_softmax SLOWER (+1.7-7.7%); oracle prefers flat ONLY as part of a coupled bundle (flat + smaller reduction_loops + more num_stages). So persistent_interleaved is neutral-to-mildly-suboptimal on full-width, NOT the 2-3x loss source.",
+        "real_gap": "The 2-3x log_softmax wide-N losses are a BROADER codegen gap on wide FULL-WIDTH LOOPED re-read: (a) LOOPED_CHUNK=16384 too big at some shapes (oracle wants 2048-8192), (b) num_stages=1 too few (oracle wants 2-4). These are NOT the named lever-3 suspect. oracle/tc 0.945-1.25 -> mostly REACHABLE (oracle beats tc at 3/4 shapes), some near tc.",
+        "scope_decision": "lever-3 SUSPECT (persistent_interleaved+maxnreg) verdict = GENERALIZES (neutral-to-helpful on full-width, not overfit). The separate wide-full-width chunk/stages gap is a NEW lever surfaced by the hunt \u2014 evaluate if a bounded fix clears the bar."
       }
     },
     "no_regression_checks": [
@@ -4217,6 +4255,11 @@
         "attempt": "M-aware normalize-tile cap (STRUCTURED_NORMALIZE_PROG_BYTES=16384, raise-only, 2048->4096 at M_BLOCK=1)",
         "result": "REJECTED by no-regression backstop. Helps wide-N (N>=10240) welford+groupnorm -8 to -13%, BUT REGRESSES welford mid-N M_BLOCK=1: fp32 (8192,5120)+6.6%,(8192,7168)+9.4%,(8192,8192)+9.7%,(8192,6144)+5.0%; fp16 (16384,4096)+14.8%. The widening helps genuinely-wide rows but hurts narrow-ish looped rows (N in [4096,8192]). My wide-N-only sweep MISSED these interior shapes (the classic endpoint-sweep footgun).",
         "lesson": "normalize widening needs a faithful WIDTH gate (fire only at genuinely-wide rows, not just looped) \u2014 M_BLOCK-awareness alone is insufficient because the mid-N M_BLOCK=1 shapes also widen. Combine fix alone is Pareto-clean; normalize fix deferred unless a clean width-separator found."
+      },
+      {
+        "attempt": "full_width-aware persist cap / looped-chunk lever for wide full-width T1 re-read (log_softmax)",
+        "result": "NOT PURSUED \u2014 the persist-vs-loop crossover for full-width log_softmax is WILDLY NON-MONOTONIC (bf16: N=16384 LOOP -44%, 24576-49152 persist +45-135%, 65536 LOOP -18%, 81920 persist +175%, 98304 LOOP -79%). persist time itself non-monotonic (2048,49152=163us but 2048,98304=2587us, 16x spike from a maximally-spilling next_pow2 tile). NO clean faithful cap separates good/bad persist \u2014 any constant would be curriculum-fit (the exact overfit being hunted).",
+        "verdict": "The wide-full-width-looped regime is genuinely hard for a SEED (single static config) and correctly left to the autotuner (oracle loops these, beats tc). Flag log_softmax wide-N as a seed-coverage limit, NOT a heuristic overfit. Bounded-climb: do not chase."
       }
     ],
     "step0": {
