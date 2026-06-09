@@ -7,10 +7,27 @@ authoritative manual is `_lab/prompts/{hillclimb-method,local-setup,gate-prompts
 Source of truth (method §6.1): THIS notebook + `_lab/ledger.json` key `dtype`. Trust the log
 over context. Wins AND rejections recorded as one-liners with evidence pointers.
 
-## ⟹⟹⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-09, D4-corner fix) — READ FIRST
-**STATE: branch tip ~`c1327b8b` = D4 narrow-N w1 + lab notes. Mid-N w4 DEFERRED (killed by Gate A, fresh
-vs-cell-best sweep confirms no clean rule — kernel-divergent best-warps; legit ceiling). NOW FIXING a
-NEWLY-FOUND D4 corner regression.**
+## ⟹⟹⟹⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-09, D4 HARDENED + gate-confirmed) — READ FIRST
+**STATE: branch tip ~`f9a8dcb5`. D4 narrow-N w1 SHIPPED + HARDENED (byte-scaled occ cap) + GATE-CONFIRMED
+(revised Gate A 3/3 SURVIVES). Mid-N w4 DEFERRED (proven ceiling). The warps lever is essentially DONE.**
+
+### D4 FINAL FORM (HEAD ~d1e2f2b4, Gate A survived @ f9a8dcb5)
+Rule: **w1 IF input_load_itemsize>0 AND grid_rows>0 AND row_bytes<=2048 AND occ*row_bytes<=262144** where
+row_bytes=rnumel*input_load_itemsize, occ=grid_rows//num_sm. The occ ceiling is a RESIDENT-PRESSURE PRODUCT
+(byte512->occ512, byte1024->occ256, byte2048->occ128) — the cliff sits at constant occ*row_bytes (~256-500
+KiB, ncu latency-hiding). This REPLACED the original flat occ cap (512//ils) which had a byte=2048 corner
+bug (+18-30% softmax landmine, in-curric layer_norm/sum +2.5%). Gate A 3/3 SURVIVES (ledger
+`D4_bytescaled_A_adversarial_verify`): corner fixed, big wins preserved (softmax (8192,512) -20-26% vs w4),
+new firing safe (softmax (131072,128) occ992 w1 cell-best), tiny-row high-occ cliffs excluded, fp32 Path-A
+poison excluded, worst fired-zone reg +2.5%. The two new facts (grid_rows, input_load_itemsize) are in
+config_spec + both device_ir builders. jsd-correctness + CE-wide-V-w8 also shipped (intact).
+
+### REMAINING WORK
+- task #6: jsd seed-vs-oracle (oracle-parity reframe) — RUNNING /tmp/jsd_oracle.json (last open exempt-loser).
+- Report: updated for byte-scaled cap + mid-N ceiling. Gate E freeze TEST-read = final step on frozen champion.
+- Mid-N w4 = proven ceiling (kernel-divergent best-warps, no faithful separator); deferred with full writeup.
+
+### (historical) D4 UPPER-CORNER REGRESSION — FOUND + FIXED (byte-scaled cap above)
 
 ### ⚠ D4 UPPER-CORNER REGRESSION FOUND (in-curriculum) — FIX IN PROGRESS
 The cliff-moves-with-bytes finding (wider rows cliff at LOWER occ) bit D4 itself. D4 fires w1 for
