@@ -354,6 +354,16 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # bytes for 8 warps to cover. cross_entropy bf16 V<=~50k lives here (+35-49%).
     REREAD_W8_MAX_BYTES = 102400
 
+    # Band-B (carries [M_BLOCK, R_BLOCK] 2-D accumulator tiles: kl_div, jsd) at a WIDE
+    # half-precision row prefers w8 over the ramp's w32 — the SAME reduction-tree-overhead
+    # mechanism as the re-read scalar-output case above, but reached via a different kernel
+    # structure (a streaming 2-D-tile reduction, NOT re-read). Gated on the half-precision
+    # INPUT-LOAD width (``input_load_itemsize <= 2``): at fp32 the 2-D-tile footprint is
+    # heavier and w32 stays optimal (kl_div fp32 wide-V w8 regresses 5.6-7.3%) — so the byte
+    # signal faithfully excludes fp32 without a dtype-kind branch. jsd/kl_div bf16 at V>=16384
+    # are ~+6-15% faster at w8 (oracle-confirmed; seed w32 avg +10.8% off-optimal).
+    BANDB_W8_MAX_INPUT_ITEMSIZE = 2
+
     # NARROW-row single-warp (occupancy-gated). A narrow reduction extent wants ONE warp:
     # the cross-warp reduction tree (shared-mem + __syncthreads) is pure overhead when each
     # warp's slice is tiny, and w1 reduces in-register via shuffle (0 shared traffic, 0
@@ -448,6 +458,14 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 fact.row_reread
                 and not fact.full_width_output
                 and rnumel * max(1, fact.itemsize) <= cls.REREAD_W8_MAX_BYTES
+            ):
+                return 8
+            # Band-B (2-D-tile streaming reduction: kl_div, jsd) at a wide half-precision row
+            # — same reduction-tree-overhead win, reached via a different structure. Gated on
+            # the input-load width so fp32 (heavier tiles, w32-optimal) is faithfully excluded.
+            if (
+                fact.num_carried_2d_tiles >= 1
+                and 0 < fact.input_load_itemsize <= cls.BANDB_W8_MAX_INPUT_ITEMSIZE
             ):
                 return 8
             return 32

@@ -1131,7 +1131,7 @@ class DeviceIR:
                     red_block_id, size_hint
                 ),
                 grid_rows=self._grid_rows(m_block_ids),
-                input_load_itemsize=self._input_load_itemsize(red_block_id),
+                input_load_itemsize=self._input_load_itemsize(red_block_id, size_hint),
             )
         )
 
@@ -1201,43 +1201,53 @@ class DeviceIR:
                             break
         return num_load, itemsize
 
-    def _input_load_itemsize(self, red_block_id: int) -> int:
-        """Element size (bytes) of the widest HBM *input row load* feeding the reduction
-        over ``red_block_id`` — the dtype-faithful per-byte signal, distinct from
-        ``ReductionFact.itemsize``.
+    def _input_load_itemsize(self, red_block_id: int, size_hint: int) -> int:
+        """Element size (bytes) of the HBM *input row load* over the reduction extent — the
+        dtype-faithful per-byte signal, distinct from ``ReductionFact.itemsize``.
 
-        ``itemsize`` (``_count_reduction_workload``) reads the reduction *input* node,
-        which Helion promotes to fp32 for the norm/softmax family (rms_norm/layer_norm/
-        softmax reduce ``x.to(fp32)``), so it is 4 at BOTH bf16 and fp32 there and cannot
-        tell the dtypes apart. This reads the actual ``hl.load`` of the row from HBM (the
-        store buffer's element size, pre-promotion): 2 for a bf16/fp16 row, 4 for fp32 —
-        a faithful, dtype-AGNOSTIC workload property (the HBM-load width), NOT a dtype-kind
-        branch. Used to scale the occupancy threshold of the narrow-row fewer-warps lever
-        (a 2 B/elem row stays in the fewer-warps regime to ~2x the occupancy of a 4 B row).
+        ``itemsize`` (``_count_reduction_workload``) reads the reduction *input* node, which
+        Helion promotes to fp32 for the norm/softmax family (rms_norm/layer_norm/softmax
+        reduce ``x.to(fp32)``), so it is 4 at BOTH bf16 and fp32 there and cannot tell the
+        dtypes apart. This reads the actual ``hl.load`` of the row from HBM (the store
+        buffer's element size, pre-promotion): 2 for a bf16/fp16 row, 4 for fp32 — a
+        faithful, dtype-AGNOSTIC workload property (the HBM-load width), NOT a dtype-kind
+        branch. Used to dtype-scale the warps levers (a 2 B/elem row behaves differently from
+        a 4 B row at the same element extent).
 
-        Returns the MIN element size over the reduction-fed loads (the row itself; a
-        broadcast weight shares the dtype). 0 if no row load feeds the reduction (kl_div/
-        jsd carry 2-D tiles with no single reduction-fed row load — the lever does not fire
-        there, and 0 reads as "unknown", disabling the byte-scaled branch).
+        Two sources, in order:
+        1. The MIN element size over loads whose value FEEDS the reduction over
+           ``red_block_id`` (the reduced row; a broadcast weight shares the dtype). This is
+           the row-reduction case (softmax/rms/ln/sum/cross_entropy).
+        2. Fallback for Band-B (kl_div/jsd): those carry ``[M_BLOCK, R_BLOCK]`` 2-D tiles and
+           have no single reduction-fed row load, but they DO stream the ``[M, N]`` input
+           rows from HBM. So if (1) is empty, take the MIN element size over rank>=2 loads
+           whose inner (reduction) dim equals ``size_hint`` — the wide input rows. This keeps
+           the signal dtype-faithful for Band-B (bf16 rows -> 2, fp32 -> 4).
+        0 if neither source finds a load (no wide input row — the lever declines).
         """
         from ..language.memory_ops import load as _load_op
 
-        sizes: list[int] = []
+        fed_sizes: list[int] = []
+        row_sizes: list[int] = []
         for graph_info in self.graphs:
             graph = graph_info.graph
             redset = _reduction_node_ids(graph, red_block_id)
-            if not redset:
-                continue
             for node in graph.find_nodes(
                 op="call_function", target=_load_op, sort=False
             ):
-                feeds, _bypass = _classify_load_dataflow(node, redset)
-                if not feeds:
-                    continue
                 fake = _accessed_tensor_fake(node)
-                if fake is not None:
-                    sizes.append(fake.element_size())
-        return min(sizes) if sizes else 0
+                if fake is None:
+                    continue
+                if redset:
+                    feeds, _bypass = _classify_load_dataflow(node, redset)
+                    if feeds:
+                        fed_sizes.append(fake.element_size())
+                # Band-B fallback candidate: a wide input row (rank>=2, inner dim == extent).
+                if fake.ndim >= 2 and int(fake.shape[-1]) == int(size_hint):
+                    row_sizes.append(fake.element_size())
+        if fed_sizes:
+            return min(fed_sizes)
+        return min(row_sizes) if row_sizes else 0
 
     def _grid_rows(self, m_block_ids: tuple[int, ...]) -> int:
         """Product of the static M-axis (non-reduction grid) extents — the program count
@@ -1566,7 +1576,7 @@ class DeviceIR:
                 rdim.block_id, size_hint
             ),
             grid_rows=self._grid_rows(m_block_ids),
-            input_load_itemsize=self._input_load_itemsize(rdim.block_id),
+            input_load_itemsize=self._input_load_itemsize(rdim.block_id, size_hint),
         )
 
     def build_codegen_graphs(self, config: Config) -> list[GraphInfo]:
