@@ -7,9 +7,29 @@ authoritative manual is `_lab/prompts/{hillclimb-method,local-setup,gate-prompts
 Source of truth (method §6.1): THIS notebook + `_lab/ledger.json` key `dtype`. Trust the log
 over context. Wins AND rejections recorded as one-liners with evidence pointers.
 
-## ⟹⟹⟹⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-09, D4 HARDENED + gate-confirmed) — READ FIRST
-**STATE: branch tip ~`f9a8dcb5`. D4 narrow-N w1 SHIPPED + HARDENED (byte-scaled occ cap) + GATE-CONFIRMED
-(revised Gate A 3/3 SURVIVES). Mid-N w4 DEFERRED (proven ceiling). The warps lever is essentially DONE.**
+## ⟹⟹⟹⟹⟹⟹⟹ FRESH-CONTEXT RESUME (NEWEST, 2026-06-09, FOUR WINS + Gate E running) — READ FIRST
+**STATE: branch tip ~`bf802056`. FOUR gate-confirmed wins. The reduction num_warps ramp was systematically
+over-warped; optimum follows a faithful f(byte,occ) surface (cliff at constant occ*row_bytes, ncu latency-
+hiding). Production diff vs PR baseline e9251140: +254/-4 (jsd.py +6, triton.py +119, device_ir.py +112,
+config_spec.py +21). 47 tests pass, ruff clean, pyrefly clean (2 pre-existing errors unrelated).**
+
+THE FOUR WINS (all faithful facts, NO dtype-kind/kernel-identity branch):
+1. **jsd bf16/fp16 correctness fix** (examples/jsd.py: intermediate_dX fp32, true fp32 no-op).
+2. **CE wide-V w8** (+35-49%): rnumel>16384 AND row_reread AND NOT full_width_output AND rnumel*itemsize
+   <=102400. Fact full_width_output. Gate A+D 3/3.
+3. **D4 narrow-N w1** (+20-60%): row_bytes<=2048 AND occ*row_bytes<=262144 (byte-scaled, resident-pressure).
+   Facts grid_rows + input_load_itemsize. Gate A+D+F+E + corner-fix re-gate (byte-scaled cap fixed a
+   byte=2048 corner the original flat cap missed).
+4. **Band-B wide-V w8** (jsd/kl_div bf16/fp16, +6-15%): rnumel>16384 AND num_carried_2d_tiles>=1 AND
+   0<input_load_itemsize<=2. input_load_itemsize EXTENDED with a Band-B fallback (wide input-row load
+   width). Gate A (RESOLVED — one skeptic's refutation was a cold-launch artifact; clean matched-lever A/B
+   shows w8 within +0-1.2% of cell-best on all 8 jsd/kl_div bf16 wide-V cells) + Gate D faithful.
+
+DEFERRED: mid-N w4 (rnumel 4k-16k) = PROVEN CEILING (kernel-divergent best-warps within every byte/occ
+bucket, no faithful separator; gate-killed + fresh 980-measurement vs-cell-best sweep).
+
+IN FLIGHT: Gate E FREEZE TEST-firewall read (wf_04917c98) — the sole sanctioned TEST-split read, final step.
+After Gate E: champion is freezable. NO git push (human handles PR).
 
 ### D4 FINAL FORM (HEAD ~d1e2f2b4, Gate A survived @ f9a8dcb5)
 Rule: **w1 IF input_load_itemsize>0 AND grid_rows>0 AND row_bytes<=2048 AND occ*row_bytes<=262144** where
