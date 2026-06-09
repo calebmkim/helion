@@ -162,8 +162,19 @@ isolated-fresh-process for before/after; suspect the analysis not the timer (§4
 - "Wide-full-width persist is unkeyable" (my premature claim): REFUTED by Gate A — was a contention artifact; crossover is element-keyed ~80k. Led to lever-4.
 - Persist-cap value 65536: too low (mis-loops 65536-81920 persist-win band); raised to 81920 (measured crossover).
 
+## Deferred hard-pile / WS2
+- persistent_interleaved occ-gate: needs DTYPE/footprint-aware boundary (occ*row_bytes); flat wave-thresh
+  regressed CE fp32 24% (off-curriculum bf16 V=131072 +18-22% regression unfixed in WS1, but curriculum-safe).
+- argmax index-reduction codegen at >1 warp (tiny-N): kernel/codegen issue, not a heuristic lever (row_max divergence-confirmed).
+- NARROW_W1 / eviction stream-vs-reread / pow-2 ramp thresholds: no WS1 sibling binds them as constraints.
+
+## FINAL STATE (frozen champion @ 133ab3ff; net code = 2 faithful fixes)
+DoD met + banked + overtime done. 7 lever verdicts, 12 gate verdicts. Tests pass (20). 9 not regressed.
+The no-regression backstop fired twice and correctly rejected: (1) flat normalize widen (welford fp32 mid-N),
+(2) persistent_interleaved occ-gate (CE fp32 24%) — both caught by sweeping the dtype/shape axis I'd missed.
+
 ## Deferred hard-pile
-(none yet)
+(folded into WS2 above)
 
 ## Overfit-hunt leads (from constant audit — Gate-E periodic raw material)
 - **REREAD_W8_MAX_BYTES=102400** flagged: bf16 crossover at V=51200 sits near train(≤50k)/val(≥65k)
