@@ -376,50 +376,19 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     NARROW_W1_MAX_BYTES = 2048
     NARROW_W1_OCC_BYTES = 512
 
-    # MID-row four-warp (occupancy-gated, the next band above NARROW). A mid-width row
-    # (rnumel*input_load_itemsize in (NARROW_W1_MAX_BYTES, MID_W4_MAX_BYTES]) at low/moderate
-    # occupancy wants 4 warps, not the ramp's w16: w4 still beats the cross-warp-tree cost
-    # while giving enough warps to hide HBM load latency. ncu smoking gun (softmax_two_pass
-    # bf16 N=5120 across the cliff): at the cliff long-scoreboard stalls jump 0.9->3.6
-    # inst/issue (4x), DRAM throughput 71%->28%, SM throughput 53%->11% — with IDENTICAL
-    # load/store counts, so it is pure LATENCY-HIDING capacity, not bandwidth. Below SM
-    # saturation w4's few-warp simplicity wins (+45-59% softmax, +14-31% welford, +12-21%
-    # layer_norm); once the SMs saturate, w4 has too few warps to hide the HBM latency of the
-    # two-pass row re-stream and throughput collapses (a VIOLENT >5x cliff for softmax over one
-    # M-step). The occ cap keeps strictly below that saturation point — MECHANISM-justified,
-    # not a fitted fence. Keyed on input_load_itemsize (dtype-faithful, scales ~2x) like NARROW.
-    #   - row cap: ``rnumel * input_load_itemsize <= MID_W4_MAX_BYTES`` (bf16 rnumel<=5120,
-    #     fp32 rnumel<=2560). Wider rows (e.g. softmax bf16 N>=8192) cliff at even LOWER occ, so
-    #     the byte cap excludes them (their latency wall arrives before any useful occ window).
-    #   - occ cap: ``grid_rows // num_sm <= MID_W4_OCC_BYTES // input_load_itemsize`` (bf16
-    #     occ<=224, fp32 occ<=112). softmax bf16 N5120 cliffs at occ~558; the 224 cap is a 2.5x
-    #     margin. fp32 cliffs ~2x earlier (heavier per-row bytes saturate SMs sooner), captured
-    #     by the same itemsize scaling.
-    # Coverage-validated across softmax/rms_norm/layer_norm/welford x bf16/fp32 x rnumel
-    # {2560,3072,4096,5120} (incl. off-curriculum learning shapes): in the fired zone 39 wins,
-    # worst regression ~2.0% (noise), zero >3% regressions, all cliffs excluded. Disjoint from
-    # NARROW (byte>2048) and the wide w8/w32 branch (byte<=10240 << the rnumel>16384 region).
-    MID_W4_MAX_BYTES = 10240
-    MID_W4_OCC_BYTES = 448
-
     @classmethod
     def _num_warps(cls, fact: ReductionFact, num_sm: int = 0) -> int:
         """Scale num_warps with the reduction extent (pow2, per NumWarpsFragment):
         rnumel <= 1024 -> 4, <= 4096 -> 8, <= 16384 -> 16, > 16384 -> 32. Too few
         under-occupies the SM, too many wastes the reduction tree.
 
-        Two occupancy-gated refinements at the LOW/MID end (both need ``num_sm``; 0 disables
-        them, e.g. an off-device caller; both decline on a dynamic grid where occupancy is
-        unknown). Both key their caps on ``input_load_itemsize`` (the HBM-load width, 2 for
-        bf16/fp16 / 4 for fp32) so the caps scale ~2x with dtype FAITHFULLY — no dtype-kind
-        branch. Disjoint byte bands, and both far below the wide-row w8/w32 region
-        (rnumel>16384), so none of the three branches interact:
-        - NARROW (``row_bytes <= NARROW_W1_MAX_BYTES``): ONE warp — the cross-warp reduction
-          tree is pure overhead at a tiny row (see ``NARROW_W1_MAX_BYTES``).
-        - MID (``NARROW_W1_MAX_BYTES < row_bytes <= MID_W4_MAX_BYTES``): FOUR warps below SM
-          saturation — fewer than the ramp's w16 (less cross-warp-tree cost) but enough to
-          hide HBM latency. ncu-proven the cliff above the occ cap is latency-hiding capacity
-          (see ``MID_W4_MAX_BYTES``).
+        NARROW-row single-warp refinement at the LOW end (the occupancy-gated lever): a
+        narrow row at low/moderate occupancy wants ONE warp (the cross-warp reduction tree
+        is pure overhead — see ``NARROW_W1_MAX_BYTES``). Fires only when BOTH the row-byte
+        cap and the occupancy cap (both keyed on ``input_load_itemsize`` so they scale ~2x
+        with dtype, faithfully, no dtype-kind branch) hold; needs ``num_sm`` (0 disables it,
+        e.g. an off-device caller). Disjoint from the wide-row w8/w32 branch below
+        (``NARROW_W1_MAX_BYTES`` << the rnumel>16384 region), so the two never interact.
 
         One dtype-aware refinement at the WIDE end (rnumel > 16384): a REDUCTION-BOUND row
         — re-read (``row_reread``, i.e. live across >=2 reductions, e.g. cross_entropy's
@@ -445,24 +414,18 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         # the input-load byte width (dtype-faithful), and the occupancy needs num_sm; an
         # input_load_itemsize of 0 (kl_div/jsd, or unknown) disables it.
         ils = fact.input_load_itemsize
-        if num_sm > 0 and ils > 0 and fact.grid_rows > 0:
+        if (
+            num_sm > 0
+            and ils > 0
+            and fact.grid_rows > 0
+            and rnumel * ils <= cls.NARROW_W1_MAX_BYTES
+        ):
             # grid_rows==0 means a dynamic/jagged M-grid: occupancy is unknown at compile
-            # time, so these levers DECLINE (an unknown occ must not assume the best-case low
-            # occ — that would wrongly fire on a possibly-saturated grid).
-            row_bytes = rnumel * ils
+            # time, so the lever DECLINES (an unknown occ must not assume the best-case low
+            # occ — that would wrongly fire w1 on a possibly-saturated grid).
             occ = fact.grid_rows // num_sm
-            # NARROW band: 1 warp.
-            if (
-                row_bytes <= cls.NARROW_W1_MAX_BYTES
-                and occ <= cls.NARROW_W1_OCC_BYTES // ils
-            ):
+            if occ <= cls.NARROW_W1_OCC_BYTES // ils:
                 return 1
-            # MID band (the next byte band up): 4 warps below SM saturation.
-            if (
-                cls.NARROW_W1_MAX_BYTES < row_bytes <= cls.MID_W4_MAX_BYTES
-                and occ <= cls.MID_W4_OCC_BYTES // ils
-            ):
-                return 4
         # >16384 (not >=) so sum's widest in-sample row (16384) stays w16, excluding the
         # tiny-rnumel w32 regression.
         warps32_min_elems = 16384
