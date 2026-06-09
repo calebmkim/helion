@@ -6,6 +6,20 @@ kernels that land in each lever's regime, then prove under the gates whether eac
 existing 9 kernels at any of fp32/bf16/fp16. Branch `reduction-pr-with-lab`; baseline = the inherited
 dtype-climb champion. NOT a PR — a validated lab result.
 
+## Per-lever verdict summary (the primary deliverable)
+| lever | family-of-one | sibling | verdict | gates |
+|---|---|---|---|---|
+| **REREAD_W8 w8-branch** | cross_entropy | logsumexp | **GENERALIZES** (kept) | A 3/3, D faithful (synthetic divergence kernel; mechanism boundary sweep) |
+| **Band-C combine + normalize caps** | welford | groupnorm | **OVERFIT → faithfully generalized** (M-aware combine; dtype-faithful normalize) | A 2/3 (lone refuter = batched-process artifact), D faithful |
+| **persistent_interleaved + maxnreg** | cross_entropy | log_softmax | **GENERALIZES** (kept; mechanism = grid-tail quantization) | A majority-refuted a *premature* over-claim → corrected; F mechanism PASS |
+| **ROW_PERSIST persist cap** (hunt-found) | — (CE byte-cap) | log_softmax | **OVERFIT → faithfully fixed** (element-keyed, full_width-gated) | A 2/3, D faithful, final audit PASS |
+| coverage: `_num_warps` ramp + ROW_PERSIST streamed | — | argmax, l2_norm | **GENERALIZE** (no fix) | transfer + TEST read |
+
+**Net code change:** 3 new faithful constants/branches in `triton.py` (`STRUCTURED_COMBINE_PROG_BYTES`,
+the `input_load_itemsize`-gated normalize widening, `FULL_WIDTH_PERSIST_MAX_ELEMS`) + the M_BLOCK-aware
+combine cap. The existing 9 kernels are byte-identical except welford (faster-or-flat, the 7.3× valley
+untouched). All four headline lever verdicts gate-verified; final overfit audit + TEST-firewall PASS.
+
 ## Siblings authored (examples/)
 `logsumexp`, `log_softmax`, `groupnorm` (welford-idiomatic Band-C), `l2_norm`, `argmax`. All
 fp32-accumulate, correct at 3 dtypes (argmax via int64 exact-index + gathered-value tie-break).
@@ -98,12 +112,42 @@ bf16 1.02/0.89, fp32 0.90/0.96, fp16 1.08/1.11 (wide-N losers).
   half-precision full-width T1 sibling (log_softmax) is steered; the 9 + CE unchanged.
 
 ## Overfit hunt (beyond the named suspects)
-- Gate-E periodic audit (during-climb): no curriculum fence found; new constants (262144, 16384) are
-  hardware-aligned per-program footprint budgets; WS1 splits are interpolation-fair.
-- (TEST-firewall read at freeze: pending — Gate E reads TEST once.)
+- **Lever 4 itself was a hunt find** — surfaced when the lever-3 adversarial gate refuted my premature
+  "unkeyable" claim and revealed the byte-keyed persist cap was the real overfit. The element-keyed,
+  full-width-gated fix resolves it faithfully.
+- Gate-E periodic + **final whole-heuristic audit: PASS — no curriculum fence.** The only constant
+  changes vs the dtype-champion baseline are the 3 documented faithful ones (`STRUCTURED_COMBINE_PROG_BYTES`,
+  the `input_load_itemsize`-gated normalize widening, `FULL_WIDTH_PERSIST_MAX_ELEMS`); each keys on a
+  hardware footprint / faithful workload property, not a curriculum N-value. WS1 splits interpolation-fair.
+- **Flagged for WS2** (pre-existing, out of WS1 scope): the persistent_interleaved+maxnreg lever is
+  shape-dependent on cross_entropy itself (helps V≥160K, regresses bf16 V=131072 by 14–17% where it
+  fires) — generalizes to log_softmax (grid-tail-quantization mechanism, Gate F) but may need a firing
+  refinement. NARROW_W1 / eviction / pow-2 ramp thresholds carry prior dtype-run verdicts, no WS1 sibling
+  binds them.
+
+## Gate-E TEST-firewall read (freeze — the single sanctioned TEST read; never benched during the climb)
+Held-out TEST geomean (seed-vs-tc, CUDA-graph), with the train↔TEST gap as a first-class number:
+| sibling | TEST bf16 | TEST fp32 | TEST fp16 | train↔TEST |
+|---|---|---|---|---|
+| logsumexp | 1.17 | 1.18 | 1.20 | ~0 (no overfit) |
+| groupnorm | 1.18 | 1.10 | 1.12 | ~0 — **lever-2 fix generalizes to TEST** |
+| l2_norm | 1.26 | 1.11 | 1.25 | TEST ≥ train (clean) |
+| log_softmax | 0.99 | 0.84 | 0.99 | tracks train; fp32 0.84 = wide-full-width codegen gap (oracle-bound, NOT overfit) |
+| argmax | 0.92 | 0.91 | 0.91 | **largest gap** (train ~1.02 → TEST ~0.91): tiny-N/wide-vocab outliers ((65536,512)=0.44) where the warp ramp trails tc — a perf-coverage limit, NOT a fence (accuracy passes, TEST N-bands interpolate train) |
+
+Accuracy passed on every TEST row (`any_acc_fail=false`), including the argmax int64 path and the
+half-precision logsumexp/log_softmax wide-V rows (no NaN). **Verdict: PASS — no overfit fence; the
+lever fixes hold out-of-sample.**
 
 ## No-regression on the existing 9 (the backstop)
-- Lever 1: no code change → 9 byte-identical.
-- Lever 2: only welford configs change (M-aware caps); welford faster-or-flat everywhere; other 8
-  byte-identical (behavior oracle, all 3 dtypes).
-- (Full freeze no-regression measurement: pending.)
+- **Lever 1, lever 3:** no code change → 9 byte-identical.
+- **Lever 2 (combine + normalize caps):** behavior oracle — only welford configs change (30, M-aware);
+  the other 8 byte-identical at all 3 dtypes. Welford isolated before/after (fresh process per shape):
+  all 24 changed shapes **faster-or-flat, 0 regressions** (the fix *improves* welford). Huge-M
+  (262144,*) byte-identical (the 7.3× valley untouched).
+- **Lever 4 (full-width persist cap):** behavior oracle — the 9 byte-identical (full-width 9 are
+  itemsize=4 so the element cap never binds; CE is scalar so the `full_width_output` clause is a
+  tautology — verified byte-identical, persists where it did). Only the log_softmax sibling is steered.
+- A measurement footgun was caught and corrected mid-flight: a batched-process before/after script
+  reported phantom welford regressions (+15–110%); isolated fresh-process re-bench (the §4 method)
+  confirmed all faster-or-flat — two independent gate skeptics reproduced the same artifact correction.

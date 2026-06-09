@@ -4274,6 +4274,45 @@
         "verdict": "PASS \u2014 no curriculum fence",
         "finding": "Only 3 constant changes vs dtype-champion baseline (all faithful): STRUCTURED_COMBINE_PROG_BYTES=262144, normalize_prog_bytes=16384 (input_load_itemsize<=2 gated), FULL_WIDTH_PERSIST_MAX_ELEMS=81920. 81920 confirmed keyed to the measured spill crossover, not curriculum (no shape in (65536,81920] band). Splits interpolation-fair.",
         "minor_fixed": "comment SMEM framing tightened; WS1_REPORT 65536->81920 stale-value fixed. Gate-D mechanism analysis (element-vs-byte, full_width gate) is value-independent & passed; audit confirms 81920 not a fence."
+      },
+      {
+        "gate": "E_TEST_firewall",
+        "sha": "36a17eb4",
+        "mode": "FREEZE \u2014 the SINGLE sanctioned TEST read",
+        "test_split_benched_first_time": true,
+        "test_geomeans": {
+          "logsumexp": {
+            "bf16": 1.174,
+            "fp32": 1.18,
+            "fp16": 1.201,
+            "gap_vs_train": "~0 (train 1.21/1.18/1.23) \u2014 NO overfit"
+          },
+          "log_softmax": {
+            "bf16": 0.991,
+            "fp32": 0.842,
+            "fp16": 0.994,
+            "note": "bf16/fp16 ~tie; fp32 0.84 = wide-full-width codegen gap (consistent train/val, oracle-bound NOT overfit)"
+          },
+          "groupnorm": {
+            "bf16": 1.176,
+            "fp32": 1.104,
+            "fp16": 1.124,
+            "gap_vs_train": "~0 (train 1.12/1.04/1.11) \u2014 NO overfit, lever-2 fix generalizes to TEST"
+          },
+          "l2_norm": {
+            "bf16": 1.255,
+            "fp32": 1.107,
+            "fp16": 1.249,
+            "gap": "TEST>=train \u2014 clean"
+          },
+          "argmax": {
+            "bf16": 0.918,
+            "fp32": 0.91,
+            "fp16": 0.913,
+            "gap_vs_train": "TRAIN~1.02 -> TEST~0.91, the LARGEST train<->held-out gap. Driven by tiny-N/wide-vocab outliers (65536,512)=0.44,(16384,768),(1024,151936) where the _num_warps ramp trails tc. acc PASSES (any_acc_fail=false). A perf-COVERAGE limit at extreme shapes, NOT an overfit FENCE (no constant fences the curriculum; TEST N-bands are interpolation within train)."
+          }
+        },
+        "verdict": "PASS (no overfit fence). Held-out TEST tracks train for the 4 levered/probed siblings within noise; the lever fixes (groupnorm, log_softmax) GENERALIZE to TEST. argmax has a real train->TEST perf gap at extreme tiny-N (flagged, first-class) but it is a coverage limit not a curriculum fence and accuracy holds."
       }
     ],
     "results": {
@@ -4342,6 +4381,10 @@
         "sha": "6d7cf8cc",
         "behavior_oracle": "only welford changed (30 configs); huge-M + other 8 byte-identical",
         "welford_isolated_before_after": "24 changed shapes ALL faster-or-flat (bf16/fp16 wide-N -8 to -12.6%, mid-N -0.2 to -5.1%; fp32 combine-only -1.8 to -2.2%; unchanged shapes +0.0%). 0 regressions. ARTIFACT NOTE: batched script gave phantom +20-110% regressions; isolated re-bench (proper method) confirmed all OK."
+      },
+      {
+        "check": "FREEZE final 9-kernel sanity (bf16 val, current heuristic 36a17eb4+doc)",
+        "result": "all 9 healthy, ZERO errors/acc-fails. geomeans: rms 1.00, ln 1.07, softmax 1.29, welford 1.01 (improved by lever-2), sum 1.05, long_sum 1.14, CE 1.37, kl_div 1.07, jsd OK. No kernel regressed; welford config-changed shapes faster-or-flat (isolated before/after). Combined with behavior-oracle byte-identity of the other 8 + welford isolated 0-regression, the no-regression backstop on the 9 is SATISFIED at all 3 dtypes."
       }
     ],
     "tried_rejected": [
@@ -4392,6 +4435,16 @@
     "notable_findings_for_WS2": [
       "persistent_interleaved+maxnreg lever REGRESSES cross_entropy bf16 V=131072 by 14-17% WHERE IT FIRES (looped re-read) \u2014 a219e4 lever-3 finding. This is PRE-EXISTING heuristic behavior (not introduced by WS1), shape-dependent on CE (helps V>=160K, hurts V=131072). The lever generalizes to log_softmax (grid-quantization mechanism, Gate F) but is non-monotonic on CE itself. FLAGGED for WS2: the lever may need a faithful firing refinement (e.g. gate on grid-tail-evenness benefit).",
       "NARROW_W1, eviction stream/reread, pow-2 ramp thresholds, LOOPED_NUM_WARPS: no WS1 sibling exercises them as binding constraints (have prior dtype-run verdicts / inherited). Out of WS1 scope."
-    ]
+    ],
+    "FREEZE": {
+      "status": "CHAMPION FROZEN",
+      "sha_at_freeze": "36a17eb4 (+ doc commit)",
+      "deliverables": {
+        "siblings_authored": "logsumexp, log_softmax, groupnorm (welford-idiomatic Band-C), l2_norm, argmax \u2014 correct 3 dtypes, fire intended branches",
+        "lever_verdicts": "lever1 GENERALIZES; lever2 OVERFIT->fixed; lever3 GENERALIZES (mechanism); lever4(hunt) OVERFIT->fixed; coverage l2_norm+argmax generalize",
+        "gates": "Gate A on every code change + every generalizes claim; Gate D on every fact/constant; Gate F mechanism on lever3; Gate E periodic + final audit PASS + TEST-firewall read (no overfit fence)",
+        "no_regression": "the 9 byte-identical except welford (faster-or-flat); measured 0 regressions"
+      }
+    }
   }
 }
