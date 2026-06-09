@@ -144,8 +144,23 @@ to logsumexp (no target gather).
   w32 genuinely wins (+18-26%). The cap is a real hardware crossover, NOT a curriculum fence (it lands near
   the train/val vocab split only because both reflect the same ~50k real-model vocab regime).
 
+## ★ DoD BANKED 2026-06-09 (champion frozen @ 8b445554) — now in Step-4 overtime/hunt ★
+4 lever verdicts gate-verified: L1 w8 GENERALIZES; L2 Band-C caps OVERFIT→fixed; L3 persistent_interleaved
+GENERALIZES (mechanism); L4(hunt) persist-cap OVERFIT→fixed. Coverage l2_norm+argmax generalize. Gate-E
+TEST-firewall PASS (no fence; fixes generalize out-of-sample; argmax tiny-N gap flagged). 9 not regressed.
+**Biggest lesson:** my own coarse persist sweep gave a CONTENTION-ARTIFACT "non-monotonic/unkeyable"
+conclusion that the Gate-A majority-refute correctly overturned → led to the real lever-4 fix. Always
+isolated-fresh-process for before/after; suspect the analysis not the timer (§4/§5 vindicated repeatedly).
+
+## Step-4 overtime candidates (keep climbing past DoD)
+- argmax tiny-N (65536,512)/(16384,768): warp ramp trails tc ~2x. Is there a faithful narrow/grid fact? (the NARROW_W1 lever the critic flagged unprobed)
+- log_softmax fp32 wide-N (0.84 TEST): oracle-bound? re-oracle to confirm ceiling vs reachable.
+- the CE V=131072 persistent_interleaved -14-17% regression (WS2-flagged): faithful firing refinement?
+
 ## Tried-and-rejected (first-class data)
-(none yet)
+- Flat normalize widen (2048→4096 all): regressed welford fp32 mid-N +5-10%. Fixed via input_load_itemsize<=2 dtype gate.
+- "Wide-full-width persist is unkeyable" (my premature claim): REFUTED by Gate A — was a contention artifact; crossover is element-keyed ~80k. Led to lever-4.
+- Persist-cap value 65536: too low (mis-loops 65536-81920 persist-win band); raised to 81920 (measured crossover).
 
 ## Deferred hard-pile
 (none yet)
