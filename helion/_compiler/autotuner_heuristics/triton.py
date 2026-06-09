@@ -528,11 +528,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
 
         # Per-row valid bytes below which the loop tile stays persistent at next_pow2(N).
         persist_max_bytes = 12288
-        # Looped chunk (bytes) above that threshold — the FLOOR of the M-aware budget below.
+        # Looped chunk (bytes) above that threshold — the FLOOR of the widened chunk below.
         # Do NOT lower without re-gating: a 4096-elem chunk is a ~6x regression valley at the
-        # large-M / N~5120 welford class (M_BLOCK=16); the M-aware budget keeps this floor
-        # there and only widens at small M_BLOCK.
+        # large-M / N~5120 welford class (M_BLOCK=16).
         loop_chunk_bytes = 8192
+        # Half-precision wide looped rows afford a WIDER normalize chunk (M-aware, raise-only).
+        # Keyed on input_load_itemsize<=2 (the bf16/fp16 HBM-load width — the SAME dtype-faithful
+        # workload signal the w8/narrow-warp levers use, NOT a dtype-kind branch). At fp32
+        # (input_load_itemsize 4) the normalize-tile optimum is NON-MONOTONIC in width (measured:
+        # helps N~16k, regresses N~20k), so it is not faithfully width-keyable and is left at the
+        # floor for the autotuner to refine. The footprint is M_BLOCK*chunk*itemsize, so the
+        # budget divides by M_BLOCK (huge-M keeps the floor — the 7.3x valley is untouched), and
+        # it only fires when the row spans >= 2 widened chunks (np2_n > raised), so a row that
+        # would collapse to a single persistent chunk stays at the floor. CUDA-graph-validated:
+        # welford+groupnorm bf16/fp16 small-M wide-N -2 to -20%, zero welford regression.
+        normalize_prog_bytes = 16384
 
         loop_block: int | None = None
         if non_reduction_loop_ids:
@@ -550,6 +560,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     loop_block = np2_n
                 else:
                     loop_chunk_elems = max(1, loop_chunk_bytes // itemsize)
+                    if 0 < fact.input_load_itemsize <= 2:
+                        m_block = 1
+                        for mbid in fact.m_block_ids:
+                            m_idx = spec.block_sizes.block_id_to_index(mbid)
+                            m_block *= cls._block_floor(
+                                cast("BlockSizeSpec", spec.block_sizes[m_idx])
+                            )
+                        raised = max(
+                            1, normalize_prog_bytes // max(1, m_block) // itemsize
+                        )
+                        # Only widen when the row spans >= 2 widened chunks (else a wide
+                        # chunk just collapses the loop to one persistent pass, which is slower
+                        # for these half-precision rows — measured at np2_n == raised).
+                        if np2_n > raised:
+                            loop_chunk_elems = max(loop_chunk_elems, raised)
                     loop_block = min(np2_n, _np2(loop_chunk_elems))
 
         red_idx = (

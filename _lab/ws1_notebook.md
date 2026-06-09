@@ -75,7 +75,37 @@ autotuner_min, computable at seed time via _block_floor). Raise-only: never belo
   128k caused (+29.8%) — 256k lets it reach full R=65536.
 Budget 262144 chosen over 524288 (which helped fp32 (131072,16384) M_BLOCK=8 but risks unvalidated bf16
 huge-M); 262144 keeps M_BLOCK≥4 safely at 8192. Faithful (M-coupling), raise-only (welford-safe), Pareto-clean.
-NEXT: implement; behavior-oracle the 9 (only welford/groupnorm configs should change); re-run groupnorm transfer; Gate A/C/D.
+DONE: combine fix implemented + committed (9ad1c54e). Behavior oracle: only welford changed (45
+configs), huge-M untouched, other 8 byte-identical. Welford before/after: combine-tile changes all
+faster-or-flat (no regression). groupnorm AFTER combine fix: bf16 1.002/0.951, fp32 1.025/1.067,
+fp16 0.995/0.936 (big lift from bf16 val 0.776).
+
+### NORMALIZE-TILE sub-lever — verdict: faithful for bf16/fp16, NON-FAITHFUL for fp32 (dtype-gate)
+Oracle on groupnorm losers: gap is the NORMALIZE tile (oracle 4096-8192 vs seed 2048). Flat M-aware
+normalize widening (2048->4096) REJECTED — regressed welford fp32 mid-N M_BLOCK=1 (+5-10% at N=5120-8192).
+Full INTERIOR width sweep (N=4096..32768, M_BLOCK=1, 3 dtypes) reveals the truth:
+- **bf16/fp16**: norm 4096 helps MONOTONICALLY from N>=6144 (-2 to -20%), only N=4096 flat. CLEAN width gate.
+- **fp32**: NON-MONOTONIC zigzag — HURTS N=4096-8192 (+2-9%), flat 10240-12288, helps 14336-16384,
+  HURTS AGAIN N=20480 (+12%!), helps 24576+. NO clean width-separable rule for fp32.
+→ The normalize tile DOES leave perf on the table for bf16/fp16 small-M wide-N, and a FAITHFUL gate
+exists: key on input_load_itemsize<=2 (the HBM load width — bf16/fp16 rows, the SAME dtype-faithful
+signal the w8/narrow levers use) AND looped + width. fp32 (itemsize 4 HBM) stays 2048 (its zigzag is
+not faithfully keyable — correctly deferred to the autotuner; it's only a seed). TESTING this dtype-
+faithful normalize gate next; if it's Pareto-clean on welford bf16/fp16 + lifts groupnorm over the bar, bank it.
+
+### dtype-faithful normalize gate IMPLEMENTED (input_load_itemsize<=2 + width + M-aware, raise-only)
+Gate: widen looped normalize chunk to 4096 only when input_load_itemsize<=2 (bf16/fp16 HBM row —
+faithful, same signal as w8/narrow levers; fp32 itemsize-4 row stays 2048, dodges its zigzag) AND
+np2(N)>raised (row spans >=2 chunks, so N=4096 stays floor) AND M_BLOCK small (footprint M_BLOCK*chunk;
+huge-M keeps floor). Configs verified: bf16 widens at wide-N M_BLOCK=1, floor at N=4096 & huge-M & M_BLOCK=4;
+fp32 normalize stays 2048 everywhere.
+**MEASUREMENT ARTIFACT CAUGHT (footgun #7):** the batched before/after script (many kernels, one long-
+lived process) reported phantom welford regressions (bf16 (65536,16384) +110%!, (4096,16384) +25%, fp32
+(8192,12288) +20%, fp16 (8192,5120) +10%). CLEAN ISOLATED re-bench (fresh process, warmup+interleaved,
+the proper method) shows ALL are FASTER-or-FLAT: (65536,16384) -1.7%, (4096,16384) -8.3%, (8192,12288 fp32)
+-2.2%, (8192,5120 fp16) -0.5%, (8192,8192 fp32) +0.0% (config identical). Suspected the analysis not the
+timer (method §5), re-benched full verbatim configs in isolation → artifacts confirmed. Running full
+isolated no-regression sweep next.
 
 ### LEVER 1 — REREAD_W8 / w8 branch — VERDICT: GENERALIZES (pending Gate A + D)
 logsumexp initial transfer (seed-vs-tc, CUDA-graph geomean, all CLEAR done-bar out of the gate):
