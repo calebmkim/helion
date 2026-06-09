@@ -3453,6 +3453,12 @@
         "verdict": "SURVIVES 3/3 NOT-refuted. Revised D4 (byte-scaled occ cap occ*row_bytes<=262144) gate-confirmed.",
         "confirmed": "Corner FIXED (softmax/ln bf16 (32768,1024) occ248/256 -> w4, w1 would be +11-33%). Big wins preserved (softmax (8192,512) w1 -20-26% vs w4, welford -17-20%). New firing safe (softmax (131072,128) occ992 w1 = cell-best +0-1.1%). Tiny-row high-occ cliffs excluded (262144,128/131072,256/262144,256 -> w4, w1 would +18-50%). fp32 Path-A poison still excluded (softmax fp32 (32768,512) -> w4). Worst fired-zone reg +2.5% (ln corner). 3 skeptics, warmup-hardened CUDA-graph (2x cold-discard, 10 warmup, 21 reps).",
         "mechanism_confirmed": "All 3 skeptics independently confirm the byte-scaled cap is faithful: safe occ ceiling scales DOWN with row width (512B->occ512, 1024B->occ256, 2048B->occ128), matching the measured cliff-moves-with-bytes (constant occ*row_bytes resident-pressure product)."
+      },
+      {
+        "gate": "BandB_w8_no_regression_config_proof",
+        "sha": "ff4ab2d6 (vs pre-Band-B 169f5bbb)",
+        "verdict": "CLEAN. 52 diffs, ALL jsd/kl_div bf16/fp16 wide-V (rnumel>16384) w32->w8. ZERO non-warp diffs, ZERO err changes, ZERO fp32 changes (fp32 jsd/kl_div stay w32, danger avoided), no other kernel touched (CE/softmax/rms/ln/sum/welford unchanged). Band-B fires exactly where intended.",
+        "fact_extension_safe": "_input_load_itemsize extended with Band-B fallback (widest rank>=2 input-row load over the extent when no reduction-fed row load). Verified across all 9 kernels: row-reduction kernels UNCHANGED (fed-load path priority -> sum/rms/ln/softmax/CE/welford same 2/4 as before, D4 unaffected); kl_div/jsd now report 2 bf16/4 fp32 (was 0). Gate A+D running wf_faee8f12."
       }
     ],
     "results": [
