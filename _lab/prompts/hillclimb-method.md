@@ -283,7 +283,20 @@ at an untested in-curriculum shape). **For a multi-target run (e.g. several dtyp
 spans the entire active matrix:** every edit must hold the floor on *every* dtype/shape already in
 play, not just the one you're currently chasing. **During the climb you discharge this by
 MEASURING** — re-bench the flip-axis sweep and the previously-banked shapes the edit could plausibly
-touch. (Not the config recorder — see §5; mid-climb you *intend* to change configs.)
+touch, and **DERIVE that affected set mechanically rather than guess it:** run the config-recorder
+(`_lab/harness/config_recorder.py`, §5) over the FULL active matrix (every kernel × shape × dtype ×
+split incl. robustness) BEFORE and AFTER the edit and diff the normalized configs — the cells that
+*changed* ARE the no-regression sweep; byte-identical cells are provably perf-invariant (codegen is
+deterministic in config+source) and need no re-bench. Every backstop miss here was a *changed cell at
+a shape/dtype the worker never thought to sweep* (the ~7.3× valley above; CE fp32 +24% — a dtype not
+swept; the D4 occ corner) — exactly what a full-matrix diff surfaces up front. THREE rules keep the
+skip sound: **changed ≠ win** (a flagged cell still earns the full A/B + gates — the D4 corner was a
+flagged cell wrongly assumed a win); **full matrix or it's a false all-clear** (valid only if the
+diff spans every active dtype + robustness — an fp32-only diff green-lit the bf16/robustness valleys);
+**selection-only** (config-identity ⇒ perf-identity ONLY when the edit changed *which* config is
+emitted — an edit touching kernel source / a fact builder / normalize / a lowering needs the
+generated-Triton diff instead: `--triton`). A climbing edit *should* change some configs — that is not
+a failure, it is the worklist.
 
 **A small, principled net-positive trade IS allowed** (not every edit must be Pareto-clean). Accept
 a regression on some shape(s) only when ALL of these hold — otherwise reject:
@@ -365,6 +378,11 @@ per their trigger.
 - **Fact-integrity / divergence test:** for any new or changed fact, construct a kernel where the
   lazy proxy and the real property *disagree*; a fact that only works by curriculum luck fails
   (real runs falsified `num_load` and `num_reduction_ops` this way). A fact no branch reads is cut.
+  **Test the THRESHOLD, not just the fact** — a faithful fact can be read unfaithfully: a quantity
+  compared straight to a constant (`fact <= K`) is a disguised dtype/identity fence whenever that
+  cut splits its value-set along dtype/kernel lines (the divergence case: two workloads equal in
+  the real property but a different dtype/kernel must decide the same). Keep a dtype- or
+  identity-correlated quantity a FACTOR inside a byte/occupancy budget, never the operand of a literal.
 - **Anti-giving-up:** any ceiling/noise/stuck/done claim must survive a *fresh* oracle; a "source
   ceiling" is valid only if `oracle ≥ tc` AND the oracle run is verified real (not truncated/OOM).
   Before declining because "a gate also regresses peer X," check X's actual code branch (it may be
@@ -381,10 +399,18 @@ per their trigger.
 - **A non-verdict is never a verdict:** a watchdog stall or API error after the analysis but before
   the verdict is recorded → re-fire fresh; never bank or fail on it.
 
-(The compile-time config-recorder "behavior oracle" is a **post-climb-only** tool — it proves a
-*cosmetic/refactor* edit left every emitted config byte-identical so frozen perf verdicts transfer.
-It is **not** a during-climb gate: a climbing edit *should* diff configs. The task file names the
-recorder script.)
+(The compile-time config-recorder "behavior oracle" has **two** roles, neither a pass/fail gate.
+**(1) During-climb SCOPING** (the no-regression backstop, §3): BEFORE/AFTER an edit, diff the
+normalized configs over the FULL active matrix to *derive* which cells changed — bench only those;
+byte-identical cells are perf-invariant and skipped (sound only over all dtypes + robustness;
+changed ≠ win; a codegen/source edit needs the `--triton` generated-Triton diff). A climbing edit
+*should* change some configs — that's the worklist, not a failure. **(2) Post-climb PROOF** that a
+*cosmetic/refactor* edit left every emitted config byte-identical, so frozen perf verdicts transfer.
+Default bar = ZERO config diffs; but if the human pre-approves specific expected config changes, honor
+that — treat those as allowed and verify only the rest are byte-identical. The generalized
+dtype/robustness/sibling recorder is `_lab/harness/config_recorder.py` (`record` +
+`diff`, `--triton` for non-selection-only edits); the fp32-only `run3_task1_seed_configs.py` stays the
+deliverable config-oracle replayed to MEASURE the win. The task file names the recorder script.)
 
 ---
 
