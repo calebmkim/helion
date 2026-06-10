@@ -10,9 +10,24 @@ capacity). The seed now captures the cleanly-separable regions of that surface v
 2. **CE wide-V w8** (+35-49%) — re-read scalar-output, `full_width_output` fact;
 3. **D4 narrow-N w1** (+20-60%) — `grid_rows` + `input_load_itemsize`, byte-scaled occ cap (occ*row_bytes
    ≤256KiB), corner regression found-and-fixed, Gate A+D+F+E;
-4. **Band-B wide-V w8** (jsd/kl_div bf16/fp16, +6-15%) — `num_carried_2d_tiles` + the Band-B `input_load_
+4. **Band-B wide-V w8** (jsd/kl_div bf16/fp16) — `num_carried_2d_tiles` + the Band-B `input_load_
    itemsize` fallback; surfaced by the oracle-parity reframe (jsd was wrongly filed "exempt"). Gate A
    (resolved after a cold-launch artifact in one skeptic) + Gate D faithful.
+   **⚠ CORRECTION (WS1 follow-up, CUDA-graph A/B + ncu — supersedes the "+6-15%" and the mechanism):**
+   The "+6-15% w8 win" held for **jsd** (per-chunk ~4096 B, w8 −11%) but **NOT for kl_div**: at the seed
+   R_BLOCK, kl_div bf16 w8 vs w32 is a **near-tie (w32 ~1% better)**; the original +6-15%/"seed-w32
+   +10.8% off-optimal" was **R_BLOCK-coupled** (seed-w32 vs an oracle that also moved R_BLOCK) and an
+   independent referee could not reproduce any w8 win in CUDA-graph device time at the seed R_BLOCK.
+   So the gate keys faithfully on the **per-chunk footprint** (`R_BLOCK*input_load_itemsize ≤ 4096`,
+   `BANDB_W8_MAX_CHUNK_BYTES`), which keeps jsd on w8 and moves kl_div to w32 (a ~1% improvement).
+   **Mechanism (ncu, kl_div) is NOT the cross-warp reduction tree** (that signal is <2% of wavefronts):
+   small chunk → w8 feeds the memory pipe better (w32 slices the fixed chunk too thin, each thread
+   stalls on one load: long-scoreboard 2.67→11.33, DRAM% 53→48); large chunk → w32 relieves w8's
+   register-pressure occupancy collapse (228→64 regs/thread, 12.5%→50% occ; least DRAM-bound regime).
+   The per-chunk key is an **empirical curriculum-correct fit, faithful generalization UNVERIFIED**
+   (the register half is dtype-independent) → WS2. NOTE: the reduction-tree mechanism claimed below for
+   the **CE w8 (#2)** and **narrow-N w1 (#3)** cases (persistent full-row reductions, a different
+   structure) was NOT re-checked here; it may warrant the same ncu scrutiny.
 DEFERRED — **mid-N w4 (rnumel 4k-16k): a PROVEN ceiling** — best-warps is kernel-divergent within every
 (byte,occ) bucket with no faithful separator (gate-killed + fresh 980-measurement vs-cell-best sweep).
 - **The inherited fp32 champion's configs transfer to bf16/fp16 for FREE.** The seed already beats

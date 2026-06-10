@@ -167,6 +167,14 @@ isolated-fresh-process for before/after; suspect the analysis not the timer (§4
   regressed CE fp32 24% (off-curriculum bf16 V=131072 +18-22% regression unfixed in WS1, but curriculum-safe).
 - argmax index-reduction codegen at >1 warp (tiny-N): kernel/codegen issue, not a heuristic lever (row_max divergence-confirmed).
 - NARROW_W1 / eviction stream-vs-reread / pow-2 ramp thresholds: no WS1 sibling binds them as constraints.
+- **lever-B (wide-row w8 unification):** the wide-row `_num_warps` decision now exposes two explicit
+  "prefers w8" bools (Path 1 CE re-read-scalar, Path 2 Band-B) — same work-per-thread-vs-occupancy axis,
+  but kept SEPARATE because Path 1's mechanism is unverified. WS2: ncu the CE path to confirm it shares
+  Band-B's register/occupancy + memory-feeding mechanism (not the disproved reduction-tree); if so, unify
+  both into ONE "resident working-set footprint → w8/w32" bool (CE footprint `rnumel*itemsize`, Band-B
+  `R_BLOCK*input_load_itemsize`), with the dtype split (register half dtype-INDEPENDENT vs feeding half
+  dtype-dependent) calibrated by an fp32 ncu + finer R_BLOCK sweep. Also fold in narrow-w1 as the same
+  axis's extreme-few-warps end → a unified `f(work_per_thread)` warp model. Code note inline in triton.py.
 
 ## FINAL STATE (frozen champion @ 133ab3ff; net code = 2 faithful fixes)
 DoD met + banked + overtime done. 7 lever verdicts, 12 gate verdicts. Tests pass (20). 9 not regressed.
@@ -212,5 +220,33 @@ Accuracy fp32 exact everywhere; bf16 max_rel is near-zero-output artifact → us
 **Gate-D flag for later:** w8 cap keys on `itemsize` (=2 here because row reduced in-dtype). Question
 the divergence test must answer: is `itemsize=2` a FAITHFUL footprint signal when the accumulator is
 fp32 internally? (CE has the same property — so faithful-or-not, the sibling matches the family-of-one.)
-</content>
-</invoke>
+
+### [2026-06-09] Cleanup: Band-B w8 dtype-fence → per-chunk byte gate + D4 coupling fix
+**Two code changes (behavior-oracle verified):**
+- **Coupled bug fix:** the D4 narrow-w1 branch relied on `input_load_itemsize==0` to exclude kl_div/jsd,
+  but the Band-B w8 work had populated `input_load_itemsize` via the Band-B fallback, silently re-opening
+  D4 for narrow-V Band-B. Fixed by excluding Band-B structurally (`num_carried_2d_tiles==0`). Config-
+  identical on the curriculum (no narrow-V Band-B shapes).
+- **Lever fix (the overfit you flagged):** replaced the Band-B w8 condition `0 < input_load_itemsize<=2`
+  (a dtype fence — `itemsize==2` in disguise) with a per-chunk byte FOOTPRINT
+  `_bandb_r_block_cap(fact)*input_load_itemsize <= BANDB_W8_MAX_CHUNK_BYTES(4096)`. Puts the R_BLOCK
+  dependence IN the condition (it was assumed-constant before); fp32 falls out for free. Added the shared
+  `_bandb_r_block_cap` helper (used by get_seed_config too, byte-identical refactor).
+**Behavior oracle (BEFORE/AFTER, 758 cells = 14 kernels × train/val/test × bf16/fp32):** ONLY 13 cells
+changed — all kl_div bf16, `num_warps 8→32` (the persistent V≤61440 cells). jsd unchanged (per-chunk
+4096 ≤ cap), all fp32 + all 12 non-Band-B kernels byte-identical. 20 heuristic + kl_div/jsd example tests
+pass, ruff clean.
+**Disagreement resolution (workflow: measure + independent referee, kl_div only, CUDA-graph):** at the
+seed R_BLOCK, kl_div bf16 w8-vs-w32 is a **near-tie (w32 ~0.7–1.5% better)** → the w8→w32 change is a small
+improvement / no-regression (worst cell +4.2%, <10%). The banked **"+6-15% kl_div w8 win" was NOT a warp
+win** — R_BLOCK-coupled (seed-w32 vs an oracle that also moved R_BLOCK) and unreproducible in CUDA-graph by
+the referee. (Separate small R_BLOCK opportunity on e.g. 8192×32768 ~3.9% → WS2.)
+**★ Gate-F MECHANISM REFUTED (ncu, kl_div bf16):** the "cross-warp reduction-tree bank conflicts vs HBM
+bandwidth" story I'd been telling is WRONG here — bank conflicts/barriers grow with warps but are <2% of
+wavefronts (too small to bind). Real mechanism: small chunk → w8 FEEDS the memory pipe better (w32 slices
+the fixed chunk too thin, each thread stalls on one load: long-scoreboard 2.67→11.33, DRAM% 53→48); large
+chunk → w32 relieves w8's REGISTER-PRESSURE occupancy collapse (228→64 regs/thread, 12.5%→50% occ; least
+DRAM-bound regime). ⇒ the per-chunk key is an **empirical curriculum-correct fit, faithful generalization
+UNVERIFIED** (the register half is dtype-independent) → WS2 (register/tile-footprint fact + fp32 ncu + finer
+sweep). The reduction-tree mechanism for CE-w8 / narrow-N-w1 (persistent full-row, different structure) was
+NOT re-checked and may warrant the same scrutiny. triton.py comments + DTYPE_REPORT corrected.

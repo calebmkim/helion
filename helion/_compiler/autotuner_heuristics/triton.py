@@ -392,15 +392,37 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # bytes for 8 warps to cover. cross_entropy bf16 V<=~50k lives here (+35-49%).
     REREAD_W8_MAX_BYTES = 102400
 
-    # Band-B (carries [M_BLOCK, R_BLOCK] 2-D accumulator tiles: kl_div, jsd) at a WIDE
-    # half-precision row prefers w8 over the ramp's w32 — the SAME reduction-tree-overhead
-    # mechanism as the re-read scalar-output case above, but reached via a different kernel
-    # structure (a streaming 2-D-tile reduction, NOT re-read). Gated on the half-precision
-    # INPUT-LOAD width (``input_load_itemsize <= 2``): at fp32 the 2-D-tile footprint is
-    # heavier and w32 stays optimal (kl_div fp32 wide-V w8 regresses 5.6-7.3%) — so the byte
-    # signal faithfully excludes fp32 without a dtype-kind branch. jsd/kl_div bf16 at V>=16384
-    # are ~+6-15% faster at w8 (oracle-confirmed; seed w32 avg +10.8% off-optimal).
-    BANDB_W8_MAX_INPUT_ITEMSIZE = 2
+    # Band-B (carries [M_BLOCK, R_BLOCK] 2-D accumulator tiles: kl_div, jsd) prefers w8 over the
+    # ramp's w32 only when its PER-CHUNK footprint is small. The row is streamed in fixed R_BLOCK
+    # chunks (R_BLOCK pinned by ``_bandb_r_block_cap``); the gate keys on the per-chunk input load
+    # ``R_BLOCK * input_load_itemsize <= BANDB_W8_MAX_CHUNK_BYTES``.
+    #
+    # MECHANISM (ncu-verified on kl_div bf16) — it is NOT the cross-warp reduction tree (that
+    # signal moves the right way with warp count but is <2% of wavefronts / <1 stall-per-issue,
+    # far too small to bind). The real, dtype-asymmetric pair of effects:
+    #   - LARGE chunk -> w32 wins by relieving REGISTER-PRESSURE occupancy collapse: the resident
+    #     fp32 accumulator tile is ~R_BLOCK/threads elems/thread, so at w8 a wide chunk needs
+    #     ~228 regs/thread -> 1 block/SM -> 12.5% occupancy; w32 quarters it to ~64 regs -> 50%
+    #     (no spill; the regime is the LEAST DRAM-bound, so "HBM-bandwidth-bound" is wrong).
+    #   - SMALL chunk -> w8 wins by FEEDING the memory pipe better: the per-program work is fixed,
+    #     so w32 slices the narrow chunk so thin (~1 elem/thread) each thread stalls on its single
+    #     load (long-scoreboard 2.67->11.33, DRAM% 53->48 going w8->w32) while w8 (~4 elem/thread)
+    #     batches loads + overlaps latency. (More warps do NOT hide latency when there is no extra
+    #     independent work to hide it with.)
+    # The bottleneck flips memory-feeding -> register-occupancy as R_BLOCK grows; the perf
+    # crossover is ~per-chunk 8 KiB at bf16.
+    #
+    # CAVEAT — this key is an EMPIRICAL fit, faithful generalization UNVERIFIED (Gate F). The
+    # register-pressure half is dtype-INDEPENDENT (fp32 accumulator), yet this key multiplies in
+    # ``input_load_itemsize``, so it is a curriculum-correct proxy, not a mechanism-derived key. It
+    # gives the right configs for kl_div/jsd (CUDA-graph-verified) but a divergence Band-B kernel
+    # (different register/tile balance) could break it -> revisit in WS2 (a register/tile-footprint
+    # fact, plus an fp32 ncu + finer R_BLOCK sweep). Measured kl_div bf16 per-chunk -> w8-vs-w32:
+    # 2048 B -17.7%, 4096 B -3.7% (w8 wins), 8192 B +1.1%, 16384 B ~tie, 32768 B +8.8%, 65536 B
+    # +94% (w32 wins). 4096 keeps jsd (per-chunk 4096) on w8 and moves kl_div (per-chunk 8192) to
+    # w32 — kl_div's prior w8 was a ~1% regression at the seed R_BLOCK, NOT the +6-15% once claimed
+    # (that number was R_BLOCK-coupled / unreproducible in CUDA-graph device time, not a warp win).
+    BANDB_W8_MAX_CHUNK_BYTES = 4096
 
     # NARROW-row single-warp (occupancy-gated). A narrow reduction extent wants ONE warp:
     # the cross-warp reduction tree (shared-mem + __syncthreads) is pure overhead when each
@@ -429,6 +451,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     NARROW_W1_MAX_BYTES = 2048
     # occ * row_bytes ceiling (256 KiB): the resident-pressure product above which w1 cliffs.
     NARROW_W1_OCC_BYTE_LIMIT = 262144
+
+    @classmethod
+    def _bandb_r_block_cap(cls, fact: ReductionFact) -> int:
+        """Pow2 R_BLOCK ceiling for a Band-B (carried 2-D tile) reduction: the per-program
+        footprint ``BANDB_R_BLOCK_BYTES`` split across the accumulator itemsize and the
+        carried-tile count. Shared by ``get_seed_config`` (caps the seed R_BLOCK) and
+        ``_num_warps`` (the per-chunk HBM footprint the Band-B w8 lever keys on) so the two
+        never drift. ``max(1, ..)`` guards a zero itemsize / tile count.
+        """
+        from ..._utils import next_power_of_2 as _np2
+
+        cap = cls.BANDB_R_BLOCK_BYTES // (
+            max(1, fact.itemsize) * max(1, fact.num_carried_2d_tiles)
+        )
+        return _np2(max(1, cap))
 
     @classmethod
     def _num_warps(cls, fact: ReductionFact, num_sm: int = 0) -> int:
@@ -465,46 +502,78 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         the opposite low-extent regime, is the occupancy-gated w1 branch above.)
         """
         rnumel = fact.size_hint
-        # NARROW-row single-warp: a narrow row at low/moderate occupancy. Both caps key on
-        # the input-load byte width (dtype-faithful), and the occupancy needs num_sm; an
-        # input_load_itemsize of 0 (kl_div/jsd, or unknown) disables it.
         ils = fact.input_load_itemsize
         row_bytes = rnumel * ils
-        if (
-            num_sm > 0
-            and ils > 0
-            and fact.grid_rows > 0
-            and row_bytes <= cls.NARROW_W1_MAX_BYTES
-        ):
-            # grid_rows==0 means a dynamic/jagged M-grid: occupancy is unknown at compile
-            # time, so the lever DECLINES (an unknown occ must not assume the best-case low
-            # occ — that would wrongly fire w1 on a possibly-saturated grid).
-            # Cap the resident-pressure PRODUCT occ * row_bytes (a wider row saturates the SM
-            # latency-hiding at lower occupancy), so the safe occupancy ceiling scales down as
-            # the row grows: occ <= LIMIT // row_bytes.
+        # NARROW-row single-warp (occupancy-gated), in two parts:
+        # (1) AVAILABILITY — can the rule be evaluated at all? It needs a known
+        #     device (num_sm: the occupancy denominator), a known input-load width
+        #     (ils: the byte unit of row_bytes), and a static grid (grid_rows: the
+        #     occupancy numerator; 0 = a dynamic/jagged M-grid, unknown occupancy).
+        #     Any unknown → decline to the ramp below.
+        have_enough_information = num_sm > 0 and ils > 0 and fact.grid_rows > 0
+        if have_enough_information:
+            # (2) FIRING CONDITION — faithful properties under which w1 wins:
+            #     - NOT Band-B (num_carried_2d_tiles == 0): kl_div/jsd stream 2-D
+            #       tiles, not a single reduction-fed row; w1 regresses up to +46%.
+            #       Structural — ils stopped excluding them once the Band-B
+            #       input-load fallback populated it.
+            #     - NARROW row (row_bytes <= NARROW_W1_MAX_BYTES): the cross-warp
+            #       reduction tree is pure overhead at a tiny per-warp slice, so
+            #       w1 reduces in-register via shuffle instead.
+            #     - below the w1 CLIFF: the resident-pressure product
+            #       occ * row_bytes <= NARROW_W1_OCC_BYTE_LIMIT (a wider row
+            #       cliffs at lower occupancy, so occ ≤ LIMIT // row_bytes).
             occ = fact.grid_rows // num_sm
-            if occ * row_bytes <= cls.NARROW_W1_OCC_BYTE_LIMIT:
+            if (
+                fact.num_carried_2d_tiles == 0
+                and row_bytes <= cls.NARROW_W1_MAX_BYTES
+                and occ * row_bytes <= cls.NARROW_W1_OCC_BYTE_LIMIT
+            ):
                 return 1
         # >16384 (not >=) so sum's widest in-sample row (16384) stays w16, excluding the
         # tiny-rnumel w32 regression.
         warps32_min_elems = 16384
         if rnumel > warps32_min_elems:
-            # Reduction-bound (re-read, scalar output) wide rows want fewer warps; the byte cap
-            # caps the resident-row footprint (so wide fp32, 4 B/elem, hits it sooner than bf16)
-            # and full-width/non-reread kernels stay on the w32 default.
-            if (
+            # Wide-row num_warps is ONE decision with two code paths that BOTH want fewer warps (w8)
+            # when work-per-thread is the binding factor, else the w32 default (more warps for
+            # occupancy). Expose each path as a named "prefers w8" bool and take w8 if either fires.
+            # The two paths differ in WHAT is resident AND in how well their mechanism is verified,
+            # so they stay SEPARATE for now (do not collapse into one bool — see the lever-B note).
+            #
+            # Path 1 — CE-style: persistent full row, re-read, scalar output; the whole row is held
+            # resident (at INPUT width) to re-read amax+sum, so the footprint is rnumel*itemsize. w8
+            # while that stays <= REREAD_W8_MAX_BYTES; full-width / non-reread kernels stay w32.
+            # CAVEAT: this path's mechanism was attributed to the cross-warp reduction tree but was
+            # NOT re-verified by ncu (that story was DISPROVED for the Band-B path below); it is
+            # plausibly the same register/occupancy + memory-feeding story (the resident row is large
+            # at w8).
+            reread_scalar_prefers_w8 = (
                 fact.row_reread
                 and not fact.full_width_output
                 and rnumel * max(1, fact.itemsize) <= cls.REREAD_W8_MAX_BYTES
-            ):
-                return 8
-            # Band-B (2-D-tile streaming reduction: kl_div, jsd) at a wide half-precision row
-            # — same reduction-tree-overhead win, reached via a different structure. Gated on
-            # the input-load width so fp32 (heavier tiles, w32-optimal) is faithfully excluded.
-            if (
+            )
+            # Path 2 — Band-B (2-D-tile streaming reduction: kl_div, jsd): per-chunk footprint =
+            # R_BLOCK * input_load_itemsize (a byte FOOTPRINT, not a dtype fence). MECHANISM
+            # (ncu-verified, kl_div): small chunk -> w8 feeds the memory pipe better (w32 slices the
+            # fixed chunk too thin, each thread stalls on its one load); large chunk -> w32 relieves
+            # w8's register-pressure occupancy collapse. NOT the cross-warp reduction tree. The key
+            # is an empirical, curriculum-correct fit; faithful generalization UNVERIFIED -> see
+            # BANDB_W8_MAX_CHUNK_BYTES.
+            band_b_prefers_w8 = (
                 fact.num_carried_2d_tiles >= 1
-                and 0 < fact.input_load_itemsize <= cls.BANDB_W8_MAX_INPUT_ITEMSIZE
-            ):
+                and fact.input_load_itemsize > 0
+                and (
+                    cls._bandb_r_block_cap(fact) * fact.input_load_itemsize
+                    <= cls.BANDB_W8_MAX_CHUNK_BYTES
+                )
+            )
+            # lever-B (WS2, DEFERRED): ncu the CE path (Path 1) to confirm whether it shares Band-B's
+            # register/occupancy + memory-feeding mechanism (likely) rather than the disproved
+            # reduction-tree story; if so, UNIFY both paths into one "resident working-set footprint
+            # -> w8 vs w32" bool (CE footprint rnumel*itemsize, Band-B R_BLOCK*input_itemsize), with
+            # the dtype split (register half dtype-INDEPENDENT vs feeding half dtype-dependent)
+            # calibrated by an fp32 ncu + a finer R_BLOCK sweep. Until verified, keep them separate.
+            if reread_scalar_prefers_w8 or band_b_prefers_w8:
                 return 8
             return 32
         if rnumel <= 1024:
@@ -875,13 +944,10 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
         r_block = extent
         non_reduction_loop_ids = set(fact.non_reduction_loop_block_ids)
         if fact.num_carried_2d_tiles >= 1:
-            # Band B (kl_div, jsd): a full-N R_BLOCK over-allocates the carried 2-D tiles
-            # and spills, so cap the footprint (R_BLOCK * itemsize * n_carried)
-            # SM-resident. num_carried_2d_tiles routes (>=1) and sizes; max(1,..) guards 0.
-            cap = cls.BANDB_R_BLOCK_BYTES // (
-                max(1, fact.itemsize) * max(1, fact.num_carried_2d_tiles)
-            )
-            r_block = min(r_block, _np2(max(1, cap)))
+            # Band B (kl_div, jsd): a full-N R_BLOCK over-allocates the carried 2-D tiles and
+            # spills, so cap the footprint (R_BLOCK * itemsize * n_carried) SM-resident. The cap
+            # is shared with the Band-B w8 lever via _bandb_r_block_cap so they never drift.
+            r_block = min(r_block, cls._bandb_r_block_cap(fact))
         elif non_reduction_loop_ids:
             # Band C (welford, groupnorm): the combine is a serial scalar recurrence that
             # prefers persistent, so cap its tile; normalize tile(s) are widened separately

@@ -110,15 +110,15 @@ the_accept_reject_rule_you_applied}. Reject if any swept shape regresses below i
 
 ---
 
-## GATE D — Fact-integrity / divergence test. Fire on any NEW or CHANGED fact, or any knob left at default.
+## GATE D — Fact-integrity / divergence test. Fire on any NEW or CHANGED fact (or threshold/constant a branch compares a fact against), or any knob left at default.
 Analysis only (no GPU) — but brief it to REUSE committed probe artifacts, never to author kernels.
 
 ```
-A heuristic branches on the FACT below. Prove it is a FAITHFUL workload property and not a PROXY
-that only works by luck on the current curriculum.
+A heuristic branches on the FACT below. Prove that BOTH the fact AND the threshold that reads it
+are a FAITHFUL workload property, not a PROXY that only works by luck on the current curriculum.
 
 THE FACT + how it is computed: {FACT name, its definition, the code that populates it}
-THE BRANCH that reads it: {the heuristic branch + what it does differently on the fact}
+THE BRANCH that reads it: {the heuristic branch + the exact threshold/constant it compares against}
 IMMUTABLE COMMIT: {SHA}
 
 Run the DIVERGENCE TEST: construct (described in the abstract, reusing existing probe kernels —
@@ -129,8 +129,26 @@ divergence kernel). Also check: is the fact style-independent (not fooled by how
 written)? Does a branch actually READ it (a fact no branch reads must be cut)? Is it reusing
 genuine compiler provenance, or guessing?
 
-Record AS-RETURNED: {faithful: bool, the_divergence_case, what_it_tracks, reasoning}. Do NOT
-over-correct into demanding a general dataflow framework where one specific faithful fact suffices.
+A faithful fact can still be read UNFAITHFULLY, so run the divergence test on the THRESHOLD too,
+not just the fact. A continuous, faithful quantity becomes a disguised dtype/identity fence the
+moment it is COMPARED TO A CONSTANT that splits its real value-set along dtype or kernel lines —
+the classic shape is a field that takes only a few discrete values gated `fact <= K` where one
+side is exactly one dtype or one kernel (e.g. an itemsize-like field whose only values are {2,4},
+gated `<= 2`, is just `if dtype is half` wearing a faithful name). The predicate divergence test
+mirrors the fact one: construct two workloads with the SAME value of the real property the
+threshold claims to encode but a DIFFERENT dtype/kernel; the branch must decide identically. If it
+diverges at equal real-property, the threshold keys on the incidental thing, not the property —
+FAIL. Faithful use keeps a dtype- or identity-correlated quantity as a FACTOR inside a
+hardware-unit budget (bytes = elems × itemsize, occ = grid_rows // num_sm), never as the operand
+of a literal comparison; and any rationale that restates as "fires only for / excludes the dtype
+(or kernel) D" IS the fence — a faithful field NAME does not launder a value threshold.
+
+Record AS-RETURNED: {verdict: faithful_property | scoped_deferral | disguised_fence,
+the_fact_divergence_case, the_threshold_divergence_case, what_it_tracks, reasoning}. A
+`scoped_deferral` (excluding a dtype/kernel because NO faithful rule exists for it — e.g. its
+optimum is non-monotonic, left to the autotuner) is acceptable ONLY if that "no rule" claim is
+itself evidenced and is logged AS a deferral, never blessed as faithful. Do NOT over-correct into
+demanding a general dataflow framework where one specific faithful fact suffices.
 ```
 
 ---
