@@ -69,7 +69,9 @@ def longsum(x: torch.Tensor) -> torch.Tensor:
     out = torch.empty([m], dtype=x.dtype, device=x.device)
 
     for tile_m in hl.tile(m):
-        out[tile_m] = x[tile_m, :].sum(-1)
+        # fp32-accumulate (HBM load stays x.dtype): a bf16/fp16 accumulator loses small
+        # addends over a long row and can overflow fp16. No-op at fp32. See sum.py.
+        out[tile_m] = x[tile_m, :].to(torch.float32).sum(-1).to(out.dtype)
     return out
 
 
@@ -106,7 +108,9 @@ def longsum_w_red_loop(x: torch.Tensor) -> torch.Tensor:
     out = torch.empty([m], dtype=x.dtype, device=x.device)
 
     for tile_m in hl.tile(m):
-        out[tile_m] = x[tile_m, :].sum(-1)
+        # fp32-accumulate (HBM load stays x.dtype): a bf16/fp16 accumulator loses small
+        # addends over a long row and can overflow fp16. No-op at fp32. See sum.py.
+        out[tile_m] = x[tile_m, :].to(torch.float32).sum(-1).to(out.dtype)
     return out
 
 
@@ -140,10 +144,12 @@ def longsum_manual(x: torch.Tensor) -> torch.Tensor:
     block_size_n = hl.register_block_size(n)
 
     for tile_m in hl.tile(m):
-        acc = hl.zeros([tile_m, block_size_n], dtype=x.dtype)
+        # fp32-accumulate the carried partial sums (see sum.py): a bf16/fp16 acc loses
+        # precision over a long row. fp32 acc + bf16 addend stays fp32; no-op at fp32.
+        acc = hl.zeros([tile_m, block_size_n], dtype=torch.float32)
         for tile_n in hl.tile(n, block_size=block_size_n):  # Reduction loop
             acc += x[tile_m, tile_n]
-        out[tile_m] = acc.sum(-1)
+        out[tile_m] = acc.sum(-1).to(out.dtype)
     return out
 
 
