@@ -40,6 +40,12 @@ per-(kernel, dtype) geomean; beating tc / oracle-parity is overtime you climb in
 
 ## Background — a genuinely new reduction TYPE
 
+**Kernels in scope — three backward kernels:** two **targets** you're here to seed —
+**`rms_norm_bwd`** and **`layer_norm_bwd`** (the two-reduction backward norms) — plus **`softmax_bwd`**,
+a **1-fact control** (a single reduction; already seeded today, so you do **not** tune it — you confirm
+your gate/populator rework keeps it correct and still seeded). *(The 9 forward kernels are a separate
+DO-NOT-REGRESS baseline — see §Resume context — not tuning targets here.)*
+
 The seed heuristic serves single-axis **forward** row-reductions. Backward norm kernels
 (`rms_norm_bwd`, `layer_norm_bwd`) reduce over **two** axes:
 - **grad_x over N** — per-row, structurally *like* the forward row-reduction. **CONFIRMED by compile
