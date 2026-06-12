@@ -42,8 +42,9 @@ per-(kernel, dtype) geomean; beating tc / oracle-parity is overtime you climb in
 
 **Kernels in scope — three backward kernels:** two **targets** you're here to seed —
 **`rms_norm_bwd`** and **`layer_norm_bwd`** (the two-reduction backward norms) — plus **`softmax_bwd`**,
-a **1-fact control** (a single reduction; already seeded today, so you do **not** tune it — you confirm
-your gate/populator rework keeps it correct and still seeded). *(The 9 forward kernels are a separate
+a **1-fact control** — softmax has **no weight parameter**, so its backward is just `grad_x` over N
+(one reduction → already seeded today, no grad_w / M-axis reduction at all). You don't tune it; you
+confirm your gate/populator rework keeps it correct and still seeded. *(The 9 forward kernels are a separate
 DO-NOT-REGRESS baseline — see §Resume context — not tuning targets here.)*
 
 The seed heuristic serves single-axis **forward** row-reductions. Backward norm kernels
@@ -70,8 +71,9 @@ one body** (N-axis grad_x + M-axis grad_w):
    (`len != 1`).
 
 → 0 facts → `_triton_reduction_eligible` (needs exactly 1) declines → generic default. **`softmax_bwd`
-is the clean 1-fact control** (only ONE reduction → a T2 seed `block_sizes=[1,2048,2048], w8`, matching
-forward `softmax_two_pass`).
+is the clean 1-fact control** — softmax has no weight parameter, so no grad_w / M-axis reduction at all:
+only ONE reduction (grad_x over N) → a T2 seed `block_sizes=[1,2048,2048], w8`, matching forward
+`softmax_two_pass`.
 Upside: rms/ln bwd sit on a fully generic seed today, so the headroom is large.
 
 Your job: build the machinery so the **grad_w (M-axis) tile-accumulation reduction** is recognized as a
