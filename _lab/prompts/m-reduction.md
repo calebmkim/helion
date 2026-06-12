@@ -12,13 +12,14 @@ method's START-HERE "picking up an in-progress run" path** for this run. Start a
 under a **NEW key** (e.g. `ws2-fresh`) so nothing auto-resumes the old run; don't overwrite the
 run3/dtype/ws1 lineage either.
 
-**Base:** branch off **stack pr 3 — the tip of `reduction-seed-heuristic`** (currently commit
-`8c3bb634`, "[autotuner] Triton reduction seed heuristic (generalizable core)"), which sits on the
-fact-layer commit (`5041cf63`: `ReductionFact` + `MemoryOpFact` + `AccumulatorFact` / the walker-derived
-split, `reread_eviction_index`, `accumulator_facts`) and carries the generalizable-core heuristic you
-extend. Run on your **own branch/worktree**.
+**Base:** branch off **`calebmkim/stack/3`** — the head of the submitted reduction PR stack (currently
+commit `d6ad1156`, "[autotuner] Triton reduction seed heuristic (generalizable core)", on the current
+main). It carries the fact layer (`ReductionFact` + `MemoryOpFact` + `AccumulatorFact` / the
+walker-derived split, `reread_eviction_index`, `accumulator_facts`) **and** the generalizable-core
+heuristic you extend. (Do **not** use `fork/reduction-seed-heuristic` / `8c3bb634` — that's an older
+snapshot on a stale main.) Run on your **own branch/worktree**.
 
-**Deliverable shape:** produce a clean set of changes *on top of* stack pr 3 that the human will later
+**Deliverable shape:** produce a clean set of changes *on top of* `calebmkim/stack/3` that the human will later
 edit to taste and **compress to a single commit** above pr-3. So keep the work clean and **additive**
 (your new fact + builder + role-based selection are additive; keep the eligibility-gate /
 fact-registration rework minimal), and **leave good information for the squash** — a tight
