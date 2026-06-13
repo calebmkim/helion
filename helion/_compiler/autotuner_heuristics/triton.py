@@ -305,7 +305,6 @@ class TritonSplitJoinRotateHeuristic(AutotunerHeuristic):
 _B200_TARGET: tuple[tuple[str, str | None], ...] = (("cuda", "sm100"),)
 
 
-
 def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> bool:
     """Gate: exactly one ``ReductionFact`` and no ``matmul_facts``. Admits both tracks
     (T1 rollable, T2 user-tiled); excludes GEMMs and multi-axis manual reductions."""
@@ -386,7 +385,8 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # applies; single-row keeps the wide tile). The B200 T2 subclass lowers this to 1 (cap
     # even single-row applies — measured: B200 welford M_BLOCK==1 wants the 2048-elem
     # streamed tile, the wide tile costs ~25-30% there).
- 
+    APPLY_STREAM_CAP_MIN_M_BLOCK = 2
+
     # NARROW-row single-warp (occupancy-gated): a narrow reduction extent wants ONE warp (the
     # cross-warp reduction tree is pure overhead; w1 reduces in-register via shuffle). The win
     # inverts past an occupancy ceiling (the SMs saturate), so it is gated on a row-byte cap AND an
@@ -516,9 +516,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             # ...except a MULTI-ROW-per-program apply (M_BLOCK > 1, the raised autotuner_min
             # at huge M) holds the [M_BLOCK, tile] tile resident and spills a wide tile, so it
             # streams a fixed per-row chunk instead (see APPLY_LOOP_STREAM_BYTES — welford fp32
-            # huge-M wide-N otherwise cliffs to <=50% of torch.compile). One-row-per-program
-            # applies (M_BLOCK == 1: groupnorm, small-M welford) keep the wide tile.
-            if cls._m_block_product(spec, fact) > 1:
+            # huge-M wide-N otherwise cliffs to <=50% of torch.compile). On sm90 a
+            # one-row-per-program apply (M_BLOCK == 1) keeps the wide tile
+            # (APPLY_STREAM_CAP_MIN_M_BLOCK == 2); the B200 T2 subclass lowers the threshold
+            # to 1 (cap even single-row applies — B200 wants the streamed tile there too).
+            if cls._m_block_product(spec, fact) >= cls.APPLY_STREAM_CAP_MIN_M_BLOCK:
                 chunk = max(1, cls.APPLY_LOOP_STREAM_BYTES // max(1, fact.itemsize))
                 loop_block = min(loop_block, _np2(chunk))
 
@@ -839,13 +841,18 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
 # persistent-vs-looped / num_warps-ramp / eviction / band logic fires on sm100. The shared
 # ``_num_warps`` lever already reads ``get_num_sm(env.device)`` (148 on B200) and
 # ``input_load_itemsize`` (the true HBM-load width, 2 at halves), so it is already
-# hardware- and dtype-aware. This commit only wakes the inherited seed on sm100; the
-# B200-specific levers are added by the following commits.
+# hardware- and dtype-aware; the B200 constants are re-tuned from here by the climb.
+#
+# B200 (sm100) constants start from the inherited H100 values as the STARTING HYPOTHESIS
+# and are re-tuned per the method (oracle answer-key -> field-diff -> A/B -> gates). When a
+# B200 constant diverges from H100, it is overridden on the subclass (leaving the sm90
+# value untouched on the base).
 # ===========================================================================
 class TritonB200ReductionTileHeuristic(TritonReductionTileHeuristic):
     """B200 (sm100) T1 inner-reduction seed (sum, long_sum, rms_norm, layer_norm,
     softmax-row, cross_entropy). Inherits the T1 logic; gates on sm100 and is promoted to
-    the compiler default there."""
+    the compiler default there. Constants re-tuned for B200 (148 SMs, 2B-or-4B reduction
+    widths at half precision) as the climb shows what must change."""
 
     name = "triton_b200_reduction_tile"
     promote_seed_to_default = True
@@ -953,14 +960,160 @@ class TritonB200ReductionTileHeuristic(TritonReductionTileHeuristic):
 class TritonB200ReductionUserTileHeuristic(TritonReductionUserTileHeuristic):
     """B200 (sm100) T2 user-tiled inner-reduction seed (softmax_two_pass, kl_div, jsd,
     welford). Inherits the T2 logic; gates on sm100 and is promoted to the compiler default
-    there."""
+    there. Constants re-tuned for B200 as the climb shows what must change."""
 
     name = "triton_b200_reduction_user_tile"
     promote_seed_to_default = True
     HARDWARE_TARGETS = _B200_TARGET
+
+    # Cap the apply/normalize stream tile even for a SINGLE-row-per-program reduce-then-apply
+    # (M_BLOCK == 1), unlike sm90 which keeps the wide tile there. On B200 a single-row
+    # welford apply with the full-width tile is ~25-30% slower than the 2048-elem streamed
+    # tile: the cap (APPLY_LOOP_STREAM_BYTES // itemsize = 8192//4 = 2048 elems, since
+    # welford's reduction itemsize is the fp32-promoted accumulator width 4 at ALL dtypes)
+    # holds across fp32/bf16/fp16. Measured (in-process A/B vs the flat seed): welford
+    # (8192,8192) fp32 0.715->0.938, (8192,5120) bf16 0.706->0.812 (both clear floor); 2048
+    # is the elem optimum (1024 and 4096 both worse). Keyed on the resident-tile footprint
+    # (bytes via the accumulator itemsize), never dtype/identity.
+    APPLY_STREAM_CAP_MIN_M_BLOCK = 1
+
+    # Band-C (reduce-then-apply with a carried SCALAR combine: welford/groupnorm-style,
+    # non_reduction_loop_ids non-empty AND num_carried_2d_tiles == 0) scales num_warps with
+    # the HBM LOAD WIDTH, not the element count. The streaming ramp keys num_warps on rnumel
+    # (elements), but Band-C's serial count/mean/M2 recurrence does not parallelize across
+    # warps — what matters is feeding the memory pipeline, whose byte-rate per element is
+    # input_load_itemsize. So the faithful warp count balances byte-rate:
+    #     num_warps_eff = ramp_warps * input_load_itemsize // FP32_ITEMSIZE   (floored at 1)
+    # fp32 (4B) -> ×4//4 = ramp unchanged; bf16/fp16 (2B) -> ×2//4 = half; a future fp8 (1B)
+    # -> quarter. This is WIDTH-CONTINUOUS over the field's physical range {1,2,4,8} with NO
+    # threshold literal — it is not the {<=2} dtype-step fence (Gate D), and it is not a
+    # total-BYTE ramp (Gate D showed the effect is load-WIDTH, not size×width: bf16 (8192,
+    # 12288)=24576B wants halving while fp32 (16384,4096)=16384B keeps the ramp — byte order
+    # inverted, so a byte threshold mis-keys; width is the real property). Measured wins
+    # (in-process A/B): welford (32768,8192) bf16 w16->w8 0.67->1.01, (262144,2048) bf16/fp16
+    # 0.82->1.16, (8192,5120) bf16/fp16 ~+34%; fp32 byte-identical (×1, zero regression).
+    # The same shape wants opposite warps by width — (8192,12288) fp32 w16=0.99 vs bf16
+    # w8=1.03 — which is exactly the byte-rate law deciding, faithfully, by the real property.
+    FP32_ITEMSIZE = 4
+
+    # Band-C resident M-tile footprint cap (bytes). At HUGE M the grid-block floor
+    # (raise_grid_block_minimums, spec-level) raises M_BLOCK so a program holds an
+    # [M_BLOCK, R_BLOCK] resident tile of M_BLOCK * R_BLOCK * itemsize bytes; past ~64 KiB
+    # the per-program register/SMEM footprint spills and the reduce-then-apply cliffs. The
+    # spec only raises the autotuner's SEARCH floor (autotuner_min) — a SEED config may
+    # legally emit a smaller M_BLOCK (verified: normalize clamps only against min_size, not
+    # autotuner_min). So cap the seed's M_BLOCK (pow2, lower-only) to fit this budget.
+    # Measured: welford (262144,2048) fp32 M_BLOCK 16->8 (131072B->65536B) G 0.71->0.85
+    # (clears floor); byte-exact no-op at every other welford cell (next-largest resident is
+    # 65536B at M_BLOCK<=4, already within budget) so it cannot cause a regression. Keyed on
+    # the resident-tile footprint (bytes), sibling to STRUCTURED_COMBINE_PROG_BYTES /
+    # APPLY_LOOP_STREAM_BYTES — never a shape/dtype literal.
+    BANDC_RESIDENT_MTILE_CAP_BYTES = 65536
+
+    # Reduction-extent threshold (elems) below which a Band-C reduction takes ONE warp (the
+    # serial scalar combine has negligible per-warp work at tiny extent). 1024 = the base
+    # num_warps ramp's smallest band edge (rnumel<=1024 -> w4); Band-C goes one further to
+    # w1. Keyed on the raw reduction extent (size_hint), reusing the ramp's own band edge.
+    NARROW_BANDC_W1_MAX_ELEMS = 1024
 
     @classmethod
     def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
         if not matches_hardware(env, cls.HARDWARE_TARGETS):
             return False
         return super().is_eligible(env, device_ir)
+
+    @classmethod
+    def get_seed_config(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> Config | None:
+        config = super().get_seed_config(env, device_ir)
+        if config is None:
+            return config
+        spec = env.config_spec
+        fact = spec.reduction_facts[0]
+        red_idx = spec.block_sizes.block_id_to_index(fact.block_id)
+
+        # Band C = reduce-then-apply with a carried SCALAR combine (non-reduction loop tiles
+        # present, no carried 2-D tile). Band B (handled above) and plain-T2 (softmax: no
+        # non_reduction loops) are unaffected by either Band-C lever.
+        is_band_c = (
+            bool(fact.non_reduction_loop_block_ids) and fact.num_carried_2d_tiles == 0
+        )
+        if not is_band_c:
+            return config
+        d = dict(config.config)
+        changed = False
+
+        # (1) Width-continuous byte-rate-balancing warp count (see class comment).
+        ils = fact.input_load_itemsize
+        warps = d.get("num_warps")
+        if ils > 0 and isinstance(warps, int) and warps > 1:
+            eff = max(1, warps * ils // cls.FP32_ITEMSIZE)
+            if eff != warps:
+                d["num_warps"] = eff
+                changed = True
+
+        # (1b) NARROW Band-C -> single warp. At a tiny reduction extent (size_hint in the
+        # ramp's smallest band) the serial count/mean/M2 combine has almost no per-warp work,
+        # so even fp32 (which the width law (1) leaves at the ramp floor) wants ONE warp; the
+        # cross-warp reduction tree is pure overhead. This is the Band-C analog of the
+        # streaming narrow-w1 lever, keyed on the reduction extent (a raw faithful shape dim)
+        # at the SAME small-band threshold the base ramp already uses (1024). Measured
+        # welford (16384,768) fp32 w4->w1 0.71->0.84 (median-of-9 sweep; clears floor — the
+        # last below-floor welford cell; persisted re-check confirms w4=0.705 stable across 5
+        # reads, NOT noise), (4096,1025) fp32 0.90->1.13; neutral where already >=w-effective
+        # ((16384,1024) fp32). The halves already reach w1 here via (1)/the streaming lever,
+        # so this only newly affects fp32.
+        warps = d.get("num_warps")
+        if (
+            fact.size_hint <= cls.NARROW_BANDC_W1_MAX_ELEMS
+            and isinstance(warps, int)
+            and warps > 1
+        ):
+            d["num_warps"] = 1
+            changed = True
+
+        # (2) Resident M-tile footprint cap (see BANDC_RESIDENT_MTILE_CAP_BYTES).
+        block_sizes = list(d.get("block_sizes", []))
+        red_idx = spec.block_sizes.block_id_to_index(fact.block_id)
+        if 0 <= red_idx < len(block_sizes):
+            r_block = block_sizes[red_idx]
+            itemsize = max(1, fact.itemsize)
+            m_block = cls._m_block_product(spec, fact)
+            footprint = m_block * max(1, r_block) * itemsize
+            if footprint > cls.BANDC_RESIDENT_MTILE_CAP_BYTES and m_block > 1:
+                budget_m = max(
+                    1,
+                    cls.BANDC_RESIDENT_MTILE_CAP_BYTES // (max(1, r_block) * itemsize),
+                )
+                from ..._utils import next_power_of_2 as _np2
+
+                # Largest pow2 m_block <= budget_m (and <= current m_block).
+                target_m = min(m_block, _np2(budget_m + 1) // 2 if budget_m >= 1 else 1)
+                target_m = max(1, target_m)
+                if target_m < m_block:
+                    # Shrink the M-tile product to target_m by dividing ONE M-axis entry by
+                    # the full pow2 ratio (not every entry — dividing all of them shrinks the
+                    # product by ratio**n, overshooting for n>=2). Pick the first entry that can
+                    # absorb the whole ratio (>= ratio); fall back to the first divisible entry.
+                    # The common case is a single M-axis block (welford's m_block_ids has one
+                    # entry), where this is exactly block_sizes[m] // ratio == target_m.
+                    ratio = m_block // target_m
+                    m_indices = [
+                        mi
+                        for mbid in fact.m_block_ids
+                        if 0
+                        <= (mi := spec.block_sizes.block_id_to_index(mbid))
+                        < len(block_sizes)
+                        and block_sizes[mi] > 1
+                    ]
+                    absorber = next(
+                        (mi for mi in m_indices if block_sizes[mi] >= ratio),
+                        m_indices[0] if m_indices else None,
+                    )
+                    if absorber is not None:
+                        block_sizes[absorber] = max(1, block_sizes[absorber] // ratio)
+                        d["block_sizes"] = block_sizes
+                        changed = True
+
+        return Config(**d) if changed else config
