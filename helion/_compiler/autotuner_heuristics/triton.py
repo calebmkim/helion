@@ -873,6 +873,30 @@ class TritonB200ReductionTileHeuristic(TritonReductionTileHeuristic):
         d = dict(config.config)
         changed = False
 
+        # (A) TWO-PASS full-width row -> fewer warps. A full-width-output reduction whose
+        # resident input row feeds >= 2 reduction passes (layer_norm: mean-sum then
+        # variance-sum) holds the row live across TWO serialized cross-warp reduction trees;
+        # the streaming warp ramp (keyed on element count) over-provisions and pays the
+        # second tree's shuffle/barrier latency on a register-heavy resident row. Halve the
+        # ramp warps (one pow2 step). DTYPE-INDEPENDENT (the second-tree latency is not a
+        # byte-rate effect): layer_norm (2048,14336) wants w8 at fp32 (0.98->1.31) AND bf16/
+        # fp16 (0.74->1.06), which the load-width law could not explain. A single-pass row
+        # (rms_norm: x^2-sum, row_reduction_passes==1) keeps the ramp (measured: rms_norm
+        # (2048,16384) bf16 w16=1.205 > w8=1.127). Co-gated on full_width_output so a
+        # scalar-output two-pass row (cross_entropy: passes==2 but full_width False, which is
+        # reduction-tree-bound and wants MORE warps) is excluded. Keyed on the reduction-pass
+        # COUNT (a faithful structural count, not kernel identity / num_load — a 2-load
+        # two-pass row would still fire, a 3-load one-pass row would not).
+        warps = d.get("num_warps")
+        if (
+            fact.full_width_output
+            and fact.row_reduction_passes >= 2
+            and isinstance(warps, int)
+            and warps > 1
+        ):
+            d["num_warps"] = max(1, warps // 2)
+            changed = True
+
         # (B) Grid-starved LOOPED row -> persistent_interleaved pid_type. A looped wide-N
         # reduction launches only `grid_rows` programs (one per kept row); when grid_rows < num_sm
         # the flat grid is under one wave on 148 SMs. At the high warp count this wide-N seed

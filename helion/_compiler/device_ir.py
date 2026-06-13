@@ -1271,10 +1271,17 @@ class DeviceIR:
         # distinct resident rows marks both 'last' (the current curriculum has <=1 re-read row).
         row_reread = False
         reread_eviction_slots: list[int] = []
+        # row_reduction_passes: max over reduction-fed loads of how many reductions on this
+        # axis the load feeds (a pure slice of the walker fact, no extra walk). 1 = single
+        # pass (rms_norm/sum), 2 = two serialized trees on the resident row (layer_norm:
+        # mean then variance; softmax/welford).
+        row_reduction_passes = 1
         for f in memory_op_facts:
             if f.kind != "load":
                 continue
             cnt = next((c for ax, c in f.reductions_fed if ax == red_block_id), 0)
+            if cnt > row_reduction_passes:
+                row_reduction_passes = cnt
             if cnt >= 2 or (cnt >= 1 and f.stores_fed):
                 row_reread = True
                 if f.eviction_index is not None:
@@ -1339,6 +1346,7 @@ class DeviceIR:
             reread_eviction_indices=tuple(reread_eviction_slots),
             full_width_output=full_width_output,
             input_load_itemsize=input_load_itemsize,
+            row_reduction_passes=row_reduction_passes,
         )
 
     def _non_reduction_loop_candidates(

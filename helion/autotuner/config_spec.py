@@ -113,6 +113,13 @@ class ReductionFact(NamedTuple):
     - ``input_load_itemsize``: element size of the HBM input row load (2 bf16/fp16, 4 fp32) — the
       dtype-faithful per-byte signal, distinct from ``itemsize`` (fp32-promoted = 4 at both). 0 when
       no single reduction-fed row load exists (kl_div/jsd).
+    - ``row_reduction_passes``: how many DISTINCT reduction passes the resident input row feeds on
+      this axis (max over reduction-fed loads of ``MemoryOpFact.reductions_fed`` count). 1 for a
+      single-pass row (rms_norm: x^2-sum; sum), 2 for a two-pass row (layer_norm: mean-sum then
+      variance-sum; welford/softmax: two trees). A pure slice of the walker fact — no extra walk.
+      A two-pass resident row holds the row live across two serialized cross-warp reduction trees,
+      a register/latency pressure independent of element width (so it explains why a two-pass row
+      wants fewer warps at BOTH fp32 and half, unlike the load-width signal).
 
     ``grid_rows`` is NOT stored — a pure function of ``m_block_ids`` + env, computed on demand by
     its one consumer (the narrow-row ``num_warps`` lever).
@@ -130,6 +137,7 @@ class ReductionFact(NamedTuple):
     reread_eviction_indices: tuple[int, ...] = ()
     full_width_output: bool = True
     input_load_itemsize: int = 0
+    row_reduction_passes: int = 1
 
 
 class MemoryOpFact(NamedTuple):
