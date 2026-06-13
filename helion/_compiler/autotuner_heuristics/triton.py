@@ -859,6 +859,72 @@ class TritonB200ReductionTileHeuristic(TritonReductionTileHeuristic):
             return False
         return super().is_eligible(env, device_ir)
 
+    @classmethod
+    def get_seed_config(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> Config | None:
+        from ...runtime import get_num_sm
+
+        config = super().get_seed_config(env, device_ir)
+        if config is None:
+            return config
+        spec = env.config_spec
+        fact = spec.reduction_facts[0]
+        d = dict(config.config)
+        changed = False
+
+        # (B) Grid-starved LOOPED row -> persistent_interleaved pid_type. A looped wide-N
+        # reduction launches only `grid_rows` programs (one per kept row); when grid_rows < num_sm
+        # the flat grid is under one wave on 148 SMs. At the high warp count this wide-N seed
+        # selects (the looped branch fixes num_warps=32), those `grid_rows` programs are
+        # maximally-fat CTAs, and a flat sub-one-wave launch of fat CTAs schedules pathologically
+        # on B200. Declaring a PERSISTENT (hardware-sized) grid fixes the launch — a pure
+        # launch-grid + loop-wrap codegen change (program_id.py), each program still reducing
+        # WHOLE rows (no split-k, no source change). With block_size = cdiv(grid_rows,
+        # num_sm) = 1 (the gate guarantees grid_rows < num_sm), persistent_blocked and
+        # persistent_interleaved assign program p -> row p IDENTICALLY (verified in the lowered
+        # Triton + equal DRAM bytes per ncu) — but interleaved's strided `range(pid, total,
+        # num_sm)` issue order schedules the DRAM request stream far better than blocked's
+        # contiguous `range(start, end)`: ncu shows 47%->77% of peak memory throughput on the
+        # firing cells with IDENTICAL bytes read and occupancy (a DRAM-access-scheduling /
+        # bank-level-parallelism effect, NOT L2 locality — L2 hit rate ~0 both). The win
+        # concentrates where the inner-loop trip count (ceil(N/16384)) is NOT a power of two
+        # (the chunk stride then de-aliases the pow2 DRAM bank interleave); it is a dead tie at
+        # pow2 trip counts (both issue orders reach the same bank steady state). Persisted A/B
+        # over the firing cells (do_bench headline + CUDA-graph cross-check, both metrics on
+        # every cell — no per-cell metric cherry-picking): interleaved has FEWER below-floor
+        # cells than blocked on BOTH metrics (do_bench 0 vs 1; CUDA-graph 1 vs 6 — interleaved
+        # rescues the half-precision cells blocked leaves below floor, e.g. (96,393216) bf16/fp16
+        # cudagraph 0.62/0.63->1.07/1.06; (64,786432) fp32 0.95->1.56). The lone genuine trade is
+        # (96,393216) fp32: a bounded ABOVE-floor nick (do_bench 0.92->0.87, cudagraph 0.81->0.75
+        # ~at floor) where the chunks=24 verdict flips by dtype. No faithful key separates that
+        # fp32 nick from the fp32 chunks=12/40/48 WINS without a curriculum fence (fp32 is
+        # non-monotonic in chunks), so it is an accepted §3 net-positive trade — one bounded
+        # above-floor nick vs many large wins and a net REDUCTION in below-floor cells. (The
+        # extreme-low-M cells like (16,2097152)/(64,655360), M<<148, are the accepted
+        # non-realistic grid-starvation corner; they also tie/improve but are not the
+        # justification.) Falls back to persistent_blocked if interleaved is unavailable.
+        # Gated on the OCCUPANCY (grid_rows < num_sm — a faithful hardware-unit property, never
+        # dtype/identity) AND the looped branch (a persistent single-pass ROW already saturates).
+        red_loops = d.get("reduction_loops")
+        is_looped = bool(red_loops) and red_loops != [None]
+        if is_looped:
+            allowed = spec.allowed_pid_types
+            pid = None
+            if "persistent_interleaved" in allowed:
+                pid = "persistent_interleaved"
+            elif "persistent_blocked" in allowed:
+                pid = "persistent_blocked"
+            if pid is not None:
+                num_sm = max(1, get_num_sm(env.device))
+                grid_rows = _grid_rows(env, fact.m_block_ids)
+                # occ == 0 (grid_rows < num_sm): the flat grid cannot fill one wave.
+                if 0 < grid_rows < num_sm:
+                    d["pid_type"] = pid
+                    changed = True
+
+        return Config(**d) if changed else config
+
 
 class TritonB200ReductionUserTileHeuristic(TritonReductionUserTileHeuristic):
     """B200 (sm100) T2 user-tiled inner-reduction seed (softmax_two_pass, kl_div, jsd,
