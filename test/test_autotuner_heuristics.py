@@ -10,6 +10,9 @@ import helion
 from helion._compiler.autotuner_heuristics import compiler_seed_configs
 from helion._compiler.autotuner_heuristics.cute import CuteTcgen05ClusterM2Heuristic
 from helion._compiler.autotuner_heuristics.registry import AutotunerHeuristic
+from helion._compiler.autotuner_heuristics.triton import (
+    TritonB200ReductionTileHeuristic,
+)
 from helion._compiler.autotuner_heuristics.triton import TritonReductionTileHeuristic
 from helion._compiler.autotuner_heuristics.triton import (
     TritonReductionUserTileHeuristic,
@@ -836,19 +839,46 @@ class TestTritonReductionTileHeuristic(TestCase):
                 out[tile_m, tile_n] = acc.to(x.dtype)
             return out
 
-        red = row_reduction.bind(
-            (torch.randn(1024, 1024, device=DEVICE, dtype=HALF_DTYPE),)
-        )
-        self.assertTrue(
-            TritonReductionTileHeuristic.is_eligible(
+        red_args = (torch.randn(1024, 1024, device=DEVICE, dtype=HALF_DTYPE),)
+        # matches_hardware() reads get_hardware_info(env.device) at CALL time, so the
+        # patch must wrap the is_eligible/get_seed_config calls (not just bind). Reduction
+        # facts are hardware-independent, so one bind serves both hardware mocks.
+        red = row_reduction.bind(red_args)
+
+        # sm90 (Hopper): the sm90 T1 heuristic fires with the rich-branch narrow seed.
+        with patch(
+            "helion._hardware.get_hardware_info", return_value=HOPPER_HARDWARE
+        ):
+            self.assertTrue(
+                TritonReductionTileHeuristic.is_eligible(
+                    red.env, red.host_function.device_ir
+                )
+            )
+            seed = TritonReductionTileHeuristic.get_seed_config(
                 red.env, red.host_function.device_ir
             )
-        )
-        seed = TritonReductionTileHeuristic.get_seed_config(
-            red.env, red.host_function.device_ir
-        )
-        self.assertEqual(seed.config["block_sizes"], [1])
-        self.assertEqual(seed.config["reduction_loops"], [None])
+            self.assertEqual(seed.config["block_sizes"], [1])
+            self.assertEqual(seed.config["reduction_loops"], [None])
+
+        # sm100 (Blackwell/B200): the sm90 T1 heuristic DEFERS (returns None) and the
+        # dedicated B200 T1 heuristic fires instead — exactly one reduction seed on sm100.
+        with patch(
+            "helion._hardware.get_hardware_info", return_value=BLACKWELL_HARDWARE
+        ):
+            self.assertIsNone(
+                TritonReductionTileHeuristic.get_seed_config(
+                    red.env, red.host_function.device_ir
+                )
+            )
+            self.assertTrue(
+                TritonB200ReductionTileHeuristic.is_eligible(
+                    red.env, red.host_function.device_ir
+                )
+            )
+            b200_seed = TritonB200ReductionTileHeuristic.get_seed_config(
+                red.env, red.host_function.device_ir
+            )
+            self.assertIsNotNone(b200_seed)
 
         mm = matmul.bind(
             (

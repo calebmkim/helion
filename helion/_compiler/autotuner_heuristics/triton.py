@@ -298,6 +298,13 @@ class TritonSplitJoinRotateHeuristic(AutotunerHeuristic):
         return Config(block_sizes=[1] * len(env.config_spec.block_sizes))
 
 
+# B200 / sm100 hardware target. The dedicated B200 reduction heuristics gate on this; the
+# sm90 reduction heuristics DECLINE when it matches, so on sm100 exactly one reduction seed
+# is collected (the B200-tuned one) — never a competing sm90 seed alongside it. Sibling
+# precedent: ``TritonB200MatmulHeuristic`` above is already ``(("cuda", "sm100"),)``.
+_B200_TARGET: tuple[tuple[str, str | None], ...] = (("cuda", "sm100"),)
+
+
 
 def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> bool:
     """Gate: exactly one ``ReductionFact`` and no ``matmul_facts``. Admits both tracks
@@ -673,6 +680,14 @@ class TritonReductionTileHeuristic(_TritonReductionSeedBase):
     def get_seed_config(
         cls, env: CompileEnvironment, device_ir: DeviceIR
     ) -> Config | None:
+        if cls.HARDWARE_TARGETS != _B200_TARGET and matches_hardware(env, _B200_TARGET):
+            # On sm100, defer to the dedicated B200 subclass (else two T1 seeds would be
+            # collected — this narrow one plus the B200-tuned one). The B200 subclass sets
+            # HARDWARE_TARGETS == _B200_TARGET so it SKIPS this guard and runs the rich
+            # branch below. DEAD CODE off sm100: matches_hardware is an exact
+            # compute-capability match (no arch fallback), so on sm90 this is always False
+            # and the sm90 path is byte-identical to before.
+            return None
         if not matches_hardware(env, cls.HARDWARE_TARGETS):
             # Off the H100-validated target: keep the upstream conservative seed.
             return cls._narrow_seed(env)
@@ -749,6 +764,11 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
     def get_seed_config(
         cls, env: CompileEnvironment, device_ir: DeviceIR
     ) -> Config | None:
+        if cls.HARDWARE_TARGETS != _B200_TARGET and matches_hardware(env, _B200_TARGET):
+            # On sm100, defer to the dedicated B200 subclass (which sets HARDWARE_TARGETS
+            # == _B200_TARGET and so SKIPS this guard). DEAD CODE off sm100 (exact-match
+            # matches_hardware), so the sm90 path is byte-identical to before.
+            return None
         if not matches_hardware(env, cls.HARDWARE_TARGETS):
             # Off sm90: upstream never fired on T2, so no prior seed to preserve. Decline.
             return None
@@ -803,3 +823,54 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
             if ev is not None:
                 seed["load_eviction_policies"] = ev
         return Config(**seed)
+
+
+# ===========================================================================
+# B200 (sm100) dedicated reduction seed heuristics.
+#
+# These subclass the H100/sm90 T1/T2 heuristics but gate on sm100 and are the promoted
+# compiler default there. The sm90 classes above DECLINE on sm100 (their B200 guard), so
+# on B200 exactly one reduction seed is collected — the B200 one. Sibling precedent:
+# ``TritonB200MatmulHeuristic`` in this file is already sm100-gated and registered.
+#
+# Because ``HARDWARE_TARGETS == _B200_TARGET`` here, the inherited ``get_seed_config``
+# SKIPS the sm90 classes' B200-defer guard and runs the rich branch (the
+# ``matches_hardware(env, cls.HARDWARE_TARGETS)`` check passes on B200) — so the full
+# persistent-vs-looped / num_warps-ramp / eviction / band logic fires on sm100. The shared
+# ``_num_warps`` lever already reads ``get_num_sm(env.device)`` (148 on B200) and
+# ``input_load_itemsize`` (the true HBM-load width, 2 at halves), so it is already
+# hardware- and dtype-aware. This commit only wakes the inherited seed on sm100; the
+# B200-specific levers are added by the following commits.
+# ===========================================================================
+class TritonB200ReductionTileHeuristic(TritonReductionTileHeuristic):
+    """B200 (sm100) T1 inner-reduction seed (sum, long_sum, rms_norm, layer_norm,
+    softmax-row, cross_entropy). Inherits the T1 logic; gates on sm100 and is promoted to
+    the compiler default there."""
+
+    name = "triton_b200_reduction_tile"
+    promote_seed_to_default = True
+    HARDWARE_TARGETS = _B200_TARGET
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        # Hardware-gate the B200 class itself, so on a non-sm100 box it never fires (the
+        # sm90 sibling serves there). The reduction-track check is the inherited one.
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return False
+        return super().is_eligible(env, device_ir)
+
+
+class TritonB200ReductionUserTileHeuristic(TritonReductionUserTileHeuristic):
+    """B200 (sm100) T2 user-tiled inner-reduction seed (softmax_two_pass, kl_div, jsd,
+    welford). Inherits the T2 logic; gates on sm100 and is promoted to the compiler default
+    there."""
+
+    name = "triton_b200_reduction_user_tile"
+    promote_seed_to_default = True
+    HARDWARE_TARGETS = _B200_TARGET
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return False
+        return super().is_eligible(env, device_ir)
