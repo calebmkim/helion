@@ -1265,19 +1265,20 @@ class DeviceIR:
             for a in accumulator_facts
             if len(a.dim_block_ids) >= 2 and a.dim_block_ids[-1] == red_block_id
         )
-        # row_reread + reread_eviction_index: the FIRST load live across the reduction boundary
-        # (feeds >= 2 reductions on this axis, or one + a bypass store); the slot is read straight
-        # from MemoryOpFact (no per-config re-walk).
+        # row_reread + reread_eviction_indices: EVERY load live across the reduction boundary
+        # (feeds >= 2 reductions on this axis, or one + a bypass store); each slot is read
+        # straight from MemoryOpFact (no per-config re-walk). A list so a kernel re-reading two
+        # distinct resident rows marks both 'last' (the current curriculum has <=1 re-read row).
         row_reread = False
-        reread_eviction_index: int | None = None
+        reread_eviction_slots: list[int] = []
         for f in memory_op_facts:
             if f.kind != "load":
                 continue
             cnt = next((c for ax, c in f.reductions_fed if ax == red_block_id), 0)
             if cnt >= 2 or (cnt >= 1 and f.stores_fed):
                 row_reread = True
-                reread_eviction_index = f.eviction_index
-                break
+                if f.eviction_index is not None:
+                    reread_eviction_slots.append(f.eviction_index)
         # full_width_output: a rank>=2 store whose inner dim is the reduction-extent AXIS
         # ({rdim} ∪ normalize loops), keyed on the store's inner SUBSCRIPT block-id
         # (reduction-agnostic) or, for the T1 ``out[tile_m, :]`` plain slice, the shape-resolved
@@ -1335,7 +1336,7 @@ class DeviceIR:
             num_carried_2d_tiles=num_carried_2d_tiles,
             non_reduction_loop_block_ids=non_reduction_loop_block_ids,
             row_reread=row_reread,
-            reread_eviction_index=reread_eviction_index,
+            reread_eviction_indices=tuple(reread_eviction_slots),
             full_width_output=full_width_output,
             input_load_itemsize=input_load_itemsize,
         )

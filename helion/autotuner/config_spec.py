@@ -103,8 +103,10 @@ class ReductionFact(NamedTuple):
       (an apply/normalize pass); ``len(...) >= 1`` is the reduce-then-apply (Band-C) signal.
     - ``row_reread``: True iff the reduction-input row is live across the loop boundary (risks
       spilling). Gates the persist byte cap + re-read eviction. From ``MemoryOpFact``.
-    - ``reread_eviction_index``: ``load_eviction_policies`` slot of the re-read load (``None``
-      unless ``row_reread``), read from that load's ``MemoryOpFact.eviction_index`` — no re-walk.
+    - ``reread_eviction_indices``: ``load_eviction_policies`` slots of EVERY re-read load
+      (empty unless ``row_reread``), each read from that load's ``MemoryOpFact.eviction_index``
+      — no re-walk. A list (not a scalar) so a kernel re-reading two distinct resident rows
+      marks BOTH 'last' (L2-resident); the current curriculum has <=1 re-read row each.
     - ``full_width_output``: True iff a store writes the result back over the reduction axis
       ([M, N], e.g. layer_norm/softmax), False for a per-row scalar ([M], e.g. cross_entropy/sum) —
       full-width is store/occupancy-bound, scalar-output reduction-tree-bound (opposite num_warps).
@@ -125,7 +127,7 @@ class ReductionFact(NamedTuple):
     num_carried_2d_tiles: int = 0
     non_reduction_loop_block_ids: tuple[int, ...] = ()
     row_reread: bool = False
-    reread_eviction_index: int | None = None
+    reread_eviction_indices: tuple[int, ...] = ()
     full_width_output: bool = True
     input_load_itemsize: int = 0
 

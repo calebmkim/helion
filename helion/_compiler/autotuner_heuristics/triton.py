@@ -298,6 +298,7 @@ class TritonSplitJoinRotateHeuristic(AutotunerHeuristic):
         return Config(block_sizes=[1] * len(env.config_spec.block_sizes))
 
 
+
 def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> bool:
     """Gate: exactly one ``ReductionFact`` and no ``matmul_facts``. Admits both tracks
     (T1 rollable, T2 user-tiled); excludes GEMMs and multi-axis manual reductions."""
@@ -374,7 +375,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # (M_BLOCK > 1): it holds the [M_BLOCK, tile] tile resident and would spill a wide tile, so it
     # streams a fixed per-row chunk. One-row-per-program applies keep the wide tile (no spill).
     APPLY_LOOP_STREAM_BYTES = 8192
-
+    # M_BLOCK threshold at/above which the apply-stream cap fires. sm90: 2 (only multi-row
+    # applies; single-row keeps the wide tile). The B200 T2 subclass lowers this to 1 (cap
+    # even single-row applies — measured: B200 welford M_BLOCK==1 wants the 2048-elem
+    # streamed tile, the wide tile costs ~25-30% there).
+ 
     # NARROW-row single-warp (occupancy-gated): a narrow reduction extent wants ONE warp (the
     # cross-warp reduction tree is pure overhead; w1 reduces in-register via shuffle). The win
     # inverts past an occupancy ceiling (the SMs saturate), so it is gated on a row-byte cap AND an
@@ -400,25 +405,47 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return _np2(max(1, cap))
 
     @classmethod
-    def _num_warps(
-        cls, fact: ReductionFact, num_sm: int = 0, grid_rows: int = 0
-    ) -> int:
-        """Scale num_warps with the reduction extent (pow2, per NumWarpsFragment):
-        rnumel <= 1024 -> 4, <= 4096 -> 8, <= 16384 -> 16, > 16384 -> 32. Too few
-        under-occupies the SM, too many wastes the reduction tree.
+    def _warp_ramp(cls, extent: int) -> int:
+        """The streaming num_warps ramp at an arbitrary (pow2) reduction extent (per
+        NumWarpsFragment): <=1024->4, <=4096->8, <=16384->16, >16384->32. Too few
+        under-occupies the SM, too many wastes the cross-warp reduction tree. ``> 16384``
+        (not ``>=``) keeps sum's widest in-sample row (16384) at w16, excluding the
+        tiny-rnumel w32 regression.
 
-        NARROW-row single-warp refinement at the LOW end (the occupancy-gated lever): a
-        narrow row at low/moderate occupancy wants ONE warp (the cross-warp reduction tree
-        is pure overhead — see ``NARROW_W1_MAX_BYTES``). Fires only when the row-byte cap AND
-        the resident-pressure cap (``occ * row_bytes <= NARROW_W1_OCC_BYTE_LIMIT``) hold; both
-        key on ``input_load_itemsize`` (faithful, no dtype-kind branch) and the occ ceiling
-        scales DOWN as the row grows (a wider row cliffs at lower occupancy). Needs ``num_sm``
-        (0 disables it, e.g. an off-device caller). Disjoint from the wide-row branch below
-        (``NARROW_W1_MAX_BYTES`` << the rnumel>16384 region), so the two never interact.
+        The single shared wide-row ladder behind BOTH ``_num_warps`` (keyed on the
+        persistent extent) and the B200 Band-B re-key (keyed on the capped R_BLOCK), so
+        the ladder lives in one place and cannot drift between the two call sites.
         """
-        rnumel = fact.size_hint
+        if extent > 16384:
+            return 32
+        if extent <= 1024:
+            return 4
+        if extent <= 4096:
+            return 8
+        return 16
+
+    @classmethod
+    def _num_warps(
+        cls, fact: ReductionFact, extent: int, num_sm: int = 0, grid_rows: int = 0
+    ) -> int:
+        """num_warps for the persistent path: ``_warp_ramp(extent)`` with a NARROW-row
+        single-warp refinement layered on at the LOW end. ``extent`` is the keyed
+        reduction extent, passed EXPLICITLY by the caller (the persistent seed path keys
+        on ``fact.size_hint``). The B200 Band-B re-key bypasses this method and calls
+        ``_warp_ramp`` on the capped R_BLOCK directly — its narrow-w1 refinement would be
+        disabled there anyway (gated ``num_carried_2d_tiles == 0``).
+
+        NARROW-row single-warp (the occupancy-gated lever): a narrow row at low/moderate
+        occupancy wants ONE warp (the cross-warp reduction tree is pure overhead — see
+        ``NARROW_W1_MAX_BYTES``). Fires only when the row-byte cap AND the resident-pressure
+        cap (``occ * row_bytes <= NARROW_W1_OCC_BYTE_LIMIT``) hold; both key on
+        ``input_load_itemsize`` (faithful, no dtype-kind branch) and the occ ceiling scales
+        DOWN as the row grows (a wider row cliffs at lower occupancy). Needs ``num_sm``
+        (0 disables it, e.g. an off-device caller). Disjoint from the wide-row ramp
+        (``NARROW_W1_MAX_BYTES`` << the extent>16384 region), so the two never interact.
+        """
         ils = fact.input_load_itemsize
-        row_bytes = rnumel * ils
+        row_bytes = extent * ils
         # NARROW-row single-warp (see NARROW_W1_MAX_BYTES); needs a known device + static grid.
         have_enough_information = num_sm > 0 and ils > 0 and grid_rows > 0
         if have_enough_information:
@@ -429,16 +456,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 and occ * row_bytes <= cls.NARROW_W1_OCC_BYTE_LIMIT
             ):
                 return 1
-        # >16384 (not >=) so sum's widest in-sample row (16384) stays w16, excluding the
-        # tiny-rnumel w32 regression.
-        warps32_min_elems = 16384
-        if rnumel > warps32_min_elems:
-            return 32
-        if rnumel <= 1024:
-            return 4
-        if rnumel <= 4096:
-            return 8
-        return 16
+        return cls._warp_ramp(extent)
 
     @classmethod
     def _block_floor(cls, bs_spec: BlockSizeSpec) -> int:
@@ -518,17 +536,17 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         cls,
         env: CompileEnvironment,
         kind: str,
-        reread_slot: int | None = None,
+        reread_slots: tuple[int, ...] = (),
     ) -> list[str] | None:
         """``load_eviction_policies`` list (spec length), keyed on per-load residency;
         None leaves the autotuner default.
 
         - ``"stream"`` — single streamed input (``num_load == 1``: sum, long_sum), read
           once: every load -> ``'first'`` (frees L2).
-        - ``"reread"`` — the row is re-read across passes: its first load -> ``'last'``
-          (L2-resident), rest -> ``'first'``. ``reread_slot`` is that load's actual slot,
-          read directly from ``ReductionFact.reread_eviction_index`` (the re-read load's
-          ``MemoryOpFact.eviction_index``), not guessed or re-walked per config.
+        - ``"reread"`` — one or more rows re-read across passes: EACH re-read load -> ``'last'``
+          (L2-resident), the rest -> ``'first'``. ``reread_slots`` are those loads' actual
+          slots, read directly from ``ReductionFact.reread_eviction_indices`` (each re-read
+          load's ``MemoryOpFact.eviction_index``), not guessed or re-walked per config.
 
         Other kinds leave the default until a per-slot win is confirmed.
         """
@@ -538,28 +556,31 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         if kind == "stream":
             return ["first"] * n
         if kind == "reread":
-            if reread_slot is None or not 0 <= reread_slot < n:
+            valid = [i for i in reread_slots if 0 <= i < n]
+            if not valid:
                 return None
             policy = ["first"] * n
-            policy[reread_slot] = "last"
+            for i in valid:
+                policy[i] = "last"
             return policy
         return None
 
     @classmethod
     def _persistent_looped(
         cls, env: CompileEnvironment, fact: ReductionFact
-    ) -> tuple[bool, int, int]:
-        """The shared first lever (both tracks); returns ``(persistent, extent,
-        num_warps)``. Persistent for every row the backend compiles in one pass (up to
+    ) -> tuple[bool, int]:
+        """The shared first lever (both tracks); returns ``(persistent, extent)``.
+        Persistent for every row the backend compiles in one pass (up to
         max_tensor_numel = 2**20 elems) AND within the per-row byte ceiling
         (ROW_PERSIST_MAX_BYTES, the register/SMEM spill limit); else loop a fixed chunk.
+        ``num_warps`` is computed separately by ``_seed_num_warps`` (one explicit
+        warp-keying path shared by T1 and T2), not bundled into this tuple.
 
         The byte cap is unconditional but config-neutral off the re-read kernels (a
         single-load looped chunk ties the persistent pass; the Band-B cap is already
         tighter), so only rms_norm/layer_norm/softmax/cross_entropy/welford are steered.
         """
         from ..._utils import next_power_of_2 as _np2
-        from ...runtime import get_num_sm
 
         # Persistent iff ALL (independent): the element cap (None => compile limit), the per-row
         # byte ceiling (residency — correct for a scalar-output re-read row like cross_entropy),
@@ -577,16 +598,32 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         )
 
         if can_persist:
-            # num_sm + grid_rows feed the occupancy-gated narrow-row w1 branch in
-            # _num_warps. grid_rows (product of static M extents) is computed on demand
-            # here, not stored on the fact (a pure function of m_block_ids + env).
-            num_sm = max(1, get_num_sm(env.device))
-            grid_rows = _grid_rows(env, fact.m_block_ids)
             # Persistent: T1 encodes the extent as reduction_loops=None; T2 as the full
             # pow2 R_BLOCK so the inner `for tile_n` runs once.
-            return True, _np2(fact.size_hint), cls._num_warps(fact, num_sm, grid_rows)
-        # Looped: exceeds the 2**20 or byte cap. Fixed chunk + high streaming warps.
-        return False, cls.LOOPED_CHUNK, cls.LOOPED_NUM_WARPS
+            return True, _np2(fact.size_hint)
+        # Looped: exceeds the 2**20 or byte cap. Fixed chunk.
+        return False, cls.LOOPED_CHUNK
+
+    @classmethod
+    def _seed_num_warps(
+        cls, env: CompileEnvironment, fact: ReductionFact, persistent: bool
+    ) -> int:
+        """num_warps for the persistent-vs-looped seed path — the ONE explicit
+        warp-keying path both T1 and T2 ``get_seed_config`` funnel through.
+
+        - Persistent: the extent-keyed ramp (``_num_warps``), keyed EXPLICITLY on
+          ``fact.size_hint``. ``num_sm`` + ``grid_rows`` (the product of static M extents,
+          computed on demand — a pure function of ``m_block_ids`` + env, not stored on the
+          fact) feed the occupancy-gated narrow-row w1 refinement inside ``_num_warps``.
+        - Looped (exceeds the 2**20 / byte cap): the fixed high streaming warp count.
+        """
+        if not persistent:
+            return cls.LOOPED_NUM_WARPS
+        from ...runtime import get_num_sm
+
+        num_sm = max(1, get_num_sm(env.device))
+        grid_rows = _grid_rows(env, fact.m_block_ids)
+        return cls._num_warps(fact, fact.size_hint, num_sm, grid_rows)
 
 
 class TritonReductionTileHeuristic(_TritonReductionSeedBase):
@@ -642,8 +679,9 @@ class TritonReductionTileHeuristic(_TritonReductionSeedBase):
         spec = env.config_spec
         fact = spec.reduction_facts[0]
         # T1 rides persistent-vs-looped on `reduction_loops`, so the lever's `extent`
-        # (the T2 R_BLOCK) is unused here.
-        persistent, _extent, num_warps = cls._persistent_looped(env, fact)
+        # (the T2 R_BLOCK) is unused here; warps key on the persistent extent.
+        persistent, _extent = cls._persistent_looped(env, fact)
+        num_warps = cls._seed_num_warps(env, fact, persistent)
 
         # A T1 reduction may be followed by a normalize loop (e.g. `s = x.sum(); out =
         # x/s`); its extra block_sizes tile(s) are sized by _build_block_sizes (matched to
@@ -671,9 +709,9 @@ class TritonReductionTileHeuristic(_TritonReductionSeedBase):
         if fact.num_load == 1:
             evict = cls._eviction_policies(env, "stream")
         elif fact.row_reread and not persistent:
-            # Re-read row's eviction slot read directly from the fact (its load's
+            # Re-read rows' eviction slots read directly from the fact (each load's
             # MemoryOpFact.eviction_index), not a per-config codegen re-walk.
-            evict = cls._eviction_policies(env, "reread", fact.reread_eviction_index)
+            evict = cls._eviction_policies(env, "reread", fact.reread_eviction_indices)
         if evict is not None:
             seed["load_eviction_policies"] = evict
         return Config(**seed)
@@ -718,7 +756,8 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
 
         spec = env.config_spec
         fact = spec.reduction_facts[0]
-        persistent, extent, num_warps = cls._persistent_looped(env, fact)
+        persistent, extent = cls._persistent_looped(env, fact)
+        num_warps = cls._seed_num_warps(env, fact, persistent)
 
         # T2: the rdim IS a block_sizes entry (no reduction_loops knob); persistent ==
         # R_BLOCK >= next_pow2(N). Other axes stay at floor (keeps Band-B M_BLOCK at 1,
@@ -758,9 +797,9 @@ class TritonReductionUserTileHeuristic(_TritonReductionSeedBase):
         # normalize, so 'last' regardless of persistence; plain-T2 (softmax_two_pass) only
         # when re-read AND looped. kl_div/jsd (row_reread=False, no normalize) unaffected.
         if non_reduction_loop_ids or (fact.row_reread and not persistent):
-            # Re-read row's eviction slot read directly from the fact (its load's
+            # Re-read rows' eviction slots read directly from the fact (each load's
             # MemoryOpFact.eviction_index), not a per-config codegen re-walk.
-            ev = cls._eviction_policies(env, "reread", fact.reread_eviction_index)
+            ev = cls._eviction_policies(env, "reread", fact.reread_eviction_indices)
             if ev is not None:
                 seed["load_eviction_policies"] = ev
         return Config(**seed)
