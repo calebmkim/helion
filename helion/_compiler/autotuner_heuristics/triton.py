@@ -996,6 +996,15 @@ class TritonB200ReductionUserTileHeuristic(TritonReductionUserTileHeuristic):
     # w8=1.03 — which is exactly the byte-rate law deciding, faithfully, by the real property.
     FP32_ITEMSIZE = 4
 
+    # Band-B (kl_div, jsd) num_warps regime threshold: the inner loop carries this many
+    # INDEPENDENT reduction accumulators before it flips from MEMORY-dominated (load-bound;
+    # warps track the HBM byte-rate) to EPILOGUE-dominated (the serial reduction-update
+    # chains, one per carried accumulator, bound the loop; extra warps don't help). jsd
+    # carries 2 (loss + dX), kl_div 1. Keyed on num_carried_2d_tiles (a structural
+    # accumulator count), so a hypothetical 2-accumulator non-jsd reduction flips the same
+    # way — not a kernel-identity fence.
+    EPILOGUE_DOMINATED_MIN_TILES = 2
+
     # Band-C resident M-tile footprint cap (bytes). At HUGE M the grid-block floor
     # (raise_grid_block_minimums, spec-level) raises M_BLOCK so a program holds an
     # [M_BLOCK, R_BLOCK] resident tile of M_BLOCK * R_BLOCK * itemsize bytes; past ~64 KiB
@@ -1032,6 +1041,47 @@ class TritonB200ReductionUserTileHeuristic(TritonReductionUserTileHeuristic):
         spec = env.config_spec
         fact = spec.reduction_facts[0]
         red_idx = spec.block_sizes.block_id_to_index(fact.block_id)
+
+        # Band B (kl_div, jsd: num_carried_2d_tiles >= 1) re-keys num_warps. The base ramp
+        # keys warps on the uncapped size_hint (e.g. 49152 -> 32 warps), but Band B caps the
+        # resident tile to _bandb_r_block_cap (BANDB_R_BLOCK_BYTES/(itemsize*n_carried): jsd
+        # 2048, kl_div 4096 elems), so 32 warps over-provision for a tile that never
+        # materializes. The right warp count is set by WHICH BOTTLENECK WINS, not tile size:
+        # the cap equalizes the total carried footprint (n_carried * R_BLOCK * itemsize ==
+        # BANDB_R_BLOCK_BYTES) across kernels, so the only thing that differs is the NUMBER of
+        # independent reduction accumulators in the inner loop (kl_div=1, jsd=2).
+        #   - MEMORY-dominated (the default; kl_div, 1 accumulator): the loop is HBM-load-bound
+        #     over the full row, so warps track the byte-rate — the Gate-D-blessed width law
+        #     orig_warps * input_load_itemsize // FP32_ITEMSIZE (champion#3): fp32 (x4//4) keeps
+        #     the full ramp (kl_div fp32 ALL-TRAIN geomean 1.163 at w32 vs 1.089 at w8 -- w32
+        #     wins by ~6.7%, the size_hint-keyed count is NOT misleading for a load-bound loop),
+        #     halves (x2//4) drop. The capped-tile ramp is never the binding floor here
+        #     (size_hint >> the cap, so the width target always exceeds _warp_ramp(R_BLOCK)).
+        #   - EPILOGUE-dominated (>= EPILOGUE_DOMINATED_MIN_TILES accumulators; jsd carries 2:
+        #     loss + dX): each inner step runs that many serial reduction-update chains, so the
+        #     epilogue arithmetic bounds the loop, not the load pipeline -- extra warps don't
+        #     help. Size warps to the capped tile that actually runs: _warp_ramp(R_BLOCK). jsd
+        #     -> w8 (rb=2048) at all dtypes. Measured: jsd fp32 every cell >= w8 better than w32
+        #     (geomean 1.024 vs 0.908); w8 vs w16 is perf-neutral (the cliff is at w32, two ramp
+        #     steps up), so the tile floor is the clean choice.
+        # Keyed on num_carried_2d_tiles (a structural accumulator count) + the width law's load
+        # width -- both faithful, never kernel identity. Only-lower (apply iff it reduces warps).
+        if fact.num_carried_2d_tiles >= 1 and 0 <= red_idx < len(
+            config.config.get("block_sizes", [])
+        ):
+            r_block = config.config["block_sizes"][red_idx]
+            warps = config.config.get("num_warps")
+            ils = fact.input_load_itemsize
+            if isinstance(warps, int) and r_block >= 1 and ils > 0:
+                if fact.num_carried_2d_tiles >= cls.EPILOGUE_DOMINATED_MIN_TILES:
+                    eff = cls._warp_ramp(r_block)  # epilogue-bound: the capped-tile floor
+                else:
+                    eff = max(1, warps * ils // cls.FP32_ITEMSIZE)  # load-bound: byte-rate
+                if eff < warps:
+                    d = dict(config.config)
+                    d["num_warps"] = eff
+                    return Config(**d)
+            return config
 
         # Band C = reduce-then-apply with a carried SCALAR combine (non-reduction loop tiles
         # present, no carried 2-D tile). Band B (handled above) and plain-T2 (softmax: no
