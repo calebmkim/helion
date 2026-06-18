@@ -1,0 +1,25 @@
+helion: /home/calebkim/helion-new-heuristics/helion-3stage/helion/__init__.py
+ROW {"kernel": "matmul_logsumexp", "shape": [131072, 256, 256], "dtype": "bf16", "lat_us": {"default": 108.32, "seeded": 65.66, "best": 65.54, "tc_default": 112.3, "tc_max": 191.84}, "seeded_vs_default": 1.6496, "best_vs_default": 1.6528, "best_vs_tc_default": 1.7136, "best_vs_tc_max": 2.9272, "acc": {"default": true, "seeded": true, "best": true, "tc_default": true, "tc_max": true}, "seed_fired": true, "best_cfg": {"block_sizes": [64, 32], "num_warps": 4, "num_stages": 3}, "grid_valid_cfgs": 30, "skinny": true, "noisy_sub25us": false, "best_bw_tbps": 1.03, "bw_exceeds_hbm_WARN": false}
+/home/calebkim/.conda/envs/helion/lib/python3.12/site-packages/torch/_inductor/select_algorithm.py:4628: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  current_out_size = out_base.storage().size()
+E0618 02:23:26.166000 994685 site-packages/torch/_inductor/select_algorithm.py:4888] [0/0] Runtime error during autotuning: 
+E0618 02:23:26.166000 994685 site-packages/torch/_inductor/select_algorithm.py:4888] [0/0] No valid triton configs. OutOfMemoryError: out of resource: triton_mm Required: 262144 Hardware limit:232448 Reducing block sizes or `num_stages` may help.. 
+E0618 02:23:26.166000 994685 site-packages/torch/_inductor/select_algorithm.py:4888] [0/0] Ignoring this choice.
+Autotune Choices Stats:
+{"num_choices": 21, "num_triton_choices": 20, "best_kernel": "mm", "best_time": 0.1985280066728592, "best_triton_pos": 1, "best_triton_time": 0.23987199366092682, "best_triton_kernel": "triton_mm_36", "best_triton_kernel_desc": "ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=128, BLOCK_N=128, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=3, num_warps=4"}
+AUTOTUNE mm(196608x256, 256x768)
+strides: [256, 1], [768, 1]
+dtypes: torch.bfloat16, torch.bfloat16
+  mm 0.1985 ms 100.0% 
+  triton_mm_36 0.2399 ms 82.8% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=128, BLOCK_N=128, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_37 0.2444 ms 81.2% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=128, BLOCK_N=128, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_29 0.2507 ms 79.2% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=128, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_30 0.2513 ms 79.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=128, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=4, num_warps=8
+  triton_mm_34 0.2553 ms 77.8% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=128, BLOCK_N=64, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=4, num_warps=8
+  triton_mm_31 0.2626 ms 75.6% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=64, BLOCK_N=128, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_33 0.2664 ms 74.5% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=128, BLOCK_N=64, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=3, num_warps=4
+  triton_mm_38 0.2676 ms 74.2% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=64, BLOCK_M=128, BLOCK_N=128, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=5, num_warps=8
+  triton_mm_26 0.3056 ms 65.0% ACC_TYPE='tl.float32', ALLOW_TF32=False, BLOCK_K=32, BLOCK_M=64, BLOCK_N=64, EVEN_K=True, GROUP_M=8, OUT_DTYPE='tl.bfloat16', USE_FAST_ACCUM=False, num_stages=2, num_warps=4
+SingleProcess AUTOTUNE benchmarking takes 0.7364 seconds and 0.4678 seconds precompiling for 21 choices
+ROW {"kernel": "matmul_logsumexp", "shape": [196608, 256, 768], "dtype": "bf16", "lat_us": {"default": 973.68, "seeded": 511.12, "best": 493.34, "tc_default": 357.5, "tc_max": 476.19}, "seeded_vs_default": 1.905, "best_vs_default": 1.9736, "best_vs_tc_default": 0.7247, "best_vs_tc_max": 0.9652, "acc": {"default": true, "seeded": true, "best": true, "tc_default": true, "tc_max": true}, "seed_fired": true, "best_cfg": {"block_sizes": [32, 16], "num_warps": 8, "num_stages": 3}, "grid_valid_cfgs": 18, "skinny": true, "noisy_sub25us": false, "best_bw_tbps": 0.206, "bw_exceeds_hbm_WARN": false}
+SUMMARY {"kernel": "matmul_logsumexp", "n_acc_pass_best": 2, "n_total": 2, "geomean_seeded_vs_default": 1.7727, "geomean_best_vs_default": 1.8061, "geomean_best_vs_tc_default": 1.1144, "geomean_best_vs_tc_max": 1.6809, "noisy_rows": [], "acc_fail_rows": [], "bw_warn_rows": []}
