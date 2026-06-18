@@ -1107,18 +1107,25 @@ class DeviceIR:
         inner_red = [b for b in red_block_ids if b not in grid_ids]
         bs_ids = spec.block_sizes.valid_block_ids()
         rl_ids = spec.reduction_loops.valid_block_ids()
-        # MATERIALIZED feature reduction (rms/ln/instance backward): a single inner reduction in
-        # NEITHER block_sizes NOR reduction_loops — the roller declined to roll it, so it is
+        # MATERIALIZED feature reduction (rms/ln/instance/group_norm backward): an inner reduction
+        # in NEITHER block_sizes NOR reduction_loops — the roller declined to roll it, so it is
         # materialized full-width. Seed it on the standard track (vanilla T1; the grad_w
         # M-collapse is not modeled — that is bias_grad/dyt's user-tiled job). bias_grad/dyt have
         # ZERO materialized inner reductions (their [N] accumulator is never a ReductionLowering
-        # axis), so they do NOT match here and stay user-tiled.
+        # axis), so they do NOT match here and stay user-tiled. When SEVERAL materialized inner
+        # reductions exist (group_norm has two: spatial-S + intra-group-Cg), seed the DOMINANT
+        # one (largest extent — the feature reduction that drives the resident footprint); the
+        # emitted standard config (floored block_sizes + reduction_loops=[]) is the same whichever
+        # is picked, so the choice only affects the num_warps ramp / fact fields.
         materialized_inner = [
             b for b in inner_red if b not in bs_ids and b not in rl_ids
         ]
         non_reduction_loop_block_ids: tuple[int, ...]
-        if len(materialized_inner) == 1:
-            red_block_id = materialized_inner[0]
+        if materialized_inner:
+            red_block_id = max(
+                materialized_inner,
+                key=lambda b: env.block_sizes[b].size_hint(),
+            )
             non_reduction_loop_block_ids = ()
         elif len(inner_red) == 1 and inner_red[0] in bs_ids:
             # USER-TILED: a single inner reduction over a block_sizes tile.
