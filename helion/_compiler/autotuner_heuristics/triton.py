@@ -386,6 +386,13 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # existing curriculum (live <= 3 tiles, all under this) is byte-identical; only a genuinely
     # heavy body (jsd, ~7 tiles) is routed to the looped path.
     LIVE_PERSIST_BUDGET = 3 * 245760
+    # M-COLLAPSE (grad-parameter reduction, e.g. bias_grad): max rows one CTA reduces in a
+    # single in-register inner tile. The grid CTA is occupancy-sized (~grid_rows/num_sm) so the
+    # grad partials finalize over ~num_sm buffers instead of a grid-wide M-way collapse; this
+    # caps the rows so the in-register reduction tree + [rows, feature] resident tile do not
+    # spill (measured crossover: 256 rows fine, 512 spills hard). See the user-tiled M-collapse
+    # branch in TritonUserTiledReductionHeuristic.get_seed_config.
+    M_COLLAPSE_MAX_CTA = 256
     # No welford "structured-combine floor": welford is memory-bound (profiler-confirmed),
     # so a wide combine tile only spills — register-residency via the reduction footprint cap
     # is what matters. The apply/normalize tile gets the SAME M_BLOCK-aware footprint cap as
@@ -887,18 +894,62 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         # shared lever returns the final R_BLOCK directly. `_persistent` is unused on this track:
         # persistence here is R_BLOCK == next_pow2(N), carried by the returned r_block itself.
         r_block, _persistent = cls._reduction_rblock(env, fact, m_block)
+        # M-COLLAPSE (grad-parameter reduction, e.g. bias_grad's grad_bias = sum over rows):
+        # a user-tiled reduction that COLLAPSES the grid (rows) axis into a per-feature
+        # accumulator. Signature: full_width_output False (output is [feature], not [M, N]),
+        # no carried 2-D tile, no normalize loop, AND a SINGLE streamed input (num_load == 1 —
+        # a pure collapse with no fused per-row elementwise work; this excludes dyt, which also
+        # writes a full [M, N] grad_x and re-reads x/weight, num_load == 3, and prefers the
+        # default floored grid). T2's default floors the grid CTA to one row -> one partial per
+        # row -> a grid-wide M-way finalize. Instead size the grid CTA for OCCUPANCY (~one wave
+        # of programs, grid_rows // num_sm) so the finalize is over ~num_sm partials, and reduce
+        # all the CTA's rows in a single inner tile (R_BLOCK == M_BLOCK). Faithful key
+        # (occupancy + load count), not kernel identity.
+        m_collapse_block: int | None = None
+        is_m_collapse = (
+            not fact.full_width_output
+            and fact.num_carried_2d_tiles == 0
+            and not fact.non_reduction_loop_block_ids
+            and fact.num_load == 1
+        )
+        if is_m_collapse:
+            from ..._utils import next_power_of_2 as _np2
+
+            grid_rows = _grid_rows(env, fact.m_block_ids)
+            num_sm = max(1, get_num_sm(env.device))
+            if grid_rows > 0:
+                # Occupancy: ~one wave of programs (grid_rows // num_sm rows per CTA), capped at
+                # M_COLLAPSE_MAX_CTA — a CTA that reduces more than ~256 rows in one in-register
+                # inner tile spills the reduction tree / resident [rows, feature] tile (measured:
+                # [512,1024] 0.21x vs [256,256] 1.00x at bias_grad 65536x1024). The cap binds only
+                # for very tall M; below it the occupancy block is used as-is.
+                m_collapse_block = max(
+                    1,
+                    min(cls.M_COLLAPSE_MAX_CTA, _np2(max(1, grid_rows // num_sm))),
+                )
+                r_block = (
+                    m_collapse_block  # reduce the whole CTA wave in one inner tile
+                )
+
         num_warps = cls._num_warps(
             fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)
         )
 
+        block_sizes = cls._build_block_sizes(
+            spec,
+            fact,
+            fact.block_id,
+            r_block,
+            non_reduction_loop_ids=non_reduction_loop_ids,
+        )
+        if m_collapse_block is not None:
+            # Raise the grid CTA tile(s) from the floor to the occupancy block (the reduction
+            # tile was already set to m_collapse_block via r_block above).
+            for mbid in fact.m_block_ids:
+                idx = spec.block_sizes.block_id_to_index(mbid)
+                block_sizes[idx] = m_collapse_block
         seed: dict[str, Any] = {
-            "block_sizes": cls._build_block_sizes(
-                spec,
-                fact,
-                fact.block_id,
-                r_block,
-                non_reduction_loop_ids=non_reduction_loop_ids,
-            ),
+            "block_sizes": block_sizes,
             "num_warps": num_warps,
             "num_stages": 1,
             "pid_type": "flat",  # see the standard branch.
