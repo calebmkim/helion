@@ -64,3 +64,20 @@ uses all four; seed ≈ best confirms they carry the win.
   softmax (measured floors), per footgun #6b (matmul accumulation order + bf16 rounding, not bugs).
 - (131072,256,2048): SMEM wall — the seed emits [16,32] but it may not fit; the autotuner/seed is
   never forced, so an infeasible tile costs nothing (the family's win vanishes at N=2048 by design).
+
+## OVERTIME (post-DoD, completeness-critic-driven)
+- **dtype coverage**: fp16 matches bf16 (svd 1.44/1.90); fp32 had a regression (svd 0.53, seed/best
+  0.34 — M_BLOCK=64 too large for the 2x fp32 operand) → FIXED (commit c265d421) with a dtype-aware
+  M_BLOCK ceiling (itemsize as a register-budget factor): fp32 (256) svd 0.53→1.51, seed/best
+  0.34→0.997; fp32 (512) svd 1.40. fp32 fix GENERALIZES (matmul_sum fp32 svd 1.44, seed/best 0.999).
+  bf16/fp16 seed unchanged; 9 curriculum byte-identical.
+- **Loss corner (131072,512,1024) bf16** (test split; "seed must decline or not regress"): seed
+  **svd=2.87** over default, seed/best=0.997 (matches Helion's grid best). Helion's best loses to tc
+  here (the small-N win has narrowed past N=512 — a codegen ceiling, the task's predicted boundary),
+  so the seed correctly emits the best Helion config; it does NOT regress.
+- **tc-win scope (precise)**: the seed BEATS torch.compile at small N (≤512: 1.5-1.73x, driver repro);
+  at N≥768 the fusion win narrows to tc-parity/slight-loss (best_vs_tc 0.72-0.97) and the seed tracks
+  Helion's best (seed/best 0.96-1.00) — the claim is "beats tc at small N", scoped as designed.
+- **Correctness backstop** (the suite no stage had run): `test_autotuner_heuristics.py` (24 passed),
+  `test_matmul_heuristics.py` (passed), `test_reductions.py` (28 passed) — the new _graph_peak_live_by_axis
+  liveness sweep, materialized recognizer, M-collapse lever, and composed fact don't break existing tests.
