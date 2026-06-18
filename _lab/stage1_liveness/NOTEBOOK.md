@@ -63,7 +63,8 @@ flj (peak=7, itemsize=4): 245760//28 = 8777 → 8192 (its best chunk). cross_ent
 ## STATUS: design done; implementing Part A next.
 
 ═══════════════════════════════════════════════════════════════════════════
-## POST-HOC CHANGES (made AFTER Stage 1 was gated/banked — recorded, NOT re-gated)
+## POST-HOC #1 — carried-cap moved into `else`  (⚠️ SUPERSEDED — see POST-HOC #2 below)
+## (made AFTER Stage 1 was gated/banked — recorded, NOT re-gated)
 ═══════════════════════════════════════════════════════════════════════════
 
 Context: after Stage 1 was banked AND after the unified-v2 commits (`3c239777` welford m_block,
@@ -104,3 +105,44 @@ on the `[stageN-*]` commit-message prefixes, not SHAs). Post-amend code-commit S
   stage3            `25908e74` (composed) · `8f948735` (gate) · `cde27cb7` (fp32 dtype fix)
   tip (pre-this-note) `b9581c1b`
 Refresh STACK_SUMMARY.md + the reports when convenient.
+
+═══════════════════════════════════════════════════════════════════════════
+## POST-HOC #2 — MEASURED the #1 regression, then FIXED it (extent_held guard + clamp)
+═══════════════════════════════════════════════════════════════════════════
+
+**Measured #1 with config_recorder** (739 cells, `b003d7ee`[before Stage 1] → `111f9ca7`[end of Stage 1]):
+67 cells changed; the carried-cap-into-`else` edit (#1) was confirmed to REGRESS kl_div + jsd —
+  - kl_div: 26 cells, `block_sizes (4096,1) → (32768,1)` / `(65536,1)`
+  - jsd:    26 cells, `block_sizes (2048,1) → (32768,1)` / `(65536,1)`
+  - (welford's 15 changed cells are the SEPARATE `3c239777` welford-m_block commit — INTENDED, not #1.)
+R_BLOCK was uncapped from the carried-tile cap (jsd 2048 / kl_div 4096) up to the full padded extent —
+exactly the full-width carried residency the original comment warned spills. So #1 DID break the
+9-kernel byte-identical invariant: **kl_div + jsd = 52 cells.**
+
+**Root cause — why `extent_held` was a no-op for carried tiles in the original.** Recorded facts for
+kl_div/jsd: `full_width_output = False`, `itemsize = 4` (the fp32 ACCUMULATOR size — uniform across
+bf16/fp32, which is why both dtypes capped identically), `num_carried_2d_tiles = 1 (kl_div) / 2 (jsd)`.
+With `full_width_output=False` the FULL_WIDTH clause is vacuous, so `extent_held ≈ size_hint ≤
+ROW_PERSIST_MAX_BYTES/itemsize = 61440`; every vocab-N (30522…50304) clears it → `extent_held=True`,
+so in the original the ONLY thing keeping kl_div/jsd off the persist path was the UNCONDITIONAL carried
+cap. `extent_held` models a ONE-SHOT held row; it does NOT model a `[M_BLOCK,R_BLOCK]` tile carried
+across the WHOLE loop (a fundamentally heavier residency) — so it cannot answer "can a carried tile
+hold?". (Confirmed a real sub-cap-N corner too: jsd/kl_div `size_hint=1024` → `rdim=1024 < carried_cap`,
+so the original actually DOES persist them at R_BLOCK=1024 — "carried never persists" only held once N
+pushed rdim above the cap.)
+
+**The fix (folded into the fold-cap commit; now `440e8717`), in `_reduction_rblock`:**
+  1. guard `extent_held` with `and fact.num_carried_2d_tiles == 0` — a carried 2-D accumulator can
+     never hold the extent, so it always streams (the faithful encoding of #1's implicit behavior).
+  2. clamp `r_block = max(1, min(r_block, rdim))` — for the sub-cap-N corner the carried cap can
+     exceed rdim; the old held branch returned exactly rdim there, so the clamp matches it.
+Byte-identical to the PRE-#1 original across the matrix (large-N carried → cap; sub-cap-N carried →
+rdim via the clamp; non-carried untouched). Re-running config_recorder was SKIPPED per the human
+(confident it's identical) — the equivalence is ANALYTIC, not re-measured.
+
+**SHAs shifted again** (amend + `rebase --onto`):
+  stage1 fold-cap  `96f14953` → `111f9ca7` → **`440e8717`**
+  stage2 A / B / C `afac0b81` / `9bc8757c` / `c8429c85`   (gate `223bc3cd`)
+  stage3           `a33a7831` (composed) · `0d1f2b74` (fp32 dtype fix) · gate `efd1d688`
+Backups: `backup/pre-extentguard-7a5606cd` (pre-fix) · `backup/pre-fixup-164ee30e` (pre-#1).
+STACK_SUMMARY.md + the per-stage reports remain stale; refresh when convenient.
