@@ -1131,16 +1131,21 @@ class TritonMatmulReductionEpilogueHeuristic(AutotunerHeuristic):
         spec = env.config_spec
         fact = spec.matmul_reduction_epilogue_facts[0]
         n = max(1, fact.n_extent)
+        # The per-program row ceiling scales DOWN with the input itemsize: a fp32 matmul uses
+        # ~2x the registers/element of a bf16/fp16 tensor-core matmul (the [K_BLOCK, N] operand
+        # tile + the dot's intermediates), so half as many M rows stay resident. Expressed as a
+        # FACTOR in the register budget (itemsize, not a dtype literal): bf16/fp16 (2 bytes) ->
+        # MAX_M_BLOCK; fp32 (4 bytes) -> MAX_M_BLOCK//2. Measured: at fp32 N=256, M_BLOCK=64 is
+        # 3x slower than 32 (the [64,N] fp32 operand + dot registers spill).
+        input_itemsize = max(2, fact.matmul.lhs_dtype.itemsize)
+        max_m = max(1, cls.MAX_M_BLOCK * 2 // input_itemsize)
         # Footprint-aware M tile: the largest pow2 whose [M_BLOCK, N] fp32 accumulator fits the
-        # byte budget, capped at MAX_M_BLOCK. Eligibility is implicit — at N where even
-        # M_BLOCK=1 overflows the budget the seed still emits 1 (a valid, if unproductive, tile;
-        # the autotuner/SMEM check rejects an infeasible one, and the seed is never forced).
+        # byte budget, capped at max_m. Eligibility is implicit — at N where even M_BLOCK=1
+        # overflows the budget the seed still emits 1 (a valid, if unproductive, tile; the
+        # autotuner/SMEM check rejects an infeasible one, and the seed is never forced).
         m_block = max(
             1,
-            min(
-                cls.MAX_M_BLOCK,
-                prev_power_of_2(max(1, cls.ACC_BUDGET_BYTES // (n * 4))),
-            ),
+            min(max_m, prev_power_of_2(max(1, cls.ACC_BUDGET_BYTES // (n * 4)))),
         )
         num_warps = 4 if m_block * n <= cls.NUM_WARPS_ELEM_BREAK else 8
 
