@@ -368,6 +368,17 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # M_BLOCK-aware; gates only full_width_output rows, steering half-precision full-width
     # standard rows onto the looped path.
     FULL_WIDTH_PERSIST_MAX_ELEMS = 81920
+    # STANDARD-track liveness ceiling: the max resident bytes a PERSISTENT reduction body
+    # (``body_live_tiles`` simultaneously-live full-width tiles) may occupy before the register
+    # spill turns catastrophic. The single-tile caps above are the per-program REGISTER budget a
+    # single tile / the looped chunk must fit; this is the wider per-program fast-memory budget
+    # (registers ~256 KiB + SMEM ~228 KiB) a one-shot persistent body may spill into. Set to 3x
+    # the register byte cap (a body that needs >3 register-budget-sized tiles resident spills
+    # hard — measured: cross_entropy_ls_zloss's ~3-tile 603KB body stays fast persistent, jsd's
+    # ~7-tile 0.9-1.4MB body spills 538x). It only REMOVES persistence from a heavy body, so the
+    # existing curriculum (live <= 3 tiles, all under this) is byte-identical; only a genuinely
+    # heavy body (jsd, ~7 tiles) is routed to the looped path.
+    LIVE_PERSIST_BUDGET = 3 * 245760
     # No welford "structured-combine floor": welford is memory-bound (profiler-confirmed),
     # so a wide combine tile only spills — register-residency via the reduction footprint cap
     # is what matters. The apply/normalize tile gets the SAME M_BLOCK-aware footprint cap as
@@ -553,28 +564,29 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         fact: ReductionFact,
         m_block: int,
         footprint_factor: int = 1,
-        persist_scale: int = 1,
+        live_budget: int | None = None,
     ) -> tuple[int, bool]:
         """The reduction-axis chunk (pow2) AND the persistent verdict, decided together in one
         budgeted formula and shared by both tracks. Returns ``(r_block, persistent)``.
 
         ``footprint_factor`` = how many resident rdim-shaped tiles one program holds live at
-        once (the liveness signal). The resident footprint is therefore
-        ``footprint_factor * m_block * rdim * itemsize`` bytes, and the decision is a single
-        budget comparison — no caller round-up, no post-hoc re-clamp; ``persistent`` is derived
-        from the final chunk, not announced early.
+        once at the peak (the liveness signal; 1 = a single result tile). It bounds the
+        decision two ways:
+        - PERSISTENT requires the SINGLE-tile fit (the unchanged per-program register caps
+          ``ROW_PERSIST_MAX_BYTES`` / ``FULL_WIDTH_PERSIST_MAX_ELEMS``) AND that the FULL
+          ``footprint_factor``-tile resident set fits ``live_budget`` (the multi-tile spill
+          ceiling — the per-program fast memory a one-shot persistent body may occupy before the
+          spill turns catastrophic). The liveness term only ever REMOVES persistence from an
+          otherwise-persistent heavy body; it never grants it.
+        - the LOOPED chunk is shrunk by ``footprint_factor`` so a heavy body gets a smaller
+          chunk (jsd's ~7-tile body -> ~8192), keeping the looped resident set inside the
+          register budget.
 
-        Two budgets, both faithful byte ceilings:
-        - PERSISTENT set: loaded once, so it may use the full per-program fast memory
-          (``persist_scale * ROW_PERSIST_MAX_BYTES``; ``persist_scale > 1`` admits the SMEM
-          spill the register file alone cannot hold for a one-shot resident set).
-        - LOOPED chunk: re-resident every iteration, so it must stay inside the register budget
-          (``ROW_PERSIST_MAX_BYTES``, NOT scaled) — shrunk by ``footprint_factor`` so a heavy
-          body gets a smaller chunk (the V=50257 jsd wants ~8192, V=32000 ~8192).
-
-        At the defaults (``footprint_factor=1``, ``persist_scale=1``) this reproduces the prior
-        single-tile decision byte-for-byte (the standard track passes the liveness factor; the
-        user-tiled track keeps the defaults and layers its Band-B cap on the returned chunk).
+        At the defaults (``footprint_factor=1``, ``live_budget`` defaulting to
+        ``ROW_PERSIST_MAX_BYTES``) the liveness term is implied by the base byte cap, so this
+        reproduces the prior single-tile decision byte-for-byte (the standard track passes the
+        liveness factor + the wider ``live_budget``; the user-tiled track keeps the defaults and
+        layers its Band-B cap on the returned chunk).
 
         No welford "structured-combine floor": keeping the chunk register-resident (the
         footprint cap) is what matters. welford is memory-bound and a wide combine tile only
@@ -588,17 +600,22 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         itemsize = max(1, fact.itemsize)
         m = max(1, m_block)
         ff = max(1, footprint_factor)
-        # Persistent iff the full ``ff``-tile resident [M_BLOCK, rdim] footprint fits ALL caps:
-        # the element compile limit, the per-program byte ceiling, AND — for a full_width_output
-        # row — the fp32-promoted element ceiling (the input-byte cap undercounts it 2x at half
-        # precision). ``persist_scale`` widens the persistent ceilings (one-shot resident set).
+        lb = live_budget if live_budget is not None else cls.ROW_PERSIST_MAX_BYTES
+        # Persistent iff (a) a SINGLE result tile fits the per-program register caps (the element
+        # compile limit, the byte ceiling, AND — for a full_width_output row — the fp32-promoted
+        # element ceiling the input-byte cap undercounts 2x at half precision), AND (b) the full
+        # ``ff``-tile resident set fits ``live_budget``. (b) is the liveness ceiling: it only
+        # removes persistence from a heavy body, never grants it (lb >= ROW_PERSIST_MAX_BYTES, so
+        # at ff==1 it is implied by (a) -> no-op).
         element_cap = env.backend.max_tensor_numel
-        byte_cap = persist_scale * cls.ROW_PERSIST_MAX_BYTES
-        fw_cap = persist_scale * cls.FULL_WIDTH_PERSIST_MAX_ELEMS
         can_persist = (
             (element_cap is None or fact.size_hint <= element_cap)
-            and (ff * m * fact.size_hint * itemsize <= byte_cap)
-            and (not fact.full_width_output or ff * m * fact.size_hint <= fw_cap)
+            and (m * fact.size_hint * itemsize <= cls.ROW_PERSIST_MAX_BYTES)
+            and (
+                not fact.full_width_output
+                or m * fact.size_hint <= cls.FULL_WIDTH_PERSIST_MAX_ELEMS
+            )
+            and (ff * m * fact.size_hint * itemsize <= lb)
         )
         if can_persist:
             return rdim, True
@@ -667,9 +684,21 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         fact = spec.reduction_facts[0]
         # standard rides persistent-vs-looped on `reduction_loops`. The shared lever sizes the
         # reduction chunk AND derives `persistent` in one budgeted decision (`_reduction_rblock`).
-        # num_sm + grid_rows feed the occupancy-gated narrow-row w1 branch in _num_warps.
+        # `footprint_factor = body_live_tiles` makes residency liveness-aware: a heavy reduction
+        # body (many simultaneously-live full-width tiles, e.g. fused_linear_jsd's
+        # softmax->log_softmax->KL->grad chain) overflows the register file when held persistent,
+        # so it is routed to the looped path with a liveness-shrunk chunk. `LIVE_PERSIST_BUDGET`
+        # is the multi-tile spill ceiling the resident set must fit (only removes persistence from
+        # a heavy body, leaving the light curriculum byte-identical). num_sm + grid_rows feed the
+        # occupancy-gated w1 branch.
         m_block = cls._m_block_product(spec, fact)
-        r_block, persistent = cls._reduction_rblock(env, fact, m_block)
+        r_block, persistent = cls._reduction_rblock(
+            env,
+            fact,
+            m_block,
+            footprint_factor=fact.body_live_tiles,
+            live_budget=cls.LIVE_PERSIST_BUDGET,
+        )
         num_warps = cls._num_warps(
             fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)
         )
