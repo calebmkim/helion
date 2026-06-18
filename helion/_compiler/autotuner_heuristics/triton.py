@@ -306,11 +306,15 @@ def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> 
 
 
 def _is_standard_reduction(spec: ConfigSpec, fact: ReductionFact) -> bool:
-    """standard vs user-tiled discriminator: standard iff the rdim is a rollable
-    ``reduction_loops`` entry, else user-tiled (a ``block_sizes`` entry). Exhaustive over
-    eligible reductions (the two device_ir populators are mutually exclusive).
+    """standard vs user-tiled discriminator: standard iff the rdim is NOT a ``block_sizes``
+    entry. This covers BOTH a roller-rolled rdim (a ``reduction_loops`` entry) AND a
+    MATERIALIZED rdim (an inner ``reduction=True`` axis the roller declined to roll, so it is in
+    NEITHER spec — rms/ln/instance backward); user-tiled is the rdim-is-a-block_sizes-tile case.
+    Equivalent to the old ``rdim in reduction_loops`` for every rollable/user-tiled kernel (a
+    rolled rdim is never a block_sizes entry), so the 9 standard + 8 transfer kernels are
+    unaffected; it additionally admits the materialized case.
     """
-    return fact.block_id in spec.reduction_loops.valid_block_ids()
+    return fact.block_id not in spec.block_sizes.valid_block_ids()
 
 
 def _grid_rows(env: CompileEnvironment, m_block_ids: tuple[int, ...]) -> int:
@@ -785,7 +789,17 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # red_block_id=None: the rdim is not a block_sizes entry, so every entry is a
         # grid axis (floored) or a normalize loop tile (sized to the reduction tile). None
         # loop => the single grid block at its floor, as before.
-        reduction_loops: list[int | None] = [None] if persistent else [r_block]
+        #
+        # MATERIALIZED rdim (rms/ln/instance backward — the roller declined to roll it, so it
+        # has NO reduction_loops spec entry): emit an EMPTY reduction_loops list. The axis is
+        # already materialized full-width in the graph (persistent by construction, no loop
+        # knob); a [None]/[r_block] of length 1 would fail normalize against the 0-length spec.
+        is_materialized = fact.block_id not in spec.reduction_loops.valid_block_ids()
+        reduction_loops: list[int | None]
+        if is_materialized:
+            reduction_loops = []
+        else:
+            reduction_loops = [None] if persistent else [r_block]
         seed: dict[str, Any] = {
             "block_sizes": cls._build_block_sizes(
                 spec, fact, None, None, non_reduction_loop_ids=non_reduction_loop_ids

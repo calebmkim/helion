@@ -1063,14 +1063,24 @@ class DeviceIR:
         accumulator_facts: list[AccumulatorFact],
         liveness_by_axis: dict[int, int] | None = None,
     ) -> None:
-        """Register a ReductionFact for a user-tiled inner reduction.
+        """Register a ReductionFact for an inner reduction the roller did NOT roll. Owns the
+        two non-rolled cases, distinguished by whether the reduction axis is a ``block_sizes``
+        entry:
 
-        user-tiled = a hand-written nested ``hl.tile`` over the reduction axis: no
-        ``reduction=True`` block, so both axes are ordinary ``block_sizes`` entries.
-        Caller-guarded (``if not reduction_loops``) so standard vs user-tiled are mutually
-        exclusive. Finds the axis by collecting every ``ReductionLowering.block_index`` and
-        dropping the grid axes (so a dead ``amax(dim=0)`` over the grid tile is ignored);
-        registers only if exactly one inner axis survives.
+        - **USER-TILED (-> T2):** a hand-written nested ``hl.tile`` over the reduction axis
+          (softmax_two_pass, kl_div, jsd) — no ``reduction=True`` block, so the axis is an
+          ordinary ``block_sizes`` entry. Routes to the user-tiled track.
+        - **MATERIALIZED FEATURE (-> standard/T1):** a ``reduction=True`` feature/spatial axis
+          the roller DECLINED to roll (rms/ln/instance backward: the inner reduction is mixed
+          with grad_x apply + a grad_w ``.sum(0)`` M-collapse inside one ``hl.tile`` body, so
+          ``should_go_in_inner_graph`` raises "mixed reduction dim usage"), leaving it
+          materialized full-width — in NEITHER ``block_sizes`` NOR ``reduction_loops``. It is a
+          STANDARD reduction that simply could not be rolled, so it routes to the standard track
+          (``_is_standard_reduction`` keys on "not a block_sizes entry").
+
+        Caller-guarded (``if not reduction_loops``) so standard-rollable vs this path are
+        mutually exclusive. Finds the axis by collecting every ``ReductionLowering.block_index``
+        and dropping the grid axes (so a dead ``amax(dim=0)`` over the grid tile is ignored).
 
         Built in Phase 3 (after ``_collect_memory_op_facts``), so the per-op-dataflow
         fields are derived from ``memory_op_facts``/``accumulator_facts``.
@@ -1095,11 +1105,33 @@ class DeviceIR:
                         red_block_ids.add(bid)
         # Drop the grid axis (a dead reduction over the grid/M tile, etc.).
         inner_red = [b for b in red_block_ids if b not in grid_ids]
-        if len(inner_red) != 1:
-            return
-        red_block_id = inner_red[0]
-        # The reduction axis must be a user tile in the block_sizes spec.
-        if red_block_id not in spec.block_sizes.valid_block_ids():
+        bs_ids = spec.block_sizes.valid_block_ids()
+        rl_ids = spec.reduction_loops.valid_block_ids()
+        # MATERIALIZED feature reduction (rms/ln/instance backward): a single inner reduction in
+        # NEITHER block_sizes NOR reduction_loops — the roller declined to roll it, so it is
+        # materialized full-width. Seed it on the standard track (vanilla T1; the grad_w
+        # M-collapse is not modeled — that is bias_grad/dyt's user-tiled job). bias_grad/dyt have
+        # ZERO materialized inner reductions (their [N] accumulator is never a ReductionLowering
+        # axis), so they do NOT match here and stay user-tiled.
+        materialized_inner = [
+            b for b in inner_red if b not in bs_ids and b not in rl_ids
+        ]
+        non_reduction_loop_block_ids: tuple[int, ...]
+        if len(materialized_inner) == 1:
+            red_block_id = materialized_inner[0]
+            non_reduction_loop_block_ids = ()
+        elif len(inner_red) == 1 and inner_red[0] in bs_ids:
+            # USER-TILED: a single inner reduction over a block_sizes tile.
+            red_block_id = inner_red[0]
+            # Additional non-grid, non-reduction tile loop(s) (beyond the reduction axis).
+            # Each must span the reduction extent with a resolvable static size, else
+            # ``all_qualified`` is False and the structured seed is undefined (decline).
+            non_reduction_loop_block_ids, all_qualified = (
+                self._non_reduction_loop_candidates(red_block_id, grid_ids)
+            )
+            if not all_qualified:
+                return
+        else:
             return
         try:
             block_info = env.block_sizes[red_block_id]
@@ -1108,15 +1140,6 @@ class DeviceIR:
         # The reduction axis must have a resolvable extent: a dynamic/jagged dim has
         # ``size=None``, for which the extent-keyed lever is undefined; decline there.
         if not isinstance(block_info.size, (int, torch.SymInt)):
-            return
-
-        # Additional non-grid, non-reduction tile loop(s) (beyond the reduction axis).
-        # Each must span the reduction extent with a resolvable static size, else
-        # ``all_qualified`` is False and the structured seed is undefined (decline).
-        non_reduction_loop_block_ids, all_qualified = (
-            self._non_reduction_loop_candidates(red_block_id, grid_ids)
-        )
-        if not all_qualified:
             return
 
         # The kept (non-reduction) axes are the grid block_ids — the "rows".
