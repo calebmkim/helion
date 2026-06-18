@@ -1240,6 +1240,34 @@ class DeviceIR:
                 memory_op_facts, accumulator_facts, liveness_by_axis
             )
 
+    def build_matmul_reduction_epilogue_facts(self) -> None:
+        """Phase 4: compose a ``MatmulWithReductionEpilogueFact`` when a fused matmul +
+        reduction-over-output-axis epilogue is recognized — exactly one ``MatmulFact`` AND exactly
+        one ``ReductionFact`` (the epilogue reduction registered by ``register_user_tiled_reductions``'s
+        materialized branch, which now admits the matmul case). The two facts already carry the
+        extents/dtypes; this just holds them together plus the N-extent the seed keys on. Pure-matmul
+        kernels register no epilogue ReductionFact (no over-output reduction) and pure-reduction
+        kernels have no MatmulFact, so neither composes a fact — the composed fact fires ONLY on the
+        fused family.
+        """
+        env = CompileEnvironment.current()
+        spec = env.config_spec
+        from ..autotuner.config_spec import MatmulWithReductionEpilogueFact
+
+        if len(spec.matmul_facts) != 1 or len(spec.reduction_facts) != 1:
+            return
+        matmul = spec.matmul_facts[0]
+        reduction = spec.reduction_facts[0]
+        spec.matmul_reduction_epilogue_facts.append(
+            MatmulWithReductionEpilogueFact(
+                matmul=matmul,
+                reduction=reduction,
+                n_extent=reduction.size_hint,
+                m_block_id=matmul.m_block_id,
+                k_block_id=matmul.k_block_id,
+            )
+        )
+
     def build_accumulator_facts(self) -> list[AccumulatorFact]:
         """One ``AccumulatorFact`` per loop-carried tensor accumulator in any loop —
         reduction-AGNOSTIC, so it is built independently of (and before) the reduction
@@ -3265,6 +3293,9 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
         # user-tiled when no standard fired) now that memory_op_facts + accumulator_facts
         # exist. liveness_by_axis supplies each fact's body_live_tiles slice.
         device_ir.build_reduction_facts(memory_op_facts, liveness_by_axis)
+        # Phase 4: compose a matmul + reduction-over-output epilogue fact when a matmul AND a
+        # register-resident epilogue reduction co-occur (matmul_rms_norm etc.).
+        device_ir.build_matmul_reduction_epilogue_facts()
 
         return device_ir
 
