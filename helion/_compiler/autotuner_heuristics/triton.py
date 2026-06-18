@@ -794,7 +794,7 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         # by min: the shared lever applies the M_BLOCK-aware footprint cap; the carried-2D cap
         # (Band B) layers on top. welford (Band C) needs no extra cap — the footprint cap
         # already keeps its combine tile register-resident (a wider tile only spills).
-        # User-tiled keeps the single-tile defaults (footprint_factor=1, persist_scale=1) so its
+        # User-tiled keeps the single-tile defaults (footprint_factor=1, default live_budget) so its
         # configs stay byte-identical; the Band-B carried-tile cap layers on the returned chunk
         # via _bandb_r_block_cap (a different 16KB byte budget than the persistent ceiling, kept
         # as the user-tiled liveness term — the standard track's footprint_factor does not subsume

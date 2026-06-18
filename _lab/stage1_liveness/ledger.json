@@ -1,0 +1,238 @@
+{
+ "stage": "stage1-liveness",
+ "sha": "e99ade11",
+ "gates": {
+  "D": {
+   "gate": "D",
+   "immutable_commit": "e99ade11",
+   "field_under_test": "ReductionFact.body_live_tiles (helion/autotuner/config_spec.py:144); walker provenance liveness_by_axis computed by _graph_peak_live_by_axis (device_ir.py:2676) inside the single collect pass _collect_memory_op_facts (device_ir.py:2722, returns (memory_op_facts, liveness_by_axis)); derived slice set in _assemble_reduction_fact (device_ir.py:1338) via max(1, liveness_by_axis.get(red_block_id, 1)); consumed by TritonStandardReductionHeuristic.get_seed_config (triton.py:699) as footprint_factor with live_budget=LIVE_PERSIST_BUDGET=3*245760 (triton.py:700) into _reduction_rblock (triton.py:561).",
+   "doctrine": "pass",
+   "doctrine_detail": {
+    "no_walk_in_derived_fact": "PASS \u2014 _assemble_reduction_fact reads body_live_tiles via a pure dict lookup `max(1, (liveness_by_axis or {}).get(red_block_id, 1))` (device_ir.py:1338). No device_ir.graphs iteration, no node.users/node.args, no _classify_load_dataflow, no IR inspection in the derived fact. It is a pure derivation over a passed-in walker slice + the trivial structural read red_block_id.",
+    "walk_folded_into_single_pass": "PASS \u2014 the only graph walk is _graph_peak_live_by_axis, invoked once inside the single collect pass's per-graph loop (device_ir.py:2765), and _collect_memory_op_facts itself is called exactly once (device_ir.py:3091). It is NOT a second top-level traversal of device_ir.graphs and NOT a per-config re-walk. The helper iterates graph.nodes for a last-use precompute + a liveness sweep; this is the SAME localized-sub-walk pattern already accepted for the folded field reductions_fed (_classify_load_dataflow does a per-load forward node.users BFS inside the same pass). It is consumer-agnostic per-axis (keyed by block_id, like reductions_fed), max-merged over graphs.",
+    "no_new_walker_fact_proliferation": "PASS \u2014 no new walker fact NamedTuple was created; liveness_by_axis is a plain per-axis dict returned alongside memory_op_facts from the existing collect pass. (It is provenance computed in the walker pass, not a per-op MemoryOpFact field, because the property is per-reduction-AXIS, not per-load/store entity \u2014 the correct home.)",
+    "walker_field_generality": "general \u2014 the field is dict[block_id -> peak], raw per-axis register-pressure provenance, NOT a baked-in consumer identity like `live_for_my_rdim: bool`. A DIFFERENT consumer can read a DIFFERENT slice: a second reduction axis in a multi-reduction kernel, an apply/normalize-loop register-pressure heuristic, or a band heuristic each index a different key. The derived ReductionFact specializes by selecting its own axis (red_block_id), exactly the reductions_fed calibration.",
+    "sound_provenance": "PASS \u2014 axis membership comes from env.resolve_block_id over meta['val'].shape (compile_environment.py:1101), genuine symbolic block-id provenance (SymInt origin / GridOrigin / specialize_expr), not a guess. No NEW accepted-unsoundness introduced. The conservative over-count (no rematerialization modeling) is DECLARED in code+docstring and errs toward looping (safe), so it is a sound-but-conservative measure, not an unflagged shortcut."
+   },
+   "generality_verdict": "general",
+   "faithfulness": "faithful_property",
+   "faithfulness_detail": {
+    "fact_divergence": "The proxy hypothesis (node-count over-count: counts rdim-shaped values that are not truly co-live) is REFUTED by an authored compile-only mutant pair (k_sequential vs k_colive, same shape 256x1024 fp32, same single-tile config). k_sequential has 66 total rdim-shaped nodes but body_live_tiles=2; k_colive has 70 total rdim-shaped nodes and body_live_tiles=7. With near-equal total node counts the field diverges 2 vs 7 \u2014 it tracks TRUE simultaneous liveness (last-use retirement working), NOT node count. Style-independence confirmed: a long single-use chain does NOT inflate the count.",
+    "threshold_divergence": "The threshold ff*m*size_hint*itemsize <= 3*245760 is a FAITHFUL hardware byte budget, NOT a disguised dtype fence. itemsize appears only as a multiplicative FACTOR inside bytes=elems*itemsize, never as the operand of a literal `itemsize <= K`. Equal-byte pairs decide IDENTICALLY across dtype: fp32@S vs bf16@2S persist=True/True at S=8192,16384 and False/False at S=32768 (the budget overflow flips both dtypes together, no dtype-line split). At FIXED bytes the ff (liveness) term correctly moves the decision (ff=1,2,3 persist; ff=7 spills at 917504>737280) \u2014 the budget genuinely governs resident-tile bytes, the real property.",
+    "bs_reduction_class_inapplicable": "The canonical bs.reduction lucky-proxy class does NOT apply: the populator keys on resolve_block_id over the reduction AXIS block_id (selected by the derived fact), not on the bs.reduction flag, so an hl.zeros([m,n]) accumulator dim that merely sets bs.reduction cannot inflate the reduction axis's liveness."
+   },
+   "population": "faithful_derivation",
+   "population_detail": "_graph_peak_live_by_axis computes the STATED property directly from faithful provenance: a proper FX liveness sweep (def-to-last-use) over each graph, counting per-axis simultaneously-live tensor values whose shape resolves (via resolve_block_id) to include each block-id axis, max-merged over graphs. CODE matches STATED PROPERTY ('peak number of simultaneously-live rdim-shaped tiles'). It selects/branches on NO incidental flag (no bs.reduction, no isinstance, no membership shortcut).",
+   "the_fact_divergence_case": "Authored mutant pair k_sequential / k_colive (template: softmax_decomposed, single-tile standard reduction). SAME real property (256x1024 fp32, rdim extent 1024, single resident config). k_sequential: long single-use rdim chain (exp->log->sin->cos->tanh->sqrt->exp then softmax), TRUE peak-live LOW. k_colive: a,b,c,d,e=exp/sin/cos/tanh/sqrt(v) all summed at the end (forced co-live), TRUE peak-live HIGH. DUMPED: k_sequential body_live_tiles=2 (TOTAL_rdim_nodes=66); k_colive body_live_tiles=7 (TOTAL_rdim_nodes=70). body_live_tiles DISAGREES with node count and AGREES with true co-liveness => faithful liveness, NOT a node-count proxy.",
+   "the_threshold_divergence_case": "Equal-bytes dtype pair (m=1, ff=7): fp32 @ size_hint S vs bf16 @ 2S (identical byte footprint). Decision identical at every S tested (True/True, True/True, False/False). Plus ff sensitivity at fixed 131072 bytes/tile: persist True for ff in {1,2,3}, False for ff=7 (917504 > 737280 budget). The branch decides on bytes*liveness, never on dtype identity.",
+   "the_authored_mutant_and_dumped_facts": {
+    "probe_file": "/tmp/gate_d_divergence.py (fact divergence), /tmp/gate_d_bsreduction.py (bs.reduction control), /tmp/gate_d_threshold.py (threshold algebra over committed constants)",
+    "compile_attempts": 1,
+    "k_sequential": {
+     "body_live_tiles": 2,
+     "total_rdim_nodes": 66
+    },
+    "k_colive": {
+     "body_live_tiles": 7,
+     "total_rdim_nodes": 70
+    },
+    "k_plain_bs_reduction_control": {
+     "body_live_tiles": 2,
+     "rdim_block_id": 1
+    },
+    "curriculum_corroboration_reproduced": "flj=7, rms_norm=3, layer_norm=3, softmax=2, sum=2, long_sum=2, cross_entropy=2, welford=3, kl_div=6, jsd=12 (probe_live_tiles.py re-run, matches RESULTS.md exactly)"
+   },
+   "what_it_tracks": "The peak number of simultaneously-live (def-to-last-use) tensor tiles whose shape spans the reduction axis, per axis \u2014 a faithful conservative-over-count register-pressure liveness measure. Verified to track true co-liveness, not node count; read as a byte-budget factor, not a dtype fence.",
+   "verdict": "PASS",
+   "reasoning": "All three parts pass. PART 1 (doctrine): the derived fact does a pure dict.get with zero graph access; the single graph walk is folded into the one collect pass (same localized-sub-walk pattern as the accepted reductions_fed field), not a second/bespoke traversal nor a per-config re-walk; the walker field is general (raw per-axis dict[block_id->peak], a different consumer reads a different slice) and soundly keyed on resolve_block_id provenance. PART 2 (faithfulness): the authored divergence mutant proves the FACT tracks true simultaneous liveness (2 vs 7 at equal ~66-70 node counts), and the THRESHOLD is a hardware byte budget with itemsize as a factor (equal-byte dtype pairs decide identically; ff moves the decision at fixed bytes), not a disguised dtype fence. PART 3 (population): the populator computes the STATED property directly via a real FX liveness sweep over faithful block-id provenance, with NO incidental-flag shortcut; the canonical bs.reduction lucky-proxy class is structurally inapplicable because it keys on the reduction axis block_id, not the flag. Conservative-over-count is declared and safe (errs to looping). No refutation found on any part."
+  },
+  "H": {
+   "verdict": "KEEP",
+   "key_faithfulness": "faithful",
+   "breadth": "mechanism-matched",
+   "form": "measured-crossover",
+   "magnitude_class": "catastrophe-rescue",
+   "reason_present": true,
+   "downside": "bounded",
+   "fact_hygiene": "clean-faithful",
+   "complexity_note": "Adds one liveness term (body_live_tiles factor) + one constant (LIVE_PERSIST_BUDGET) to the EXISTING persistent-vs-looped decision in _reduction_rblock. The only emitted field it changes is reduction_loops (None->[chunk]); Gate F confirmed 'ONLY reduction_loops differs' for flj. User-tiled track keeps defaults (no-op) -> byte-identical. Easy to reason about: one per-program fast-memory byte budget on one decision.",
+   "inert_fields_to_drop": [],
+   "conflicting_axes": [],
+   "action": "keep-in-core",
+   "reasoning": "RULE 1 (KEY FAITHFULNESS, the hard line): the key is `body_live_tiles x elems x itemsize <= 3 x ROW_PERSIST_MAX_BYTES` -- a bytes/footprint budget (the FAITHFUL category). body_live_tiles is a peak-simultaneously-live-tile COUNT; itemsize is a FACTOR inside the byte product (bytes = elems x itemsize), never a literal dtype comparison. Two workloads with equal real footprint but different dtype decide identically -> passes the threshold-divergence test. Not kernel identity, not a bare dtype literal, not an op-pattern proxy. No hard stop. RULE 1b (BREADTH): the lever applies to ALL standard reductions keyed on the workload property, not fenced to flj. Verified the shipped budget 737280 (=3x register cap) sits cleanly inside the ADDITIVE-design safe window [458752, 896000) -- keep_min=458752 (heaviest currently-persistent curriculum body, mechanism: keep persistent), flip_max=896000 (flj's own footprint, mechanism: flj must loop). The upper bound is set BY flj, so the budget cannot widen further without failing to route flj. NOT a curriculum fence (single one-sided ceiling, not a two-sided band; no dtype-correlated multiplier the mechanism does not need -- not the BANDB_W8/B200_LOOP_HBM tells). NOTE on the 2x->3x discrepancy: the NOTEBOOK's narrow window [458752,491520] and 'LIVE_PERSIST_SCALE=2' belonged to the EARLIER NAIVE design (footprint multiplied INTO the single cap, predict_flips.py L57), whose upper bound was constrained by currently-LOOPED cells flipping UP. The SHIPPED design is ADDITIVE: a SEPARATE live_budget conjunct (triton.py L618) that keeps the single-tile cap UNCHANGED and only ever REMOVES persistence (L608: lb>=ROW_PERSIST_MAX_BYTES, no-op at ff==1). A looped cell looped by failing the unchanged single-tile cap (a); raising lb cannot satisfy (a), so NO looped cell can flip up at any lb. Hence the additive window's upper bound is flj (896000), not 491522, and 3x is safe -- budget_window.py confirms 524288/655360/786432 all keep_all=True. PROVEN REVERSAL BOUNDARY exhibited + tested: cross_entropy_ls_zloss 3-tile/603KB body stays fast persistent (G 1.36-1.64), flj 7-tile/0.9-1.4MB body spills (480->0) and loops -- a tested boundary straddling the budget. RULE 1c (FORM): a single measured hardware crossover (register spill cliff: persistent n_spills=480 -> looped n_spills=0). Per 1c(iii) an if/threshold IS correct for a real spill cliff -- do not smear into a fake ramp. Justified hardware budget (registers ~256KB + SMEM ~228KB ~= 484KB per-program fast memory; 3x register cap), not a bare magic threshold. RULE 2: flj narrow-V wins 0.26->1.02, 0.58->1.32 (bf16), 0.50->1.22, 0.91->2.36 (fp32) -- large, far above the ~5% floor, with a verified mechanism. RULE 3: rescues flj narrow-V from below-floor disasters (G 0.16-0.58 < 0.75) to >=1.0 on a REAL distillation workload (realism verdict) -- catastrophe-rescue, the highest-value justification. RULE 4: measured regression NONE -- 739/739 curriculum byte-identical, 7/8 transfer kernels unchanged, only flj flips (improves); the naive design that regressed cross_entropy_ls_zloss was explicitly rejected for this additive one. RULE 5: body_live_tiles is a compile-time walker fact (no runtime info), folded into the single collect pass (no brittle second walk) -> clean-faithful (Gate D adjudicates depth). RULE 6: no inert field -- only reduction_loops changes; one new auditable constant. RULE 7: no axes conflict. Faithful key + large real win + catastrophe-rescue + zero measured regression + correct measured-crossover form + mechanism-matched breadth with a tested reversal boundary + clean fact + no inert fields = clean KEEP. (Minor non-blocking doc-drift: the line-797 comment still says 'persist_scale=1' though the param is now 'live_budget' -- cosmetic.)"
+  },
+  "F": {
+   "gate": "F",
+   "immutable_commit": "e99ade11",
+   "claim": "Routing fused_linear_jsd (standard reduction track) from persistent reduction_loops=[None] to looped [8192] via the body_live_tiles liveness ceiling eliminates a 480->0 register spill and turns a 0.26-0.91x loss vs grad-fair tc into a 1.0-2.4x win. Gate fired: lever flips a structural default (persistent<->looped).",
+   "mechanism_found": true,
+   "mechanism_matches_stated_story": true,
+   "the_resource_and_metric": {
+    "resource": "register-file capacity (register spill to local memory)",
+    "metric": "n_spills (read off the triton CompiledKernel via gc-walk; n_regs pinned at 64 in both arms)",
+    "measured": {
+     "flj_4096x50257_fp32_persistent_[None]": {
+      "n_regs": 64,
+      "n_spills": 480
+     },
+     "flj_4096x50257_fp32_looped_[8192]": {
+      "n_regs": 64,
+      "n_spills": 0
+     }
+    },
+    "spill_is_eviction_independent": "n_spills 480 (persistent) / 0 (looped) are byte-identical whether load_eviction_policies is the reread pattern or dropped to default -> the spill is purely a function of reduction_loops, not eviction.",
+    "codegen_confirmation": {
+     "persistent_[None]": "_RDIM_SIZE_1 = 65536 -> the whole vocab (50257, padded) is one tile; NO tl.range loop; all full-width [1,65536] fp32 intermediates of the softmax/log_softmax(student+teacher) -> m -> log_m -> 2x KL -> grad chain (v_0..v_28) are simultaneously live across the single body -> register-file overflow -> 480 spills. /tmp/flj_rl_None.triton.py.",
+     "looped_[8192]": "_REDUCTION_BLOCK_1 = 8192 -> body split into multiple `for roffset_1 in tl.range(0, 50257, 8192)` loops carrying only scalar [1,1] reductions (amax, sum_1..sum_4) between them; per-iteration resident set is [1,8192] chunks -> fits the register budget -> 0 spills. /tmp/flj_rl_8192.triton.py."
+    }
+   },
+   "the_predicted_boundary": {
+    "rule": "PERSISTENT iff (single result tile fits the base byte caps) AND (body_live_tiles * m_block * size * itemsize <= LIVE_PERSIST_BUDGET = 3 * ROW_PERSIST_MAX_BYTES = 737280); above the multi-tile ceiling -> looped.",
+    "flj_above": "body_live_tiles=7: 7 * 1 * 50257 * 4 = 1,407,196 B > 737,280 -> flips to looped (single-tile 201,028 B <= 245,760 still passes the OLD ff=1 gate, which is exactly why the prior heuristic wrongly kept it persistent).",
+    "boundary_property_to_key_on": "body_live_tiles (peak simultaneously-live rdim-shaped tiles per reduction axis) as a footprint multiplier inside a fast-memory byte budget."
+   },
+   "boundary_sanity_check": {
+    "cross_entropy_ls_zloss_below_boundary": {
+     "body_live_tiles": 3,
+     "resident_bytes": "3 * 1 * 50257 * 4 = 603,084 B <= 737,280 -> stays persistent",
+     "compiled_8192x50257_fp32": {
+      "reduction_loops": "[None]",
+      "n_regs": 64,
+      "n_spills": 0
+     },
+     "compiled_4096x50257_fp32": {
+      "reduction_loops": "[None]",
+      "n_regs": 64,
+      "n_spills": 0
+     },
+     "verdict": "CONFIRMED: the 3-tile body stays persistent and does NOT spill (0 spills) at the same wide V where the 7-tile flj body spills 480 and flips to looped. The boundary holds on both sides."
+    }
+   },
+   "the_property_to_key_the_fact_on": "body_live_tiles (a per-reduction-axis walker-fact field) used as footprint_factor in the bytes budget; the win generalizes to a rule keyed on live-tile-count x bytes vs the fast-memory ceiling, which is exactly how the lever is keyed.",
+   "field_attribution": {
+    "reduction_loops": {
+     "non_default_value": "[8192]",
+     "earns_place": true,
+     "doing_work_not_inert": "chunk value is liveness-driven: budget = ROW_PERSIST_MAX_BYTES // (m * itemsize * ff) = 245760 // (1*4*7) = 8777 -> prev_pow2 -> 8192, then min(LOOPED_CHUNK=16384, 8192) = 8192. A single-tile body (ff=1) would emit 16384; ff in {4..7} lands at 8192. The emitted _REDUCTION_BLOCK_1=8192 matches. So both the persistent->looped flip AND the specific chunk size are products of the liveness signal, not inert constants."
+    },
+    "load_eviction_policies": {
+     "status": "coupled-side-effect-of-the-persistent-flip, NOT an inert field set by the lever",
+     "detail": "flj has num_load=2 (skips the num_load==1 stream branch) and row_reread=True. The eviction branch `elif row_reread and not persistent` fires ONLY when persistent is False. So when the liveness lever flips persistent->looped it ALSO causes load_eviction_policies to be set to ['last','first'x17] (reread pattern); in the persistent verdict the field is absent/default. Thus the EMITTED SEED differs in TWO fields (reduction_loops AND load_eviction_policies), not strictly one as the claim states.",
+     "is_it_load_bearing_or_inert": "INERT for the stated spill mechanism: n_spills is byte-identical (480 / 0) with reread vs default eviction. The eviction change is a mechanism-grounded HBM re-read hint coupled to the looped path (the looped body re-reads the row), confirmed not to affect register residency. It is a correct, deliberately-gated coupling, NOT dead weight to drop -- but it means the claim's 'exactly ONE structural field' phrasing is an oversimplification at the seed-emission level."
+    },
+    "other_fields_unchanged_by_liveness": "num_warps(32), num_stages(1), pid_type(flat), block_sizes([1]) are computed from num_sm/grid_rows/structure, independent of body_live_tiles; the A/B (ab_flj.py, spill_probe.py) held all of these constant and isolated reduction_loops, so the measured 0.499->1.224 win and 480->0 spill are attributable to reduction_loops alone."
+   },
+   "inert_fields": [],
+   "coupled_field_sets": [
+    [
+     "reduction_loops",
+     "load_eviction_policies"
+    ]
+   ],
+   "better_neighbor_found": null,
+   "reasoning": "Mechanism VERIFIED in the lowered Triton, not assumed. Persistent [None] materializes the entire [1,65536] vocab row and holds ~all full-width fp32 intermediates of the softmax/log_softmax/KL/grad chain simultaneously live in one straight-line body -> 480 register spills; looped [8192] chunks the reduction into tl.range loops carrying only scalar accumulators -> 0 spills. Re-derived n_spills independently via gc-walk over CompiledKernel objects: [None]=(64,480), [8192]=(64,0), matching RESULTS.md and the task reference. The boundary live*bytes <= 3*ROW_PERSIST_MAX_BYTES is real and double-sided: flj's 7-tile/1.4MB body flips to looped (above), cross_entropy_ls_zloss's 3-tile/603KB body stays persistent with 0 spills (below) -- compiled and confirmed. Field attribution: reduction_loops=[8192] is genuinely doing work (the chunk is liveness-shrunk from 16384 to 8192 by ff=7, not an inert constant). One nuance vs the claim: the persistent->looped flip ALSO sets load_eviction_policies (the `row_reread and not persistent` branch), so the emitted seed differs in TWO fields, not one. But that eviction field is (a) a mechanism-grounded coupling to the looped re-read path and (b) provably spill-independent (480/0 identical with reread vs default), so it is neither inert-to-drop nor the source of the win -- the spill-elimination win is 100% attributable to reduction_loops. No inert fields to drop; one recorded coupling. PASS.",
+   "verdict": "PASS"
+  },
+  "A": {
+   "error": "Expecting value: line 35 column 64 (char 6544)"
+  },
+  "R": {
+   "gate": "R",
+   "immutable_commit": "e99ade11",
+   "before": "48ac703e",
+   "base": "0676dd32",
+   "edit": "Part B liveness signal on the STANDARD reduction track: walker fact body_live_tiles (peak simultaneously-live rdim-shaped tiles per reduction axis, computed in the single collect pass) feeds footprint_factor; additive persist ceiling body_live_tiles * m * sh * itemsize <= LIVE_PERSIST_BUDGET = 3 * ROW_PERSIST_MAX_BYTES = 737280. Only REMOVES persistence from a heavy-bodied standard reduction (never adds it); looped chunk shrinks by body_live_tiles.",
+   "is_generality_edit": "yes \u2014 broad (keyed on the workload liveness property, not fenced to one kernel); targeted perf fix for heavy-bodied standard reductions. NAMED off-train transfer shape it lifts: fused_linear_jsd narrow-V (e.g. (4096,50257), (8192,32000), (16384,32000)).",
+   "accept": true,
+   "changed_cells": [],
+   "changed_cells_count": 0,
+   "scope_note": "config_recorder diff cfg_partA.json -> cfg_partB.json over the FULL active matrix (9 curriculum kernels x fp32/bf16/fp16 x train/val/robustness = 739 cells): UNCHANGED 739, CHANGED 0. Independently reproduced by this referee. The 9 standard reduction kernels are byte-identical (Part A was already zero-diff; Part B's liveness ceiling does not change any curriculum config because the worst curriculum base-persistent footprint = 458752 (cross_entropy bf16 (4096,114688)) is 278528 below the 737280 budget). Part-B RESULTS.md additionally hash-checked --triton on a rms_norm/cross_entropy/welford/kl_div/softmax subset: config-identical => Triton-identical, so selection-only and the config-only diff is sound for the curriculum.",
+   "transfer_scope_audit": {
+    "method": "The 8 off-curriculum TRANSFER kernels are NOT in the 739-cell matrix. Independently recomputed each transfer cell's flip condition: a standard-track cell flips persistent->looped under Part B ONLY IF it is BASE-persistent AND its body_live_tiles*m*sh*itemsize crosses 737280 (Part B only REMOVES persistence). m_block=1 row-persistent path, body_live_tiles per RESULTS.md/probe_live_tiles.py.",
+    "predicted_flips": {
+     "fused_linear_jsd": "6 cells flip (all narrow-V, base-persistent, live=7): bf16/fp32 (8192,32000)=896000, bf16/fp32 (4096,50257)=1407196, bf16/fp32 (16384,32000)=896000 \u2014 all > 737280. Matches RESULTS.md exactly.",
+     "fused_add_rmsnorm": "0 (live=4 full-width; largest transfer N=16384 -> footprint 262144 << budget)",
+     "fused_add_layernorm": "0 (same)",
+     "gated_rmsnorm": "0 (same)",
+     "scaled_masked_softmax": "0 (live=3 full-width). The wide cells N=65536/131072 DO exceed budget (786432/1572864) BUT are already BASE-LOOPED (N*isz exceeds the 245760 byte cap), so Part B is byte-identical for them. The base-persistent wide cell N=32768 -> footprint 393216 << budget. No flip.",
+     "cross_entropy_ls_zloss": "0 (live=3, base-persistent at N<=61440; max footprint 3*50304*4=603648 < 737280 -> stays PERSISTENT)",
+     "dynamic_quant": "0",
+     "grpo": "0"
+    },
+    "wide_N_worry_resolved": "The frame's two named concerns are answered: (a) scaled_masked_softmax at large N does NOT wrongly flip because its wide shapes are already base-LOOPED (byte cap), not because the liveness budget protects them; (b) fused_add norms at large N do not flip because the largest transfer N (16384) is far inside the base-persistent region and far below budget. A full-width norm (live=4) WOULD flip only in the window N in (46080, 61440] (still base-persistent AND footprint>budget); NO transfer or curriculum norm lands in that band. Reasoning is SOUND.",
+    "transfer_flj_direction": "All 6 flj flips IMPROVE (base persistent [None] is a register-spill disaster: 480 n_spills, G 0.159-0.906 mostly below floor; Part-B looped [8192] -> 0 spills, G 1.017-2.358). RESULTS.md ab_flj.py grad-fair tc median-of-9."
+   },
+   "below_floor": [],
+   "realism_verdicts": {
+    "fused_linear_jsd": "realistic (real (chunk_tokens, vocab) shapes from Llama2/GPT2/Llama3/Qwen2/Gemma); all flipped cells END above the 0.75 floor (1.017-2.358). The BEFORE (Part A) state had these below floor (0.159-0.906) \u2014 Part B REMOVES a pre-existing disaster, it creates none."
+   },
+   "no_new_disaster": "confirmed \u2014 the only changed cells (flj, 6) all move from below/near-floor to comfortably above floor. No shape pushed below its floor by this edit.",
+   "kernels_vs_anchor": [
+    {
+     "kernel": "rms_norm",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "layer_norm",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "softmax",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "sum",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "long_sum",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "cross_entropy",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "welford",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "kl_div",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "jsd",
+     "delta_vs_frozen": "0% (byte-identical)"
+    },
+    {
+     "kernel": "fused_linear_jsd (transfer)",
+     "delta_vs_frozen": "large IMPROVEMENT (e.g. (4096,50257) bf16 0.259->1.017, fp32 0.499->1.224; (4096,32000) fp32 0.906->2.358)"
+    },
+    {
+     "kernel": "cross_entropy_ls_zloss (transfer)",
+     "delta_vs_frozen": "0% \u2014 stays persistent (footprint 603084-603648 < budget 737280); the earlier WRONG multiplicative design regressed it (persist 1.6x -> loop 0.99x), the shipped additive ceiling keeps it persistent (verified ab_transfer_flip.py: persist G 1.36-1.64)"
+    }
+   ],
+   "no_collapse": "confirmed \u2014 no kernel's geomean drops. 9 curriculum kernels byte-identical (0% vs frozen anchor); flj improves; cross_entropy_ls_zloss and the other 6 transfer kernels unchanged. Nothing >10% below the frozen anchor.",
+   "majority_up": true,
+   "net_progress": "fused_linear_jsd improves materially (multiple cells 2-6x off the disastrous persistent baseline, all crossing the 0.75 floor); nothing regresses. Even setting aside the generality license, net progress holds: the changed set is strictly improving and the unchanged set is byte-identical.",
+   "generality_license": {
+    "claimed": true,
+    "measured_lift_shape": "fused_linear_jsd narrow-V: (4096,50257), (8192,32000), (16384,32000) (bf16+fp32)",
+    "confirmed": true,
+    "within_once_per_kernel_budget": true,
+    "note": "License is not even strictly needed \u2014 no kernel dips (all curriculum byte-identical, flj/CE_ls improve or unchanged). The named off-train shape it lifts (flj) is re-bench-confirmed (ab_flj.py grad-fair median-of-9). No spent-license collision."
+   },
+   "wrong_design_check": "VERIFIED. The earlier WRONG design (multiplicative footprint x scaled cap) recalibrated the cap down at the cross_entropy curriculum point, which flipped cross_entropy_ls_zloss (V~50k) to looped and regressed it (persist 1.6x -> loop 0.99x). The SHIPPED additive-ceiling design (live*bytes <= 3*ROW_PERSIST_MAX_BYTES, base register caps UNCHANGED) keeps cross_entropy_ls_zloss persistent: its footprint 3*50257*4=603084 < 737280. Independently confirmed by this referee; corroborates ab_transfer_flip.py.",
+   "independent_recompute": "This referee independently (1) ran config_recorder diff -> 0 changed of 739; (2) recomputed all 8 transfer kernels' flip predictions from the standard-track base-persist + additive-ceiling logic -> only flj flips (6 cells), matching RESULTS.md; (3) derived the would-flip windows for full-width norms (N in (46080,61440]) and softmax, confirming no transfer/curriculum shape lands in them; (4) confirmed cross_entropy_ls_zloss stays persistent; (5) confirmed worst curriculum persistent footprint (458752) is 278528 below budget so curriculum is byte-identical.",
+   "reasoning": "SCOPE: 0 of 739 curriculum cells changed (independently reproduced) \u2014 the 9 standard reduction kernels are byte-identical because Part B's liveness ceiling (737280) sits 278528 above the worst curriculum base-persistent footprint and only removes persistence. TRANSFER reasoning is sound: a cell flips only if base-persistent AND live*bytes>737280; recomputation reproduces RESULTS.md exactly (only flj, 6 cells, all improving). The frame's wide-N worries are resolved \u2014 scaled_masked_softmax wide shapes are already base-looped (byte cap), fused_add norms top out at N=16384 (far inside persistent, far below budget); the only would-flip norm band N in (46080,61440] is unpopulated. No NEW disaster: the flj cells move OUT of a register-spill disaster (the BEFORE state), not into one; no shape ends below floor. No COLLAPSE: every kernel is 0% (byte-identical) or improved vs the frozen anchor; cross_entropy_ls_zloss is held persistent by the additive ceiling (the earlier multiplicative design's regression is avoided \u2014 verified). NET PROGRESS holds (flj improves materially, nothing regresses) and a confirmed-measured generality license covers it though it is not even needed. ACCEPT.",
+   "frame_steps": {
+    "1_scope": "0 changed of 739 (independently reproduced)",
+    "2_transfer": "sound; only flj flips (6, all improve); no wide-N kernel wrongly flips \u2014 recomputed",
+    "3_disaster": "no new disaster; flj cells end above floor (removes the BEFORE disaster)",
+    "4_collapse": "no kernel geomean drops; curriculum byte-identical, flj up, CE_ls held persistent",
+    "5_net_progress": "majority/net up; generality license confirmed (flj) though not required => ACCEPT"
+   }
+  }
+ }
+}

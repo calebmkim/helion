@@ -2697,9 +2697,7 @@ def _graph_peak_live_by_axis(
         val = node.meta.get("val")
         if isinstance(val, torch.Tensor):
             axes = {
-                bid
-                for s in val.shape
-                if (bid := env.resolve_block_id(s)) is not None
+                bid for s in val.shape if (bid := env.resolve_block_id(s)) is not None
             }
             if axes:
                 axes_of[node] = frozenset(axes)

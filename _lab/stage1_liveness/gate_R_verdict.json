@@ -1,0 +1,75 @@
+{
+  "gate": "R",
+  "immutable_commit": "e99ade11",
+  "before": "48ac703e",
+  "base": "0676dd32",
+  "edit": "Part B liveness signal on the STANDARD reduction track: walker fact body_live_tiles (peak simultaneously-live rdim-shaped tiles per reduction axis, computed in the single collect pass) feeds footprint_factor; additive persist ceiling body_live_tiles * m * sh * itemsize <= LIVE_PERSIST_BUDGET = 3 * ROW_PERSIST_MAX_BYTES = 737280. Only REMOVES persistence from a heavy-bodied standard reduction (never adds it); looped chunk shrinks by body_live_tiles.",
+  "is_generality_edit": "yes — broad (keyed on the workload liveness property, not fenced to one kernel); targeted perf fix for heavy-bodied standard reductions. NAMED off-train transfer shape it lifts: fused_linear_jsd narrow-V (e.g. (4096,50257), (8192,32000), (16384,32000)).",
+  "accept": true,
+
+  "changed_cells": [],
+  "changed_cells_count": 0,
+  "scope_note": "config_recorder diff cfg_partA.json -> cfg_partB.json over the FULL active matrix (9 curriculum kernels x fp32/bf16/fp16 x train/val/robustness = 739 cells): UNCHANGED 739, CHANGED 0. Independently reproduced by this referee. The 9 standard reduction kernels are byte-identical (Part A was already zero-diff; Part B's liveness ceiling does not change any curriculum config because the worst curriculum base-persistent footprint = 458752 (cross_entropy bf16 (4096,114688)) is 278528 below the 737280 budget). Part-B RESULTS.md additionally hash-checked --triton on a rms_norm/cross_entropy/welford/kl_div/softmax subset: config-identical => Triton-identical, so selection-only and the config-only diff is sound for the curriculum.",
+
+  "transfer_scope_audit": {
+    "method": "The 8 off-curriculum TRANSFER kernels are NOT in the 739-cell matrix. Independently recomputed each transfer cell's flip condition: a standard-track cell flips persistent->looped under Part B ONLY IF it is BASE-persistent AND its body_live_tiles*m*sh*itemsize crosses 737280 (Part B only REMOVES persistence). m_block=1 row-persistent path, body_live_tiles per RESULTS.md/probe_live_tiles.py.",
+    "predicted_flips": {
+      "fused_linear_jsd": "6 cells flip (all narrow-V, base-persistent, live=7): bf16/fp32 (8192,32000)=896000, bf16/fp32 (4096,50257)=1407196, bf16/fp32 (16384,32000)=896000 — all > 737280. Matches RESULTS.md exactly.",
+      "fused_add_rmsnorm": "0 (live=4 full-width; largest transfer N=16384 -> footprint 262144 << budget)",
+      "fused_add_layernorm": "0 (same)",
+      "gated_rmsnorm": "0 (same)",
+      "scaled_masked_softmax": "0 (live=3 full-width). The wide cells N=65536/131072 DO exceed budget (786432/1572864) BUT are already BASE-LOOPED (N*isz exceeds the 245760 byte cap), so Part B is byte-identical for them. The base-persistent wide cell N=32768 -> footprint 393216 << budget. No flip.",
+      "cross_entropy_ls_zloss": "0 (live=3, base-persistent at N<=61440; max footprint 3*50304*4=603648 < 737280 -> stays PERSISTENT)",
+      "dynamic_quant": "0",
+      "grpo": "0"
+    },
+    "wide_N_worry_resolved": "The frame's two named concerns are answered: (a) scaled_masked_softmax at large N does NOT wrongly flip because its wide shapes are already base-LOOPED (byte cap), not because the liveness budget protects them; (b) fused_add norms at large N do not flip because the largest transfer N (16384) is far inside the base-persistent region and far below budget. A full-width norm (live=4) WOULD flip only in the window N in (46080, 61440] (still base-persistent AND footprint>budget); NO transfer or curriculum norm lands in that band. Reasoning is SOUND.",
+    "transfer_flj_direction": "All 6 flj flips IMPROVE (base persistent [None] is a register-spill disaster: 480 n_spills, G 0.159-0.906 mostly below floor; Part-B looped [8192] -> 0 spills, G 1.017-2.358). RESULTS.md ab_flj.py grad-fair tc median-of-9."
+  },
+
+  "below_floor": [],
+  "realism_verdicts": {
+    "fused_linear_jsd": "realistic (real (chunk_tokens, vocab) shapes from Llama2/GPT2/Llama3/Qwen2/Gemma); all flipped cells END above the 0.75 floor (1.017-2.358). The BEFORE (Part A) state had these below floor (0.159-0.906) — Part B REMOVES a pre-existing disaster, it creates none."
+  },
+  "no_new_disaster": "confirmed — the only changed cells (flj, 6) all move from below/near-floor to comfortably above floor. No shape pushed below its floor by this edit.",
+
+  "kernels_vs_anchor": [
+    {"kernel": "rms_norm", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "layer_norm", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "softmax", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "sum", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "long_sum", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "cross_entropy", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "welford", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "kl_div", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "jsd", "delta_vs_frozen": "0% (byte-identical)"},
+    {"kernel": "fused_linear_jsd (transfer)", "delta_vs_frozen": "large IMPROVEMENT (e.g. (4096,50257) bf16 0.259->1.017, fp32 0.499->1.224; (4096,32000) fp32 0.906->2.358)"},
+    {"kernel": "cross_entropy_ls_zloss (transfer)", "delta_vs_frozen": "0% — stays persistent (footprint 603084-603648 < budget 737280); the earlier WRONG multiplicative design regressed it (persist 1.6x -> loop 0.99x), the shipped additive ceiling keeps it persistent (verified ab_transfer_flip.py: persist G 1.36-1.64)"}
+  ],
+  "no_collapse": "confirmed — no kernel's geomean drops. 9 curriculum kernels byte-identical (0% vs frozen anchor); flj improves; cross_entropy_ls_zloss and the other 6 transfer kernels unchanged. Nothing >10% below the frozen anchor.",
+
+  "majority_up": true,
+  "net_progress": "fused_linear_jsd improves materially (multiple cells 2-6x off the disastrous persistent baseline, all crossing the 0.75 floor); nothing regresses. Even setting aside the generality license, net progress holds: the changed set is strictly improving and the unchanged set is byte-identical.",
+
+  "generality_license": {
+    "claimed": true,
+    "measured_lift_shape": "fused_linear_jsd narrow-V: (4096,50257), (8192,32000), (16384,32000) (bf16+fp32)",
+    "confirmed": true,
+    "within_once_per_kernel_budget": true,
+    "note": "License is not even strictly needed — no kernel dips (all curriculum byte-identical, flj/CE_ls improve or unchanged). The named off-train shape it lifts (flj) is re-bench-confirmed (ab_flj.py grad-fair median-of-9). No spent-license collision."
+  },
+
+  "wrong_design_check": "VERIFIED. The earlier WRONG design (multiplicative footprint x scaled cap) recalibrated the cap down at the cross_entropy curriculum point, which flipped cross_entropy_ls_zloss (V~50k) to looped and regressed it (persist 1.6x -> loop 0.99x). The SHIPPED additive-ceiling design (live*bytes <= 3*ROW_PERSIST_MAX_BYTES, base register caps UNCHANGED) keeps cross_entropy_ls_zloss persistent: its footprint 3*50257*4=603084 < 737280. Independently confirmed by this referee; corroborates ab_transfer_flip.py.",
+
+  "independent_recompute": "This referee independently (1) ran config_recorder diff -> 0 changed of 739; (2) recomputed all 8 transfer kernels' flip predictions from the standard-track base-persist + additive-ceiling logic -> only flj flips (6 cells), matching RESULTS.md; (3) derived the would-flip windows for full-width norms (N in (46080,61440]) and softmax, confirming no transfer/curriculum shape lands in them; (4) confirmed cross_entropy_ls_zloss stays persistent; (5) confirmed worst curriculum persistent footprint (458752) is 278528 below budget so curriculum is byte-identical.",
+
+  "reasoning": "SCOPE: 0 of 739 curriculum cells changed (independently reproduced) — the 9 standard reduction kernels are byte-identical because Part B's liveness ceiling (737280) sits 278528 above the worst curriculum base-persistent footprint and only removes persistence. TRANSFER reasoning is sound: a cell flips only if base-persistent AND live*bytes>737280; recomputation reproduces RESULTS.md exactly (only flj, 6 cells, all improving). The frame's wide-N worries are resolved — scaled_masked_softmax wide shapes are already base-looped (byte cap), fused_add norms top out at N=16384 (far inside persistent, far below budget); the only would-flip norm band N in (46080,61440] is unpopulated. No NEW disaster: the flj cells move OUT of a register-spill disaster (the BEFORE state), not into one; no shape ends below floor. No COLLAPSE: every kernel is 0% (byte-identical) or improved vs the frozen anchor; cross_entropy_ls_zloss is held persistent by the additive ceiling (the earlier multiplicative design's regression is avoided — verified). NET PROGRESS holds (flj improves materially, nothing regresses) and a confirmed-measured generality license covers it though it is not even needed. ACCEPT.",
+
+  "frame_steps": {
+    "1_scope": "0 changed of 739 (independently reproduced)",
+    "2_transfer": "sound; only flj flips (6, all improve); no wide-N kernel wrongly flips — recomputed",
+    "3_disaster": "no new disaster; flj cells end above floor (removes the BEFORE disaster)",
+    "4_collapse": "no kernel geomean drops; curriculum byte-identical, flj up, CE_ls held persistent",
+    "5_net_progress": "majority/net up; generality license confirmed (flj) though not required => ACCEPT"
+  }
+}

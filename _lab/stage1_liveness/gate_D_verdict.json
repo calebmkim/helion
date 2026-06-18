@@ -1,0 +1,44 @@
+{
+  "gate": "D",
+  "immutable_commit": "e99ade11",
+  "field_under_test": "ReductionFact.body_live_tiles (helion/autotuner/config_spec.py:144); walker provenance liveness_by_axis computed by _graph_peak_live_by_axis (device_ir.py:2676) inside the single collect pass _collect_memory_op_facts (device_ir.py:2722, returns (memory_op_facts, liveness_by_axis)); derived slice set in _assemble_reduction_fact (device_ir.py:1338) via max(1, liveness_by_axis.get(red_block_id, 1)); consumed by TritonStandardReductionHeuristic.get_seed_config (triton.py:699) as footprint_factor with live_budget=LIVE_PERSIST_BUDGET=3*245760 (triton.py:700) into _reduction_rblock (triton.py:561).",
+
+  "doctrine": "pass",
+  "doctrine_detail": {
+    "no_walk_in_derived_fact": "PASS — _assemble_reduction_fact reads body_live_tiles via a pure dict lookup `max(1, (liveness_by_axis or {}).get(red_block_id, 1))` (device_ir.py:1338). No device_ir.graphs iteration, no node.users/node.args, no _classify_load_dataflow, no IR inspection in the derived fact. It is a pure derivation over a passed-in walker slice + the trivial structural read red_block_id.",
+    "walk_folded_into_single_pass": "PASS — the only graph walk is _graph_peak_live_by_axis, invoked once inside the single collect pass's per-graph loop (device_ir.py:2765), and _collect_memory_op_facts itself is called exactly once (device_ir.py:3091). It is NOT a second top-level traversal of device_ir.graphs and NOT a per-config re-walk. The helper iterates graph.nodes for a last-use precompute + a liveness sweep; this is the SAME localized-sub-walk pattern already accepted for the folded field reductions_fed (_classify_load_dataflow does a per-load forward node.users BFS inside the same pass). It is consumer-agnostic per-axis (keyed by block_id, like reductions_fed), max-merged over graphs.",
+    "no_new_walker_fact_proliferation": "PASS — no new walker fact NamedTuple was created; liveness_by_axis is a plain per-axis dict returned alongside memory_op_facts from the existing collect pass. (It is provenance computed in the walker pass, not a per-op MemoryOpFact field, because the property is per-reduction-AXIS, not per-load/store entity — the correct home.)",
+    "walker_field_generality": "general — the field is dict[block_id -> peak], raw per-axis register-pressure provenance, NOT a baked-in consumer identity like `live_for_my_rdim: bool`. A DIFFERENT consumer can read a DIFFERENT slice: a second reduction axis in a multi-reduction kernel, an apply/normalize-loop register-pressure heuristic, or a band heuristic each index a different key. The derived ReductionFact specializes by selecting its own axis (red_block_id), exactly the reductions_fed calibration.",
+    "sound_provenance": "PASS — axis membership comes from env.resolve_block_id over meta['val'].shape (compile_environment.py:1101), genuine symbolic block-id provenance (SymInt origin / GridOrigin / specialize_expr), not a guess. No NEW accepted-unsoundness introduced. The conservative over-count (no rematerialization modeling) is DECLARED in code+docstring and errs toward looping (safe), so it is a sound-but-conservative measure, not an unflagged shortcut."
+  },
+
+  "generality_verdict": "general",
+
+  "faithfulness": "faithful_property",
+  "faithfulness_detail": {
+    "fact_divergence": "The proxy hypothesis (node-count over-count: counts rdim-shaped values that are not truly co-live) is REFUTED by an authored compile-only mutant pair (k_sequential vs k_colive, same shape 256x1024 fp32, same single-tile config). k_sequential has 66 total rdim-shaped nodes but body_live_tiles=2; k_colive has 70 total rdim-shaped nodes and body_live_tiles=7. With near-equal total node counts the field diverges 2 vs 7 — it tracks TRUE simultaneous liveness (last-use retirement working), NOT node count. Style-independence confirmed: a long single-use chain does NOT inflate the count.",
+    "threshold_divergence": "The threshold ff*m*size_hint*itemsize <= 3*245760 is a FAITHFUL hardware byte budget, NOT a disguised dtype fence. itemsize appears only as a multiplicative FACTOR inside bytes=elems*itemsize, never as the operand of a literal `itemsize <= K`. Equal-byte pairs decide IDENTICALLY across dtype: fp32@S vs bf16@2S persist=True/True at S=8192,16384 and False/False at S=32768 (the budget overflow flips both dtypes together, no dtype-line split). At FIXED bytes the ff (liveness) term correctly moves the decision (ff=1,2,3 persist; ff=7 spills at 917504>737280) — the budget genuinely governs resident-tile bytes, the real property.",
+    "bs_reduction_class_inapplicable": "The canonical bs.reduction lucky-proxy class does NOT apply: the populator keys on resolve_block_id over the reduction AXIS block_id (selected by the derived fact), not on the bs.reduction flag, so an hl.zeros([m,n]) accumulator dim that merely sets bs.reduction cannot inflate the reduction axis's liveness."
+  },
+
+  "population": "faithful_derivation",
+  "population_detail": "_graph_peak_live_by_axis computes the STATED property directly from faithful provenance: a proper FX liveness sweep (def-to-last-use) over each graph, counting per-axis simultaneously-live tensor values whose shape resolves (via resolve_block_id) to include each block-id axis, max-merged over graphs. CODE matches STATED PROPERTY ('peak number of simultaneously-live rdim-shaped tiles'). It selects/branches on NO incidental flag (no bs.reduction, no isinstance, no membership shortcut).",
+
+  "the_fact_divergence_case": "Authored mutant pair k_sequential / k_colive (template: softmax_decomposed, single-tile standard reduction). SAME real property (256x1024 fp32, rdim extent 1024, single resident config). k_sequential: long single-use rdim chain (exp->log->sin->cos->tanh->sqrt->exp then softmax), TRUE peak-live LOW. k_colive: a,b,c,d,e=exp/sin/cos/tanh/sqrt(v) all summed at the end (forced co-live), TRUE peak-live HIGH. DUMPED: k_sequential body_live_tiles=2 (TOTAL_rdim_nodes=66); k_colive body_live_tiles=7 (TOTAL_rdim_nodes=70). body_live_tiles DISAGREES with node count and AGREES with true co-liveness => faithful liveness, NOT a node-count proxy.",
+
+  "the_threshold_divergence_case": "Equal-bytes dtype pair (m=1, ff=7): fp32 @ size_hint S vs bf16 @ 2S (identical byte footprint). Decision identical at every S tested (True/True, True/True, False/False). Plus ff sensitivity at fixed 131072 bytes/tile: persist True for ff in {1,2,3}, False for ff=7 (917504 > 737280 budget). The branch decides on bytes*liveness, never on dtype identity.",
+
+  "the_authored_mutant_and_dumped_facts": {
+    "probe_file": "/tmp/gate_d_divergence.py (fact divergence), /tmp/gate_d_bsreduction.py (bs.reduction control), /tmp/gate_d_threshold.py (threshold algebra over committed constants)",
+    "compile_attempts": 1,
+    "k_sequential": {"body_live_tiles": 2, "total_rdim_nodes": 66},
+    "k_colive": {"body_live_tiles": 7, "total_rdim_nodes": 70},
+    "k_plain_bs_reduction_control": {"body_live_tiles": 2, "rdim_block_id": 1},
+    "curriculum_corroboration_reproduced": "flj=7, rms_norm=3, layer_norm=3, softmax=2, sum=2, long_sum=2, cross_entropy=2, welford=3, kl_div=6, jsd=12 (probe_live_tiles.py re-run, matches RESULTS.md exactly)"
+  },
+
+  "what_it_tracks": "The peak number of simultaneously-live (def-to-last-use) tensor tiles whose shape spans the reduction axis, per axis — a faithful conservative-over-count register-pressure liveness measure. Verified to track true co-liveness, not node count; read as a byte-budget factor, not a dtype fence.",
+
+  "verdict": "PASS",
+  "reasoning": "All three parts pass. PART 1 (doctrine): the derived fact does a pure dict.get with zero graph access; the single graph walk is folded into the one collect pass (same localized-sub-walk pattern as the accepted reductions_fed field), not a second/bespoke traversal nor a per-config re-walk; the walker field is general (raw per-axis dict[block_id->peak], a different consumer reads a different slice) and soundly keyed on resolve_block_id provenance. PART 2 (faithfulness): the authored divergence mutant proves the FACT tracks true simultaneous liveness (2 vs 7 at equal ~66-70 node counts), and the THRESHOLD is a hardware byte budget with itemsize as a factor (equal-byte dtype pairs decide identically; ff moves the decision at fixed bytes), not a disguised dtype fence. PART 3 (population): the populator computes the STATED property directly via a real FX liveness sweep over faithful block-id provenance, with NO incidental-flag shortcut; the canonical bs.reduction lucky-proxy class is structurally inapplicable because it keys on the reduction axis block_id, not the flag. Conservative-over-count is declared and safe (errs to looping). No refutation found on any part."
+}

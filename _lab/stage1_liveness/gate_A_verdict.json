@@ -1,0 +1,48 @@
+{
+  "gate": "A",
+  "immutable_commit": "e99ade11",
+  "claim": "On the standard reduction track, the body_live_tiles liveness ceiling flips fused_linear_jsd narrow-V from persistent reduction_loops=[None] to looped [8192], turning a 0.26-0.91x loss vs grad-fair torch.compile into a 1.0-2.4x win, WITH the 9 curriculum reduction kernels byte-identical (739/739 config+triton) and the other 7 transfer kernels unchanged.",
+
+  "refuted": false,
+  "refuted_qualifier": "Could not refute on any analyzable axis. All six attack axes pass on analysis + compile-time fact dumps. The ONE residual that a GPU-free skeptic cannot positively self-confirm is the measured latency magnitudes; those require the driver to run the independently-authored repro (gate_A_repro.py). Conditional PASS: refuted=false provided that repro reproduces the headline flip on the GPU. The analytical case for the claim is otherwise complete and self-consistent.",
+  "axis_that_failed": null,
+
+  "axis_findings": {
+    "1_noise_fabrication": "PASS. Working sets computed independently: helion arm 1.0-2.5 GB, tc arm 3.7-7.4 GB, both >> 50 MB L2 -> do_bench is genuinely COLD (no L2-residency footgun / cudagraph distortion). flj latencies are ms-scale (softmax+log_softmax+KL+grad over [M,V]), orders of magnitude above the ~25us noise floor. ab_flj.py: fixed inputs (one allocation reused for tc + every arm), accuracy gate ON (loss allclose rtol/atol 3e-2), median-of-9 over do_bench medians, single process. Gate F established the result tile is byte-identical (201028 B) across [None] vs [8192] (only reduction_loops differs), so tile-size is NOT the discriminator -- the spill (480->0 regs) is.",
+    "2_measuring_wrong_thing_ARM_EQUIVALENCE": "PASS (the key risk for this claim). Read fair_tc in ab_flj.py directly: it returns BOTH loss [M] AND grad=((1-beta)/T)*(sp-m) [M,V] fp32 -- exactly the two tensors jsd_kernel returns (loss [M], grad_student_logits [M,V] fp32). Arm-fair, footgun #6c handled; a loss-only baseline would bias AGAINST the seed, so the true win is at least as good. SEED-IS-THE-TIMED-CONFIG verified at COMPILE time (no GPU): compiler_seed_configs emits reduction_loops=[8192] for ALL 5 narrow-V shapes ((4096,32000)+(4096,50257)+(8192,32000) bf16, (4096,32000)+(4096,50257) fp32) with body_live_tiles=7 -- the [8192] column IS the heuristic's emitted seed, not a hand-picked off-frontier config. Same dtype on both arms; grad fp32 in both kernel and baseline.",
+    "3_independent_reproduction": "AUTHORED gate_A_repro.py (independent of ab_flj.py): asserts emitted seed reduction_loops==[8192], times grad-fair tc (loss+grad), runs BEFORE=[None] vs AFTER=[8192] (only reduction_loops differs), median-of-9 single process, acc gate on. Seed-emission path already verified compile-time (it emits [8192]+body_live_tiles=7 on every shape). LEFT FOR DRIVER to run foreground-serial (command below).",
+    "4_overfit": "PASS. config_recorder methodology is SOUND: full active matrix (9 kernels x {fp32,bf16,fp16} x {train,val,robustness} = 739 cells, fp16-unsupported dropped) -- satisfies recorder rule #2 (full matrix, all dtypes + robustness). I RE-RAN the diff myself: base->partB and partA->partB both report 0/739 CHANGED. Off-focus kernel cross_entropy_ls_zloss confirmed (compile-time) stays persistent reduction_loops=[None] at (8192,50257)bf16 / (4096,50257)fp32 / (8192,32000)bf16 (body_live_tiles=3, full_width=False, 3*50257*4=603KB <= 737280 budget) -- the additive design keeps it persistent; the earlier naive (multiply-into-cap) design that regressed it was correctly rejected. CAVEAT (non-fatal): the saved cfg_*.json snapshots have triton_hashed=0, so the '739/739 config+triton' all-clear's --triton soundness leg is not IN the snapshot artifacts. I closed this gap by code analysis: body_live_tiles is read in exactly ONE output-affecting site (triton.py:699 footprint_factor), which feeds ONLY _reduction_rblock's seed-config decision -- it has NO codegen reader. Therefore config-identical => triton-identical by construction for the 739 cells; the config-only all-clear is sound for THIS edit.",
+    "5_kernel_identity_smuggling": "PASS. grep of triton.py + device_ir.py: every 'jsd'/'flj'/'fused_linear' occurrence is in a COMMENT (mechanism examples), never in an executable branch. No kernel_name / .name== / identity check anywhere in the lever or the populator. The rule fires purely on the faithful workload property body_live_tiles*m*size_hint*itemsize <= 3*ROW_PERSIST_MAX_BYTES. The only structural test is fact.num_carried_2d_tiles==0 (Band-B detection via 2-D carried tiles, a real property). A hypothetical OTHER kernel with 7 live full-width tiles WOULD be routed to looped identically; a 3-live-tile body (cross_entropy_ls_zloss) correctly stays persistent. Not fencing flj.",
+    "6_metric_gaming": "PASS. No tolerance loosened (3e-2 acc gate consistent), no shape dropped, no acc-fail/NaN folded into an aggregate (acc reported per-arm, claim is per-shape not geomean). '739/739 unchanged' is a real full-matrix all-clear (re-verified). flj wins are large (bf16 0.26->1.02, 0.58->1.32; fp32 0.50->1.22, 0.91->2.36), far above the ~5% band -- no noise-floor majority manufacturing. The win is a below-floor catastrophe-rescue (G 0.16-0.91 -> >=1.0) on a realistic distillation workload, not an anchor-drift or generality-license laundering case."
+  },
+
+  "my_raw_numbers": {
+    "compile_time_seed_emission_VERIFIED_no_gpu": {
+      "(4096,32000)bf16": {"emitted_reduction_loops": [8192], "body_live_tiles": 7},
+      "(4096,50257)bf16": {"emitted_reduction_loops": [8192], "body_live_tiles": 7},
+      "(8192,32000)bf16": {"emitted_reduction_loops": [8192], "body_live_tiles": 7},
+      "(4096,32000)fp32": {"emitted_reduction_loops": [8192], "body_live_tiles": 7},
+      "(4096,50257)fp32": {"emitted_reduction_loops": [8192], "body_live_tiles": 7},
+      "(2048,128256)bf16": {"emitted_reduction_loops": [8192], "body_live_tiles": 7, "note": "wide-V sanity; base looped [16384], both ~1.26, within noise"}
+    },
+    "working_set_MB_vs_L2_50MB": {
+      "(4096,32000)bf16": {"helion": 1049, "tc": 3670, "cold": true},
+      "(4096,50257)bf16": {"helion": 1647, "tc": 5764, "cold": true},
+      "(8192,32000)bf16": {"helion": 2097, "tc": 7340, "cold": true},
+      "(4096,50257)fp32": {"helion": 2470, "tc": 6587, "cold": true}
+    },
+    "config_diff_reverified": {"base_to_partB_changed": 0, "partA_to_partB_changed": 0, "matrix_cells": 739},
+    "off_focus_ce_ls_zloss_compile_time": {"reduction_loops": [None], "body_live_tiles": 3, "footprint_KB": 603, "budget_KB": 720, "stays_persistent": true},
+    "flj_persist_decision_math": "ff=7,m=1,it=4: single-cap m*sh*it<=245760 holds; live-conjunct 7*sh*4 <= 737280 FAILS for V in {32000,50257} -> not persistent; looped budget 245760//(1*4*7)=8777 -> prev_pow2=8192 -> min(16384,8192)=8192. Matches emitted seed exactly.",
+    "GPU_latencies": "NOT measured by this skeptic (GPU is driver-serial; I am GPU-free). Authoritative numbers are RESULTS.md's ab_flj.py table; my repro re-confirms them on the driver run."
+  },
+
+  "repro_command": "cd /tmp && CUDA_VISIBLE_DEVICES=0 HELION_AUTOTUNE_EFFORT=none PYTHONPATH=/home/calebkim/helion-new-heuristics/helion-3stage python /home/calebkim/helion-new-heuristics/helion-3stage/_lab/stage1_liveness/gate_A_repro.py",
+
+  "reasoning": "Default-to-refuted, attacked all six axes. The claim survives every analyzable attack: (1) measurements are cold-L2 (1-2.5 GB working sets), ms-scale (>> noise floor), accuracy-gated, fixed-input, median-of-9; (2) the tc baseline is ARM-FAIR -- it computes loss AND grad fp32, the kernel's two outputs (footgun #6c handled), and the [8192] timed is the ACTUAL emitted seed (verified compile-time on all 5 narrow-V shapes, not hand-picked); (4) the 739/739 byte-identical all-clear spans the full matrix (all dtypes + robustness) and I re-verified 0 changed, the off-focus cross_entropy_ls_zloss stays persistent, and although the snapshots lack triton hashes I proved body_live_tiles has NO codegen reader so config-identical => triton-identical is sound by construction; (5) no kernel-identity branch exists (all jsd/flj are comments), the rule fires on a faithful liveness*bytes budget that a hypothetical other 7-tile kernel would hit identically; (6) no tolerance/shape/acc gaming, wins are large and per-shape. The single thing a GPU-free skeptic cannot self-confirm is the measured latency magnitudes -- handed to the driver via the independently-authored gate_A_repro.py. refuted=false conditional on that repro reproducing the headline flip; no refutation found on any axis I could test.",
+
+  "non_blocking_notes": [
+    "Snapshot artifacts cfg_base/partA/partB.json were recorded WITHOUT --triton (triton_hashed=0). The '739/739 config+triton' claim's triton-leg is therefore an asserted subset-check (rms_norm/cross_entropy/welford/kl_div/softmax) not present in these snapshots. Soundness preserved by the code-analysis proof that body_live_tiles never reaches codegen; flagging for the completeness-critic to optionally re-record with --triton.",
+    "NOTEBOOK.md still describes the EARLIER naive design (LIVE_PERSIST_SCALE=2, budget 491520, window [458752,491520]); the SHIPPED design is the additive LIVE_PERSIST_BUDGET=3*245760=737280 conjunct (RESULTS.md + triton.py:381). Doc drift only; Gate H already adjudicated the 2x->3x discrepancy and confirmed the additive upper bound is set by flj (896000), so 3x is inside the safe window. triton.py:797 comment 'persist_scale=1' is also stale (param renamed live_budget). Cosmetic."
+  ]
+}

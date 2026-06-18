@@ -1,0 +1,64 @@
+{
+  "gate": "F",
+  "immutable_commit": "e99ade11",
+  "claim": "Routing fused_linear_jsd (standard reduction track) from persistent reduction_loops=[None] to looped [8192] via the body_live_tiles liveness ceiling eliminates a 480->0 register spill and turns a 0.26-0.91x loss vs grad-fair tc into a 1.0-2.4x win. Gate fired: lever flips a structural default (persistent<->looped).",
+
+  "mechanism_found": true,
+  "mechanism_matches_stated_story": true,
+
+  "the_resource_and_metric": {
+    "resource": "register-file capacity (register spill to local memory)",
+    "metric": "n_spills (read off the triton CompiledKernel via gc-walk; n_regs pinned at 64 in both arms)",
+    "measured": {
+      "flj_4096x50257_fp32_persistent_[None]": {"n_regs": 64, "n_spills": 480},
+      "flj_4096x50257_fp32_looped_[8192]": {"n_regs": 64, "n_spills": 0}
+    },
+    "spill_is_eviction_independent": "n_spills 480 (persistent) / 0 (looped) are byte-identical whether load_eviction_policies is the reread pattern or dropped to default -> the spill is purely a function of reduction_loops, not eviction.",
+    "codegen_confirmation": {
+      "persistent_[None]": "_RDIM_SIZE_1 = 65536 -> the whole vocab (50257, padded) is one tile; NO tl.range loop; all full-width [1,65536] fp32 intermediates of the softmax/log_softmax(student+teacher) -> m -> log_m -> 2x KL -> grad chain (v_0..v_28) are simultaneously live across the single body -> register-file overflow -> 480 spills. /tmp/flj_rl_None.triton.py.",
+      "looped_[8192]": "_REDUCTION_BLOCK_1 = 8192 -> body split into multiple `for roffset_1 in tl.range(0, 50257, 8192)` loops carrying only scalar [1,1] reductions (amax, sum_1..sum_4) between them; per-iteration resident set is [1,8192] chunks -> fits the register budget -> 0 spills. /tmp/flj_rl_8192.triton.py."
+    }
+  },
+
+  "the_predicted_boundary": {
+    "rule": "PERSISTENT iff (single result tile fits the base byte caps) AND (body_live_tiles * m_block * size * itemsize <= LIVE_PERSIST_BUDGET = 3 * ROW_PERSIST_MAX_BYTES = 737280); above the multi-tile ceiling -> looped.",
+    "flj_above": "body_live_tiles=7: 7 * 1 * 50257 * 4 = 1,407,196 B > 737,280 -> flips to looped (single-tile 201,028 B <= 245,760 still passes the OLD ff=1 gate, which is exactly why the prior heuristic wrongly kept it persistent).",
+    "boundary_property_to_key_on": "body_live_tiles (peak simultaneously-live rdim-shaped tiles per reduction axis) as a footprint multiplier inside a fast-memory byte budget."
+  },
+
+  "boundary_sanity_check": {
+    "cross_entropy_ls_zloss_below_boundary": {
+      "body_live_tiles": 3,
+      "resident_bytes": "3 * 1 * 50257 * 4 = 603,084 B <= 737,280 -> stays persistent",
+      "compiled_8192x50257_fp32": {"reduction_loops": "[None]", "n_regs": 64, "n_spills": 0},
+      "compiled_4096x50257_fp32": {"reduction_loops": "[None]", "n_regs": 64, "n_spills": 0},
+      "verdict": "CONFIRMED: the 3-tile body stays persistent and does NOT spill (0 spills) at the same wide V where the 7-tile flj body spills 480 and flips to looped. The boundary holds on both sides."
+    }
+  },
+
+  "the_property_to_key_the_fact_on": "body_live_tiles (a per-reduction-axis walker-fact field) used as footprint_factor in the bytes budget; the win generalizes to a rule keyed on live-tile-count x bytes vs the fast-memory ceiling, which is exactly how the lever is keyed.",
+
+  "field_attribution": {
+    "reduction_loops": {
+      "non_default_value": "[8192]",
+      "earns_place": true,
+      "doing_work_not_inert": "chunk value is liveness-driven: budget = ROW_PERSIST_MAX_BYTES // (m * itemsize * ff) = 245760 // (1*4*7) = 8777 -> prev_pow2 -> 8192, then min(LOOPED_CHUNK=16384, 8192) = 8192. A single-tile body (ff=1) would emit 16384; ff in {4..7} lands at 8192. The emitted _REDUCTION_BLOCK_1=8192 matches. So both the persistent->looped flip AND the specific chunk size are products of the liveness signal, not inert constants."
+    },
+    "load_eviction_policies": {
+      "status": "coupled-side-effect-of-the-persistent-flip, NOT an inert field set by the lever",
+      "detail": "flj has num_load=2 (skips the num_load==1 stream branch) and row_reread=True. The eviction branch `elif row_reread and not persistent` fires ONLY when persistent is False. So when the liveness lever flips persistent->looped it ALSO causes load_eviction_policies to be set to ['last','first'x17] (reread pattern); in the persistent verdict the field is absent/default. Thus the EMITTED SEED differs in TWO fields (reduction_loops AND load_eviction_policies), not strictly one as the claim states.",
+      "is_it_load_bearing_or_inert": "INERT for the stated spill mechanism: n_spills is byte-identical (480 / 0) with reread vs default eviction. The eviction change is a mechanism-grounded HBM re-read hint coupled to the looped path (the looped body re-reads the row), confirmed not to affect register residency. It is a correct, deliberately-gated coupling, NOT dead weight to drop -- but it means the claim's 'exactly ONE structural field' phrasing is an oversimplification at the seed-emission level."
+    },
+    "other_fields_unchanged_by_liveness": "num_warps(32), num_stages(1), pid_type(flat), block_sizes([1]) are computed from num_sm/grid_rows/structure, independent of body_live_tiles; the A/B (ab_flj.py, spill_probe.py) held all of these constant and isolated reduction_loops, so the measured 0.499->1.224 win and 480->0 spill are attributable to reduction_loops alone."
+  },
+
+  "inert_fields": [],
+  "coupled_field_sets": [
+    ["reduction_loops", "load_eviction_policies"]
+  ],
+  "better_neighbor_found": null,
+
+  "reasoning": "Mechanism VERIFIED in the lowered Triton, not assumed. Persistent [None] materializes the entire [1,65536] vocab row and holds ~all full-width fp32 intermediates of the softmax/log_softmax/KL/grad chain simultaneously live in one straight-line body -> 480 register spills; looped [8192] chunks the reduction into tl.range loops carrying only scalar accumulators -> 0 spills. Re-derived n_spills independently via gc-walk over CompiledKernel objects: [None]=(64,480), [8192]=(64,0), matching RESULTS.md and the task reference. The boundary live*bytes <= 3*ROW_PERSIST_MAX_BYTES is real and double-sided: flj's 7-tile/1.4MB body flips to looped (above), cross_entropy_ls_zloss's 3-tile/603KB body stays persistent with 0 spills (below) -- compiled and confirmed. Field attribution: reduction_loops=[8192] is genuinely doing work (the chunk is liveness-shrunk from 16384 to 8192 by ff=7, not an inert constant). One nuance vs the claim: the persistent->looped flip ALSO sets load_eviction_policies (the `row_reread and not persistent` branch), so the emitted seed differs in TWO fields, not one. But that eviction field is (a) a mechanism-grounded coupling to the looped re-read path and (b) provably spill-independent (480/0 identical with reread vs default), so it is neither inert-to-drop nor the source of the win -- the spill-elimination win is 100% attributable to reduction_loops. No inert fields to drop; one recorded coupling. PASS.",
+
+  "verdict": "PASS"
+}
