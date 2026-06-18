@@ -12,21 +12,27 @@ branch IS the "current main + merged reduction seed" base. Box: 4×H100 (sm90), 
 ## Commit ranges → stages (contiguous, non-straddling; `[stageN-lab]` = lab/log/report only, excluded
 from the eventual PR which is the `helion/` + `examples/` changes)
 
-| stage | PR code commits (helion/) | lab commits | what landed |
+| stage | PR code commits (helion/ + examples/) | lab commits | what landed |
 |---|---|---|---|
-| **Stage 1 — liveness chunk** | `48ac703e` (Part A), `e99ade11` (Part B), `26427709` (doc/format) | `010ebf05`, `b003d7ee`, `26427709` | a liveness-aware persistent decision |
-| **Stage 2 — unify M-reduction** | `a90aa7b4` (A), `ef8b390f` (B), `faecdbfc` (C) | `6a4e091a` | materialized + M-collapse recognizers; m_reduction unnecessary |
-| **Stage 3 — matmul+epilogue** | `d204b1a5` | `e6cf4670` | the first composed fact + heuristic |
+| **Stage 1 — liveness chunk** | `48ac703e` (Part A), `e99ade11` (Part B), `26427709` (doc/format), `3c239777` (welford m_block cap + fp32 stats) | `010ebf05`, `b003d7ee`, `26427709` | liveness-aware persistent decision; **welford huge-M m_block persist-cap (+13% fp32) + fp32 stat accumulation (bf16/fp16 accuracy fix)** |
+| **Stage 2 — unify M-reduction** | `4c05c507` (A), `d0c7b946` (B), `6657d8ac` (C) | `0f941ba6` | materialized + M-collapse recognizers; m_reduction unnecessary |
+| **Stage 3 — matmul+epilogue** | `73a08439`, `b37349b2` (dtype-aware M_BLOCK overtime) | `4fa32735` | the first composed fact + heuristic |
 
 (`git log --oneline 0676dd32..HEAD` is the full stack. To cut the 3-stage PR, split on the
 `[stage1-*]` / `[stage2-*]` / `[stage3-*]` prefixes; drop the `_lab/` paths.)
 
-## HARD INVARIANT — held end-to-end
-The 9 standard reduction kernels (rms_norm, layer_norm, softmax, sum, long_sum, cross_entropy,
-welford, kl_div, jsd) are **byte-identical from BASE → Stage 3**: config_recorder over the full active
-matrix (× fp32/bf16/fp16 × train/val/robustness = 739 cells) shows **0 changed**, and every stage-to-
-stage diff is also 0. The 8 Task-1 transfer kernels are non-regressed throughout. Every stage proved
-this after each edit (config + `--triton` hash for fact/source edits = selection-only).
+## HARD INVARIANT — held end-to-end (with ONE intentional, benchmarked exception: welford)
+**8 of the 9** standard reduction kernels (rms_norm, layer_norm, softmax, sum, long_sum,
+cross_entropy, kl_div, jsd) are **byte-identical from BASE → Stage 3**. **welford is intentionally
+changed in Stage 1** by the welford commit `3c239777` (huge-M `m_block` persist-cap + fp32 stat
+accumulation): config_recorder over the full active matrix (× fp32/bf16/fp16 × train/val/robustness =
+739 cells) shows **exactly 15 changed cells, all welford**; the other 8 standard kernels and the 8
+Task-1 transfer kernels are **0 changed**. The welford change is benchmarked, not a regression — fp32
+**+13% geomean (up to +37.5%)** at huge-M, and it **fixes** the pre-existing bf16 (0.082→0.0156) and
+fp16 (NaN→0.0020) accuracy failures at wide reduction chunks. The `m_block` cap is full-width-only and
+is a **provable no-op** for the Stage-2 backward kernels (bias_grad/dyt are scalar-output; group_norm/
+instance_norm are small-M so `m_floor=1`, `fires=False`) and Stage 3. Every other stage-to-stage diff
+is 0. Backup of the pre-welford stack: branch `backup-pre-welford-rebase`.
 
 ## Per-stage status
 
