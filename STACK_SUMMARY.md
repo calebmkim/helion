@@ -63,6 +63,26 @@ reduction it is. Disjoint: composed fact fires only on the fused family (pure ma
 unchanged). Gate D proposed a §2 doctrine clarification for the "composed fact" category. All gates
 pass.
 
+## Overtime (post-DoD, completeness-critic-driven — method §6.0 keep-climbing)
+- **Stage 3 fp32 dtype fix (commit `c265d421`)** — the dtype gap the task flagged. The M_BLOCK
+  ceiling was dtype-blind; at fp32 the seed emitted [64,32] and the 2×-bigger fp32 operand spilled
+  (svd 0.53, seed/best 0.34 = 3× slower than grid best). Fixed by scaling the row ceiling by the
+  input itemsize (a register-budget FACTOR, not a dtype literal): fp32 svd 0.53→1.51, seed/best
+  0.34→0.997; generalizes (matmul_sum fp32 svd 1.44); bf16/fp16 unchanged; 9 curriculum byte-identical.
+- **Loss corner (131072,512,1024)** — seed svd=2.87 over default, seed/best=0.997; does NOT regress
+  (it matches Helion's best, which loses to tc only because the small-N fusion win has narrowed — the
+  task's predicted boundary, a codegen ceiling not a seed failure).
+- **Correctness backstop** (the suite no stage had run): `test_autotuner_heuristics` (24 passed),
+  `test_matmul_heuristics` (passed), `test_reductions` (28 passed) — the new liveness sweep,
+  recognizers, and composed fact don't break existing tests.
+- **Completeness critic** re-verified the hard invariant 0/739 across every hop, and the group_norm
+  TEST split (recognizer generalizes: large-N 1.21 beats default; wide-S kernel-authoring-bound).
+- **Logged, not chased (task-deprioritized):** Stage 2 rms/ln/instance vanilla-T1 perf < old
+  m_reduction (the M_CTA-occupancy + inner-byte-cap recovery — the task says do NOT chase it / do NOT
+  reach for AccumulatorFact to tune perf); Stage 1 flj bf16 V=50257 wide-V tail (chunk [2048] → ~1.15
+  vs current ~0.8; a secondary bonus the task says is not a loop target). Both are real headroom left
+  as future overtime with their re-add recipes in the per-stage notebooks.
+
 ## Reports & logs
 Per-stage report + notebook + ledger (gate verdicts AS-RETURNED): `_lab/stage1_liveness/`,
 `_lab/stage2_unify/`, `_lab/stage3_epilogue/` (`REPORT.md` / `NOTEBOOK.md` / `ledger.json` +
