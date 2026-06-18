@@ -61,3 +61,46 @@ flj (peak=7, itemsize=4): 245760//28 = 8777 → 8192 (its best chunk). cross_ent
   not a literal). Gate H: measured-crossover form, faithful key (peak_live × bytes ≤ HW budget).
 
 ## STATUS: design done; implementing Part A next.
+
+═══════════════════════════════════════════════════════════════════════════
+## POST-HOC CHANGES (made AFTER Stage 1 was gated/banked — recorded, NOT re-gated)
+═══════════════════════════════════════════════════════════════════════════
+
+Context: after Stage 1 was banked AND after the unified-v2 commits (`3c239777` welford m_block,
+`96f14953` fold-carried-cap / derive-persist / rename-Band-B) were rebased into the Stage-1 range,
+a further hand-edit was folded into the fold-cap commit via `git commit --amend` + `git rebase
+--onto`. That commit's SHA therefore changed: **`96f14953` → `111f9ca7`** (message unchanged).
+
+### What changed — helion/_compiler/autotuner_heuristics/triton.py, in `_reduction_rblock`
+- **Substantive:** the loop-carried 2-D accumulator cap (`_carried_tile_r_block_cap`; kl_div/jsd)
+  moved from being applied UNCONDITIONALLY (after the if/else) to INSIDE the `else` (looped) branch
+  only — i.e. it is now SKIPPED when `extent_held` is True.
+- Cosmetic: two long lines wrapped (the `num_carried_2d_tiles == 0` trailing-comment line; the
+  `_m_block_cap` `return 1<<30` / `return max(1, prev_power_of_2(...))` lines).
+
+### ⚠️ Reviewer caveat — this is a BEHAVIOR change, NOT a no-op, and is UNVERIFIED
+- It only bites when `extent_held == True` for a carried-tile reduction (kl_div, jsd). In that case
+  the OLD code emitted `R_BLOCK = min(rdim, carried_cap) =` the cap (jsd→2048, kl_div→4096; see
+  `_lab/harness/run3_bandb_nro_ab.py`); the NEW code emits `R_BLOCK = rdim` (full width, e.g. 32768).
+- `extent_held` needs `m·size_hint·itemsize ≤ ROW_PERSIST_MAX_BYTES (245760)`. With user-tiled
+  `m=1`, even V=50257 fp32 (=201028) clears it → extent_held is plausibly True for kl_div/jsd, which
+  would change their emitted config.
+- **Invariant risk:** kl_div and jsd are 2 of the 9 standard-reduction curriculum kernels the hard
+  invariant requires to stay byte-identical (0/739). This change MAY break that. It also reintroduces
+  the full-width carried-tile residency the in-code comment (now self-contradictory — it still reads
+  "Applied regardless of the persist verdict … a carried reduction is NOT given the persist path")
+  warned causes catastrophic ptxas spills.
+- **NOT re-verified:** config_recorder before/after was NOT re-run (conda `helion` python not on PATH
+  at edit time). TODO before trusting it: re-run config_recorder over the full matrix and confirm
+  kl_div/jsd stay byte-identical; if they change, revert this hunk (backup tag
+  `backup/pre-fixup-164ee30e`) or rethink, and fix the now-stale comment.
+
+### SHAs are STALE (downstream of the amend)
+The amend + `rebase --onto` rewrote `96f14953` and EVERY descendant commit, so the SHAs cited in
+`STACK_SUMMARY.md` and the per-stage `REPORT.md`s are now stale. PR-splitting is unaffected (it cuts
+on the `[stageN-*]` commit-message prefixes, not SHAs). Post-amend code-commit SHAs:
+  stage1 fold-cap   `96f14953` → `111f9ca7`
+  stage2 A / B / C  `3c925d10` / `36836aac` / `9c384047`   (gate `09b1fa1d`)
+  stage3            `25908e74` (composed) · `8f948735` (gate) · `cde27cb7` (fp32 dtype fix)
+  tip (pre-this-note) `b9581c1b`
+Refresh STACK_SUMMARY.md + the reports when convenient.
