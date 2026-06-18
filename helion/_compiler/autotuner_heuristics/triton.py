@@ -339,7 +339,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
       into a ``reduction_loops`` loop.
     - **user-tiled** (:class:`TritonUserTiledReductionHeuristic`): the user hand-writes
       the ``hl.tile`` loop, so the reduction axis is a ``block_sizes`` entry (plain
-      user-tiled softmax, Band-B kl_div/jsd, Band-C welford).
+      user-tiled softmax, carried-2-D-tile kl_div/jsd, reduce-then-apply welford).
 
     Cloned from ``cute.CuteReductionTileHeuristic`` for triton (drops the CuTe-only
     knobs, adds ``num_warps`` / ``num_stages``). Not registered; only the subclasses are.
@@ -352,10 +352,13 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # residency budget. ``_reduction_rblock`` shrinks it when a raised M_BLOCK divides the
     # footprint budget below it; at M_BLOCK==1 it is used as-is.
     LOOPED_CHUNK = 16384
-    # Band-B (user-tiled, carrying [M_BLOCK, R_BLOCK] 2-D accumulators: kl_div, jsd) R_BLOCK
-    # cap, as a per-program footprint R_BLOCK * itemsize * n_carried; in bytes (via itemsize)
-    # for dtype-generality.
-    BANDB_R_BLOCK_BYTES = 16384
+    # Per-program byte budget for LOOP-CARRIED 2-D accumulator tiles (kl_div, jsd, which carry
+    # [M_BLOCK, R_BLOCK] running tiles across the reduction loop). Such a tile is resident for
+    # the WHOLE loop -- the most occupancy-costly residency lifetime -- so it gets the tightest
+    # budget; R_BLOCK is capped at this / (itemsize * num_carried_2d_tiles). (cf.
+    # ROW_PERSIST_MAX_BYTES = one-shot held register capacity; LOOPED_CHUNK = transient
+    # streamed-chunk occupancy. Three lifetimes, three budgets.)
+    CARRIED_TILE_MAX_BYTES = 16384
     # Per-program persistent byte ceiling. The resident reduction tile is [M_BLOCK, R_BLOCK]
     # in BOTH tracks (the persistent load and the looped accumulator both carry the M_BLOCK
     # dim), so the per-program footprint is ``m_block * r_block * itemsize`` and every cap
@@ -398,14 +401,15 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     NARROW_W1_OCC_BYTE_LIMIT = 262144
 
     @classmethod
-    def _bandb_r_block_cap(cls, fact: ReductionFact) -> int:
-        """Pow2 R_BLOCK ceiling for a Band-B (carried 2-D tile) reduction: the per-program
-        footprint ``BANDB_R_BLOCK_BYTES`` split across the accumulator itemsize and the
-        carried-tile count. ``max(1, ..)`` guards a zero itemsize / tile count.
+    def _carried_tile_r_block_cap(cls, fact: ReductionFact) -> int:
+        """Pow2 R_BLOCK ceiling for a reduction carrying loop-resident 2-D accumulator tiles
+        (kl_div, jsd): the per-program byte budget ``CARRIED_TILE_MAX_BYTES`` split across the
+        accumulator itemsize and the carried-tile count. ``max(1, ..)`` guards a zero itemsize /
+        tile count.
         """
         from ..._utils import next_power_of_2 as _np2
 
-        cap = cls.BANDB_R_BLOCK_BYTES // (
+        cap = cls.CARRIED_TILE_MAX_BYTES // (
             max(1, fact.itemsize) * max(1, fact.num_carried_2d_tiles)
         )
         return _np2(max(1, cap))
@@ -435,7 +439,8 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         if have_enough_information:
             occ = grid_rows // num_sm
             if (
-                fact.num_carried_2d_tiles == 0  # not Band-B (kl_div/jsd)
+                fact.num_carried_2d_tiles
+                == 0  # not a carried-2-D-tile reduction (kl_div/jsd)
                 and row_bytes <= cls.NARROW_W1_MAX_BYTES
                 and occ * row_bytes <= cls.NARROW_W1_OCC_BYTE_LIMIT
             ):
@@ -476,11 +481,15 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         from ..._utils import prev_power_of_2
 
         if not fact.full_width_output:
-            return 1 << 30  # no cap: scalar/streamed occupancy rides the reduction chunk
+            return (
+                1 << 30
+            )  # no cap: scalar/streamed occupancy rides the reduction chunk
         live = max(1, fact.body_live_tiles)
         isz = max(1, fact.itemsize)
         sh = max(1, fact.size_hint)
-        return max(1, prev_power_of_2(max(1, cls.ROW_PERSIST_MAX_BYTES // (sh * isz * live))))
+        return max(
+            1, prev_power_of_2(max(1, cls.ROW_PERSIST_MAX_BYTES // (sh * isz * live)))
+        )
 
     @classmethod
     def _m_block_product(cls, spec: ConfigSpec, fact: ReductionFact) -> int:
@@ -618,8 +627,8 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         At the defaults (``footprint_factor=1``, ``live_budget`` defaulting to
         ``ROW_PERSIST_MAX_BYTES``) the liveness term is implied by the base byte cap, so this
         reproduces the prior single-tile decision byte-for-byte (the standard track passes the
-        liveness factor + the wider ``live_budget``; the user-tiled track keeps the defaults and
-        layers its Band-B cap on the returned chunk).
+        liveness factor + the wider ``live_budget``; the user-tiled track keeps the defaults; the
+        carried-2-D-tile cap (kl_div/jsd) is folded into this chunk decision below).
 
         No welford "structured-combine floor": keeping the chunk register-resident (the
         footprint cap) is what matters. welford is memory-bound and a wide combine tile only
@@ -641,7 +650,16 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         # removes persistence from a heavy body, never grants it (lb >= ROW_PERSIST_MAX_BYTES, so
         # at ff==1 it is implied by (a) -> no-op).
         element_cap = env.backend.max_tensor_numel
-        can_persist = (
+        # The full reduction extent is HELD one-shot iff it clears every per-program residency
+        # ceiling: the element compile limit, the single-tile register byte cap, the fp32-
+        # promoted full-width-row element cap, and the live-set spill ceiling (`lb`) -- AND there
+        # is NO loop-carried 2-D accumulator. A carried [M_BLOCK, R_BLOCK] tile is resident for the
+        # WHOLE reduction loop -- a fundamentally heavier residency than the single-tile byte caps
+        # model (they size a one-shot held row, not a tile carried across every loop step) -- so
+        # the extent can NEVER be held when one exists; it must stream, capped below. (This is the
+        # faithful encoding of what the unconditional carried cap did implicitly: at every shape
+        # where the cap bound, persistent was already impossible.)
+        extent_held = (
             (element_cap is None or fact.size_hint <= element_cap)
             and (m * fact.size_hint * itemsize <= cls.ROW_PERSIST_MAX_BYTES)
             and (
@@ -649,14 +667,32 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 or m * fact.size_hint <= cls.FULL_WIDTH_PERSIST_MAX_ELEMS
             )
             and (ff * m * fact.size_hint * itemsize <= lb)
+            and fact.num_carried_2d_tiles == 0
         )
-        if can_persist:
-            return rdim, True
-        # Looped: LOOPED_CHUNK, shrunk to the largest pow2 the M_BLOCK- AND liveness-aware byte
-        # budget allows. At M_BLOCK==1, footprint_factor==1 the budget exceeds LOOPED_CHUNK ->
-        # chunk == LOOPED_CHUNK; a raised M_BLOCK or a heavier body divides the budget below it.
-        budget = cls.ROW_PERSIST_MAX_BYTES // (m * itemsize * ff)
-        return max(1, min(cls.LOOPED_CHUNK, prev_power_of_2(budget))), False
+        if extent_held:
+            r_block = rdim
+        else:
+            # Can't hold the extent -> stream it at the occupancy-optimal LOOPED_CHUNK (M_BLOCK-
+            # and liveness-shrunk). A capacity-sized looped chunk is strictly worse (re-read AND
+            # low occupancy), so we drop to the occupancy chunk here.
+            budget = cls.ROW_PERSIST_MAX_BYTES // (m * itemsize * ff)
+            r_block = min(cls.LOOPED_CHUNK, prev_power_of_2(budget))
+            # Loop-carried 2-D accumulator tiles (kl_div, jsd) ALWAYS reach this branch (the
+            # `num_carried_2d_tiles == 0` clause on `extent_held` keeps them off the persist path),
+            # so cap R_BLOCK by its tighter per-program byte budget -- a carried full-width set
+            # risks catastrophic, erratic ptxas register spills (measured). No-op when
+            # num_carried_2d_tiles == 0 (every standard/streamed reduction).
+            if fact.num_carried_2d_tiles >= 1:
+                r_block = min(r_block, cls._carried_tile_r_block_cap(fact))
+        # Never size the chunk past the (padded) extent. For a sub-cap-N carried reduction the
+        # carried-tile cap can exceed rdim; the old held branch returned exactly rdim there, so
+        # clamp to match it (also keeps `persistent` below correct, and the whole decision
+        # byte-identical to the pre-cleanup unconditional-cap tree).
+        r_block = max(1, min(r_block, rdim))
+        # `persistent` is READ OFF the final chunk: the extent is held iff the chunk reached it
+        # (expressed as reduction_loops=[None] on the standard track, or R_BLOCK == rdim on the
+        # user-tiled track) -- never announced separately.
+        return r_block, r_block >= rdim
 
 
 class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
@@ -786,9 +822,10 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
 
     - **plain user-tiled** (softmax_two_pass): no extra cap — persistent full-pow2 R_BLOCK,
       standard-style reread-eviction for wide looped rows.
-    - **Band B** (kl_div, jsd): carries ``[M_BLOCK, R_BLOCK]`` 2-D tiles, so a full-N
-      R_BLOCK spills — cap by ``BANDB_R_BLOCK_BYTES / (itemsize * num_carried_2d_tiles)``.
-    - **Band C** (welford, ``non_reduction_loop_block_ids`` non-empty): reduce-then-apply — no
+    - **carried 2-D tiles** (kl_div, jsd): carry ``[M_BLOCK, R_BLOCK]`` accumulator tiles across
+      the loop, so R_BLOCK is capped by ``CARRIED_TILE_MAX_BYTES / (itemsize *
+      num_carried_2d_tiles)`` -- folded into the shared ``_reduction_rblock`` chunk decision.
+    - **reduce-then-apply** (welford, ``non_reduction_loop_block_ids`` non-empty): no
       combine floor (welford is memory-bound; a wide combine only spills). Its normalize/apply
       tile starts at the reduction tile and gets the SAME M_BLOCK-aware footprint cap (NOT a
       flat per-row cap, which needlessly narrowed the memory-bound apply pass); see
@@ -822,22 +859,16 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         m_block = cls._m_block_product(spec, fact)
 
         # user-tiled: the rdim IS a block_sizes entry (no reduction_loops knob); persistent ==
-        # R_BLOCK >= next_pow2(N). Other axes stay at floor (keeps Band-B M_BLOCK at 1, required
-        # by the u0*u1 <= 2**20 constraint). The band caps are INDEPENDENT predicates composed
-        # by min: the shared lever applies the M_BLOCK-aware footprint cap; the carried-2D cap
-        # (Band B) layers on top. welford (Band C) needs no extra cap — the footprint cap
-        # already keeps its combine tile register-resident (a wider tile only spills).
-        # User-tiled keeps the single-tile defaults (footprint_factor=1, default live_budget) so its
-        # configs stay byte-identical; the Band-B carried-tile cap layers on the returned chunk
-        # via _bandb_r_block_cap (a different 16KB byte budget than the persistent ceiling, kept
-        # as the user-tiled liveness term — the standard track's footprint_factor does not subsume
-        # it). The persistent verdict is unused here (the rdim is a block_sizes entry, not a
-        # reduction_loops knob).
+        # R_BLOCK >= next_pow2(N). Other axes stay at floor (keeps the carried-tile M_BLOCK at 1,
+        # required by the u0*u1 <= 2**20 constraint). The shared lever (_reduction_rblock) sizes
+        # R_BLOCK from the residency lifetime -- single-tile footprint, and (for kl_div/jsd) the
+        # folded-in carried-2-D-tile cap; welford's reduce-then-apply needs no extra cap (the
+        # footprint cap already keeps its combine tile register-resident). User-tiled passes the
+        # single-tile defaults (footprint_factor=1, default live_budget).
+        # The carried-2-D-tile cap (kl_div, jsd) is now folded into _reduction_rblock, so the
+        # shared lever returns the final R_BLOCK directly. `_persistent` is unused on this track:
+        # persistence here is R_BLOCK == next_pow2(N), carried by the returned r_block itself.
         r_block, _persistent = cls._reduction_rblock(env, fact, m_block)
-        if fact.num_carried_2d_tiles >= 1:
-            # Band B (kl_div, jsd): a carried [M_BLOCK, R_BLOCK] tile spills a full-N R_BLOCK, so
-            # cap the footprint (R_BLOCK * itemsize * n_carried) via _bandb_r_block_cap.
-            r_block = min(r_block, cls._bandb_r_block_cap(fact))
         num_warps = cls._num_warps(
             fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)
         )
