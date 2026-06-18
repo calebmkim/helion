@@ -459,16 +459,43 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return max(1, bs_spec.min_size, bs_spec.autotuner_min)
 
     @classmethod
+    def _m_block_cap(cls, fact: ReductionFact) -> int:
+        """Upper bound on M_BLOCK (rows/program) for a FULL-WIDTH-output reduction, so a huge-M
+        *grid-size* ``autotuner_min`` raise cannot force an occupancy-starving M_BLOCK on a
+        memory-bound held-row reduction. ``autotuner_min`` is raised to ``size_hint //
+        max_blocks_per_dim`` purely to cap the grid — unrelated to the perf optimum — and a seed
+        below it is valid (it survives ``normalize`` and the autotuner keeps it if best).
+
+        The cap keeps the resident ``[M_BLOCK, rdim]`` live set inside the per-program register
+        budget: ``M_BLOCK <= ROW_PERSIST_MAX_BYTES / (rdim * itemsize * body_live_tiles)``. It is
+        applied only via ``min`` with ``_block_floor`` (only ever LOWERS an over-raised floor),
+        and only for full-width output — streamed/scalar reductions ride occupancy on the chunk,
+        not M_BLOCK, so they are uncapped. Matches the measured huge-M optimum (welford N=5120
+        fp32 -> 4, N=16384 -> 1; rms/layer_norm already floor at 1 so are unchanged).
+        """
+        from ..._utils import prev_power_of_2
+
+        if not fact.full_width_output:
+            return 1 << 30  # no cap: scalar/streamed occupancy rides the reduction chunk
+        live = max(1, fact.body_live_tiles)
+        isz = max(1, fact.itemsize)
+        sh = max(1, fact.size_hint)
+        return max(1, prev_power_of_2(max(1, cls.ROW_PERSIST_MAX_BYTES // (sh * isz * live))))
+
+    @classmethod
     def _m_block_product(cls, spec: ConfigSpec, fact: ReductionFact) -> int:
         """Product of the seed's floored M-axis (grid) block sizes — the number of rows each
-        program processes (1 unless a huge-M shape raised ``autotuner_min``). Shared by the
-        apply-loop stream cap (``_build_block_sizes``) and the Band-C combine cap so they read
-        the same M_BLOCK.
+        program processes (1 unless a huge-M shape raised ``autotuner_min``, capped by
+        ``_m_block_cap`` for full-width reductions). Shared by the apply-loop stream cap
+        (``_build_block_sizes``) and the Band-C combine cap so they read the same M_BLOCK.
         """
         m_block = 1
+        cap = cls._m_block_cap(fact)
         for mbid in fact.m_block_ids:
             m_idx = spec.block_sizes.block_id_to_index(mbid)
-            m_block *= cls._block_floor(cast("BlockSizeSpec", spec.block_sizes[m_idx]))
+            m_block *= min(
+                cls._block_floor(cast("BlockSizeSpec", spec.block_sizes[m_idx])), cap
+            )
         return m_block
 
     @classmethod
@@ -521,6 +548,12 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 out.append(cast("int", red_value))
             elif bs_spec.block_id in non_reduction_loop_ids and loop_block is not None:
                 out.append(loop_block)
+            elif bs_spec.block_id in fact.m_block_ids:
+                # M (grid) axis: floor it, but cap a full-width reduction's M_BLOCK by the
+                # per-program register budget (``_m_block_cap``) so a huge-M grid-size
+                # autotuner_min raise can't force an occupancy-starving M_BLOCK. min() only ever
+                # LOWERS (rms/layer_norm floor at 1 -> unchanged; welford 16 -> 4/1).
+                out.append(min(cls._block_floor(bs_spec), cls._m_block_cap(fact)))
             else:
                 out.append(cls._block_floor(bs_spec))
         return out

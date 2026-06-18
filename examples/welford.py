@@ -48,7 +48,12 @@ def welford(
         acc_m2 = torch.zeros_like(acc_cnt)
 
         for tile_n in hl.tile(n):
-            chunk = x[tile_m, tile_n]
+            # Accumulate the per-chunk statistics in fp32 even for half-precision input: the
+            # bf16/fp16 `sum(chunk)` and especially `chunk * chunk` (squaring a half) drift with
+            # chunk width (and overflow to NaN at fp16), so the online combine's fp32 acc_* are
+            # not enough on their own. The HBM load stays half (traffic unchanged); this is an
+            # in-register promote. Output still casts back to x.dtype below.
+            chunk = x[tile_m, tile_n].to(torch.float32)
             # Count of VALID columns (the divisor): use the true valid count, not the constexpr
             # tile width (over-counts last-tile padding). Cast the mask to int32 BEFORE summing —
             # a bool operand gives CuTe a saturating accumulator (-> NaN).
