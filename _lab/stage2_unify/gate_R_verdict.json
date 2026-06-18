@@ -1,0 +1,81 @@
+{
+  "gate": "GATE R — regression-referee + §3 acceptance model",
+  "immutable_commit": "faecdbfc",
+  "before": "26427709 (Stage-1 tip; baseline snapshot _lab/stage1_liveness/cfg_partB.json)",
+  "edit": "Stage-2 unification, 3 commits: A a90aa7b4 (materialized-feature recognizer port), B ef8b390f (M-collapse occupancy seed, user-tiled), C faecdbfc (multi-materialized recognizer for group_norm)",
+  "is_generality_edit": false,
+  "is_generality_edit_note": "Not licensed as a generality dip. This is a pure catastrophe-rescue of 6 M-reduction kernels from their default with the two protected sets held byte-identical; no protected kernel takes a drop, so no license is needed or spent.",
+  "the_hard_invariant": {
+    "a_nine_standard_byte_identical_after_each_edit": true,
+    "b_eight_transfer_no_regression": true
+  },
+
+  "step1_scope": {
+    "method": "config_recorder diff over the FULL active matrix (9 standard kernels x {fp32,bf16,fp16} x {train,val,robustness} = 739 cells), Stage-1 baseline cfg_partB.json vs each of cfg_stage2A/B/C.json; plus a deeper field-level diff and an independent compile-time fact dump for the 8 transfer kernels (which are NOT in the 739-cell recorder matrix).",
+    "config_diffs": {
+      "cfg_partB_vs_cfg_stage2A": {"unchanged": 739, "changed": 0, "matrix_mismatch": false},
+      "cfg_partB_vs_cfg_stage2B": {"unchanged": 739, "changed": 0, "matrix_mismatch": false},
+      "cfg_partB_vs_cfg_stage2C": {"unchanged": 739, "changed": 0, "matrix_mismatch": false}
+    },
+    "deeper_field_diff_beyond_normalized_cfg": {
+      "fields_checked": ["normalized_cfg", "raw_seed", "classification", "heuristics_fired", "reduction_fact"],
+      "diffs_found_A": 0, "diffs_found_B": 0, "diffs_found_C": 0,
+      "only_before": 0, "only_after": 0, "shared_keys": 739,
+      "note": "Not just normalized_cfg — raw_seed, classification (T1/T2), heuristics_fired, AND the full reduction_fact are byte-identical for all 739 cells after each of A/B/C. The 9-standard invariant (a) is airtight."
+    },
+    "changed_cells": [],
+    "changed_cells_count": 0,
+    "scope_note": "0 changed cells among the protected 9 standard kernels after every step. The ONLY changed emitted configs in the whole stage are the 6 backward M-reduction kernels (rms_norm_bwd, layer_norm_bwd, instance_norm, group_norm, bias_grad; dyt unchanged) — and those are NEITHER in the 9 standard set NOR the 8 transfer set. They are the targets being LIFTED from default, not protected baselines."
+  },
+
+  "step2_transfer_flip_risk": {
+    "claim_scrutinized": "RESULTS.md: the 8 transfer kernels are config-identical to Stage-1 because (i) they have no materialized axis (so the A/C materialized recognizer cannot fire) and (ii) the M-collapse lever's num_load/full_width gate does not match them (grpo included).",
+    "verdict": "CONFIRMED — no transfer kernel can flip on any of A/B/C.",
+    "evidence_method": "Independent compile-time fact dump of all 8 transfer kernels x {bf16,fp32} (and grpo across its FULL 7-shape x 3-dtype set), reading the exact gate fields, PLUS the transfer verifier (compile + accuracy) under faecdbfc.",
+    "m_collapse_gate_is_user_tiled_only": "is_eligible for the M-collapse heuristic = NOT _is_standard_reduction (rdim IS a block_sizes entry). 7 of 8 transfer kernels are on the STANDARD track (rdim rolled into reduction_loops) so they cannot reach the user-tiled M-collapse branch at all.",
+    "the_one_near_miss": {
+      "kernel": "grpo",
+      "is_the_only_user_tiled_transfer_kernel": true,
+      "matches_three_of_four_conditions": "full_width_output=False, num_carried_2d_tiles=0, non_reduction_loop_block_ids=0 — all match the M-collapse signature.",
+      "excluded_by": "num_load == 7 (gate requires == 1), robust across all 7 shapes x 3 dtypes (bf16/fp16/fp32).",
+      "margin_assessment": "num_load=7 vs the required 1 is a large structural margin (grpo genuinely streams ~7 inputs: logits, selected logits, old/ref logp, advantage, completion mask), not a tuned fence; there is no grpo shape or dtype where it approaches 1. Verifier confirms grpo emits reduction_loops=None (floored user-tiled seed) — M-collapse did NOT fire."
+    },
+    "materialized_recognizer_cannot_touch_transfer": "The A/C materialized branch fires only on an inner reduction axis in NEITHER block_sizes NOR reduction_loops. The 7 standard transfer kernels never enter register_user_tiled_reductions (guarded by `if not spec.reduction_loops`); grpo enters it but its inner reduction IS a block_sizes entry, so it hits the user-tiled elif, not the materialized branch. _is_standard_reduction's rewrite (block_id NOT in block_sizes) is provably equivalent to the old (block_id in reduction_loops) for every rdim that is rolled or block-sized — only a materialized rdim differs, and none of the 17 protected kernels has one.",
+    "transfer_kernels_that_would_match_m_collapse": 0,
+    "transfer_verifier_result": "ALL 8 PASS (seed fires, compiles, matches pure-torch reference) under faecdbfc, bf16+fp32."
+  },
+
+  "step3_disaster": {
+    "protected_sets_below_floor": [],
+    "reasoning": "The 9 standard kernels are byte-identical (config + raw_seed + reduction_fact) after every step => identical codegen => identical perf => provably perf-invariant => none can be pushed below floor. The 8 transfer kernels are config-identical to Stage-1 (independently dumped + verifier-confirmed; grpo stays floored user-tiled, the 7 standard stay standard) => also perf-invariant => none below floor.",
+    "m_reduction_kernels_are_not_protected_baselines": "The 6 changed M-reduction kernels are NOT in the 9+8 invariant sets. They are being LIFTED from a catastrophic default (G=0.03-0.22, and group_norm's [32,32] default FAILS TO COMPILE on wide-S shapes). They have no protected Stage-1 baseline to fall below — default IS the floor they rise from. Per RESULTS.md every one beats its default (6x rms_bwd, 4x ln_bwd, ~20x instance_norm, bias_grad geo 0.94 vs default 0.75-0.86); group_norm wide-S is kernel-authoring-bound and the seed at least compiles + beats the non-compiling default.",
+    "realism_verdicts": {
+      "all_protected_9plus8": "perf-invariant (byte-identical) — realism moot, nothing below floor",
+      "6_m_reduction_kernels": "out of GATE R's protected-floor scope (rescue targets, not baselines); their below-default-to-above-default lift is strict progress"
+    },
+    "no_new_disaster": true
+  },
+
+  "step4_collapse_vs_frozen_anchor": {
+    "frozen_anchor": "Stage-1 tip geomeans (each protected kernel's banked freeze).",
+    "kernels_vs_anchor": [
+      {"set": "9 standard reduction kernels", "delta_vs_frozen": "0% (byte-identical configs across A/B/C)"},
+      {"set": "8 transfer kernels", "delta_vs_frozen": "0% (config-identical to Stage-1; perf-invariant)"}
+    ],
+    "no_collapse": true,
+    "note": "No protected kernel's geomean moves at all, so the ~10%-below-frozen-anchor collapse bound is trivially satisfied (0% drop everywhere in the protected sets)."
+  },
+
+  "step5_net_progress": {
+    "protected_sets": "unchanged (neutral by construction — byte-identical)",
+    "changed_kernels": "6 M-reduction kernels, all improve from catastrophic default per RESULTS.md (Gate A/F adjudicate the magnitude of each lift; GATE R confirms the direction is up-from-default and no protected baseline regressed).",
+    "majority_up_among_changed": true,
+    "net_progress": true,
+    "generality_license_needed": false,
+    "generality_license": {"claimed": false, "measured_lift_shape": null, "confirmed": null, "within_once_per_kernel_budget": null}
+  },
+
+  "accept": true,
+  "reasoning": "Both halves of the hard invariant hold. (a) The 9 standard kernels are BYTE-IDENTICAL after EACH of A/B/C across the full 739-cell matrix (all dtypes + robustness) — verified not just on normalized_cfg but on raw_seed, classification, heuristics_fired, and the full reduction_fact, with identical key-sets and zero matrix mismatch. (b) None of the 8 transfer kernels regresses: 7 are standard-track (cannot reach the user-tiled M-collapse branch and have no materialized axis for the A/C recognizer), and the sole user-tiled transfer kernel grpo — the one genuine near-miss that matches 3 of 4 M-collapse conditions — is excluded robustly by num_load==7 (vs the required 1) across all 7 shapes x 3 dtypes, a large structural margin not a fence; the verifier confirms grpo keeps its floored user-tiled seed. The only changed emitted configs in the entire stage belong to the 6 backward M-reduction kernels, which sit in NEITHER protected set and are being lifted from a catastrophic (sometimes non-compiling) default — they are rescue targets, not protected baselines, so they cannot be 'pushed below floor.' No realistic shape below floor (3), no protected kernel >10% below the frozen anchor (4, all at 0% delta), and net progress holds (the 6 rescues rise, the 17 protected stay put) (5). ACCEPT.",
+  "most_important_reason": "The two protected sets are PROVABLY perf-invariant — 9 standard byte-identical (739/739, deep-field), 8 transfer config-identical with the only flip-candidate (grpo) excluded by a large structural num_load margin (7 vs 1) — while the only changed configs are the 6 M-reduction rescue kernels that lie outside both invariant sets and only rise from default."
+}

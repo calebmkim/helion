@@ -1,0 +1,201 @@
+{
+ "stage": "stage2-unify",
+ "sha": "faecdbfc",
+ "gates": {
+  "D": {
+   "gate": "D",
+   "sha": "faecdbfc",
+   "claim": "Stage-2 materialized-feature recognizer (device_ir.register_user_tiled_reductions + triton._is_standard_reduction) + M-collapse occupancy lever (TritonUserTiledReductionHeuristic.get_seed_config)",
+   "relaxed_faithfulness": true,
+   "doctrine": "pass",
+   "doctrine_detail": {
+    "no_walk_in_derived_fact": "PASS. ReductionFact is the derived fact; its runtime consumers (_is_standard_reduction, _triton_reduction_eligible, get_seed_config) read ONLY spec.block_sizes/reduction_loops.valid_block_ids(), fact fields, and trivial structural env reads (_grid_rows reads env.block_sizes[mbid].size). No device_ir.graphs iteration, no node.users/args, no _classify_load_dataflow, no IR inspection in any branch.",
+    "walk_belongs_on_populator_once": "PASS. The ReductionLowering census (for graph_info in self.graphs: node.meta['lowering']; ReductionLowering.block_index) lives in register_user_tiled_reductions, a device_ir.py POPULATOR (fact-build pass) where graph access is legitimate. CONFIRMED pre-existing in base 26427709 (byte-identical census loop). The change adds only a new CLASSIFICATION over that same census (materialized_inner = [b for b in inner_red if b not in bs_ids and b not in rl_ids]) and reuses _assemble_reduction_fact. NO second/bespoke traversal, NO new walker fact, NO new graph walk.",
+    "key_faithful": "PASS. _is_standard_reduction's 'rdim NOT in block_sizes' is a structural spec-membership property, not kernel identity / dtype literal. Equivalent to old 'in reduction_loops' for rolled+user-tiled; strictly more general (additionally admits the materialized-in-neither case). The dominant-axis pick (max size_hint over materialized_inner) is a faithful extent tie-break (group_norm's 2 materialized -> picks largest; emitted config identical either way per the source comment + verified group_norm registers 1 fact at block 3, the S=64 axis)."
+   },
+   "generality_verdict": "general",
+   "faithfulness": "faithful_property",
+   "faithfulness_recognizer_detail": "The materialized recognizer computes the real property: an inner axis that (a) carries a ReductionLowering op in the graph AND (b) is in NEITHER block_sizes NOR reduction_loops (roller-declined materialized feature reduction). Factdump confirms: rms/ln/instance/group_norm now register 1 fact whose block_id is exactly the materialized reduction axis (reduction=True, in_bs=false, in_rl=false); bias_grad/dyt have 0 materialized axes and stay user-tiled (their fact's block_id is a block_sizes entry).",
+   "faithfulness_mcollapse_detail": "M-collapse gate (not full_width_output AND num_carried_2d_tiles==0 AND not non_reduction_loop_block_ids AND num_load==1) is a faithful STRUCTURAL signature of a pure single-stream grid-collapse reduction with a scalar [feature] output, NOT a bias_grad identity fence. A hypothetical other pure-collapse grad-parameter kernel (standalone grad_bias = sum_M of a single streamed input) matches identically. num_load==1 is a dtype-independent load COUNT, not a dtype/identity literal: it faithfully excludes dyt (num_load=3: grad_out+x+weight, AND a full [M,N] grad_x so full_width-ish + carried tiles diverge it independently). Threshold-divergence test PASSES: a half-precision pure-collapse bias_grad still has num_load==1, so equal-real-property workloads decide identically regardless of dtype.",
+   "faithfulness_occupancy_key_detail": "Occupancy key grid_rows // num_sm is a hardware occupancy budget (Gate-H faithful-property menu). M_COLLAPSE_MAX_CTA=256 is a single MEASURED hardware spill crossover (bias_grad 65536x1024: [512,*]=0.21x register/SMEM spill vs [256,*]=1.00x), not a curriculum fence between two N values -> Gate H 1c(iii) 'single measured hardware crossover => if/threshold IS correct'. next_pow2 sizing + cap are a measured cliff, not a fake ramp or magic threshold.",
+   "population": "faithful_derivation",
+   "population_detail": "The populator keys on isinstance(lowering, ReductionLowering) (a real reduction op) + spec-membership, NOT on bs.reduction. The Gate-D canonical lucky-proxy mutant (mutant_zeros_accum: an hl.zeros([tile_m, n]) 2-D accumulator NEVER reduced, only stored full-width) sets bs.reduction=True on axis 2 (size 1024, ReductionLowering=False, materialized_neither=True). A populator reading bs.reduction would FALSELY register axis 2 as a materialized reduction; the populator under test did NOT pick it (picked_as_red_fact=false) and correctly registered axis 1 (the genuine torch.sum collapse, ReductionLowering=True). Proxy and real property DIVERGE on this mutant and the populator follows the REAL property.",
+   "the_fact_divergence_case": "M-collapse num_load==1 vs full_width_output: bias_grad (num_load=1, full_width_output=False) fires; dyt (num_load=3, writes full [M,N] grad_x) excluded by num_load AND would also be caught by the fused-body signals. Equal-dtype-different value of num_load => correct different decision; equal-num_load-different-dtype => identical decision (faithful, no dtype split).",
+   "the_threshold_divergence_case": "_is_standard_reduction 'not in block_sizes' and M-collapse num_load==1 both pass: a half-precision bias_grad and an fp32 bias_grad (same real property: pure single-load collapse) both have num_load==1 and both fire M-collapse -> the branch decides identically at equal real-property across dtype. No itemsize-multiplied / dtype-correlated quantity is the operand of a literal comparison. M_COLLAPSE_MAX_CTA bounds rows (a hardware count), not bytes.",
+   "the_authored_mutant_and_dumped_facts": {
+    "template": "bias_grad_bwd (vetted mreduction_styles template) mutated with an extra hl.zeros([tile_m, n]) 2-D accumulator stored full-width, never reduced",
+    "axis_1": {
+     "size": 8192,
+     "bs_reduction_PROXY": false,
+     "is_ReductionLowering_REAL": true,
+     "in_block_sizes": true,
+     "materialized_neither": false,
+     "picked_as_red_fact": true
+    },
+    "axis_2_the_proxy_mutant": {
+     "size": 1024,
+     "bs_reduction_PROXY": true,
+     "is_ReductionLowering_REAL": false,
+     "in_block_sizes": false,
+     "materialized_neither": true,
+     "picked_as_red_fact": false
+    },
+    "n_reduction_facts": 1,
+    "registered_red_block_id": 1,
+    "interpretation": "proxy != real on BOTH axes; populator tracks the ReductionLowering REAL property, NOT bs.reduction. Faithful."
+   },
+   "what_it_tracks": "Recognizer: a roller-declined materialized inner reduction (ReductionLowering op in NEITHER spec) -> standard track; dominant-extent axis when several. M-collapse: a pure single-stream grid-collapse reduction (scalar [feature] output, single streamed load, no carried 2-D tile, no normalize loop) sized to hardware occupancy (grid_rows//num_sm, capped at the measured 256-row spill crossover).",
+   "compile_only_probes": [
+    "/home/calebkim/helion-new-heuristics/helion-3stage/_lab/stage2_unify/probe_stage2.py (factdump of all 6 kernels)",
+    "/tmp/gate_d_stage2_pop.py (Part-3 divergence kernel)"
+   ],
+   "refuted": false,
+   "verdict": "PASS",
+   "reasoning": "All THREE parts pass. PART 1 (doctrine): no walk in the derived fact; the only graph census is the pre-existing populator census in register_user_tiled_reductions (a device_ir builder, not a derived-fact branch), reused with a new classification + the existing _assemble_reduction_fact -> no new/bespoke walk, no new walker fact; the 'not in block_sizes' key is a structural property. PART 2 (faithfulness): the M-collapse gate is a structural signature of a pure single-stream grid-collapse reduction, not a bias_grad fence; num_load==1 is a faithful dtype-independent load count that genuinely excludes dyt's 3-load fused body; the occupancy key + M_COLLAPSE_MAX_CTA=256 are a hardware occupancy budget + a single measured spill crossover, passing both divergence tests. PART 3 (population): the authored canonical lucky-proxy mutant proves the populator follows the REAL ReductionLowering property and ignores the bs.reduction proxy that would have mis-fired on the never-reduced hl.zeros accumulator axis. Under relaxed-faithfulness no genuine doctrine/identity/lucky-proxy violation exists; the slightly-imperfect-fit allowance is not even needed here -- the populator is faithful on the divergence kernel."
+  },
+  "HF": {
+   "F": {
+    "mechanism_found": true,
+    "mechanism_matches_stated_story": true,
+    "the_resource_and_metric": "Grid-wide reduction-tree / occupancy cost. The metric that moves (verified in the lowered Triton, compile-only) is the number of grid partials the final `gb_blocks.sum(0)` collapses. FLOORED T2 default (block_sizes=[1,1]) emits `_launcher(_helion_bias_grad_bwd, (16384,), ...)` -> a grid of M=16384 programs, each storing one partial row into gb_blocks -> the finalize is an M-way (16384-partial) reduction (G~0.35). LEVER (block_sizes=[128,128]) emits `_launcher(..., ((16384 + _BLOCK_SIZE_0 - 1) // _BLOCK_SIZE_0,), ...)` = (16384+128-1)//128 = 128 programs -> gb_blocks has ~num_sm(=132)-sized partial count -> the M-way finalize SHRINKS from 16384 to 128 partials. Exactly the stated mechanism: occupancy-size the CTA so the finalize is over ~one wave, not the whole M axis.",
+    "the_predicted_boundary": "M_COLLAPSE_MAX_CTA=256 rows per CTA = the in-register reduction-tree / [rows,feature] resident-tile spill point. Confirmed binding compile-only: bias_grad (65536,1024) raw next_pow2(M/num_sm)=512 -> seed capped to [256,256]; (262144,1024) raw=2048 -> still [256,256]; (16384,1024) raw=128 -> [128,128] (cap inert below it). Measured crossover (recorded): 512 rows 0.21x vs 256 rows 1.00x. Boundary keyed on occupancy grid_rows//num_sm (num_sm=132 real H100), not a curriculum constant.",
+    "the_property_to_key_the_fact_on": "occupancy grid_rows // num_sm (the wave count) capped at the in-register-spill crossover, AND the structural M-collapse signature (full_width_output False AND num_carried_2d_tiles==0 AND no normalize loop AND num_load==1). The lever already keys on exactly these; no key change needed.",
+    "inert_fields": [],
+    "coupled_field_sets": [
+     "{grid m_block(s), R_BLOCK} \u2014 R_BLOCK is SET EQUAL to the occupancy m_block by construction (r_block = m_collapse_block). The grid block sets the launch grid (occupancy / # partials); R_BLOCK==m_block makes the inner `tl.sum(load,0)` consume the whole CTA wave in ONE in-register tile. Both move the number and are mutually dependent (one wave reduced in one pass) -> KEEP as a recorded coupling, neither is dead."
+    ],
+    "better_neighbor_found": null,
+    "reasoning": "Mechanism verified in lowered code (compile-only, no GPU): the only emitted-code change of the lever is the grid launch dimension (M -> ceil(M/m_block)=~num_sm) and the inner reduction tile width (R_BLOCK=m_block), which together collapse the grid-wide M-way `gb_blocks.sum(0)` finalize down to ~one wave of partials. The stated story ('default floors CTA to 1 row -> M-way finalize; lever sizes CTA for occupancy -> ~num_sm partials, one inner pass') matches the lowered Triton exactly. The 256 cap is a real measured crossover (512-row in-register reduction spills hard, 0.21x; 256-row 1.00x), confirmed to bind at the predicted occupancy. num_load==1 correctly excludes dyt (num_load=3: full grad_x [M,N] store + x/weight rereads + fused elementwise -> NOT a pure single-stream collapse; measured to regress to 0.23x under [128,128], so it genuinely prefers the floored seed). Both non-default fields (grid block + R_BLOCK) are attributed and coupled; nothing inert. PASS."
+   },
+   "H": {
+    "verdict": "KEEP",
+    "key_faithfulness": "faithful",
+    "breadth": "mechanism-matched",
+    "form": "measured-crossover",
+    "magnitude_class": "real",
+    "reason_present": true,
+    "downside": "bounded",
+    "fact_hygiene": "clean-faithful",
+    "complexity_note": "Multi-field lever (grid m_block + R_BLOCK) but the two are a recorded coupling (R_BLOCK=m_block by construction; Gate F check 4) \u2014 one mechanism (one CTA wave reduced in one inner pass), easy to reason about. No structural-default flip (pid='flat'/num_stages=1 match the standard branch). Sits as one band-predicate inside get_seed_config alongside the existing Band-B/Band-C caps.",
+    "inert_fields_to_drop": [],
+    "conflicting_axes": [],
+    "action": "keep-in-core",
+    "num_load_and_256_judgement": "num_load==1: FAITHFUL mechanism fence, NOT an unjustified narrow fence and NOT a dtype/identity fence. It is a load COUNT (a faithful workload property from genuine compiler provenance: # loads in the reduction's graphs scoped by graph_id) that distinguishes a pure single-stream collapse (bias_grad, num_load=1) from a fused per-row kernel that also writes a full [M,N] grad_x and rereads inputs (dyt, num_load=3). The exclusion is mechanism-grounded (dyt is not a pure collapse) AND tested (dyt [128,128] measured 0.23x regression -> it prefers the floored seed). This is a documented + measured reversal: the lever's mechanism genuinely does not hold for a multi-load fused kernel. M_COLLAPSE_MAX_CTA=256: FAITHFUL measured crossover (form iii of rule 1c \u2014 a single real hardware spill point: 256-row in-register reduction fits 1.00x, 512-row spills 0.21x), keyed on the continuous occupancy quantity grid_rows//num_sm, dtype- and kernel-independent. Confirmed compile-only to bind exactly where predicted (raw 512 at 65536-M -> capped 256). NOT a curriculum fence: it binds on occupancy, fires/caps identically for any tall-M pure collapse regardless of which kernel or its specific dims.",
+    "reasoning": "Rule 1 (key faithfulness, the hard line): PASS. The key is occupancy (grid_rows // num_sm, real num_sm=132) plus the structural M-collapse signature built from existing faithful fact fields (full_width_output False / num_carried_2d_tiles==0 / non_reduction_loop_block_ids empty / num_load==1) \u2014 all populated from genuine compiler provenance (store subscript block-ids, accumulator last-dim==rdim, load counts scoped by graph_id). No kernel_name, no bare dtype literal, no op-pattern proxy. Rule 1b (breadth): mechanism-matched, NOT too narrow. The gate fires on the whole M-collapse family (any pure grad-parameter collapse over the grid axis with one streamed input), not bias_grad's specific shapes \u2014 verified the path has no shape-box or kernel-specific constant. The two narrowings both have justified+tested reasons: num_load==1 (dyt is a genuinely different multi-load kernel, measured to regress) and the 256 cap (measured in-register spill). Rule 1c (form): measured-crossover (the cap) + structural named-bool (is_m_collapse) \u2014 correct forms, no bare magic threshold. Rule 2 (magnitude x reason): real win above noise WITH a verified mechanism (bias_grad geo 0.35->0.94 default->lever, beating tc-default 0.75-0.86; all train shapes >=0.75). Rule 4 (downside x realism): bounded \u2014 9 standard + 8 transfer kernels config-byte-identical (cfg_stage2A/B/C md5-identical, 0/739 changed; independently confirmed), dyt structurally excluded and unchanged. No realistic shape below floor; no off-curriculum regression. Rule 5 (fact hygiene): reads only existing faithful facts computed in the single fact-build pass, adds no fact, needs no runtime info. Rule 6 (complexity/dead-knob): both emitted fields earn their place (Gate F: grid block + coupled R_BLOCK, no inert field). All KEEP conditions met: faithful key, real win with reason, bounded downside per the acceptance model, form matches mechanism, gate as wide as the mechanism allows with proven reversal boundaries (num_load>1 and >256 rows), no inert field. KEEP in core (no BROADEN needed \u2014 the narrowness is justified+tested, not a fence)."
+   }
+  },
+  "R": {
+   "gate": "GATE R \u2014 regression-referee + \u00a73 acceptance model",
+   "immutable_commit": "faecdbfc",
+   "before": "26427709 (Stage-1 tip; baseline snapshot _lab/stage1_liveness/cfg_partB.json)",
+   "edit": "Stage-2 unification, 3 commits: A a90aa7b4 (materialized-feature recognizer port), B ef8b390f (M-collapse occupancy seed, user-tiled), C faecdbfc (multi-materialized recognizer for group_norm)",
+   "is_generality_edit": false,
+   "is_generality_edit_note": "Not licensed as a generality dip. This is a pure catastrophe-rescue of 6 M-reduction kernels from their default with the two protected sets held byte-identical; no protected kernel takes a drop, so no license is needed or spent.",
+   "the_hard_invariant": {
+    "a_nine_standard_byte_identical_after_each_edit": true,
+    "b_eight_transfer_no_regression": true
+   },
+   "step1_scope": {
+    "method": "config_recorder diff over the FULL active matrix (9 standard kernels x {fp32,bf16,fp16} x {train,val,robustness} = 739 cells), Stage-1 baseline cfg_partB.json vs each of cfg_stage2A/B/C.json; plus a deeper field-level diff and an independent compile-time fact dump for the 8 transfer kernels (which are NOT in the 739-cell recorder matrix).",
+    "config_diffs": {
+     "cfg_partB_vs_cfg_stage2A": {
+      "unchanged": 739,
+      "changed": 0,
+      "matrix_mismatch": false
+     },
+     "cfg_partB_vs_cfg_stage2B": {
+      "unchanged": 739,
+      "changed": 0,
+      "matrix_mismatch": false
+     },
+     "cfg_partB_vs_cfg_stage2C": {
+      "unchanged": 739,
+      "changed": 0,
+      "matrix_mismatch": false
+     }
+    },
+    "deeper_field_diff_beyond_normalized_cfg": {
+     "fields_checked": [
+      "normalized_cfg",
+      "raw_seed",
+      "classification",
+      "heuristics_fired",
+      "reduction_fact"
+     ],
+     "diffs_found_A": 0,
+     "diffs_found_B": 0,
+     "diffs_found_C": 0,
+     "only_before": 0,
+     "only_after": 0,
+     "shared_keys": 739,
+     "note": "Not just normalized_cfg \u2014 raw_seed, classification (T1/T2), heuristics_fired, AND the full reduction_fact are byte-identical for all 739 cells after each of A/B/C. The 9-standard invariant (a) is airtight."
+    },
+    "changed_cells": [],
+    "changed_cells_count": 0,
+    "scope_note": "0 changed cells among the protected 9 standard kernels after every step. The ONLY changed emitted configs in the whole stage are the 6 backward M-reduction kernels (rms_norm_bwd, layer_norm_bwd, instance_norm, group_norm, bias_grad; dyt unchanged) \u2014 and those are NEITHER in the 9 standard set NOR the 8 transfer set. They are the targets being LIFTED from default, not protected baselines."
+   },
+   "step2_transfer_flip_risk": {
+    "claim_scrutinized": "RESULTS.md: the 8 transfer kernels are config-identical to Stage-1 because (i) they have no materialized axis (so the A/C materialized recognizer cannot fire) and (ii) the M-collapse lever's num_load/full_width gate does not match them (grpo included).",
+    "verdict": "CONFIRMED \u2014 no transfer kernel can flip on any of A/B/C.",
+    "evidence_method": "Independent compile-time fact dump of all 8 transfer kernels x {bf16,fp32} (and grpo across its FULL 7-shape x 3-dtype set), reading the exact gate fields, PLUS the transfer verifier (compile + accuracy) under faecdbfc.",
+    "m_collapse_gate_is_user_tiled_only": "is_eligible for the M-collapse heuristic = NOT _is_standard_reduction (rdim IS a block_sizes entry). 7 of 8 transfer kernels are on the STANDARD track (rdim rolled into reduction_loops) so they cannot reach the user-tiled M-collapse branch at all.",
+    "the_one_near_miss": {
+     "kernel": "grpo",
+     "is_the_only_user_tiled_transfer_kernel": true,
+     "matches_three_of_four_conditions": "full_width_output=False, num_carried_2d_tiles=0, non_reduction_loop_block_ids=0 \u2014 all match the M-collapse signature.",
+     "excluded_by": "num_load == 7 (gate requires == 1), robust across all 7 shapes x 3 dtypes (bf16/fp16/fp32).",
+     "margin_assessment": "num_load=7 vs the required 1 is a large structural margin (grpo genuinely streams ~7 inputs: logits, selected logits, old/ref logp, advantage, completion mask), not a tuned fence; there is no grpo shape or dtype where it approaches 1. Verifier confirms grpo emits reduction_loops=None (floored user-tiled seed) \u2014 M-collapse did NOT fire."
+    },
+    "materialized_recognizer_cannot_touch_transfer": "The A/C materialized branch fires only on an inner reduction axis in NEITHER block_sizes NOR reduction_loops. The 7 standard transfer kernels never enter register_user_tiled_reductions (guarded by `if not spec.reduction_loops`); grpo enters it but its inner reduction IS a block_sizes entry, so it hits the user-tiled elif, not the materialized branch. _is_standard_reduction's rewrite (block_id NOT in block_sizes) is provably equivalent to the old (block_id in reduction_loops) for every rdim that is rolled or block-sized \u2014 only a materialized rdim differs, and none of the 17 protected kernels has one.",
+    "transfer_kernels_that_would_match_m_collapse": 0,
+    "transfer_verifier_result": "ALL 8 PASS (seed fires, compiles, matches pure-torch reference) under faecdbfc, bf16+fp32."
+   },
+   "step3_disaster": {
+    "protected_sets_below_floor": [],
+    "reasoning": "The 9 standard kernels are byte-identical (config + raw_seed + reduction_fact) after every step => identical codegen => identical perf => provably perf-invariant => none can be pushed below floor. The 8 transfer kernels are config-identical to Stage-1 (independently dumped + verifier-confirmed; grpo stays floored user-tiled, the 7 standard stay standard) => also perf-invariant => none below floor.",
+    "m_reduction_kernels_are_not_protected_baselines": "The 6 changed M-reduction kernels are NOT in the 9+8 invariant sets. They are being LIFTED from a catastrophic default (G=0.03-0.22, and group_norm's [32,32] default FAILS TO COMPILE on wide-S shapes). They have no protected Stage-1 baseline to fall below \u2014 default IS the floor they rise from. Per RESULTS.md every one beats its default (6x rms_bwd, 4x ln_bwd, ~20x instance_norm, bias_grad geo 0.94 vs default 0.75-0.86); group_norm wide-S is kernel-authoring-bound and the seed at least compiles + beats the non-compiling default.",
+    "realism_verdicts": {
+     "all_protected_9plus8": "perf-invariant (byte-identical) \u2014 realism moot, nothing below floor",
+     "6_m_reduction_kernels": "out of GATE R's protected-floor scope (rescue targets, not baselines); their below-default-to-above-default lift is strict progress"
+    },
+    "no_new_disaster": true
+   },
+   "step4_collapse_vs_frozen_anchor": {
+    "frozen_anchor": "Stage-1 tip geomeans (each protected kernel's banked freeze).",
+    "kernels_vs_anchor": [
+     {
+      "set": "9 standard reduction kernels",
+      "delta_vs_frozen": "0% (byte-identical configs across A/B/C)"
+     },
+     {
+      "set": "8 transfer kernels",
+      "delta_vs_frozen": "0% (config-identical to Stage-1; perf-invariant)"
+     }
+    ],
+    "no_collapse": true,
+    "note": "No protected kernel's geomean moves at all, so the ~10%-below-frozen-anchor collapse bound is trivially satisfied (0% drop everywhere in the protected sets)."
+   },
+   "step5_net_progress": {
+    "protected_sets": "unchanged (neutral by construction \u2014 byte-identical)",
+    "changed_kernels": "6 M-reduction kernels, all improve from catastrophic default per RESULTS.md (Gate A/F adjudicate the magnitude of each lift; GATE R confirms the direction is up-from-default and no protected baseline regressed).",
+    "majority_up_among_changed": true,
+    "net_progress": true,
+    "generality_license_needed": false,
+    "generality_license": {
+     "claimed": false,
+     "measured_lift_shape": null,
+     "confirmed": null,
+     "within_once_per_kernel_budget": null
+    }
+   },
+   "accept": true,
+   "reasoning": "Both halves of the hard invariant hold. (a) The 9 standard kernels are BYTE-IDENTICAL after EACH of A/B/C across the full 739-cell matrix (all dtypes + robustness) \u2014 verified not just on normalized_cfg but on raw_seed, classification, heuristics_fired, and the full reduction_fact, with identical key-sets and zero matrix mismatch. (b) None of the 8 transfer kernels regresses: 7 are standard-track (cannot reach the user-tiled M-collapse branch and have no materialized axis for the A/C recognizer), and the sole user-tiled transfer kernel grpo \u2014 the one genuine near-miss that matches 3 of 4 M-collapse conditions \u2014 is excluded robustly by num_load==7 (vs the required 1) across all 7 shapes x 3 dtypes, a large structural margin not a fence; the verifier confirms grpo keeps its floored user-tiled seed. The only changed emitted configs in the entire stage belong to the 6 backward M-reduction kernels, which sit in NEITHER protected set and are being lifted from a catastrophic (sometimes non-compiling) default \u2014 they are rescue targets, not protected baselines, so they cannot be 'pushed below floor.' No realistic shape below floor (3), no protected kernel >10% below the frozen anchor (4, all at 0% delta), and net progress holds (the 6 rescues rise, the 17 protected stay put) (5). ACCEPT.",
+   "most_important_reason": "The two protected sets are PROVABLY perf-invariant \u2014 9 standard byte-identical (739/739, deep-field), 8 transfer config-identical with the only flip-candidate (grpo) excluded by a large structural num_load margin (7 vs 1) \u2014 while the only changed configs are the 6 M-reduction rescue kernels that lie outside both invariant sets and only rise from default."
+  }
+ },
+ "gate_E_freeze_test": {
+  "bias_grad": "geo~0.91 all fire beats default",
+  "dyt": "geo~0.63 beats default",
+  "instance_norm": "fires; wide-S kernel-authoring-bound but beats broken/0.03 default"
+ }
+}

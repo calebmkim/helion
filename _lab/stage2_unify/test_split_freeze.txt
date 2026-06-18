@@ -1,0 +1,18 @@
+bias_grad      [32768, 1536]      n_seeds=1 G_tc=0.8664
+bias_grad      [16384, 3072]      n_seeds=1 G_tc=0.8723
+bias_grad      [4096, 5120]       n_seeds=1 G_tc=0.8068
+bias_grad      [8192, 2048]       n_seeds=1 G_tc=1.0064
+bias_grad      [4096, 10240]      n_seeds=1 G_tc=0.8674
+bias_grad      [16384, 6144]      n_seeds=1 G_tc=0.9851
+bias_grad      [8192, 14336]      n_seeds=1 G_tc=1.0004
+dyt            [32768, 1024]      n_seeds=1 G_tc=0.8596
+dyt            [16384, 3072]      n_seeds=1 G_tc=0.6821
+dyt            [8192, 7168]       n_seeds=1 G_tc=0.6915
+dyt            [4096, 2560]       n_seeds=1 G_tc=0.6727
+dyt            [4096, 10240]      n_seeds=1 G_tc=0.4397
+dyt            [8192, 6144]       n_seeds=1 G_tc=0.6901
+dyt            [8192, 14336]      n_seeds=1 G_tc=0.4435
+instance_norm  [768, 64, 128]     n_seeds=1 G_tc=0.5134
+instance_norm  [192, 256, 128]    n_seeds=1 G_tc=0.0909
+instance_norm  [96, 128, 512]     n_seeds=1 G_tc=0.0616
+instance_norm  [48, 128, 1024]    n_seeds=1 G_tc=0.0469
