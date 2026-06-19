@@ -64,3 +64,56 @@ kernels UNCHANGED (config-identical: flj=[8192], grpo=[1,8,4096] excluded by num
 - Wide-S group_norm / instance_norm shapes are KERNEL-AUTHORING-BOUND (even old m_reduction couldn't
   beat tc there; the [32,32] default fails to compile) — characterized, not chased, per the task.
 - Band-B unification (Stage 1) untouched here.
+
+═══════════════════════════════════════════════════════════════════════════
+## ADDENDUM (2026-06-19) — sub-problem D: recover the m_reduction perf (was overtime, now done)
+═══════════════════════════════════════════════════════════════════════════
+The original report logged "vanilla-T1 perf < old m_reduction (rms/ln/instance) — accepted as overtime."
+Re-opened by the human. The four dual-axis backward norms (rms_norm_bwd, layer_norm_bwd, instance_norm,
+group_norm) route to the standard MATERIALIZED branch but had their grid M block floored to 1, so the
+per-feature grad accumulator finalized over M partials (the M-way collapse). The kernels ALREADY expose
+the two-level tiling (`m_block = hl.register_block_size` + inner `hl.tile(mb_cta.begin, mb_cta.end)`),
+so closing the gap is HEURISTIC-only — no kernel change.
+
+### The change (one commit, `[stage2-unify]`, `triton.py` only)
+In `TritonStandardReductionHeuristic.get_seed_config`, gated on
+`is_materialized AND fact.per_feature_accumulator AND fact.full_width_output AND inner_tile_ids`:
+- **grid M block → `next_pow2(grid_rows/num_sm)`** (`_m_collapse_grid_block`) — the dominant lever;
+  shrinks the grad_w finalize from M partials to ~num_sm.
+- **inner re-tile → byte-cap** (`_m_collapse_inner_tile`) against the TRUE product feature footprint
+  (N for 2-D → inner 2-8; C*S for 3-D → inner=1, dodging the ws2 per-axis-MAX spill trap).
+- **drop narrow-w1** for the collapse (unfaithful: it keys on the rdim extent, flooring instance's
+  S=128 to 1 warp, but the resident tile is `[inner, feature]`-wide) → plain extent ramp.
+
+`per_feature_accumulator` (the faithful grad-parameter-collapse provenance, fact field from 5f34e9d1)
+is what makes the gate disjoint from everything else: it is False for all 9 standard + 8 transfer
+kernels, so they are byte-identical.
+
+### Perf — every dual-axis norm now matches/beats tc on the realistic regime (G = tc/seed, fp32)
+| kernel | shape | BEFORE [1,1] | AFTER | old m_reduction |
+|---|---|---|---|---|
+| rms_norm_bwd | (4096,4096) | 0.90 | **1.49** | 1.48 |
+| rms_norm_bwd | (8192,1024) | 0.72 | **1.81** | 1.85 |
+| rms_norm_bwd | (8192,4096) | 0.64 | **1.07** | — |
+| layer_norm_bwd | (4096,4096) | 0.68 | **1.49** | 1.52 |
+| layer_norm_bwd | (8192,4096) | 0.49 | **1.13** | — |
+| instance_norm | (512,64,128) | 0.67 | **1.65** | ~1.78 geo |
+| instance_norm | (1024,32,256) | 0.43 | **1.13** | — |
+| group_norm | (512,128,64,32) | 2.45 | **2.82** | 2.0-2.4 |
+| group_norm | (1024,64,128,32) | 1.42 | **1.76** | — |
+
+Wide-N (N=8192) is NEUTRAL, not regressed (rms 0.93→0.93, ln 0.74→0.75): the per-row feature
+reduction dominates so the M-collapse buys little — old m_reduction was weak there too. bf16
+spot-check all >1, accuracy-pass (rms 1.26/2.55, ln 1.44, instance 2.84, group 2.71).
+
+### Invariant — held (a regression on either protected set would sink it)
+- **9 standard reduction kernels byte-identical**: config_recorder final-code vs stashed-baseline =
+  **739/739** unchanged (fp32/bf16/fp16 × train/val/robustness).
+- **8 transfer kernels gate-disjoint**: compile-only probe → `per_feature_accumulator=False` (or
+  non-materialized / user-tiled) for all 8 → GATE_FIRES=False.
+- **bias_grad/dyt unchanged**: still `[128,128]`/`[128,8]` (user-tiled M-collapse, separate track).
+
+### Deferred (smaller than before)
+- Wide-N (N=8192) tail: m_reduction's HBM-bytes warp ramp (16/32) would close it; neutral as-is.
+- A full curriculum sweep (all splits × dtypes) before landing — spot-shapes here are representative.
+- Evidence: `RESULTS.md` (ADDENDUM), `probe_mcollapse.py`, ledger `perf_recovery_mcollapse`.

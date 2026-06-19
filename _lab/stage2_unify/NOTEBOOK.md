@@ -50,3 +50,55 @@ output, full_width_output=False. Derive the lever via oracle + hill-climb. NOT a
 Must pick the feature reduction driving the resident footprint + produce a good config. Hardest.
 
 ## STATUS: implementing sub-problem A next.
+
+═══════════════════════════════════════════════════════════════════════════
+## ADDENDUM (2026-06-19) — sub-problem D: recover m_reduction perf for the dual-axis backward norms
+═══════════════════════════════════════════════════════════════════════════
+Re-opened the task-deprioritized "vanilla-T1 perf < old m_reduction" item (rms/ln/instance/group
+backward). Stage 2 routed these to the standard MATERIALIZED branch but FLOORED the grid M block to 1
+(`_m_block_cap`'s residency model), so the per-feature grad accumulator (`grad_weight[N]`) finalized
+over M partials — the M-way collapse the m_reduction heuristic existed to fix. The kernels already
+have the two-level tiling (`m_block = hl.register_block_size`; inner `hl.tile(mb_cta.begin,
+mb_cta.end)`), so this is a HEURISTIC-only gap.
+
+**Discriminator (compile-only probe `probe_mcollapse.py`).** `per_feature_accumulator` (the
+5f34e9d1 fact field) is the faithful signal: True iff a loop-carried accumulator's dims are ALL the
+materialized feature axis (the grad-param buffer summed across the grid). Confirmed:
+- rms/ln/instance/group bwd: PFA=True, is_materialized=True, full_width_output=True, a non-grid inner
+  tile present → the lever fires.
+- 9 standard (rolled): is_materialized=False. 8 transfer: 7 rolled (is_materialized=False), grpo
+  user-tiled+PFA=False → GATE_FIRES=False for ALL → disjoint, byte-identical.
+- bias_grad/dyt: PFA=True but full_width_output=False + no inner tile (pure user-tiled M-collapse,
+  already seeded) → not touched.
+
+**The lever (triton.py `TritonStandardReductionHeuristic.get_seed_config`, materialized branch).**
+Gated on `is_materialized AND per_feature_accumulator AND full_width_output AND inner_tile_ids`:
+1. grid M block → `next_pow2(grid_rows/num_sm)` (`_m_collapse_grid_block`) — DOMINANT lever, shrinks
+   the grad_w finalize from M partials to ~num_sm.
+2. inner re-tile → `next_pow2(32768/(footprint*itemsize))` (`_m_collapse_inner_tile`) against the TRUE
+   PRODUCT footprint (N for 2-D → inner 2-8; C*S for 3-D → inner=1, the ws2 spill-trap dodge; note
+   `fact.feature_extent` is the per-axis MAX, which under-counts a 3-D footprint).
+3. num_warps: drop the narrow-w1 lever (it keys on the rdim extent alone → floored instance's S=128 to
+   1 warp; the resident tile is `[inner, feature]`-wide). Use the plain extent ramp.
+
+**Findings.**
+- First cut (M_CTA only, inner=1) won big on rms/ln/group but REGRESSED instance_norm 0.67→0.38. Root
+  cause: narrow-w1 (instance has 0 carried tiles → narrow-w1 fires; group has 5 → it never did). cfg
+  sweep: instance [4,1] w1=0.38, w4=1.52, w8=2.24 → it was the WARPS, not the M-collapse. Fixed by the
+  narrow-w1 bypass.
+- inner byte-cap (inner=2) closed rms (8192,4096) 0.94→1.07.
+- The `oracle` mode for instance returned [32,32] with seed_over_oracle=0.108 (seed 9× FASTER than
+  "oracle") — a broken autotune (matches ws2's "autotuner hangs on these"); disregarded.
+
+**Perf** (G=tc/seed, fp32, before→after): rms (4096,4096) 0.90→1.49, (8192,1024) 0.72→1.81,
+(8192,4096) 0.64→1.07; ln (4096,4096) 0.68→1.49, (8192,4096) 0.49→1.13; instance (512,64,128)
+0.67→1.65, (1024,32,256) 0.43→1.13; group (512,128,64,32) 2.45→2.82, (1024,64,128,32) 1.42→1.76.
+Wide-N (N=8192) NEUTRAL (rms 0.93→0.93, ln 0.74→0.75 — per-row reduction dominates; no regression).
+bf16 spot-check all >1, acc-pass. Matches/exceeds old m_reduction (rms 4096²=1.49 vs 1.48; 8192×1024
+=1.81 vs 1.85; ln 4096²=1.49 vs 1.52).
+
+**Invariant** (config_recorder, final code vs stashed baseline): 9 standard 739/739 byte-identical
+(fp32/bf16/fp16 × train/val/robustness); 8 transfer gate-disjoint; bias_grad/dyt unchanged.
+
+Residual: wide-N tail (m_reduction's HBM-bytes warp ramp 16/32 would close it); full curriculum sweep
+before landing. See REPORT.md "ADDENDUM" + RESULTS.md.

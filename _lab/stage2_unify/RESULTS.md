@@ -67,3 +67,51 @@ vs 256 rows 1.00x).
   reduction collapsing the grid axis into a per-feature accumulator." Occupancy key
   (grid_rows//num_sm) + the M_COLLAPSE_MAX_CTA measured crossover. No kernel-identity, no dtype
   literal. The dominant-axis pick (largest extent) is a faithful tie-break.
+
+═══════════════════════════════════════════════════════════════════════════
+## ADDENDUM (2026-06-19) — sub-problem D: M-collapse perf recovery (the [stage2-unify] commit before [stage3-epilogue])
+═══════════════════════════════════════════════════════════════════════════
+Lever (triton.py `TritonStandardReductionHeuristic.get_seed_config`, materialized branch, gated on
+`is_materialized & per_feature_accumulator & full_width_output & inner_tile_ids`): grid M block →
+`next_pow2(grid_rows/num_sm)`; inner re-tile → byte-cap vs true product footprint; narrow-w1 dropped.
+
+### Discriminator probe (`probe_mcollapse.py`, compile-only)
+| kernel | PFA | is_mat | full_width | inner tile | FINAL seed | gate |
+|---|---|---|---|---|---|---|
+| rms_norm_bwd (8192,4096) | True | True | True | yes | [64,2] w8 | FIRES |
+| layer_norm_bwd (8192,4096) | True | True | True | yes | [64,2] w8 | FIRES |
+| instance_norm (512,64,128) | True | True | True | yes | [4,1] w4 | FIRES |
+| group_norm (512,128,64,32) | True | True | True | yes | [4,1] w4 | FIRES |
+| bias_grad / dyt | True | — | False | no | [128,128]/[128,8] | off (user-tiled) |
+| 9 standard / 8 transfer | False | mixed | — | — | unchanged | off |
+
+### Perf — G = tc/seed (fp32, do_bench median-of-11, accuracy-gated FIRST)
+| kernel | shape | seed_us before→after | tc_us | G before | **G after** |
+|---|---|---|---|---|---|
+| rms_norm_bwd | (4096,4096) | 178.0→108.5 | 161 | 0.90 | **1.49** |
+| rms_norm_bwd | (8192,1024) | 93.1→61.9 | 112 | 0.72 | **1.81** |
+| rms_norm_bwd | (8192,4096) | 339.8→203.3 | 217 | 0.64 | **1.07** |
+| rms_norm_bwd | (4096,8192) | —→340.7 | 315 | 0.93 | 0.93 |
+| layer_norm_bwd | (4096,4096) | 259.0→116.4 | 174 | 0.68 | **1.49** |
+| layer_norm_bwd | (8192,4096) | 485.3→210.6 | 238 | 0.49 | **1.13** |
+| layer_norm_bwd | (4096,8192) | —→484.8 | 365 | 0.74 | 0.75 |
+| instance_norm | (512,64,128) | 160.0→67.9 | 112 | 0.67 | **1.65** |
+| instance_norm | (1024,32,256) | 246.5→80.4 | 91 | 0.43 | **1.13** |
+| group_norm | (512,128,64,32) | 53.5→46.6 | 132 | 2.45 | **2.82** |
+| group_norm | (1024,64,128,32) | 82.8→73.8 | 130 | 1.42 | **1.76** |
+
+bf16 spot-check (acc=True): rms (4096,4096) 1.26 [32,2], (8192,1024) 2.55 [64,8]; ln (4096,4096) 1.44
+[32,2]; instance (512,64,128) 2.84 [4,1]; group (512,128,64,32) 2.71 [4,1].
+
+### Diagnostics that shaped the design
+- instance first-cut [4,1] w1 = 0.38 (REGRESSION) → root cause narrow-w1 (instance has 0 carried tiles
+  so narrow-w1 fires; group has 5 so it never did). cfg sweep (512,64,128): [1,1]w1=0.67, [4,1]w1=0.38,
+  [4,1]w4=1.52, [4,1]w8=2.24 → warps, not the M-collapse. Fixed by the narrow-w1 bypass.
+- inner byte-cap: rms (8192,4096) [64,1]=0.94 → [64,2]=1.07.
+- instance `oracle` mode returned [32,32], seed_over_oracle=0.108 (seed 9× faster than "oracle") — a
+  broken autotune (ws2: "autotuner hangs on these"); disregarded.
+
+### Invariant
+- config_recorder (final code vs stashed baseline): **739/739 byte-identical** (fp32/bf16/fp16 ×
+  train/val/robustness).
+- transfer probe: all 8 GATE_FIRES=False. bias_grad/dyt configs unchanged.
