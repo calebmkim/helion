@@ -102,3 +102,21 @@ bf16 spot-check all >1, acc-pass. Matches/exceeds old m_reduction (rms 4096²=1.
 
 Residual: wide-N tail (m_reduction's HBM-bytes warp ramp 16/32 would close it); full curriculum sweep
 before landing. See REPORT.md "ADDENDUM" + RESULTS.md.
+
+---
+
+## Sub-problem E (post-D) — M-collapse gate over-specified; rms/ln_bwd lost at non-pow2/wide N
+
+Audit of the unified stack vs the W1 standalone `TritonMReductionHeuristic` found rms/ln_bwd fired the
+floored `[1,1]` seed (G≈0.5–0.9) instead of the W1 `[32,2]` collapse (G≈1.2–1.6) on most shapes.
+Bind-verified root cause (fp32+bf16): the D gate `is_materialized and per_feature_accumulator and
+full_width_output and inner_tile_ids` is over-specified — `per_feature_accumulator` already implies
+`is_materialized`, and `full_width_output` is a FALSE NEGATIVE at non-pow2 N (feature next_pow2 padding
+spawns an extra block → the grad_x store axis no longer block-id-matches the rdim), so the collapse
+fired only at small pow2 N.
+
+Fix: gate = `per_feature_accumulator and inner_tile_ids` (provenance + the structural guard that the
+grow-outer / byte-cap-inner decomposition exists). Verified by config binds: non-pow2 rms/ln_bwd now
+`[1,1]→[m_cta,1]` (m_cta=next_pow2(M/num_sm)); pow2 unchanged; 0/18 forward cells changed (gate never
+fires for PFA=False); bias_grad/dyt/group/instance unchanged; (2048,6144)/(2048,7168) correctly decline
+(inner_tile_ids empty — kept safety gate is the deciding vote). Config-only; not timed in this commit.

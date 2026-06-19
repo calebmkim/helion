@@ -117,3 +117,43 @@ spot-check all >1, accuracy-pass (rms 1.26/2.55, ln 1.44, instance 2.84, group 2
 - Wide-N (N=8192) tail: m_reduction's HBM-bytes warp ramp (16/32) would close it; neutral as-is.
 - A full curriculum sweep (all splits × dtypes) before landing — spot-shapes here are representative.
 - Evidence: `RESULTS.md` (ADDENDUM), `probe_mcollapse.py`, ledger `perf_recovery_mcollapse`.
+
+## Sub-problem E — simplify the M-collapse gate (recover rms/ln_bwd at non-pow2 / wide N)
+
+**Problem found post-D.** Sub-problem D added the standard-track M-collapse seed but gated it on
+FOUR conjuncts: `is_materialized and per_feature_accumulator and full_width_output and inner_tile_ids`.
+Two are over-specified and one (`full_width_output`) is a false negative on this branch, so the
+collapse fired only at small power-of-2 feature widths. rms/ln_bwd were left at the floored `[1,1]`
+seed (G≈0.5–0.9 vs torch.compile) at non-pow2 / wide N — most real shapes — instead of the W1
+m_reduction `[32,2]`-family seed (G≈1.2–1.6). (This is why the unified stack underperformed the
+standalone `TritonMReductionHeuristic` on rms/ln_bwd.)
+
+**Root cause (bind-verified, fp32+bf16):** `per_feature_accumulator` is True for ALL N; the
+discriminators were the other two flags:
+- non-pow2 N → `full_width_output=False`: padding the feature to next_pow2 spawns an extra block, so
+  `fact.block_id` shifts (e.g. 2→3) and the grad_x store's inner-subscript axis no longer matches the
+  reduction `red_block_id` (full_width matches on AXIS identity). A spurious false negative.
+- wide N → the inner byte-cap floors to 1; the held `[1, feature]` tile already fills the 32 KiB
+  budget, so the collapse degraded to `[1, feature]` and dropped the `m_cta` occupancy.
+
+**Change.** Gate is now exactly `per_feature_accumulator and inner_tile_ids`:
+- `per_feature_accumulator` — the faithful grad-parameter-collapse provenance; it ALREADY implies
+  `is_materialized` (the accumulator's dims ARE the materialized feature axis), so `is_materialized`
+  was redundant. False for all 9 standard + 8 transfer kernels (structural exclusion).
+- `inner_tile_ids` — KEPT: the structural safety that the grow-outer-grid / byte-cap-inner
+  decomposition physically exists, so a held m_tile with no inner re-tile is never grown → spilled.
+- `full_width_output` dropped from the gate (still used elsewhere for num_warps direction); on this
+  branch every collapse kernel writes full-width grad_x except for the non-pow2 padding artifact.
+
+**Verified (config binds only, fp32 + bf16; no timing in this commit):**
+- rms/ln_bwd non-pow2 N now collapse `[1,1] → [m_cta, 1]`, `m_cta = next_pow2(M/num_sm)`
+  (e.g. (16384,896)→[128,1], (8192,1280)→[64,1], (4096,2560)→[32,1], (2048,10240)→[16,1]); pow2 N
+  unchanged ([16,2]/[32,4]) — restores the W1 m_reduction `[32,2]`-family shape.
+- **Forward byte-identical**: 0/18 sampled base-kernel test cells changed (per_feature_accumulator
+  False ⇒ gate never fires) — Gate-R invariant preserved.
+- bias_grad/dyt (user-tiled branch) and group_norm/instance_norm unchanged.
+- (2048,6144)/(2048,7168) correctly still decline: `inner_tile_ids=[]` (the roller gave these shapes
+  no inner M tile), so the kept safety gate is the deciding vote — no spill risk, no regression.
+
+**Not yet timed** (config-only here): the new seeds match the W1 M-collapse shape that WS2 measured at
+~1.2–1.6× over torch.compile; a timed A/B on these exact shapes would confirm the speedup on this stack.

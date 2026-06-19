@@ -875,10 +875,18 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # feeds a per-feature grad accumulator finalized across CTAs. _build_block_sizes floors
         # this block to 1 (a residency model that does not apply here), leaving a grid-wide M-way
         # grad_w finalize; size it for occupancy instead so the finalize shrinks to ~num_sm
-        # partials. Gated on `per_feature_accumulator` (the faithful grad-parameter-collapse
-        # provenance) AND a non-grid inner tile that bears the residency -- so a normal held
-        # m_tile (no inner re-tile) is NEVER grown. The 9 standard + 8 transfer kernels have no
-        # materialized feature axis => per_feature_accumulator is False => untouched (byte-id).
+        # partials. Gated on EXACTLY TWO conditions: `per_feature_accumulator` (the faithful
+        # grad-parameter-collapse provenance -- a loop-carried accumulator that sums across rows
+        # into an all-feature buffer) AND a non-grid inner tile that bears the residency (so a
+        # held m_tile with no inner re-tile is NEVER grown -> never spilled). The former is
+        # provenance; the latter is structure (the grow-outer-grid / byte-cap-inner decomposition
+        # must physically exist). `is_materialized` and `full_width_output` were dropped as
+        # redundant: per_feature_accumulator already implies the feature axis is materialized
+        # (the accumulator's dims ARE that materialized axis), and on this branch a collapse
+        # kernel always writes full-width grad_x -- except that non-pow2 feature padding splits
+        # the store axis off the rdim block-id, making full_width_output a FALSE NEGATIVE that
+        # suppressed the collapse at non-pow2 / wide N. The 9 standard + 8 transfer kernels have
+        # per_feature_accumulator False, so the gate never fires => their seeds stay byte-identical.
         grid_ids = {b for bids in device_ir.grid_block_ids for b in bids}
         inner_tile_ids = [
             b
@@ -887,12 +895,7 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             and b != fact.block_id
             and b not in non_reduction_loop_ids
         ]
-        if (
-            is_materialized
-            and fact.per_feature_accumulator
-            and fact.full_width_output
-            and inner_tile_ids
-        ):
+        if fact.per_feature_accumulator and inner_tile_ids:
             # Occupancy-size the grid M block (the dominant lever: M-way grad_w finalize ->
             # ~num_sm partials), byte-cap the inner re-tile to the resident feature footprint, and
             # drop the narrow-w1 num_warps lever -- it keys on the rdim extent alone (so it floors
