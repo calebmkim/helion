@@ -766,6 +766,57 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         return Config(**seed)
 
     @classmethod
+    def _m_collapse_grid_block(
+        cls, env: CompileEnvironment, fact: ReductionFact
+    ) -> int:
+        """Occupancy-sized grid M block for a dual-axis grad-parameter M-collapse
+        (rms/ln/instance/group backward). The grad-parameter (``grad_weight[N]`` /
+        ``grad_bias[N]``) is summed across the grid rows into a per-CTA partial buffer that is
+        finalized by a cross-CTA ``sum(0)``. With the grid block floored to 1 that finalize is a
+        grid-wide M-way collapse (one partial per row); sizing the block so the grid is ~one SM
+        wave (``next_pow2(grid_rows // num_sm)``) cuts it to ~``num_sm`` partials. Valid ONLY when
+        an inner loop re-tiles this block so it does not bear residency (the caller gates on that);
+        the inner tile carries the resident ``[inner, feature]`` set, so this block is free to
+        ride occupancy. Mirrors the user-tiled M-collapse seed's occupancy lever.
+        """
+        from ..._utils import next_power_of_2 as _np2
+        from ...runtime import get_num_sm
+
+        grid_rows = _grid_rows(env, fact.m_block_ids)
+        num_sm = max(1, get_num_sm(env.device))
+        return max(1, _np2(max(1, grid_rows // num_sm)))
+
+    @classmethod
+    def _m_collapse_inner_tile(
+        cls, env: CompileEnvironment, fact: ReductionFact, grid_ids: set[int]
+    ) -> int:
+        """Byte-cap the inner re-tile of a dual-axis M-collapse against the TRUE resident feature
+        footprint -- the PRODUCT of the materialized feature axes (``N`` for a 2-D norm, ``C*S``
+        for a 3-D norm), so the resident ``[inner, feature]`` fp32 tile fits
+        ``M_COLLAPSE_TILE_BYTES``. A 3-D norm's wide footprint floors ``inner`` to 1 (the
+        ``[1, C, S]`` tile already fills the budget -- avoiding the ws2 spill where a per-axis MAX
+        under-counted the footprint by C); a 2-D norm's narrower ``N`` row admits ``inner`` 2-8.
+        ``fact.feature_extent`` is the single widest axis (MAX, the user-tiled M-collapse's signal)
+        which under-counts a 3-D footprint, so recompute the product here.
+        """
+        from ..._utils import next_power_of_2 as _np2
+
+        bs_ids = env.config_spec.block_sizes.valid_block_ids()
+        rl_ids = env.config_spec.reduction_loops.valid_block_ids()
+        footprint = 1
+        for bs in env.block_sizes:
+            if (
+                bs.reduction
+                and isinstance(bs.size, (int, torch.SymInt))
+                and bs.block_id not in grid_ids
+                and bs.block_id not in bs_ids
+                and bs.block_id not in rl_ids
+            ):
+                footprint *= max(1, env.size_hint(bs.size))
+        itemsize = max(1, fact.itemsize)
+        return max(1, _np2(cls.M_COLLAPSE_TILE_BYTES // max(1, footprint * itemsize)))
+
+    @classmethod
     def get_seed_config(
         cls, env: CompileEnvironment, device_ir: DeviceIR
     ) -> Config | None:
@@ -816,10 +867,49 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             reduction_loops = []
         else:
             reduction_loops = [None] if persistent else [r_block]
+        block_sizes = cls._build_block_sizes(
+            spec, fact, None, None, non_reduction_loop_ids=non_reduction_loop_ids
+        )
+        # Dual-axis grad-parameter M-collapse (rms/ln/instance/group backward): the grid M block
+        # is re-tiled by an INNER loop (so residency rides the inner tile, NOT this block) and
+        # feeds a per-feature grad accumulator finalized across CTAs. _build_block_sizes floors
+        # this block to 1 (a residency model that does not apply here), leaving a grid-wide M-way
+        # grad_w finalize; size it for occupancy instead so the finalize shrinks to ~num_sm
+        # partials. Gated on `per_feature_accumulator` (the faithful grad-parameter-collapse
+        # provenance) AND a non-grid inner tile that bears the residency -- so a normal held
+        # m_tile (no inner re-tile) is NEVER grown. The 9 standard + 8 transfer kernels have no
+        # materialized feature axis => per_feature_accumulator is False => untouched (byte-id).
+        grid_ids = {b for bids in device_ir.grid_block_ids for b in bids}
+        inner_tile_ids = [
+            b
+            for b in spec.block_sizes.valid_block_ids()
+            if b not in grid_ids
+            and b != fact.block_id
+            and b not in non_reduction_loop_ids
+        ]
+        if (
+            is_materialized
+            and fact.per_feature_accumulator
+            and fact.full_width_output
+            and inner_tile_ids
+        ):
+            # Occupancy-size the grid M block (the dominant lever: M-way grad_w finalize ->
+            # ~num_sm partials), byte-cap the inner re-tile to the resident feature footprint, and
+            # drop the narrow-w1 num_warps lever -- it keys on the rdim extent alone (so it floors
+            # a narrow-S 3-D norm to ONE warp) but the resident tile here is [inner, feature]-wide,
+            # so the plain extent ramp (>= 4 warps) is faithful. 2-D rms/ln are already past the
+            # narrow-w1 threshold so their warps are unchanged; this only rescues instance_norm.
+            m_cta = cls._m_collapse_grid_block(env, fact)
+            for mbid in fact.m_block_ids:
+                block_sizes[spec.block_sizes.block_id_to_index(mbid)] = m_cta
+            inner = cls._m_collapse_inner_tile(env, fact, grid_ids)
+            for bid in inner_tile_ids:
+                block_sizes[spec.block_sizes.block_id_to_index(bid)] = inner
+            num_warps = cls._num_warps(
+                fact
+            )  # num_sm/grid_rows default 0 -> no narrow-w1
         seed: dict[str, Any] = {
-            "block_sizes": cls._build_block_sizes(
-                spec, fact, None, None, non_reduction_loop_ids=non_reduction_loop_ids
-            ),
+            "block_sizes": block_sizes,
             "reduction_loops": reduction_loops,
             "num_warps": num_warps,
             "num_stages": 1,
