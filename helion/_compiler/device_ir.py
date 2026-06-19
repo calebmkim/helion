@@ -7,6 +7,7 @@ import contextlib
 import copy
 import dataclasses
 import functools
+import logging
 import math
 import operator
 import re
@@ -89,6 +90,8 @@ if TYPE_CHECKING:
 
 
 tls: _TLS = cast("_TLS", threading.local())
+
+log = logging.getLogger(__name__)
 
 
 def _lerp_scalar_decomp(
@@ -1126,7 +1129,33 @@ class DeviceIR:
                 materialized_inner,
                 key=lambda b: env.block_sizes[b].size_hint(),
             )
-            non_reduction_loop_block_ids = ()
+            # Widen genuine apply/normalize loops that span the reduction extent (``qualifying``),
+            # but — unlike the user-tiled branch below — do NOT decline on ``all_qualified``: a
+            # materialized reduction legitimately co-occurs with OTHER non-grid block_sizes loops
+            # that must NOT be widened to its extent (a secondary reduction such as the grad_w
+            # M-collapse / C*S feature collapse, or an apply loop at a different extent). Those stay
+            # floored — a safe seed the autotuner refines. For the curriculum kernels ``qualifying``
+            # is empty, so the seed is byte-identical to the previous forced-``()``. A non-qualifying
+            # tile that is NOT itself a reduction axis is an unhandled apply-loop shape: floor it,
+            # but warn so a new kernel family earns a deliberate widening rule, not a silent floor.
+            non_reduction_loop_block_ids, _all_qualified = (
+                self._non_reduction_loop_candidates(red_block_id, grid_ids)
+            )
+            qualified = set(non_reduction_loop_block_ids)
+            for bid in bs_ids:
+                if (
+                    bid in grid_ids
+                    or bid == red_block_id
+                    or bid in qualified
+                    or bid in red_block_ids
+                ):
+                    continue
+                log.warning(
+                    "materialized-reduction seed: non-reduction block_sizes loop %s "
+                    "(size %s) is floored (no widening rule for this apply-loop shape yet)",
+                    bid,
+                    env.block_sizes[bid].size,
+                )
         elif len(inner_red) == 1 and inner_red[0] in bs_ids:
             # USER-TILED: a single inner reduction over a block_sizes tile.
             red_block_id = inner_red[0]
@@ -1367,6 +1396,49 @@ class DeviceIR:
         # read off the walker liveness slice for this axis (default 1 = single resident tile).
         body_live_tiles = max(1, (liveness_by_axis or {}).get(red_block_id, 1))
 
+        # feature_extent: resident per-inner-row FEATURE footprint a grad-parameter M-collapse
+        # (bias_grad/dyt) byte-caps its inner tile against -- the materialized full-width feature
+        # axis (a ``reduction=True`` block in NEITHER block_sizes NOR reduction_loops, e.g. the [N]
+        # grad-param output). 0 when none exists, so it also discriminates the M-collapse from the
+        # user-tiled feature reductions (softmax_two_pass/kl_div/jsd/grpo have no such axis). A
+        # trivial structural read of the block-size table -- no graph walk. (A 3-D norm's resident
+        # footprint is C*S, but those ride the standard track, not the user-tiled M-collapse, so the
+        # single widest materialized axis suffices here.)
+        env = CompileEnvironment.current()
+        bs_ids = env.config_spec.block_sizes.valid_block_ids()
+        rl_ids = env.config_spec.reduction_loops.valid_block_ids()
+        grid_ids = {b for bids in self.grid_block_ids for b in bids}
+        # Materialized feature axes: reduction-dim blocks (``bs.reduction`` provenance) left
+        # full-width -- in NEITHER block_sizes (not user-tiled) NOR reduction_loops (not rolled)
+        # NOR grid. For a grad-parameter collapse this is the ``[N]`` buffer/output width.
+        materialized_feature_axes = {
+            bs.block_id
+            for bs in env.block_sizes
+            if bs.reduction
+            and isinstance(bs.size, (int, torch.SymInt))
+            and bs.block_id not in grid_ids
+            and bs.block_id not in bs_ids
+            and bs.block_id not in rl_ids
+        }
+        feature_extent = max(
+            (env.block_sizes[b].size_hint() for b in materialized_feature_axes),
+            default=0,
+        )
+        # per_feature_accumulator: the FAITHFUL M-collapse signature -- a loop-carried accumulator
+        # whose dims are ALL the materialized feature axis (the grad-param buffer, e.g.
+        # ``grad_bias[N]`` / ``grad_weight[N]``: a per-feature gradient summed across the grid/rows).
+        # The padded-buffer case (a non-pow2 grad buffer whose dim resolves to ``(None,)``) counts
+        # when a feature axis exists. softmax/kl_div/jsd/welford/grpo accumulate per-ROW or 2-D
+        # buffers (never all-feature), so they are excluded structurally, not by a tuned guard.
+        per_feature_accumulator = any(
+            a.dim_block_ids
+            and (
+                all(d in materialized_feature_axes for d in a.dim_block_ids)
+                or (a.dim_block_ids == (None,) and materialized_feature_axes)
+            )
+            for a in accumulator_facts
+        )
+
         return ReductionFact(
             block_id=red_block_id,
             size_hint=size_hint,
@@ -1381,6 +1453,8 @@ class DeviceIR:
             full_width_output=full_width_output,
             input_load_itemsize=input_load_itemsize,
             body_live_tiles=body_live_tiles,
+            feature_extent=feature_extent,
+            per_feature_accumulator=per_feature_accumulator,
         )
 
     def _non_reduction_loop_candidates(

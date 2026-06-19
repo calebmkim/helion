@@ -393,6 +393,15 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # spill (measured crossover: 256 rows fine, 512 spills hard). See the user-tiled M-collapse
     # branch in TritonUserTiledReductionHeuristic.get_seed_config.
     M_COLLAPSE_MAX_CTA = 256
+    # M-COLLAPSE inner reduction tile byte budget. A grad-parameter collapse is MEMORY-bound
+    # (each row read once, summed), so the inner ``[inner_rows, feature]`` tile wants the SMALLEST
+    # resident footprint for maximum CTA occupancy -- NOT the largest-that-fits (that is the
+    # compute-bound persistent-reduction rule). Byte-cap the resident fp32 tile here so the inner
+    # row count floors toward the occupancy sweet spot (~2-8 rows): ``inner =
+    # next_pow2(budget // (feature_extent * itemsize))``. 32 KiB matches the ws2 m_reduction
+    # calibration (inner=8 at N=1024, inner=2 at N=4096); decoupling this from the occupancy grid
+    # block is what unspills dyt's grad_x-laden body ([128,128] 0.23x -> [128,8]).
+    M_COLLAPSE_TILE_BYTES = 32768
     # No welford "structured-combine floor": welford is memory-bound (profiler-confirmed),
     # so a wide combine tile only spills — register-residency via the reduction footprint cap
     # is what matters. The apply/normalize tile gets the SAME M_BLOCK-aware footprint cap as
@@ -906,30 +915,47 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         # all the CTA's rows in a single inner tile (R_BLOCK == M_BLOCK). Faithful key
         # (occupancy + load count), not kernel identity.
         m_collapse_block: int | None = None
-        is_m_collapse = (
-            not fact.full_width_output
-            and fact.num_carried_2d_tiles == 0
-            and not fact.non_reduction_loop_block_ids
-            and fact.num_load == 1
-        )
+        # M-COLLAPSE (grad-parameter reduction collapsing the grid/row axis into a per-feature
+        # [N] gradient, e.g. bias_grad's grad_bias / dyt's grad_weight). The FAITHFUL signature is
+        # a single structural fact -- ``per_feature_accumulator``: a loop-carried accumulator whose
+        # dims are ALL the materialized feature axis (the grad-param buffer summed across rows).
+        # This is the *definition* of the family, read from accumulator provenance, and REPLACES the
+        # old 4-way symptom conjunction (full_width_output / num_carried / non_reduction_loop /
+        # num_load). It includes bias_grad AND dyt and excludes softmax/kl_div/jsd/welford/grpo
+        # (per-row or 2-D accumulators, never all-feature) structurally, not by a tuned guard.
+        is_m_collapse = fact.per_feature_accumulator
         if is_m_collapse:
             from ..._utils import next_power_of_2 as _np2
 
             grid_rows = _grid_rows(env, fact.m_block_ids)
             num_sm = max(1, get_num_sm(env.device))
             if grid_rows > 0:
-                # Occupancy: ~one wave of programs (grid_rows // num_sm rows per CTA), capped at
-                # M_COLLAPSE_MAX_CTA — a CTA that reduces more than ~256 rows in one in-register
-                # inner tile spills the reduction tree / resident [rows, feature] tile (measured:
-                # [512,1024] 0.21x vs [256,256] 1.00x at bias_grad 65536x1024). The cap binds only
-                # for very tall M; below it the occupancy block is used as-is.
+                # TWO DECOUPLED knobs (the previous seed wrongly set both to the occupancy block):
+                # (a) grid CTA -> OCCUPANCY: ~one wave of programs (grid_rows // num_sm rows per
+                #     CTA), capped at M_COLLAPSE_MAX_CTA, so the M-way `gb_blocks.sum(0)` finalize is
+                #     over ~num_sm partials instead of the whole M axis.
                 m_collapse_block = max(
                     1,
                     min(cls.M_COLLAPSE_MAX_CTA, _np2(max(1, grid_rows // num_sm))),
                 )
-                r_block = (
-                    m_collapse_block  # reduce the whole CTA wave in one inner tile
-                )
+                # (b) inner reduction tile: depends on whether the collapse has PER-ROW WORK,
+                #     which ``body_live_tiles`` measures (peak simultaneously-live full-width tiles).
+                if fact.body_live_tiles <= 1:
+                    # PURE collapse (bias_grad: read + sum, ONE resident tile): a big inner tile is
+                    # cheap (no per-row intermediates/store) and cuts loop overhead, so reduce the
+                    # whole CTA wave in one slab. Occupancy is bounded by the grid block + 256 cap.
+                    # (Measured: bias_grad [128,128] 1.17x vs the byte-capped [128,8] 0.96x.)
+                    r_block = m_collapse_block
+                else:
+                    # Collapse WITH per-row work (dyt: a full-width grad_x store + tanh intermediates
+                    # -> body_live_tiles resident tiles): a big inner tile spills, so byte-cap the
+                    # resident [inner, feature] footprint tight (~2-8 rows) for occupancy. (Measured:
+                    # dyt [128,128] 0.23x spill -> byte-capped [128,8] 1.44x; mirrors ws2 m_reduction.)
+                    feat_bytes = max(1, fact.feature_extent) * max(1, fact.itemsize)
+                    inner_cap = max(
+                        1, _np2(max(1, cls.M_COLLAPSE_TILE_BYTES // feat_bytes))
+                    )
+                    r_block = max(1, min(m_collapse_block, inner_cap))
 
         num_warps = cls._num_warps(
             fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)

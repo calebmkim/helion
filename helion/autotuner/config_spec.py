@@ -124,6 +124,17 @@ class ReductionFact(NamedTuple):
       over-count (all rdim-shaped values live at a point; register rematerialization may reduce
       true pressure) so it errs toward looping, never toward an unsafe persistent spill.
       Defaults to 1 (single resident tile) for facts built without the liveness slice.
+    - ``per_feature_accumulator``: the faithful M-collapse discriminator -- True iff a loop-carried
+      accumulator exists whose dims are ALL the materialized feature axis (the grad-parameter buffer,
+      e.g. ``grad_bias[N]`` / ``grad_weight[N]``: a per-feature gradient summed across the grid/rows).
+      This is the *definition* of a grad-parameter collapse (bias_grad/dyt), read from accumulator
+      provenance -- not a symptom proxy. softmax_two_pass/kl_div/jsd/welford/grpo accumulate per-ROW
+      or 2-D buffers (never all-feature) so they are False; the user-tiled seed keys ``is_m_collapse``
+      on it. False for all 9 standard + 8 transfer kernels' user-tiled members.
+    - ``feature_extent``: the materialized full-width feature extent -- the ``N`` of the resident
+      ``[inner, N]`` tile. Used only by the M-collapse seed to byte-cap its inner reduction tile
+      against ``feature_extent * itemsize`` (a memory-bound collapse wants the smallest resident
+      tile, for occupancy). 0 when no materialized feature axis exists.
 
     ``grid_rows`` is NOT stored — a pure function of ``m_block_ids`` + env, computed on
     demand by its one consumer (the narrow-row ``num_warps`` lever).
@@ -142,6 +153,8 @@ class ReductionFact(NamedTuple):
     full_width_output: bool = True
     input_load_itemsize: int = 0
     body_live_tiles: int = 1
+    feature_extent: int = 0
+    per_feature_accumulator: bool = False
 
 
 class MemoryOpFact(NamedTuple):
