@@ -14,12 +14,16 @@ from the eventual PR which is the `helion/` + `examples/` changes)
 
 | stage | PR code commits (helion/ + examples/) | lab commits | what landed |
 |---|---|---|---|
-| **Stage 1 — liveness chunk** | `48ac703e` (Part A), `e99ade11` (Part B), `26427709` (doc/format), `3c239777` (welford m_block cap + fp32 stats) | `010ebf05`, `b003d7ee`, `26427709` | liveness-aware persistent decision; **welford huge-M m_block persist-cap (+13% fp32) + fp32 stat accumulation (bf16/fp16 accuracy fix)** |
-| **Stage 2 — unify M-reduction** | `4c05c507` (A), `d0c7b946` (B), `6657d8ac` (C) | `0f941ba6` | materialized + M-collapse recognizers; m_reduction unnecessary |
-| **Stage 3 — matmul+epilogue** | `73a08439`, `b37349b2` (dtype-aware M_BLOCK overtime) | `4fa32735` | the first composed fact + heuristic |
+| **Stage 1 — liveness chunk** | `48ac703e` (Part A), `e99ade11` (Part B), `26427709` (doc/format), `3c239777` (welford m_block cap + fp32 stats), `440e8717` (fold carried-cap into `_reduction_rblock`) | `010ebf05`, `b003d7ee`, trailing `e0d98abb` + `28672138` (post-hoc records) | liveness-aware persistent decision; welford huge-M m_block persist-cap (+13% fp32) + fp32 stat accumulation (bf16/fp16 accuracy fix) |
+| **Stage 2 — unify M-reduction** | `afac0b81` (A: materialized recognizer), `9bc8757c` (B: bias_grad M-collapse), `c8429c85` (C: multi-materialized), `5f34e9d1` (faithful `per_feature_accumulator` + dyt fix), **`883aa50f` (D: dual-axis M-collapse perf recovery — 2026-06-19)** | `223bc3cd`, **`e0c293d6` (D)** | materialized + M-collapse recognizers (m_reduction unnecessary) **+ rms/ln/instance/group backward recover old m_reduction perf** |
+| **Stage 3 — matmul+epilogue** | `ea5cf150` (composed fact + heuristic), `000b02db` (dtype-aware M_BLOCK overtime) | `6749108d`, `bee15408`, `8d738eae`, `51045a1b`, `64222faa` | the first composed fact + heuristic |
 
 (`git log --oneline 0676dd32..HEAD` is the full stack. To cut the 3-stage PR, split on the
-`[stage1-*]` / `[stage2-*]` / `[stage3-*]` prefixes; drop the `_lab/` paths.)
+`[stage1-*]` / `[stage2-*]` / `[stage3-*]` prefixes; drop the `_lab/` paths. NOTE: the two trailing
+`[stage1-lab]` post-hoc commits (`e0d98abb`, `28672138`) sit physically after Stage 3 — they are
+**lab-only** (no `helion/` changes) so they don't affect the code split. SHAs `ea5cf150`→`28672138`
+were regenerated when sub-problem D was inserted at the end of Stage 2; backup of the prior tip:
+branch `backup-pre-mcta-insert`.)
 
 ## HARD INVARIANT — held end-to-end (with ONE intentional, benchmarked exception: welford)
 **8 of the 9** standard reduction kernels (rms_norm, layer_norm, softmax, sum, long_sum,
@@ -55,7 +59,15 @@ num_load=1, already beats its default); (C) the multi-materialized recognizer fi
 (0.04→1.16–1.89 large-N). **Every former-m_reduction kernel now beats its default via the standard or
 user-tiled track**, so a bespoke M-reduction heuristic is unnecessary. Wide-S group/instance shapes
 characterized as kernel-authoring-bound (the `[32,32]` default fails to compile there; the seed still
-beats it). Vanilla-T1 perf short of old m_reduction is accepted (overtime). All gates pass.
+beats it). All gates pass. **(D — 2026-06-19, commit `883aa50f`) The vanilla-T1 perf gap to old
+m_reduction is now CLOSED for the 4 dual-axis backward norms.** An M-collapse occupancy lever
+(grid M block → `next_pow2(grid_rows/num_sm)`) + inner byte-cap + narrow-w1 bypass in the standard
+MATERIALIZED branch, gated on `per_feature_accumulator` (+ `is_materialized` + `full_width_output` +
+a non-grid inner tile), lifts fp32 G=tc/seed on N≤4096 to **rms 0.90→1.49 / 0.72→1.81, ln 0.68→1.49 /
+0.49→1.13, instance 0.67→1.65 / 0.43→1.13, group 2.45→2.82 / 1.42→1.76** — matching/exceeding old
+m_reduction. The kernels already had the two-level tiling (`register_block_size` + inner `hl.tile`), so
+it is heuristic-only. Wide-N (N=8192) neutral. **Invariant held: 739/739 byte-identical** (gate
+disjoint — `per_feature_accumulator=False` for all 9 standard + 8 transfer); bias_grad/dyt unchanged.
 
 **Stage 3 — composed-fact seed for matmul + reduction-epilogue (DONE, gated D/F/H/A/R/E — the genuine
 hill-climb).** The first COMPOSED fact: `MatmulWithReductionEpilogueFact` holds a MatmulFact + the
@@ -83,11 +95,14 @@ pass.
   recognizers, and composed fact don't break existing tests.
 - **Completeness critic** re-verified the hard invariant 0/739 across every hop, and the group_norm
   TEST split (recognizer generalizes: large-N 1.21 beats default; wide-S kernel-authoring-bound).
-- **Logged, not chased (task-deprioritized):** Stage 2 rms/ln/instance vanilla-T1 perf < old
-  m_reduction (the M_CTA-occupancy + inner-byte-cap recovery — the task says do NOT chase it / do NOT
-  reach for AccumulatorFact to tune perf); Stage 1 flj bf16 V=50257 wide-V tail (chunk [2048] → ~1.15
-  vs current ~0.8; a secondary bonus the task says is not a loop target). Both are real headroom left
-  as future overtime with their re-add recipes in the per-stage notebooks.
+- **Stage 2 m_reduction perf recovery — now DONE** (sub-problem D, commit `883aa50f`, 2026-06-19):
+  the M_CTA-occupancy + inner-byte-cap recovery, re-opened by the human. Deliberately uses the
+  `AccumulatorFact`-derived `per_feature_accumulator` signal the original run was told to defer. fp32
+  G=tc/seed 0.49–0.90 → 1.07–2.82 on N≤4096; 739/739 byte-identical. Residual: wide-N (N=8192) neutral
+  (m_reduction's HBM-bytes warp ramp would close it); full curriculum sweep before landing.
+- **Logged, not chased (task-deprioritized):** Stage 1 flj bf16 V=50257 wide-V tail (chunk [2048] →
+  ~1.15 vs current ~0.8; a secondary bonus the task says is not a loop target) — real headroom left
+  as future overtime with its re-add recipe in the per-stage notebook.
 
 ## Reports & logs
 Per-stage report + notebook + ledger (gate verdicts AS-RETURNED): `_lab/stage1_liveness/`,
