@@ -606,7 +606,6 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         fact: ReductionFact,
         m_block: int,
         footprint_factor: int = 1,
-        live_budget: int | None = None,
     ) -> tuple[int, bool]:
         """The reduction-axis chunk (pow2) AND the persistent verdict, decided together in one
         budgeted formula and shared by both tracks. Returns ``(r_block, persistent)``.
@@ -614,21 +613,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         ``footprint_factor`` = how many resident rdim-shaped tiles one program holds live at
         once at the peak (the liveness signal; 1 = a single result tile). It bounds the
         decision two ways:
-        - PERSISTENT requires the SINGLE-tile fit (the unchanged per-program register caps
-          ``ROW_PERSIST_MAX_BYTES`` / ``FULL_WIDTH_PERSIST_MAX_ELEMS``) AND that the FULL
-          ``footprint_factor``-tile resident set fits ``live_budget`` (the multi-tile spill
-          ceiling — the per-program fast memory a one-shot persistent body may occupy before the
-          spill turns catastrophic). The liveness term only ever REMOVES persistence from an
-          otherwise-persistent heavy body; it never grants it.
+        - PERSISTENT requires the single resident tile to fit the per-program register byte cap
+          (``ROW_PERSIST_MAX_BYTES``) AND the full ``footprint_factor``-tile resident set to fit
+          ``LIVE_PERSIST_BUDGET`` (the multi-tile spill ceiling — the per-program fast memory a
+          one-shot persistent body may occupy before the spill turns catastrophic). The liveness
+          term only ever REMOVES persistence from an otherwise-persistent heavy body.
         - the LOOPED chunk is shrunk by ``footprint_factor`` so a heavy body gets a smaller
           chunk (jsd's ~7-tile body -> ~8192), keeping the looped resident set inside the
           register budget.
 
-        At the defaults (``footprint_factor=1``, ``live_budget`` defaulting to
-        ``ROW_PERSIST_MAX_BYTES``) the liveness term is implied by the base byte cap, so this
-        reproduces the prior single-tile decision byte-for-byte (the standard track passes the
-        liveness factor + the wider ``live_budget``; the user-tiled track keeps the defaults; the
-        carried-2-D-tile cap (kl_div/jsd) is folded into this chunk decision below).
+        The standard track passes ``footprint_factor=body_live_tiles``; the user-tiled track
+        keeps the default ``footprint_factor=1``, where the ``LIVE_PERSIST_BUDGET`` ceiling
+        collapses to the base byte cap (a no-op there). ``LIVE_PERSIST_BUDGET`` is used
+        unconditionally — the old per-call ``live_budget`` default of ``ROW_PERSIST_MAX_BYTES``
+        was redundant (at ``footprint_factor=1`` the byte cap already dominates it). The
+        carried-2-D-tile cap (kl_div/jsd) is folded into this chunk decision below.
 
         No welford "structured-combine floor": keeping the chunk register-resident (the
         footprint cap) is what matters. welford is memory-bound and a wide combine tile only
@@ -642,7 +641,6 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         itemsize = max(1, fact.itemsize)
         m = max(1, m_block)
         ff = max(1, footprint_factor)
-        lb = live_budget if live_budget is not None else cls.ROW_PERSIST_MAX_BYTES
         # Persistent iff (a) a SINGLE result tile fits the per-program register caps (the element
         # compile limit, the byte ceiling, AND — for a full_width_output row — the fp32-promoted
         # element ceiling the input-byte cap undercounts 2x at half precision), AND (b) the full
@@ -660,14 +658,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         # faithful encoding of what the unconditional carried cap did implicitly: at every shape
         # where the cap bound, persistent was already impossible.)
         extent_held = (
-            (element_cap is None or fact.size_hint <= element_cap)
-            and (m * fact.size_hint * itemsize <= cls.ROW_PERSIST_MAX_BYTES)
-            and (
-                not fact.full_width_output
-                or m * fact.size_hint <= cls.FULL_WIDTH_PERSIST_MAX_ELEMS
-            )
-            and (ff * m * fact.size_hint * itemsize <= lb)
+            # Persist captures a re-read prize iff looping would RE-READ the row -- either a
+            # full-width post-reduction apply (rms_norm/layer_norm/softmax/welford) OR a second
+            # reduction needing the first's result (cross_entropy's logsumexp: the sum-exp pass
+            # needs the global max -> two passes -> re-read). ``row_reread`` captures BOTH (a load
+            # feeding >=2 reductions, OR a reduction + a store). ``full_width_output`` MISSES the
+            # logsumexp case and regresses cross_entropy ~1.4x fp32 / ~1.6x bf16 (measured). The
+            # two old residency ceilings are collapsed into one fp32-resident byte cap
+            # (ROW_PERSIST_MAX_BYTES); FULL_WIDTH_PERSIST_MAX_ELEMS was dominated by it.
+            # ``num_carried_2d_tiles == 0`` keeps chunked-carried kernels (kl_div/jsd) off the
+            # persist path -- they re-read regardless of chunk size, so persist saves nothing.
+            fact.row_reread
             and fact.num_carried_2d_tiles == 0
+            and (element_cap is None or fact.size_hint <= element_cap)
+            and (m * fact.size_hint * itemsize <= cls.ROW_PERSIST_MAX_BYTES)
+            and (ff * m * fact.size_hint * itemsize <= cls.LIVE_PERSIST_BUDGET)
         )
         if extent_held:
             r_block = rdim
@@ -766,7 +771,6 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             fact,
             m_block,
             footprint_factor=fact.body_live_tiles,
-            live_budget=cls.LIVE_PERSIST_BUDGET,
         )
         num_warps = cls._num_warps(
             fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)

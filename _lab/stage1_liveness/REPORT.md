@@ -87,3 +87,36 @@ is fully attributable to `reduction_loops`.
 ## Deferred / logged
 - Band-B unification into footprint_factor (different byte budget) — fallback taken, logged.
 - flj bf16 V=50257 residual gap to tc (chunk [2048] would close it) — secondary wide-V tail, overtime.
+
+## Addendum — gate the persist decision on the re-read prize (`row_reread`)
+
+Final stage-1 change (the commit right before stage 2). `_reduction_rblock.extent_held` previously
+persisted ANY reduction whose resident row fit the byte cap. But persisting only *pays off* when
+looping would otherwise RE-READ the row — i.e. there is a re-read "prize" to capture. Two such cases:
+(a) a full-width post-reduction apply (rms_norm / layer_norm / softmax / welford — the apply needs the
+reduction result, so a looped kernel reloads the row); (b) a second reduction that needs the first's
+result — `cross_entropy`'s logsumexp, where `sum-exp` needs the global `max`, forcing two passes →
+re-read. A read-once / scalar-output reduction (`sum`, `long_sum`) reads the row exactly once whether
+persisted or looped, so persisting just spends register/occupancy headroom for no traffic win.
+
+`extent_held` now leads with **`fact.row_reread`** (a load feeding ≥2 reductions, OR a reduction +
+a store) — the signal that captures BOTH prize cases. Also in this commit: the two residency ceilings
+collapse to one fp32-resident byte cap (`ROW_PERSIST_MAX_BYTES`; `FULL_WIDTH_PERSIST_MAX_ELEMS` was
+dominated by it — dtype-safe since `fact.itemsize` is fp32-promoted=4 at bf16 too), and the redundant
+`live_budget` parameter of `_reduction_rblock` is removed (hardcoded to `LIVE_PERSIST_BUDGET`; at the
+user-tiled track's `footprint_factor=1` the byte cap already dominates it, so it was a no-op).
+
+**Why not `full_width_output`?** It was tried first and a red-flag A/B **regressed `cross_entropy`
+~1.4× fp32 / ~1.6× bf16** — it misses CE's logsumexp re-read (CE is `full_width_output=False` but a
+genuine re-read kernel). `row_reread` catches CE; it maps exactly onto the measured truth (persist
+wins for {rms_norm, layer_norm, softmax, welford, cross_entropy}; loop is fine for {sum, long_sum,
+kl_div, jsd}).
+
+**Net effect (config-recorder, verified):** the ONLY seed change vs the prior stage-1 tip is `sum`
+flipping persist→loop at the two test shapes whose N exceeds the looped chunk (`(4096,18432)`,
+`(2048,24576)`) — measured **flat** (read-once → no traffic prize). `cross_entropy`, the 9 standard
+kernels' protected re-read members, `kl_div`/`jsd`, and all 6 backward/M-collapse kernels are
+**byte-identical**. So this is a faithfulness + robustness refinement (persist now keys on the real
+prize; read-once kernels can't ride the spill cliff at large N/M_BLOCK), **perf-neutral** on the
+curriculum. Verified by a flip-scoped A/B (sum flat, CE regression under the rejected `full_width_output`
+variant) and a config-diff re-verify (only `sum` flips; everything else byte-identical; itemsize=4).
