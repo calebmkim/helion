@@ -120,3 +120,59 @@ grow-outer / byte-cap-inner decomposition exists). Verified by config binds: non
 `[1,1]→[m_cta,1]` (m_cta=next_pow2(M/num_sm)); pow2 unchanged; 0/18 forward cells changed (gate never
 fires for PFA=False); bias_grad/dyt/group/instance unchanged; (2048,6144)/(2048,7168) correctly decline
 (inner_tile_ids empty — kept safety gate is the deciding vote). Config-only; not timed in this commit.
+
+---
+
+## Post-review code-cleanup pass (2026-06-19) — readability/robustness, behavior-preserving
+
+> NOTE: commit hashes cited anywhere in this log are APPROXIMATE — this stack is rebased repeatedly
+> (e.g. to keep each cleanup commit in its own stage group), so SHAs drift on every rebase. Identify
+> commits by their `[stageN-...]` prefix + description, not by the hash.
+
+A review-driven cleanup of the Stage-2 recognizer + fact code. No behavior change for any tested kernel
+(verified). Banked as: `[stage1-liveness]` test fixes, `[stage2-unify]` code cleanup, this `[stage2-lab]`
+record.
+
+**Stage 2 code cleanup** (`device_ir.py`, `config_spec.py`, `triton.py`):
+- Dropped the dead `bid == red_block_id` clause in the floored-apply-loop warn loop — unreachable (the
+  loop iterates `bs_ids` and `red_block_id ∉ bs_ids` by construction; `bid in red_block_ids` subsumes it).
+- Added a `len(materialized_reduction_axes) > 1` warning. group_norm is the ONLY tested kernel that hits
+  the multi-axis case (S=64 + Cg=4; only the dominant becomes the fact). Confirmed the emitted config is
+  invariant to the pick, but `body_live_tiles`/`num_carried_2d_tiles` are axis-specific (tie-break risk
+  if a future lever reads them).
+- Unified `if materialized / elif user-tiled / else` into one priority-pool body
+  (`pool = materialized_reduction_axes or inner_red`; dominant-by-extent + warn-if-many); dropped the
+  `all_qualified` decline (floor+warn instead). This also **dropped the `has_matmul` gate**, which was
+  introduced by Stage 3 (`0e991a86`) — strictly a Stage-3 concern leaking into Stage 2. Per human
+  decision the leak is acceptable: the gate removal is behaviorally inert (pure matmul → empty-pool
+  decline; matmul+materialized rides the same path; no tested kernel changes; `test_matmul_heuristics`
+  passes).
+- Removed the now-dead `_all_qualified` 2nd return of `_non_reduction_loop_candidates` (only reader was
+  the deleted elif decline).
+- Renamed `materialized_inner` → `materialized_reduction_axes` (the reduced-OVER set); added shared
+  `_is_materialized_axis` helper whose docstring names the two provenances (reduced-OVER via
+  `ReductionLowering` vs feature-footprint via `bs.reduction`); pinned `bs.reduction` = registration
+  *role*, not "a reduction is lowered over it" (e.g. bias_grad's `[N]` output).
+- Renamed `ReductionFact.feature_extent` → `max_feature_extent` (it is a MAX over the materialized
+  feature axes).
+- Replaced the `(None,)` `per_feature_accumulator` special-case with `_resolve_accumulator_dim_block_id`:
+  `resolve_block_id`, else a **unique** `next_pow2(size_hint)` extent match (root cause: grad buffers are
+  padded to next_pow2, so a logical [1000] axis is a [1024] buffer dim that matches neither the block
+  size nor any origin → `resolve_block_id` returns None). Declines + warns on an ambiguous (≥2 same
+  padded-extent) match rather than guessing — a wrong guess would corrupt the identity-keyed
+  `num_carried_2d_tiles` (`dim_block_ids[-1] == red_block_id`). `per_feature_accumulator` simplifies to
+  `all(d in materialized_feature_axes ...)`, now N-D-correct. Limit (documented): unhandled only for a
+  genuine same-extent collision, which no extent scheme can resolve without real provenance.
+
+**Stage 1 test fixes** (`test/test_autotuner_heuristics.py`, banked `[stage1-liveness]`) — two
+pre-existing failures, base tests broken by Stage-1 commits:
+- `test_kl_div_wide_seeds_band_b_r_block_cap`: `_bandb_r_block_cap` → `_carried_tile_r_block_cap` (renamed
+  by `440e8717`).
+- `test_persistent_seed_round_trips_through_config_generation`: thread `row_reread=True` through
+  `_reduction_spec` so a wide reduction persists under the `row_reread` gate added by `53c88088`.
+
+**Verification** (subagents, GPU0): 6 m-reduction seeds byte-identical at every step (rms 2/[64,2],
+ln 1/[64,2], bias_grad 1/[128,128], dyt 2/[128,8], group 3/[4,1], instance 3/[4,1]);
+`test_autotuner_heuristics + test_matmul_heuristics + test_reductions` = **52 passed / 0 failed** (was
+50/2 before the test fixes); non-pow2 recovery confirmed (bias_grad N=1024 & N=1000 both resolve the
+acc dim to `(2,)` and `per_feature_accumulator=True`).
