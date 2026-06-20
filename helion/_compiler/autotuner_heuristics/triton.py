@@ -959,3 +959,121 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
             if ev is not None:
                 seed["load_eviction_policies"] = ev
         return Config(**seed)
+
+
+class TritonMatmulReductionEpilogueHeuristic(AutotunerHeuristic):
+    """Seed for a fused matmul + reduction-over-output-axis epilogue (matmul_rms_norm /
+    matmul_layernorm / matmul_softmax / matmul_l2_normalize / matmul_sum / ...): a single
+    grid loop over M does an inner K-loop ``addmm`` into a register-resident ``[M_BLOCK, N]``
+    fp32 accumulator, then reduces over the matmul's N (output) axis on that accumulator. N
+    is ``hl.specialize``'d (never tiled), so BOTH the ``[M_BLOCK, N]`` accumulator AND the
+    ``[K_BLOCK, N]`` y-operand tile scale with N -> the kernel is SMEM/register-footprint
+    bound and the win regime is small N (where a productive tile fits).
+
+    Fires on the composed ``MatmulWithReductionEpilogueFact`` (a MatmulFact + an epilogue
+    ReductionFact in one kernel) -- never on a pure matmul or a pure reduction, so those stay
+    byte-identical. This sizes M_BLOCK by the resident fp32-accumulator footprint.
+
+    Also handles the looped/tiled-N variant (manual ``hl.tile(N)``, e.g. large-vocab
+    fused linear+logsumexp): same budget, the N tile is the free variable. That looped
+    seed is footprint-justified but PERF-UNVERIFIED -- measured win is the resident case.
+    """
+
+    name = "triton_matmul_reduction_epilogue"
+    backend = "triton"
+    HARDWARE_TARGETS = (("cuda", "sm90"),)
+
+    # The resident [M_BLOCK, N] fp32 accumulator must fit a per-program byte budget; M_BLOCK is the
+    # largest pow2 under it, capped at MAX_M_BLOCK (an occupancy/register ceiling). ~128 KiB gives
+    # the answer-key tile: M_BLOCK=64 at N<=512, 32 at N=1024, 16 at N=2048 (where the win vanishes).
+    ACC_BUDGET_BYTES = 131072
+    MAX_M_BLOCK = 64
+    # Inner K tile (min 16 by the matmul min_dot_size; normalize clamps to <=K).
+    K_BLOCK = 32
+    # num_stages: pipeline the K-loop addmm (a matmul knob; the answer key uses 3).
+    NUM_STAGES = 3
+    # num_warps ramps with the resident accumulator elements (M_BLOCK * N).
+    NUM_WARPS_ELEM_BREAK = 16384
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return False
+        # Fires on BOTH shapes the composed fact matches -- resident N (n_block_id None)
+        # and looped/tiled N (n_block_id set); get_seed_config branches on which.
+        return len(env.config_spec.matmul_reduction_epilogue_facts) == 1
+
+    @classmethod
+    def get_seed_config(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> Config | None:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return None
+        from ..._utils import next_power_of_2
+        from ..._utils import prev_power_of_2
+
+        spec = env.config_spec
+        fact = spec.matmul_reduction_epilogue_facts[0]
+        n = max(1, fact.n_extent)
+        # Per-program row ceiling: MAX_M_BLOCK at 2 bytes (bf16/fp16 tensor core),
+        # scaled DOWN as the input dtype widens (fp32 = ~2x regs/elem -> //2 -> 32).
+        # The factor only lowers the ceiling; MAX_M_BLOCK is the hard occupancy cap,
+        # so a 1-byte dtype (fp8) is pinned to it by min(), not pushed above it.
+        input_itemsize = fact.matmul.lhs_dtype.itemsize
+        max_m = max(1, min(cls.MAX_M_BLOCK, cls.MAX_M_BLOCK * 2 // input_itemsize))
+
+        # Branch on the free axis: resident N (n_block_id None) sizes M_BLOCK to the
+        # budget; looped N (set) pins M_BLOCK=max_m and sizes the N tile to the budget.
+        n_block_id = fact.matmul.n_block_id
+        n_block: int | None = None
+        if n_block_id is None:
+            # Largest pow2 [M_BLOCK, N] fp32 accumulator under budget, capped at max_m.
+            # Budget counts only the accumulator, not the [K_BLOCK, N] operand -- so at
+            # large N the resident structure OOMs for EVERY config (default included):
+            # an hl.specialize(N) limit (loop N instead), not one this seed can fix.
+            m_block = max(
+                1, min(max_m, prev_power_of_2(max(1, cls.ACC_BUDGET_BYTES // (n * 4))))
+            )
+            resident_n = n
+        else:
+            # Max rows, then the largest pow2 N tile (<= N) under the rest of budget
+            # (resident at small N, chunked at large N). PERF-UNVERIFIED: not benched on
+            # any kernel -- a footprint-justified guess that beats the N-blind default.
+            m_block = max_m
+            n_block = max(
+                1,
+                min(
+                    next_power_of_2(n),
+                    prev_power_of_2(max(1, cls.ACC_BUDGET_BYTES // (m_block * 4))),
+                ),
+            )
+            resident_n = n_block
+        num_warps = 4 if m_block * resident_n <= cls.NUM_WARPS_ELEM_BREAK else 8
+
+        block_sizes: list[int] = []
+        for i in range(len(spec.block_sizes)):
+            bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])
+            bid = bs_spec.block_id
+            if bid == fact.m_block_id:
+                block_sizes.append(max(bs_spec.min_size, m_block))
+            elif bid == fact.k_block_id:
+                block_sizes.append(
+                    max(bs_spec.min_size, min(cls.K_BLOCK, bs_spec.size_hint))
+                )
+            elif n_block is not None and bid == n_block_id:
+                block_sizes.append(
+                    max(bs_spec.min_size, min(n_block, bs_spec.size_hint))
+                )
+            else:
+                block_sizes.append(max(1, bs_spec.min_size, bs_spec.autotuner_min))
+
+        seed: dict[str, Any] = {
+            "block_sizes": block_sizes,
+            # Resident: the epilogue reduction is materialized on the accumulator (no reduction_loops
+            # knob). Looped: the reduction rides the hl.tile(N) block_sizes entry set above, so
+            # reduction_loops is likewise empty.
+            "reduction_loops": [],
+            "num_warps": num_warps,
+            "num_stages": cls.NUM_STAGES,
+        }
+        return Config(**seed)
