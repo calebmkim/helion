@@ -131,10 +131,11 @@ class ReductionFact(NamedTuple):
       provenance -- not a symptom proxy. softmax_two_pass/kl_div/jsd/welford/grpo accumulate per-ROW
       or 2-D buffers (never all-feature) so they are False; the user-tiled seed keys ``is_m_collapse``
       on it. False for all 9 standard + 8 transfer kernels' user-tiled members.
-    - ``feature_extent``: the materialized full-width feature extent -- the ``N`` of the resident
-      ``[inner, N]`` tile. Used only by the M-collapse seed to byte-cap its inner reduction tile
-      against ``feature_extent * itemsize`` (a memory-bound collapse wants the smallest resident
-      tile, for occupancy). 0 when no materialized feature axis exists.
+    - ``max_feature_extent``: the MAX extent over the materialized feature axes -- the ``N`` of the
+      resident ``[inner, N]`` tile (the widest, when several feature axes exist). Used only by the
+      M-collapse seed to byte-cap its inner reduction tile against ``max_feature_extent * itemsize``
+      (a memory-bound collapse wants the smallest resident tile, for occupancy). 0 when no
+      materialized feature axis exists.
 
     ``grid_rows`` is NOT stored — a pure function of ``m_block_ids`` + env, computed on
     demand by its one consumer (the narrow-row ``num_warps`` lever).
@@ -153,7 +154,7 @@ class ReductionFact(NamedTuple):
     full_width_output: bool = True
     input_load_itemsize: int = 0
     body_live_tiles: int = 1
-    feature_extent: int = 0
+    max_feature_extent: int = 0
     per_feature_accumulator: bool = False
 
 

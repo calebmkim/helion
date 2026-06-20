@@ -398,7 +398,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # resident footprint for maximum CTA occupancy -- NOT the largest-that-fits (that is the
     # compute-bound persistent-reduction rule). Byte-cap the resident fp32 tile here so the inner
     # row count floors toward the occupancy sweet spot (~2-8 rows): ``inner =
-    # next_pow2(budget // (feature_extent * itemsize))``. 32 KiB matches the ws2 m_reduction
+    # next_pow2(budget // (max_feature_extent * itemsize))``. 32 KiB matches the ws2 m_reduction
     # calibration (inner=8 at N=1024, inner=2 at N=4096); decoupling this from the occupancy grid
     # block is what unspills dyt's grad_x-laden body ([128,128] 0.23x -> [128,8]).
     M_COLLAPSE_TILE_BYTES = 32768
@@ -796,7 +796,7 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         ``M_COLLAPSE_TILE_BYTES``. A 3-D norm's wide footprint floors ``inner`` to 1 (the
         ``[1, C, S]`` tile already fills the budget -- avoiding the ws2 spill where a per-axis MAX
         under-counted the footprint by C); a 2-D norm's narrower ``N`` row admits ``inner`` 2-8.
-        ``fact.feature_extent`` is the single widest axis (MAX, the user-tiled M-collapse's signal)
+        ``fact.max_feature_extent`` is the single widest axis (MAX, the user-tiled M-collapse's signal)
         which under-counts a 3-D footprint, so recompute the product here.
         """
         from ..._utils import next_power_of_2 as _np2
@@ -1044,7 +1044,7 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
                     # -> body_live_tiles resident tiles): a big inner tile spills, so byte-cap the
                     # resident [inner, feature] footprint tight (~2-8 rows) for occupancy. (Measured:
                     # dyt [128,128] 0.23x spill -> byte-capped [128,8] 1.44x; mirrors ws2 m_reduction.)
-                    feat_bytes = max(1, fact.feature_extent) * max(1, fact.itemsize)
+                    feat_bytes = max(1, fact.max_feature_extent) * max(1, fact.itemsize)
                     inner_cap = max(
                         1, _np2(max(1, cls.M_COLLAPSE_TILE_BYTES // feat_bytes))
                     )
