@@ -959,3 +959,87 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
             if ev is not None:
                 seed["load_eviction_policies"] = ev
         return Config(**seed)
+
+
+class TritonMatmulReductionEpilogueHeuristic(AutotunerHeuristic):
+    """Seed for a fused matmul + reduction-over-output-axis epilogue (matmul_rms_norm /
+    matmul_layernorm / matmul_softmax / matmul_l2_normalize / matmul_sum / ...): a single
+    grid loop over M does an inner K-loop ``addmm`` into a register-resident ``[M_BLOCK, N]``
+    fp32 accumulator, then reduces over the matmul's N (output) axis on that accumulator. N
+    is ``hl.specialize``'d (never tiled), so BOTH the ``[M_BLOCK, N]`` accumulator AND the
+    ``[K_BLOCK, N]`` y-operand tile scale with N -> the kernel is SMEM/register-footprint
+    bound and the win regime is small N (where a productive tile fits).
+
+    Fires on the composed ``MatmulWithReductionEpilogueFact`` (a MatmulFact + an epilogue
+    ReductionFact in one kernel) -- never on a pure matmul or a pure reduction, so those stay
+    byte-identical. This sizes M_BLOCK by the resident fp32-accumulator footprint.
+    """
+
+    name = "triton_matmul_reduction_epilogue"
+    backend = "triton"
+    HARDWARE_TARGETS = (("cuda", "sm90"),)
+
+    # The resident [M_BLOCK, N] fp32 accumulator must fit a per-program byte budget; M_BLOCK is the
+    # largest pow2 under it, capped at MAX_M_BLOCK (an occupancy/register ceiling). ~128 KiB gives
+    # the answer-key tile: M_BLOCK=64 at N<=512, 32 at N=1024, 16 at N=2048 (where the win vanishes).
+    ACC_BUDGET_BYTES = 131072
+    MAX_M_BLOCK = 64
+    # Inner K tile (min 16 by the matmul min_dot_size; normalize clamps to <=K).
+    K_BLOCK = 32
+    # num_stages: pipeline the K-loop addmm (a matmul knob; the answer key uses 3).
+    NUM_STAGES = 3
+    # num_warps ramps with the resident accumulator elements (M_BLOCK * N).
+    NUM_WARPS_ELEM_BREAK = 16384
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return False
+        return len(env.config_spec.matmul_reduction_epilogue_facts) == 1
+
+    @classmethod
+    def get_seed_config(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> Config | None:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return None
+        from ..._utils import prev_power_of_2
+
+        spec = env.config_spec
+        fact = spec.matmul_reduction_epilogue_facts[0]
+        n = max(1, fact.n_extent)
+        # The per-program row ceiling scales DOWN with input itemsize: an fp32 matmul uses ~2x the
+        # registers/element of a bf16/fp16 tensor-core matmul, so half as many M rows stay resident.
+        # Expressed as a FACTOR (itemsize, not a dtype literal): 2 bytes -> MAX_M_BLOCK, 4 bytes -> //2.
+        input_itemsize = max(2, fact.matmul.lhs_dtype.itemsize)
+        max_m = max(1, cls.MAX_M_BLOCK * 2 // input_itemsize)
+        # Footprint-aware M tile: the largest pow2 whose [M_BLOCK, N] fp32 accumulator fits the byte
+        # budget, capped at max_m. Eligibility is implicit -- where even M_BLOCK=1 overflows, the seed
+        # still emits 1 (the autotuner/SMEM check rejects an infeasible tile; the seed is never forced).
+        m_block = max(
+            1,
+            min(max_m, prev_power_of_2(max(1, cls.ACC_BUDGET_BYTES // (n * 4)))),
+        )
+        num_warps = 4 if m_block * n <= cls.NUM_WARPS_ELEM_BREAK else 8
+
+        block_sizes: list[int] = []
+        for i in range(len(spec.block_sizes)):
+            bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])
+            bid = bs_spec.block_id
+            if bid == fact.m_block_id:
+                block_sizes.append(max(bs_spec.min_size, m_block))
+            elif bid == fact.k_block_id:
+                block_sizes.append(
+                    max(bs_spec.min_size, min(cls.K_BLOCK, bs_spec.size_hint))
+                )
+            else:
+                block_sizes.append(max(1, bs_spec.min_size, bs_spec.autotuner_min))
+
+        seed: dict[str, Any] = {
+            "block_sizes": block_sizes,
+            # The epilogue reduction is materialized on the accumulator (no reduction_loops knob).
+            "reduction_loops": [],
+            "num_warps": num_warps,
+            "num_stages": cls.NUM_STAGES,
+        }
+        return Config(**seed)
