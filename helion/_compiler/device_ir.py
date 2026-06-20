@@ -1236,7 +1236,6 @@ class DeviceIR:
         """
         from ..autotuner.config_spec import AccumulatorFact
 
-        env = CompileEnvironment.current()
         facts: list[AccumulatorFact] = []
         for gi in self.graphs:
             if not isinstance(gi, ForLoopGraphInfo):
@@ -1247,12 +1246,48 @@ class DeviceIR:
                     facts.append(
                         AccumulatorFact(
                             dim_block_ids=tuple(
-                                env.resolve_block_id(s) for s in val.shape
+                                self._resolve_accumulator_dim_block_id(s)
+                                for s in val.shape
                             ),
                             itemsize=val.element_size(),
                         )
                     )
         return facts
+
+    def _resolve_accumulator_dim_block_id(self, size: object) -> int | None:
+        """Resolve an accumulator dim to its block id, recovering the non-pow2 padded
+        case ``resolve_block_id`` misses. A grad-parameter buffer is padded to the
+        next power of two, so its extent matches neither the block's registered size
+        nor any block-size origin and ``resolve_block_id`` returns ``None``. Fall back
+        to matching the padded extent against a reduction block whose
+        ``next_power_of_2(size_hint)`` equals it -- but ONLY when UNIQUE. Two axes
+        padding to the same extent are indistinguishable, so DECLINE (return ``None``)
+        rather than mis-assign an identity the ``num_carried_2d_tiles`` and
+        ``per_feature_accumulator`` consumers would read.
+        """
+        from .._utils import next_power_of_2
+
+        env = CompileEnvironment.current()
+        block_id = env.resolve_block_id(size)
+        if block_id is not None:
+            return block_id
+        extent = env.size_hint(size)
+        matches = [
+            info.block_id
+            for info in env.block_sizes
+            if info.reduction and next_power_of_2(info.size_hint()) == extent
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            log.warning(
+                "accumulator dim (padded extent %s) matches %d reduction axes %s; cannot "
+                "differentiate by extent -- left unresolved (per_feature_accumulator may miss it)",
+                extent,
+                len(matches),
+                matches,
+            )
+        return None
 
     def _reduction_input_itemsize(self, red_block_id: int) -> int:
         """Element size (bytes) of the tensor reduced over ``red_block_id`` — read from the
@@ -1372,6 +1407,35 @@ class DeviceIR:
         # the walker liveness slice for this axis (default 1).
         body_live_tiles = max(1, (liveness_by_axis or {}).get(red_block_id, 1))
 
+        # feature_footprint: resident per-row feature footprint an M-collapse byte-caps its
+        # inner tile against -- the PRODUCT (not a per-axis max, else 3-D norms spill) of the
+        # materialized full-width feature axes. 1 when none. A structural read, no graph walk.
+        env = CompileEnvironment.current()
+        bs_ids = env.config_spec.block_sizes.valid_block_ids()
+        rl_ids = env.config_spec.reduction_loops.valid_block_ids()
+        grid_ids = {b for bids in self.grid_block_ids for b in bids}
+        # Feature-footprint axes: full-width feature/output dims left materialized. NOTE
+        # bs.reduction is the dim's reduction ROLE at registration, not 'a reduction is lowered
+        # over it' (e.g. bias_grad's [N] output), so this set differs from the reduced-over set.
+        materialized_feature_axes = {
+            bs.block_id
+            for bs in env.block_sizes
+            if bs.reduction
+            and isinstance(bs.size, (int, torch.SymInt))
+            and self._is_materialized_axis(bs.block_id, grid_ids, bs_ids, rl_ids)
+        }
+        feature_footprint = 1
+        for b in materialized_feature_axes:
+            feature_footprint *= max(1, env.block_sizes[b].size_hint())
+        # per_feature_accumulator: the FAITHFUL M-collapse signature -- a loop-carried accumulator
+        # whose dims are ALL the materialized feature axis (e.g. grad_bias[N]). Per-row / 2-D
+        # accumulators (softmax/kl_div/jsd/welford/grpo) fail this test, excluded structurally.
+        per_feature_accumulator = any(
+            a.dim_block_ids
+            and all(d in materialized_feature_axes for d in a.dim_block_ids)
+            for a in accumulator_facts
+        )
+
         return ReductionFact(
             block_id=red_block_id,
             size_hint=size_hint,
@@ -1386,6 +1450,8 @@ class DeviceIR:
             full_width_output=full_width_output,
             input_load_itemsize=input_load_itemsize,
             body_live_tiles=body_live_tiles,
+            feature_footprint=feature_footprint,
+            per_feature_accumulator=per_feature_accumulator,
         )
 
     def _is_materialized_axis(
