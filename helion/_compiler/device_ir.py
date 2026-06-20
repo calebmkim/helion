@@ -1426,14 +1426,15 @@ class DeviceIR:
         # read off the walker liveness slice for this axis (default 1 = single resident tile).
         body_live_tiles = max(1, (liveness_by_axis or {}).get(red_block_id, 1))
 
-        # max_feature_extent: resident per-inner-row FEATURE footprint a grad-parameter M-collapse
-        # (bias_grad/dyt) byte-caps its inner tile against -- the MAX extent over the materialized
-        # full-width feature axes (a ``reduction=True`` block in NEITHER block_sizes NOR
-        # reduction_loops, e.g. the [N] grad-param output). 0 when none exists, so it also
-        # discriminates the M-collapse from the user-tiled feature reductions
-        # (softmax_two_pass/kl_div/jsd/grpo have no such axis). A trivial structural read of the
-        # block-size table -- no graph walk. (A 3-D norm's resident footprint is C*S, but those ride
-        # the standard track, not the user-tiled M-collapse, so the single widest axis suffices here.)
+        # feature_footprint: resident per-inner-row FEATURE footprint a grad-parameter M-collapse
+        # (bias_grad/dyt on the user-tiled track; rms/ln/instance/group backward on the standard
+        # track) byte-caps its inner tile against -- the PRODUCT of the materialized full-width
+        # feature axes (a ``reduction=True`` block in NEITHER block_sizes NOR reduction_loops, e.g.
+        # the [N] grad-param output). For a 2-D norm this is the single [N]; for a 3-D norm the full
+        # C*S -- a per-axis MAX under-counts the 3-D footprint and spills (the ws2 bug), so use the
+        # product. 1 when none exists, which (with per_feature_accumulator) keeps it off the
+        # user-tiled feature reductions (softmax_two_pass/kl_div/jsd/grpo have no such axis). A
+        # trivial structural read of the block-size table -- no graph walk.
         env = CompileEnvironment.current()
         bs_ids = env.config_spec.block_sizes.valid_block_ids()
         rl_ids = env.config_spec.reduction_loops.valid_block_ids()
@@ -1443,7 +1444,8 @@ class DeviceIR:
         # REGISTRATION, NOT "a reduction is lowered over it" — e.g. bias_grad's ``[N]`` grad-param
         # output is ``reduction=True`` yet never a ``ReductionLowering`` axis. So this set (footprint
         # provenance) deliberately differs from the reduced-over set that picks ``red_block_id``; it
-        # exists to size the resident per-row ``max_feature_extent`` (the ``[N]`` buffer/output width).
+        # exists to size the resident per-row ``feature_footprint``. Both M-collapse tracks read this
+        # one field (the standard track no longer rescans block_sizes for the product).
         materialized_feature_axes = {
             bs.block_id
             for bs in env.block_sizes
@@ -1451,10 +1453,9 @@ class DeviceIR:
             and isinstance(bs.size, (int, torch.SymInt))
             and self._is_materialized_axis(bs.block_id, grid_ids, bs_ids, rl_ids)
         }
-        max_feature_extent = max(
-            (env.block_sizes[b].size_hint() for b in materialized_feature_axes),
-            default=0,
-        )
+        feature_footprint = 1
+        for b in materialized_feature_axes:
+            feature_footprint *= max(1, env.block_sizes[b].size_hint())
         # per_feature_accumulator: the FAITHFUL M-collapse signature -- a loop-carried accumulator
         # whose dims are ALL the materialized feature axis (the grad-param buffer, e.g.
         # ``grad_bias[N]`` / ``grad_weight[N]``: a per-feature gradient summed across the grid/rows).
@@ -1484,7 +1485,7 @@ class DeviceIR:
             full_width_output=full_width_output,
             input_load_itemsize=input_load_itemsize,
             body_live_tiles=body_live_tiles,
-            max_feature_extent=max_feature_extent,
+            feature_footprint=feature_footprint,
             per_feature_accumulator=per_feature_accumulator,
         )
 
@@ -1503,7 +1504,7 @@ class DeviceIR:
           OVER the axis — the axis the seed reduces and keys on (``red_block_id``).
         - FEATURE-FOOTPRINT axes (``_assemble_reduction_fact``): full-width feature/output dims
           flagged ``bs.reduction`` at REGISTRATION, INCLUDING the grad-param output that is never
-          reduced *over* — the resident ``max_feature_extent`` footprint.
+          reduced *over* — the resident ``feature_footprint`` (their product).
 
         bias_grad's ``[N]`` is a feature-footprint axis but NOT a reduced-over one — that gap is the
         whole reason these are two sets, not one.
