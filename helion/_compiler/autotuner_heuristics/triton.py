@@ -298,6 +298,97 @@ class TritonSplitJoinRotateHeuristic(AutotunerHeuristic):
         return Config(block_sizes=[1] * len(env.config_spec.block_sizes))
 
 
+class TritonPointwiseSeedHeuristic(AutotunerHeuristic):
+    """Seed a bandwidth-saturating tile for PURE elementwise/pointwise kernels.
+
+    A pointwise kernel reads its inputs, computes, and writes its outputs with no
+    reduction / matmul / loop-carried accumulator — it is BANDWIDTH-bound. The compiler
+    default tiles it at ``block_size=32`` (``BlockSizeSpec._fragment``: ``total_ndim <= 2
+    and reduction_numel <= 128``), moving only ~10% of HBM (~5-7x slower than a saturating
+    tile; measured headroom in ``_lab/pointwise``). This seed sizes the tile to (a) a byte
+    budget that saturates HBM and (b) the grid occupancy (size_hint-aware), keyed on the
+    derived ``PointwiseElementwiseFact`` (bytes/elem + total numel) — NEVER on the
+    activation identity or a dtype literal. Fires on the presence of that fact, which is
+    built only on the ABSENCE of the reduction/matmul/accumulator facts (disjointness rule),
+    so it never claws a reducing kernel into the pointwise track.
+    """
+
+    name = "triton_pointwise"
+    backend = "triton"
+
+    # Hill-climbed constants (see _lab/pointwise/NOTEBOOK.md). TILE_BYTES=8192 gives a ~1024-elem
+    # tile for traffic-3 (swiglu/geglu/residual_add) and ~2048 for traffic-2 (relu²/bias_gelu) —
+    # the robust zone: 1-D kernels are flat across 1-8K, but N-D/traffic-2 kernels (bias_gelu) lose
+    # ~5-25% at 4096 vs 2048, so the smaller budget lifts the worst kernel with no 1-D regression.
+    TILE_BYTES = 8192  # target HBM bytes moved per tile
+    MIN_WAVES = 8  # grid >= num_sm * MIN_WAVES (size_hint-aware grid floor)
+    BLOCK_FLOOR = 256  # never regress toward the bs=32 default
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        return bool(env.config_spec.pointwise_facts)
+
+    @classmethod
+    def get_seed_config(cls, env: CompileEnvironment, device_ir: DeviceIR) -> Config:
+        from ...runtime import get_num_sm
+
+        spec = env.config_spec
+        fact = spec.pointwise_facts[0]
+        num_sm = max(1, get_num_sm(env.device))
+        bytes_per_elem = max(1, fact.bytes_per_elem)
+        # Bytes-aware target tile (in elements): a traffic-3 kernel moves 50% more bytes per
+        # element than traffic-2, so for the same byte budget it gets a SMALLER element tile.
+        target = max(cls.BLOCK_FLOOR, cls.TILE_BYTES // bytes_per_elem)
+        # size_hint-aware: cap the tile so the grid keeps the SMs busy on small problems.
+        max_tile = max(1, fact.total_numel // (num_sm * cls.MIN_WAVES))
+        target = max(1, min(target, max_tile))
+        # block_sizes is the only non-default field; num_warps/num_stages/pid_type stay at the
+        # compiler defaults (4 / 1 / 'flat'), so emitting them would be inert (Gate F). A measured
+        # num_warps ramp for large tiles is a BROADEN-queue item.
+        return Config(block_sizes=cls._seed_block_sizes(spec, target))
+
+    @staticmethod
+    def _pow2_floor(value: int) -> int:
+        return 1 << (value.bit_length() - 1) if value >= 1 else 1
+
+    @classmethod
+    def _clamp_dim(cls, target: int, bs_spec: BlockSizeSpec, floor: int) -> int:
+        # Round DOWN to a pow2 within [floor (and the spec's correctness min), max_size]. max_size
+        # is next_pow2(extent), so capping there (rather than pre-capping at the raw size_hint) lets
+        # the inner tile COVER a short row in one masked tile (extent 768 -> 1024, not floored to
+        # 512). autotuner_min is the AUTOTUNER's search floor, NOT a seed constraint (the reduction
+        # and split-join seeds emit block=1 below it), so it is intentionally not applied here.
+        cand = cls._pow2_floor(max(1, target))
+        cand = max(cand, floor, bs_spec.min_size)
+        cand = min(cand, bs_spec.max_size)
+        return max(1, cand)
+
+    @classmethod
+    def _seed_block_sizes(cls, spec: ConfigSpec, target: int) -> list[int]:
+        """Distribute the target tile (in elements) across the block dims, INNERMOST first,
+        SPILLING the leftover budget outward. The innermost (contiguous, last) dim takes as much
+        of the budget as its extent allows (capped at max_size = next_pow2(extent), so a short row
+        is covered in one masked tile); whatever budget it cannot absorb spills to the next-outer
+        dim, and so on. Because a row-major tensor stores rows contiguously, an ``[R, N]`` tile of
+        a short-N tensor is still a coalesced ``R*N`` contiguous block — so a tall-skinny tensor
+        (small inner extent, e.g. image RGBA N=4 or a per-head N=64) gets a budget-sized tile (e.g.
+        ``[128, 8]``) instead of a starved ``[1, 8]`` that regresses below the bs=32 default. For a
+        WIDE row (extent >= budget) the inner absorbs the whole budget and the outer dims stay 1
+        (``[1, 1024]``) — the 1-D-flatten-equivalent coalesced run; for a 1-D kernel this is just
+        ``[clamp(target)]``."""
+        n = len(spec.block_sizes)
+        specs = [cast("BlockSizeSpec", spec.block_sizes[i]) for i in range(n)]
+        block = [1] * n
+        remaining = max(1, target)
+        for i in reversed(range(n)):  # innermost (contiguous) dim first, spill the rest outward
+            floor = cls.BLOCK_FLOOR if i == n - 1 else 1
+            block[i] = cls._clamp_dim(remaining, specs[i], floor)
+            remaining = max(1, remaining // block[i])
+            if remaining <= 1:
+                break
+        return block
+
+
 def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> bool:
     """Gate: exactly one ``ReductionFact`` and no ``matmul_facts``. Admits both tracks
     (standard rollable, user-tiled); excludes GEMMs and multi-axis manual reductions."""

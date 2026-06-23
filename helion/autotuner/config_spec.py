@@ -211,6 +211,15 @@ class MemoryOpFact(NamedTuple):
     # subscript so it is reduction-AGNOSTIC; ``None`` for a plain slice). The faithful axis key for
     # the full_width_output / input_load_itemsize gates.
     subscript_block_ids: tuple[int | None, ...] = ()
+    # DISTINCT HBM elements the op's accessed tensor touches: product of its size-hinted shape dims
+    # over NON-broadcast dims (``stride != 0``); a stride-0 dim contributes factor 1 (``0`` if no
+    # resolvable fake tensor). A FULL-EXTENT op has ``accessed_numel`` == the problem numel; a
+    # BROADCAST operand has a STRICTLY SMALLER count — whether it is a small tensor (``bias[N]``,
+    # ``[M,1]``, ``[1,N]``) OR a full-SIZE ``.expand()``/``broadcast_tensors`` view with a stride-0
+    # dim. The faithful signal for per-element HBM traffic at ANY rank/stride, unlike a bare ``ndim``
+    # check (a full-rank ``[M,1]`` broadcast passes ndim) or a shape-only product (a stride-0 expand
+    # passes shape).
+    accessed_numel: int = 0
 
 
 class AccumulatorFact(NamedTuple):
@@ -223,6 +232,39 @@ class AccumulatorFact(NamedTuple):
 
     dim_block_ids: tuple[int | None, ...]
     itemsize: int
+
+
+class PointwiseElementwiseFact(NamedTuple):
+    """Workload facts for a PURE elementwise/pointwise kernel — a tiled map that reads its
+    inputs, computes, and writes its outputs with NO reduction, NO matmul, and NO
+    loop-carried accumulator. The fact is DEFINED by their absence (the disjointness rule):
+    a reduction/matmul/accumulator fact firing routes the kernel to that family, and this
+    fact is never built. Bandwidth-bound; the compiler default tiles it at ``block_size=32``
+    (``BlockSizeSpec._fragment``: ``total_ndim <= 2 and reduction_numel <= 128``), which
+    starves HBM. The pointwise seed sizes a saturating tile from these fields.
+
+    DERIVED (never walks the graph): both fields are pure derivations over the walker
+    ``MemoryOpFact`` list + the block-size specs. The fact carries ONLY the two scalars the seed
+    branches on (the tile-rank / per-dim extents the distributor needs are read live off
+    ``ConfigSpec.block_sizes``, never snapshotted here).
+
+    - ``total_numel``: product of the tiled block dims' ``size_hint``s (= the static problem
+      element count, M*N); the occupancy / grid-saturation input.
+    - ``bytes_per_elem``: SUM over the kernel's FULL-EXTENT load+store memory ops (an op that
+      touches at least the whole problem: ``MemoryOpFact.accessed_numel >= total_numel``) of the
+      accessed tensor's itemsize — the per-element HBM byte traffic (read + write). Populated from
+      ``MemoryOpFact.dtype.itemsize`` (NOT an op name or a dtype literal): traffic-3 gated acts
+      (swiglu = 2 bf16 loads + 1 store = 6) vs traffic-2 unary ops (relu_squared = 1 load + 1
+      store = 4). A BROADCAST operand (``bias[N]``, per-row ``[M,1]``, per-col ``[1,N]``, any
+      size-1 / stride-0 dim) has strictly FEWER distinct elements than the iteration space
+      (``accessed_numel < total_numel``) → amortized → excluded. An OVERSIZED operand (a padded /
+      over-allocated / sliced buffer wider than the tile, read sub-indexed) has
+      ``accessed_numel > total_numel`` but still touches the full problem under the tile → counted
+      (hence ``>=``, not ``==``). The bytes-aware tile keys on this.
+    """
+
+    total_numel: int
+    bytes_per_elem: int
 
 
 def shrink_block_sizes_for_numel_constraints(
@@ -488,6 +530,7 @@ class ConfigSpec:
         self.reduction_facts: list[ReductionFact] = []
         self.matmul_reduction_epilogue_facts: list[MatmulWithReductionEpilogueFact] = []
         self.accumulator_facts: list[AccumulatorFact] = []
+        self.pointwise_facts: list[PointwiseElementwiseFact] = []
         self.store_indices: list[int] = []
         self.memory_op_facts: list[MemoryOpFact] = []
         self.backend_tunable_fragments = self.backend.tunable_fragments()

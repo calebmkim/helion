@@ -1260,6 +1260,50 @@ class DeviceIR:
             )
         )
 
+    def build_pointwise_facts(self) -> None:
+        """Phase 5: record one ``PointwiseElementwiseFact`` for a PURE elementwise kernel —
+        a tiled map that reads its inputs, computes, and writes its outputs with NO
+        reduction, NO matmul, and NO loop-carried accumulator. Disjointness rule: if any
+        reduction / matmul / accumulator fact fired, the kernel belongs to that family and
+        gets NO pointwise fact (the fact's meaning IS their absence). DERIVED — every field
+        is a pure read of the walker ``memory_op_facts`` + the block-size specs (no graph
+        walk), so this runs last, after the other facts exist.
+        """
+        env = CompileEnvironment.current()
+        spec = env.config_spec
+        from ..autotuner.config_spec import PointwiseElementwiseFact
+
+        if spec.reduction_facts or spec.matmul_facts or spec.accumulator_facts:
+            return
+        if not spec.memory_op_facts or not spec.block_sizes:
+            return
+        # The static problem element count = product of the tiled block dims' size_hints (the
+        # per-dim extents the seed needs for the tile distribution are read live off block_sizes).
+        total_numel = 1
+        for block_size in spec.block_sizes:
+            total_numel *= block_size.size_hint
+        # Per-element HBM byte traffic: sum the itemsize of every FULL-EXTENT load/store — an op
+        # that touches at least the whole problem (accessed_numel >= total_numel). A BROADCAST
+        # operand (bias[N], per-row [M,1], per-col [1,N], any size-1 / stride-0 dim) has STRICTLY
+        # FEWER distinct elements than the iteration space (accessed_numel < total_numel) → it is
+        # amortized and does NOT count. An OVERSIZED operand (a padded / over-allocated / sliced
+        # buffer wider than the tile, read sub-indexed) has accessed_numel > total_numel but still
+        # touches total_numel under the tile, so it DOES count — hence ">=", not "==" (Gate D:
+        # "==" silently dropped the oversized case). accessed_numel is the faithful full-extent
+        # signal at any rank/stride; read from the walker fact dtypes — never an op name or dtype
+        # literal (the lucky-proxy class).
+        bytes_per_elem = sum(
+            memfact.dtype.itemsize
+            for memfact in spec.memory_op_facts
+            if memfact.dtype is not None and memfact.accessed_numel >= total_numel
+        )
+        spec.pointwise_facts.append(
+            PointwiseElementwiseFact(
+                total_numel=total_numel,
+                bytes_per_elem=bytes_per_elem,
+            )
+        )
+
     def build_accumulator_facts(self) -> list[AccumulatorFact]:
         """One ``AccumulatorFact`` per loop-carried tensor accumulator in any loop —
         reduction-AGNOSTIC, so it is built independently of (and before) the reduction
@@ -2976,7 +3020,20 @@ def _collect_memory_op_facts(
             indexed_block_ids: tuple[int | None, ...] = ()
             subscript_block_ids: tuple[int | None, ...] = ()
             inner_extent: int | None = None
+            accessed_numel = 0
             if fake is not None:
+                # Distinct HBM elements the op touches = product of size-hinted shape dims over
+                # NON-broadcast dims (stride != 0). A stride-0 dim (an .expand()/broadcast — full
+                # SIZE but one underlying element, e.g. bias[N].expand_as(x) or a broadcast_tensors
+                # operand) contributes factor 1, so an expanded broadcast is NOT mistaken for
+                # full-extent traffic. size_hint (not int()) avoids specializing a SymInt dim. A
+                # broadcast operand thus has a strictly smaller numel than the problem numel — the
+                # faithful full-extent signal at any rank/stride (see MemoryOpFact.accessed_numel).
+                accessed_numel = 1
+                fake_strides = fake.stride()
+                for dim_index, dim_size in enumerate(fake.shape):
+                    if fake_strides[dim_index] != 0:
+                        accessed_numel *= env.size_hint(dim_size)
                 index_list = node.args[1] if len(node.args) >= 2 else None
                 if isinstance(index_list, (list, tuple)):
                     # same positions for both tuples so [-1] aligns (drop bare-int / OOB)
@@ -3015,6 +3072,7 @@ def _collect_memory_op_facts(
                         indexed_block_ids=indexed_block_ids,
                         inner_extent=inner_extent,
                         subscript_block_ids=subscript_block_ids,
+                        accessed_numel=accessed_numel,
                     ),
                 )
             )
@@ -3268,6 +3326,10 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
         # Phase 4: compose a matmul + reduction-over-output epilogue fact when a matmul AND a
         # register-resident epilogue reduction co-occur (matmul_rms_norm etc.).
         device_ir.build_matmul_reduction_epilogue_facts()
+        # Phase 5: record a PointwiseElementwiseFact for a PURE elementwise kernel (no
+        # reduction/matmul/accumulator fact) so the pointwise seed can size a BW-saturating
+        # tile instead of the starved block_size=32 default.
+        device_ir.build_pointwise_facts()
 
         return device_ir
 
