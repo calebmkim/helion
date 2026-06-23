@@ -1,0 +1,1226 @@
+{
+  "rows": [
+    {
+      "kernel": "swiglu",
+      "shape": [
+        32768,
+        1536
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 950.064,
+        "seeded": 142.72,
+        "tc": 142.432
+      },
+      "seeded_vs_default": 6.6568,
+      "G_seeded_vs_tc": 0.998,
+      "seed_gbps": 2.116,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        16384,
+        2048
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 635.264,
+        "seeded": 97.312,
+        "tc": 98.592
+      },
+      "seeded_vs_default": 6.5281,
+      "G_seeded_vs_tc": 1.0132,
+      "seed_gbps": 2.0689,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        16384,
+        2880
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 931.904,
+        "seeded": 135.296,
+        "tc": 135.136
+      },
+      "seeded_vs_default": 6.8879,
+      "G_seeded_vs_tc": 0.9988,
+      "seed_gbps": 2.0926,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        8192,
+        3072
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 519.744,
+        "seeded": 75.232,
+        "tc": 75.456
+      },
+      "seeded_vs_default": 6.9085,
+      "G_seeded_vs_tc": 1.003,
+      "seed_gbps": 2.0071,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        16384,
+        8192
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2829.6001,
+        "seeded": 366.08,
+        "tc": 384.928
+      },
+      "seeded_vs_default": 7.7295,
+      "G_seeded_vs_tc": 1.0515,
+      "seed_gbps": 2.1998,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        8192,
+        11008
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1962.688,
+        "seeded": 249.6,
+        "tc": 254.256
+      },
+      "seeded_vs_default": 7.8633,
+      "G_seeded_vs_tc": 1.0187,
+      "seed_gbps": 2.1677,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        8192,
+        12288
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2285.3761,
+        "seeded": 278.4,
+        "tc": 307.168
+      },
+      "seeded_vs_default": 8.209,
+      "G_seeded_vs_tc": 1.1033,
+      "seed_gbps": 2.1695,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        8192,
+        13824
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2412.832,
+        "seeded": 313.12,
+        "tc": 412.928
+      },
+      "seeded_vs_default": 7.7058,
+      "G_seeded_vs_tc": 1.3188,
+      "seed_gbps": 2.17,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        8192,
+        14336
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2723.712,
+        "seeded": 323.68,
+        "tc": 378.176
+      },
+      "seeded_vs_default": 8.4148,
+      "G_seeded_vs_tc": 1.1684,
+      "seed_gbps": 2.177,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        4096,
+        17408
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1572.672,
+        "seeded": 203.472,
+        "tc": 253.536
+      },
+      "seeded_vs_default": 7.7292,
+      "G_seeded_vs_tc": 1.246,
+      "seed_gbps": 2.1026,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        4096,
+        17920
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1714.048,
+        "seeded": 205.984,
+        "tc": 214.4
+      },
+      "seeded_vs_default": 8.3213,
+      "G_seeded_vs_tc": 1.0409,
+      "seed_gbps": 2.138,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        4096,
+        18432
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1762.208,
+        "seeded": 213.28,
+        "tc": 253.952
+      },
+      "seeded_vs_default": 8.2624,
+      "G_seeded_vs_tc": 1.1907,
+      "seed_gbps": 2.1239,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        4096,
+        18944
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1641.536,
+        "seeded": 216.192,
+        "tc": 306.096
+      },
+      "seeded_vs_default": 7.593,
+      "G_seeded_vs_tc": 1.4159,
+      "seed_gbps": 2.1535,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        4096,
+        25600
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2519.872,
+        "seeded": 290.688,
+        "tc": 353.744
+      },
+      "seeded_vs_default": 8.6686,
+      "G_seeded_vs_tc": 1.2169,
+      "seed_gbps": 2.1643,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        4096,
+        28672
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2739.0079,
+        "seeded": 323.616,
+        "tc": 403.008
+      },
+      "seeded_vs_default": 8.4638,
+      "G_seeded_vs_tc": 1.2453,
+      "seed_gbps": 2.1774,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        2048,
+        29568
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1414.4,
+        "seeded": 173.632,
+        "tc": 194.944
+      },
+      "seeded_vs_default": 8.146,
+      "G_seeded_vs_tc": 1.1227,
+      "seed_gbps": 2.0925,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        32768,
+        2048
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1431.936,
+        "seeded": 190.464,
+        "tc": 211.488
+      },
+      "seeded_vs_default": 7.5181,
+      "G_seeded_vs_tc": 1.1104,
+      "seed_gbps": 2.1141,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        16384,
+        9728
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 3714.9761,
+        "seeded": 457.92,
+        "tc": 585.696
+      },
+      "seeded_vs_default": 8.1127,
+      "G_seeded_vs_tc": 1.279,
+      "seed_gbps": 2.0884,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        16384,
+        12288
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 4614.336,
+        "seeded": 562.528,
+        "tc": 711.488
+      },
+      "seeded_vs_default": 8.2029,
+      "G_seeded_vs_tc": 1.2648,
+      "seed_gbps": 2.1474,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        8192,
+        16384
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 3222.08,
+        "seeded": 378.688,
+        "tc": 468.96
+      },
+      "seeded_vs_default": 8.5085,
+      "G_seeded_vs_tc": 1.2384,
+      "seed_gbps": 2.1266,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        8192,
+        20480
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 3909.024,
+        "seeded": 471.04,
+        "tc": 599.264
+      },
+      "seeded_vs_default": 8.2987,
+      "G_seeded_vs_tc": 1.2722,
+      "seed_gbps": 2.137,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        4096,
+        27648
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2545.568,
+        "seeded": 328.992,
+        "tc": 396.224
+      },
+      "seeded_vs_default": 7.7375,
+      "G_seeded_vs_tc": 1.2044,
+      "seed_gbps": 2.0653,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "swiglu",
+      "shape": [
+        4096,
+        29568
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2925.216,
+        "seeded": 335.04,
+        "tc": 432.0
+      },
+      "seeded_vs_default": 8.7309,
+      "G_seeded_vs_tc": 1.2894,
+      "seed_gbps": 2.1689,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        16384,
+        2880
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1177.6,
+        "seeded": 153.088,
+        "tc": 171.872
+      },
+      "seeded_vs_default": 7.6923,
+      "G_seeded_vs_tc": 1.1227,
+      "seed_gbps": 1.8494,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        8192,
+        3072
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 608.736,
+        "seeded": 89.344,
+        "tc": 85.152
+      },
+      "seeded_vs_default": 6.8134,
+      "G_seeded_vs_tc": 0.9531,
+      "seed_gbps": 1.69,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        8192,
+        6912
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1411.424,
+        "seeded": 200.56,
+        "tc": 222.784
+      },
+      "seeded_vs_default": 7.0374,
+      "G_seeded_vs_tc": 1.1108,
+      "seed_gbps": 1.694,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        8192,
+        9216
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1880.96,
+        "seeded": 280.72,
+        "tc": 305.952
+      },
+      "seeded_vs_default": 6.7005,
+      "G_seeded_vs_tc": 1.0899,
+      "seed_gbps": 1.6137,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        8192,
+        10240
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2088.9921,
+        "seeded": 311.392,
+        "tc": 345.36
+      },
+      "seeded_vs_default": 6.7086,
+      "G_seeded_vs_tc": 1.1091,
+      "seed_gbps": 1.6163,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        8192,
+        14336
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2677.632,
+        "seeded": 516.544,
+        "tc": 551.392
+      },
+      "seeded_vs_default": 5.1837,
+      "G_seeded_vs_tc": 1.0675,
+      "seed_gbps": 1.3641,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        8192,
+        15360
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 3131.2801,
+        "seeded": 483.328,
+        "tc": 524.832
+      },
+      "seeded_vs_default": 6.4786,
+      "G_seeded_vs_tc": 1.0859,
+      "seed_gbps": 1.562,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        4096,
+        16384
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1615.2641,
+        "seeded": 240.032,
+        "tc": 262.24
+      },
+      "seeded_vs_default": 6.7294,
+      "G_seeded_vs_tc": 1.0925,
+      "seed_gbps": 1.6775,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        4096,
+        21504
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2192.6401,
+        "seeded": 325.792,
+        "tc": 360.496
+      },
+      "seeded_vs_default": 6.7302,
+      "G_seeded_vs_tc": 1.1065,
+      "seed_gbps": 1.6221,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        4096,
+        24576
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2350.208,
+        "seeded": 278.192,
+        "tc": 544.256
+      },
+      "seeded_vs_default": 8.4482,
+      "G_seeded_vs_tc": 1.9564,
+      "seed_gbps": 2.1711,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        4096,
+        36864
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 4007.7119,
+        "seeded": 550.976,
+        "tc": 601.904
+      },
+      "seeded_vs_default": 7.2738,
+      "G_seeded_vs_tc": 1.0924,
+      "seed_gbps": 1.6443,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        2048,
+        36864
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 1880.928,
+        "seeded": 211.392,
+        "tc": 376.48
+      },
+      "seeded_vs_default": 8.8978,
+      "G_seeded_vs_tc": 1.781,
+      "seed_gbps": 2.1429,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        16384,
+        6912
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2938.336,
+        "seeded": 406.624,
+        "tc": 453.024
+      },
+      "seeded_vs_default": 7.2262,
+      "G_seeded_vs_tc": 1.1141,
+      "seed_gbps": 1.671,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        16384,
+        10240
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 4172.6079,
+        "seeded": 693.104,
+        "tc": 745.152
+      },
+      "seeded_vs_default": 6.0202,
+      "G_seeded_vs_tc": 1.0751,
+      "seed_gbps": 1.4524,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        8192,
+        16384
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 3338.3039,
+        "seeded": 502.656,
+        "tc": 558.272
+      },
+      "seeded_vs_default": 6.6413,
+      "G_seeded_vs_tc": 1.1106,
+      "seed_gbps": 1.6021,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        8192,
+        21504
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 4229.0878,
+        "seeded": 673.024,
+        "tc": 746.464
+      },
+      "seeded_vs_default": 6.2837,
+      "G_seeded_vs_tc": 1.1091,
+      "seed_gbps": 1.5705,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    },
+    {
+      "kernel": "geglu",
+      "shape": [
+        4096,
+        30720
+      ],
+      "dtype": "bf16",
+      "us": {
+        "default": 2895.68,
+        "seeded": 415.296,
+        "tc": 722.8
+      },
+      "seeded_vs_default": 6.9726,
+      "G_seeded_vs_tc": 1.7404,
+      "seed_gbps": 1.8179,
+      "seed_cfg": {
+        "block_sizes": [
+          1024
+        ],
+        "num_warps": null,
+        "num_stages": null,
+        "pid": null
+      },
+      "acc": {
+        "default": true,
+        "seeded": true,
+        "tc": true
+      },
+      "noisy_sub25us": false
+    }
+  ],
+  "summary": [
+    {
+      "kernel": "swiglu",
+      "dtype": "bf16",
+      "n_acc_pass": 23,
+      "n_total": 23,
+      "geomean_seeded_vs_default": 7.8527,
+      "geomean_G_vs_tc": 1.1596,
+      "min_G": 0.998,
+      "below_floor_realistic": []
+    },
+    {
+      "kernel": "geglu",
+      "dtype": "bf16",
+      "n_acc_pass": 17,
+      "n_total": 17,
+      "geomean_seeded_vs_default": 6.8827,
+      "geomean_G_vs_tc": 1.1916,
+      "min_G": 0.9531,
+      "below_floor_realistic": []
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "run": "pointwise-seed-heuristic",
+  "base_sha": "9bf7b1f9ec742aa9e776ce59d4c7df2d20d79e7f",
+  "champion_sha": "268edf3b6793e889e991c13693ddd997ff2d5870",
+  "champion_note": "268edf3b = tall-skinny spill-fix BROADEN; corpus byte-identical to the gated b4a4a681, so the gated perf + Gate E freeze transfer; only off-corpus tall-skinny improves (beats default 1.07-1.15x, tc parity)",
+  "worktree": "/home/calebkim/helion-new-heuristics/helion-pointwise",
+  "interpreter": "/home/calebkim/.conda/envs/helion/bin/python",
+  "deliverable_status": "DoD MET + BANKED (all gates A/D/F/H/R/E PASS); overtime validated (refactor-critic, robustness correctness, accumulator-negative, dtype-faithful, warp-ramp DEFER)",
+  "overtime_closures": {
+    "refactor_critic": "fact trimmed 6->2 fields @ 1ef6c5c0 (behavior-preserving)",
+    "robustness_correctness": "all 6 kernels pass acc on decode/odd/non-pow2 canaries (res_robustness.json)",
+    "accumulator_negative": "carried-state kernel excluded in isolation (accum=1, pointwise=0)",
+    "dtype_faithful": "fp16 [1024]/fp32 [512] fire + correct; bytes-aware reads dtype.itemsize",
+    "warp_ramp": "DEFER -- w4 optimal at seed tiles, w8 within-noise, w16 -10% (warp_ramp_probe.py)"
+  },
+  "overtime_remaining_low_value": [
+    "MIN_WAVES=8 audit (only binds tiny/decode problems, correctness-only)",
+    "per-dtype TILE_BYTES (bf16-tuned; fp16/fp32 confirmed fire+correct, perf-tune low value)",
+    "oversized/concat REAL curriculum shape (Gate D fix #3 covers it; task pins corpus -> human-review)",
+    "sub-parity push residual_add/bias_gelu ~0.95-0.97 (N-D codegen ceiling, no clean lever found)"
+  ],
+  "step0_headroom": {
+    "verdict": "niche CONFIRMED: 5.3-7.0x default->oracle, oracle~=tc parity, cold-L2 verified",
+    "rows": [
+      {"shape": [16384, 11008], "default_to_oracle": 7.024, "oracle_vs_tc": 1.003},
+      {"shape": [512, 11008], "default_to_oracle": 5.315, "oracle_vs_tc": 1.022},
+      {"shape": [4096, 4096], "default_to_oracle": 6.362, "oracle_vs_tc": 1.016}
+    ]
+  },
+  "commit_trail": [
+    {"sha": "dda82b3", "what": "Phase 1: PointwiseElementwiseFact + populator + TritonPointwiseSeedHeuristic"},
+    {"sha": "f49543d", "what": "Gate D fix1 (accessed_numel==total, full-rank broadcast) + Gate F (emit block_sizes only)"},
+    {"sha": "8dc7889", "what": "Gate D fix2 (stride-aware accessed_numel, stride-0 expand)"},
+    {"sha": "abba851", "what": "N-D: outer dims->1, inner covers contiguous row (residual_add 0.906->0.984)"},
+    {"sha": "a1b5402", "what": "TILE_BYTES 16384->8192 (robust byte budget)"},
+    {"sha": "b4a4a681", "what": "Gate D fix3 (accessed_numel>=total, oversized operands) -- CHAMPION"}
+  ],
+  "champion_perf_bf16_cool_gpu": {
+    "note": "do_bench med-of-9 cold-L2, train+val, cool GPUs (<40C). G=tc/seed (>=1 beats tc). All clear 0.75 floor.",
+    "swiglu": {"seeded_vs_default": 6.83, "G_vs_tc": 0.998, "min_G": 0.995, "seed": "[1024]"},
+    "geglu": {"seeded_vs_default": 6.84, "G_vs_tc": 0.996, "min_G": 0.993, "seed": "[1024]"},
+    "residual_add": {"seeded_vs_default": 1.35, "G_vs_tc": 0.986, "min_G": 0.964, "seed": "[1,1024]"},
+    "relu_squared": {"seeded_vs_default": 9.99, "G_vs_tc": 0.994, "min_G": 0.988, "seed": "[2048]"},
+    "bias_gelu": {"seeded_vs_default": 1.21, "G_vs_tc": 0.968, "min_G": 0.903, "seed": "[1,2048]"}
+  },
+  "freeze_gate_E": {
+    "read": "ONCE @ b4a4a681 (Gate E sole TEST+held-out reader)",
+    "test_split": {"swiglu": 0.997, "geglu": 0.996, "residual_add": 0.977, "relu_squared": 0.998, "bias_gelu": 0.977},
+    "held_out_dyt": {"G_vs_tc": 0.967, "min_G": 0.876, "seeded_vs_default": 1.18, "acc": "18/18"},
+    "verdict": "PASS -- test tracks train, held-out dyt generalizes, no below-floor, no overfit"
+  },
+  "gate_verdicts": [
+    {"gate": "A", "sha": "f49543d", "verdict": "PASS", "wf": "wf_1b971801", "note": "3/3 skeptics refuted=false; independent CUDA-Event repro confirms tc-parity"},
+    {"gate": "F", "sha": "dda82b3", "verdict": "PASS", "wf": "wf_6cff2546", "note": "mechanism in lowered code; block_sizes sole non-default field; inert warps/stages/pid dropped"},
+    {"gate": "H", "sha": "a1b5402", "verdict": "KEEP", "wf": "wf_beb416c3", "note": "faithful keys, broad, byte-budget form; 6 BROADEN items"},
+    {"gate": "R", "sha": "a1b5402", "verdict": "accept", "wf": "wf_beb416c3", "note": "negatives byte-identical, no disaster, 5/5 up; anchor set"},
+    {"gate": "D", "sha": "dda82b3", "verdict": "REFUTED->fixed f49543d", "note": "full-rank broadcast counted by bare-ndim proxy"},
+    {"gate": "D", "sha": "f49543d", "verdict": "REFUTED->fixed 8dc7889", "note": "stride-0 .expand()/broadcast_tensors counted"},
+    {"gate": "D", "sha": "8dc7889/a1b5402", "verdict": "REFUTED->fixed b4a4a681", "note": "oversized operand dropped by == test"},
+    {"gate": "D", "sha": "b4a4a681", "verdict": "PASS", "agent": "a3f0104d", "note": "4th pass refuted=false; population+threshold faithful; residual re-subscript corner scoped-deferred"},
+    {"gate": "E", "sha": "b4a4a681", "verdict": "PASS", "note": "freeze read: test+dyt clear floor, no overfit"}
+  ],
+  "frozen_anchor_bf16": {
+    "swiglu": 0.998, "geglu": 0.996, "residual_add": 0.986, "relu_squared": 0.994, "bias_gelu": 0.968,
+    "set_at_sha": "b4a4a681", "note": "per (kernel,dtype) cell; ratchets up only"
+  },
+  "decisions": [
+    {"id": "D1", "decision": "fire broadly (no HARDWARE_TARGETS gate)", "why": "bytes/occupancy/num_sm keys are hardware-general; prefer-to-fire"},
+    {"id": "D2", "decision": "promote_seed_to_default=False", "why": "match reduction heuristics; force configs=[seed] for bench"},
+    {"id": "D3", "decision": "authored corpus kernels in _lab (not committed examples/)", "why": "heuristic independent of them; keeps PR to 4 helion files"},
+    {"id": "D4", "decision": "GPU thermal corruption invalidated bias_gelu measurements", "why": "re-measure on cool GPUs; see memory gpu-thermal-measurement-corruption"}
+  ],
+  "broaden_queue": [
+    "num_warps ramp for large tiles (measure; likely within-noise)",
+    "per-dtype TILE_BYTES (8192 tuned on bf16)",
+    "BLOCK_FLOOR/MIN_WAVES small-problem + non-H100 SM-count sweep",
+    "wire n_load/n_store into the budget for many-input fused elementwise"
+  ]
+}
