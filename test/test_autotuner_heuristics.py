@@ -361,8 +361,13 @@ class TestMatmulFacts(TestCase):
 
             self.assertEqual(len(bound.config_spec.matmul_facts), expected_facts)
             if expected_facts == 0:
-                self.assertEqual(bound.config_spec.compiler_seed_configs, [])
-                self.assertEqual(bound.config_spec.autotuner_heuristics, [])
+                # No matmul fact: a pure-pointwise kernel (triton_add) is instead seeded by
+                # TritonPointwiseSeedHeuristic. Assert it routes there (one seed config), not
+                # the pre-pointwise-heuristic expectation of no seed at all.
+                self.assertEqual(
+                    bound.config_spec.autotuner_heuristics, ["triton_pointwise"]
+                )
+                self.assertEqual(len(bound.config_spec.compiler_seed_configs), 1)
             for fact in bound.config_spec.matmul_facts:
                 self.assertEqual(fact.lhs_ndim, 2)
                 self.assertEqual(fact.rhs_ndim, 2)
@@ -712,7 +717,7 @@ class TestTritonStandardReductionHeuristic(TestCase):
         # block_id=1 (the rolled reduction loop above), the row axis block_id=0.
         spec.reduction_facts.append(
             ReductionFact(
-                block_id=1,
+                primary_reduction_block_id=1,
                 size_hint=reduction_size_hint,
                 m_block_ids=(0,),
                 static_rnumel=reduction_size_hint,
@@ -3559,7 +3564,9 @@ class TestTritonReductionHeuristic(TestCase):
                 self.assertEqual(fact.size_hint, n)
                 self.assertEqual(fact.m_block_ids, (0,))
                 self.assertEqual(len(fact.non_reduction_loop_block_ids), 1)
-                self.assertNotIn(fact.block_id, fact.non_reduction_loop_block_ids)
+                self.assertNotIn(
+                    fact.primary_reduction_block_id, fact.non_reduction_loop_block_ids
+                )
                 self.assertEqual(fact.num_carried_2d_tiles, 0)
                 self.assertIn(
                     TritonStandardReductionHeuristic.name,
@@ -3637,7 +3644,7 @@ class TestTritonReductionHeuristic(TestCase):
 
         def fact(block_id: int, norm_bid: int) -> ReductionFact:
             return ReductionFact(
-                block_id=block_id,
+                primary_reduction_block_id=block_id,
                 size_hint=size_hint,
                 m_block_ids=(0,),
                 static_rnumel=None,  # <-- dynamic extent: triggers the fallback
@@ -3646,22 +3653,35 @@ class TestTritonReductionHeuristic(TestCase):
                 non_reduction_loop_block_ids=(norm_bid,),
             )
 
-        # user-tiled: the reduction axis IS a block_sizes entry (red_value given). The
-        # normalize tile matches that red_value (777, an arbitrary sentinel), NOT a
-        # byte-cap value.
+        # user-tiled: the reduction axis IS a block_sizes entry (sized via the red_values
+        # map {block_id -> r_block}). The normalize tile matches the PRIMARY rdim's value
+        # (777, an arbitrary sentinel), NOT a byte-cap value.
         spec = spec_with(reduction_bid=1, norm_bid=2)
-        bs = H._build_block_sizes(spec, fact(1, 2), 1, 777, non_reduction_loop_ids={2})
+        bs = H._build_block_sizes(
+            None, spec, fact(1, 2), {1: 777}, non_reduction_loop_ids={2}
+        )
         red_idx = spec.block_sizes.block_id_to_index(1)
         norm_idx = spec.block_sizes.block_id_to_index(2)
         self.assertEqual(bs[red_idx], 777)
         self.assertEqual(bs[norm_idx], 777)  # normalize tile == reduction tile
 
-        # standard: the reduction rides reduction_loops (red_block_id=None,
-        # red_value=None), so the normalize tile matches next_pow2(size_hint) instead —
-        # must NOT floor to 1.
+        # standard: the reduction rides reduction_loops (empty red_values map), so the
+        # normalize tile matches next_pow2(size_hint) instead — must NOT floor to 1.
         bs_t1 = H._build_block_sizes(
-            spec, fact(1, 2), None, None, non_reduction_loop_ids={2}
+            None, spec, fact(1, 2), None, non_reduction_loop_ids={2}
         )
         self.assertEqual(bs_t1[norm_idx], 4096)  # next_pow2(4096)
         self.assertNotEqual(bs_t1[norm_idx], 1)
         self.assertEqual(bs_t1[0], H._block_floor(spec.block_sizes[0]))  # grid floored
+
+        # multi-reduction (rms_norm_per_block-class): TWO reducing axes, each sized to its
+        # OWN r_block via the map. The non-dominant reducing axis is NOT floored to 1 — the
+        # core of the multi-r_block fix. (Here both axes are tunable block_sizes entries;
+        # block 1 is the primary rdim, block 2 a secondary reducing axis.)
+        spec2 = spec_with(reduction_bid=1, norm_bid=2)
+        bs_multi = H._build_block_sizes(None, spec2, fact(1, 2), {1: 4096, 2: 512})
+        self.assertEqual(bs_multi[spec2.block_sizes.block_id_to_index(1)], 4096)
+        self.assertEqual(bs_multi[spec2.block_sizes.block_id_to_index(2)], 512)
+        self.assertNotEqual(
+            bs_multi[spec2.block_sizes.block_id_to_index(2)], 1
+        )  # secondary NOT floored

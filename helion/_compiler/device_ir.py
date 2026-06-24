@@ -5,6 +5,7 @@ import builtins
 import contextlib
 import copy
 import dataclasses
+import enum
 import functools
 import logging
 import math
@@ -25,6 +26,7 @@ from torch._dynamo.convert_frame import compile_lock
 from torch._inductor.decomposition import select_decomp_table
 from torch.fx._lazy_graph_module import _LazyGraphModule
 from torch.fx.experimental import proxy_tensor
+from torch.fx.experimental.symbolic_shapes import free_unbacked_symbols
 from torch.fx.traceback import preserve_node_meta
 from torch.utils import _pytree as pytree
 
@@ -92,6 +94,21 @@ if TYPE_CHECKING:
 tls: _TLS = cast("_TLS", threading.local())
 
 log = logging.getLogger(__name__)
+
+
+class ReductionRole(enum.Enum):
+    """How the reduction seed treats one ``ReductionLowering`` axis. All three ARE
+    reductions; the role decides whether we size it as one. See
+    :meth:`DeviceIR._classify_reduction_axis` for the discriminator.
+    """
+
+    # Sized as a reduction (static extent, fully reduced within one program).
+    TILED = "tiled"
+    # A partial grid axis: the grid parallelizes it, so one program reduces only its
+    # tile. Its extent is not a per-program reduction size -- kept as a grid ROW (floored).
+    FLOORED_ROW = "floored_row"
+    # No static extent (jagged / data-dependent) -- the extent-keyed seed is undefined.
+    DECLINED = "declined"
 
 
 def _lerp_scalar_decomp(
@@ -1060,13 +1077,67 @@ class DeviceIR:
                 )
             )
 
-    def register_user_tiled_reductions(
+    def _all_reduction_axes(self) -> set[int]:
+        """EVERY block_id some ``ReductionLowering`` reduces over, across all device
+        graphs. The faithful "all reductions" set -- no grid / extent / residency
+        filtering. The classifier (:meth:`_classify_reduction_axis`) decides what each
+        member becomes; this just enumerates them.
+        """
+        from .inductor_lowering import ReductionLowering
+
+        out: set[int] = set()
+        for graph_info in self.graphs:
+            for node in graph_info.graph.nodes:
+                lowering = node.meta.get("lowering")
+                if isinstance(lowering, ReductionLowering):
+                    bid = getattr(lowering, "block_index", None)
+                    if bid is not None:
+                        out.add(bid)
+        return out
+
+    def _classify_reduction_axis(
+        self, block_id: int, grid_ids: set[int]
+    ) -> ReductionRole:
+        """The single decision behind the three reduction-axis sets the seed builds.
+
+        A ``ReductionLowering`` axis is one of three roles. The distinction is NOT "is it
+        a reduction" (all three are) but "do we size it AS a reduction":
+
+        - ``TILED``: a reduction whose full extent is reduced WITHIN one program and is
+          statically sized -- so its ``size_hint`` is a faithful sizing input and it gets a
+          reduction tile (``red_values`` -> ``_reduction_rblock``). Either a non-grid inner
+          reduction, or a FULLY-RESIDENT grid axis (``cdiv == 1``: tiled at full extent, the
+          program reduces the whole thing in one intra-program op -- per_token_group's
+          specialized ``group_size``).
+        - ``FLOORED_ROW``: a reduction over a PARTIAL grid axis (``cdiv > 1``: the grid
+          PARALLELIZES it, so one program reduces only its row-tile, NOT the extent).
+          ``size_hint`` is the whole-axis count -- a LIE as a per-program reduction size --
+          so we do not tile it; it stays a grid ROW (floored, kept in ``m_block_ids``).
+          ``jsd``'s ``amax(dim=0)`` over the ``tile_bt`` grid axis.
+        - ``DECLINED``: a reduction with NO static extent (a jagged / data-dependent range,
+          ``size=None``, e.g. ``hl.jagged_tile(nnz)``). The extent-keyed seed is undefined,
+          so the kernel falls back to the default config.
+
+        Replaces the prior three cascading filters (``inner_red`` grid filter, the
+        ``all_reducing_axes`` static filter, the ``backed_reducing_axes`` unbacked filter),
+        each of which silently dropped a different slice under a name claiming completeness.
+        """
+        info = CompileEnvironment.current().block_sizes[block_id]
+        if not isinstance(info.size, (int, torch.SymInt)):
+            return ReductionRole.DECLINED
+        if block_id in grid_ids and not self._is_fully_resident_grid_axis(block_id):
+            return ReductionRole.FLOORED_ROW
+        return ReductionRole.TILED
+
+    def register_unrolled_reductions(
         self,
         memory_op_facts: list[MemoryOpFact],
         accumulator_facts: list[AccumulatorFact],
         liveness_by_axis: dict[int, int] | None = None,
     ) -> None:
-        """Register a ReductionFact for an inner reduction the roller did NOT roll.
+        """Register a ReductionFact for an inner reduction the roller did NOT roll
+        (named for the *unrolled* property, not the resulting heuristic -- it feeds BOTH
+        the standard and user-tiled seeds depending on the axis shape below).
         Owns the two non-rolled cases, keyed on whether the reduction axis is a
         ``block_sizes`` entry:
 
@@ -1085,58 +1156,72 @@ class DeviceIR:
         ``ReductionLowering.block_index`` minus the grid axes. Built in Phase 3, so
         per-op-dataflow fields derive from ``memory_op_facts``/``accumulator_facts``.
         """
-        from .inductor_lowering import ReductionLowering
-
         env = CompileEnvironment.current()
         spec = env.config_spec
         grid_ids = {b for bids in self.grid_block_ids for b in bids}
 
-        red_block_ids: set[int] = set()
-        for graph_info in self.graphs:
-            for node in graph_info.graph.nodes:
-                lowering = node.meta.get("lowering")
-                if isinstance(lowering, ReductionLowering):
-                    bid = getattr(lowering, "block_index", None)
-                    if bid is not None:
-                        red_block_ids.add(bid)
-        # Drop the grid axis (a dead reduction over the grid/M tile, etc.).
-        inner_red = [b for b in red_block_ids if b not in grid_ids]
-        bs_ids = spec.block_sizes.valid_block_ids()
-        rl_ids = spec.reduction_loops.valid_block_ids()
-        # Materialized axes (rms/ln/instance/group bwd): a ReductionLowering axis the roller left in
-        # neither block_sizes nor reduction_loops -> standard track. bias_grad/dyt have none (their [N]
-        # accumulator is never reduced over), so they fall to the block-tiled pool below.
-        materialized_reduction_axes = [
-            b
-            for b in inner_red
-            if self._is_materialized_axis(b, grid_ids, bs_ids, rl_ids)
-        ]
-        # Candidate pool: prefer the materialized reductions (-> standard track), else the
-        # remaining block-tiled inner reductions (-> user-tiled track). A pure matmul has no
-        # inner reduction so its pool is empty (declines); a matmul WITH a reduction rides
-        # the same path -- no special gate needed.
-        pool = materialized_reduction_axes or inner_red
-        # Drop dynamic-extent axes: a jagged/data-dependent reduction tile has ``size=None``
-        # (no static extent), so ``size_hint()`` would assert. The seed keys on a static
-        # resident footprint, so decline such axes here (mirrors the static-size guard below)
-        # rather than crash -- jagged kernels fall back to the default config as on main.
-        pool = [
-            b for b in pool if isinstance(env.block_sizes[b].size, (int, torch.SymInt))
-        ]
-        if not pool:
+        # Classify EVERY ReductionLowering axis into one role (see _classify_reduction_axis).
+        # The three roles replace the prior three cascading filters (inner_red grid-drop,
+        # all_reducing_axes static-drop, backed_reducing_axes unbacked-drop), each of which
+        # silently excluded a different slice under a name claiming completeness.
+        roles = {
+            b: self._classify_reduction_axis(b, grid_ids)
+            for b in self._all_reduction_axes()
+        }
+        # tiled_reduction_axes: the reductions we actually SIZE as reductions (the primary +
+        # the secondaries recorded in `secondary_reduction_block_ids`). A FLOORED_ROW axis
+        # (a partial grid reduction, e.g. jsd's amax over the tile_bt grid axis) is a real
+        # reduction but is NOT sized as one -- its extent is a per-grid count, not a per-program
+        # reduction size -- so it stays a grid ROW (kept in m_block_ids, floored). A DECLINED
+        # axis (jagged / size=None) means the extent-keyed seed is undefined.
+        tiled_reduction_axes = [b for b, r in roles.items() if r is ReductionRole.TILED]
+        if not tiled_reduction_axes:
+            # No sizeable reduction (pure matmul, or only floored-row / jagged reductions):
+            # fall back to the default config, as before.
             return
-        # Seed the DOMINANT reduction (largest extent -- drives the resident footprint). The pick is
-        # config-invariant for today's kernels but the axis-specific fact fields are not, so warn and
-        # revisit the tie-break if a seed lever starts consuming them.
-        red_block_id = max(pool, key=lambda b: env.block_sizes[b].size_hint())
-        if len(pool) > 1:
+        # Seed the DOMINANT reduction (largest extent -- drives the resident footprint + the
+        # SCALAR levers: num_warps, m_block_cap, the standard-vs-user-tiled track discriminator).
+        # Rank by reduction-axis EXTENT (`size_hint` = element count, NOT the autotuner tile
+        # size), but only over BACKED (statically-sized) axes. An UNBACKED reducing axis -- a
+        # data-dependent range, e.g. rms/layer_norm bwd's inner-M `.sum(0)` over
+        # `hl.tile(mb_cta.begin, mb_cta.end)` -- has `size_hint()` == the `create_unbacked_symint`
+        # placeholder (8192), which spuriously outranks a real materialized feature reduction (N)
+        # and mis-routes the kernel. An axis with no known extent cannot claim to be the dominant
+        # reduction, so exclude it from the RANKING (it stays in the tiled set, just not primary).
+        backed_reducing_axes = [
+            b
+            for b in tiled_reduction_axes
+            if not free_unbacked_symbols(env.block_sizes[b].size)
+        ]
+        if backed_reducing_axes:
+            red_block_id = max(
+                backed_reducing_axes, key=lambda b: env.block_sizes[b].size_hint()
+            )
+        else:
+            # Every tiled reducing axis is unbacked (pure-collapse bias_grad/dyt: the sole
+            # reduction is the data-dependent grad accumulation). No real extent to rank by.
+            red_block_id = tiled_reduction_axes[0]
+        # Record the SECONDARY (non-primary) tiled reducing axes. The primary is carried by
+        # red_block_id alone; this set is the EXTRA reductions a multi-reduction kernel sizes
+        # per-axis. Empty `()` means "primary only" -- a single-reduction kernel (and any kernel
+        # whose only tiled axis is the primary) so every downstream per-axis path collapses to
+        # block_id and stays byte-identical. Size-descending.
+        secondary_reduction_block_ids: tuple[int, ...] = tuple(
+            sorted(
+                (b for b in tiled_reduction_axes if b != red_block_id),
+                key=lambda b: env.block_sizes[b].size_hint(),
+                reverse=True,
+            )
+        )
+        if secondary_reduction_block_ids:
             log.warning(
-                "inner-reduction seed: %d candidate inner reductions %s; "
-                "recording only the dominant axis %s as the ReductionFact",
-                len(pool),
-                {b: env.block_sizes[b].size_hint() for b in pool},
+                "inner-reduction seed: %d tiled inner reductions %s; "
+                "recording only the dominant axis %s as the primary ReductionFact",
+                len(tiled_reduction_axes),
+                {b: env.block_sizes[b].size_hint() for b in tiled_reduction_axes},
                 red_block_id,
             )
+        bs_ids = spec.block_sizes.valid_block_ids()
         # Widen genuine apply/normalize loops that span the reduction extent. Do NOT decline on a
         # non-qualifying loop: a reduction can co-occur with other non-grid loops that must stay floored
         # (a secondary reduction, or an apply loop at a different extent) -- warn instead of declining.
@@ -1156,17 +1241,17 @@ class DeviceIR:
                 bid,
                 env.block_sizes[bid].size,
             )
-        try:
-            block_info = env.block_sizes[red_block_id]
-        except (IndexError, KeyError):
-            return
-        # The reduction axis must have a resolvable extent: a dynamic/jagged dim has
-        # ``size=None``, for which the extent-keyed lever is undefined; decline there.
-        if not isinstance(block_info.size, (int, torch.SymInt)):
-            return
-
-        # The kept (non-reduction) axes are the grid block_ids — the "rows".
-        m_block_ids = tuple(sorted(grid_ids))
+        # red_block_id is a TILED axis, so its extent is static by construction (the classifier
+        # rejects size=None as DECLINED) -- no extent guard needed here.
+        block_info = env.block_sizes[red_block_id]
+        # The kept (non-reduction) axes are the grid block_ids — the "rows" — EXCLUDING the TILED
+        # reducing axes (a reduction we size as a reduction must not also be counted as a row in
+        # the M_BLOCK product / grid-rows). A FLOORED_ROW reduction is deliberately NOT excluded:
+        # it IS a row (jsd's grid amax). Subtract the FULL tiled set, not just the primary, so a
+        # kernel reducing over two fully-resident grid axes does not leak its secondary into the
+        # rows. No current corpus kernel has a tiled grid SECONDARY reduction, so byte-identical
+        # today; hardens against that shape.
+        m_block_ids = tuple(sorted(grid_ids - set(tiled_reduction_axes)))
         size_hint = block_info.size_hint()
         static_rnumel = block_info.size if isinstance(block_info.size, int) else None
         # user-tiled digests over ALL device graphs (the manual inner loop body lives in
@@ -1184,8 +1269,46 @@ class DeviceIR:
                 memory_op_facts,
                 accumulator_facts,
                 liveness_by_axis or {},
+                secondary_reduction_block_ids=secondary_reduction_block_ids,
             )
         )
+
+    def _user_tiled_reduction_block_ids(self, exclude_block_id: int) -> list[int]:
+        """``ReductionLowering`` axes that are TUNABLE ``block_sizes`` entries (user-tiled
+        secondary reductions), excluding ``exclude_block_id`` (the rolled primary).
+
+        A kernel can roll its PRIMARY reduction (-> ``reduction_loops``, standard track) yet
+        hand-write a SECONDARY reduction over another axis via a nested ``hl.tile`` (-> an
+        ordinary ``block_sizes`` entry). That secondary axis must be sized as a reduction
+        (``red_values`` via ``_reduction_rblock``) rather than floored / generic-widened by the
+        ``_build_block_sizes`` catch-all. The standard fact builder (the
+        ``_rollable_reduction_records`` loop) cannot rely on ``register_unrolled_reductions``
+        (skipped whenever a rolled reduction exists), so it collects the secondaries here.
+
+        Statically-sized only (the seed keys on ``size_hint``); the rolled rdim itself is
+        excluded both by ``exclude_block_id`` and by the ``block_sizes`` membership test (it
+        lives in ``reduction_loops``, not ``block_sizes``).
+        """
+        from .inductor_lowering import ReductionLowering
+
+        env = CompileEnvironment.current()
+        valid = env.config_spec.block_sizes.valid_block_ids()
+        out: list[int] = []
+        seen: set[int] = set()
+        for graph_info in self.graphs:
+            for node in graph_info.graph.nodes:
+                lowering = node.meta.get("lowering")
+                if not isinstance(lowering, ReductionLowering):
+                    continue
+                bid = getattr(lowering, "block_index", None)
+                if bid is None or bid == exclude_block_id or bid in seen:
+                    continue
+                if bid in valid and isinstance(
+                    env.block_sizes[bid].size, (int, torch.SymInt)
+                ):
+                    seen.add(bid)
+                    out.append(bid)
+        return out
 
     def build_reduction_facts(
         self,
@@ -1213,6 +1336,20 @@ class DeviceIR:
             non_reduction_loop_block_ids = self._non_reduction_loop_candidates(
                 rdim.block_id, grid_ids
             )
+            # A kernel can roll its PRIMARY reduction yet hand-write SECONDARY reductions over
+            # other axes (nested hl.tile -> block_sizes entries). Record those secondaries so the
+            # standard seed sizes each as a reduction (red_values) instead of flooring/generic-
+            # widening it (the rolled analogue of the user-tiled multi-reduction fix). The rolled
+            # rdim is the primary (carried by rdim.block_id), so it is NOT in this set. Size-
+            # descending. Stays () for a single-reduction kernel -> byte-identical to before.
+            env = CompileEnvironment.current()
+            secondary_reduction_block_ids: tuple[int, ...] = tuple(
+                sorted(
+                    self._user_tiled_reduction_block_ids(rdim.block_id),
+                    key=lambda b: env.block_sizes[b].size_hint(),
+                    reverse=True,
+                )
+            )
             spec.reduction_facts.append(
                 self._assemble_reduction_fact(
                     rdim.block_id,
@@ -1224,12 +1361,13 @@ class DeviceIR:
                     memory_op_facts,
                     accumulator_facts,
                     liveness_by_axis,
+                    secondary_reduction_block_ids=secondary_reduction_block_ids,
                 )
             )
         # user-tiled: mutually exclusive with standard — only when no reduction_loops spec
         # was registered.
         if not spec.reduction_loops:
-            self.register_user_tiled_reductions(
+            self.register_unrolled_reductions(
                 memory_op_facts, accumulator_facts, liveness_by_axis
             )
 
@@ -1237,7 +1375,7 @@ class DeviceIR:
         """Phase 4: compose a ``MatmulWithReductionEpilogueFact`` for a fused matmul +
         reduction-over-output-axis epilogue. Fires iff exactly one ``MatmulFact`` AND
         one ``ReductionFact`` (the epilogue reduction from
-        ``register_user_tiled_reductions``'s materialized branch); holds the two facts
+        ``register_unrolled_reductions``'s materialized branch); holds the two facts
         plus the N-extent the seed keys on. Pure-matmul kernels have no epilogue
         ReductionFact and pure-reduction kernels no MatmulFact, so the composed fact
         fires ONLY on the fused family.
@@ -1277,11 +1415,19 @@ class DeviceIR:
             return
         if not spec.memory_op_facts or not spec.block_sizes:
             return
-        # The static problem element count = product of the tiled block dims' size_hints (the
-        # per-dim extents the seed needs for the tile distribution are read live off block_sizes).
+        # The static problem element count = product of EVERY iteration axis's extent. The axes
+        # are the union of the grid axes (``grid_block_ids``) and the tunable tile axes
+        # (``spec.block_sizes``): a grid-PINNED axis (``hl.tile(M, block_size=1)``) or a
+        # specialized full-extent axis lives ONLY on the grid and is absent from
+        # ``spec.block_sizes`` (which carries only tunable tiles). Iterating ``spec.block_sizes``
+        # alone silently dropped those axes from the product -- e.g. a grid-pinned-M map collapsed
+        # total_numel from M*N to N, starving the seed tile. Extents are read from
+        # ``env.block_sizes`` (keyed by ALL block_ids incl. grid), never the tunable spec.
+        axis_ids = {b for bids in self.grid_block_ids for b in bids}
+        axis_ids.update(spec.block_sizes.valid_block_ids())
         total_numel = 1
-        for block_size in spec.block_sizes:
-            total_numel *= block_size.size_hint
+        for bid in axis_ids:
+            total_numel *= env.block_sizes[bid].size_hint()
         # Per-element HBM byte traffic: sum the itemsize of every FULL-EXTENT load/store — an op
         # that touches at least the whole problem (accessed_numel >= total_numel). A BROADCAST
         # operand (bias[N], per-row [M,1], per-col [1,N], any size-1 / stride-0 dim) has STRICTLY
@@ -1404,6 +1550,7 @@ class DeviceIR:
         memory_op_facts: list[MemoryOpFact],
         accumulator_facts: list[AccumulatorFact],
         liveness_by_axis: dict[int, int] | None = None,
+        secondary_reduction_block_ids: tuple[int, ...] = (),
     ) -> ReductionFact:
         """Build one ``ReductionFact`` for axis ``red_block_id`` from the enriched
         ``memory_op_facts`` + ``accumulator_facts`` + per-axis liveness slice. Shared
@@ -1517,7 +1664,7 @@ class DeviceIR:
         )
 
         return ReductionFact(
-            block_id=red_block_id,
+            primary_reduction_block_id=red_block_id,
             size_hint=size_hint,
             m_block_ids=m_block_ids,
             static_rnumel=static_rnumel,
@@ -1532,7 +1679,43 @@ class DeviceIR:
             body_live_tiles=body_live_tiles,
             feature_footprint=feature_footprint,
             per_feature_accumulator=per_feature_accumulator,
+            secondary_reduction_block_ids=secondary_reduction_block_ids,
         )
+
+    def _is_fully_resident_grid_axis(self, block_id: int) -> bool:
+        """True iff a grid axis is tiled at its FULL extent (``block_size == extent`` =>
+        ``cdiv(extent, block) == 1`` => the whole axis is resident in each program). Such an axis
+        is on ``grid_block_ids`` only because it shares a combined ``hl.tile`` (per_token_group's
+        ``hl.specialize``'d ``group_size``); a reduction over it reduces the WHOLE extent in one
+        program, so its ``size_hint`` is a faithful per-program reduction extent and it is worth
+        seeding as a TILED reduction.
+
+        This is a PERF/SIZING eligibility gate, NOT a correctness guard: the seed only proposes a
+        starting config that the autotuner accuracy-gates, so it can neither make a correct kernel
+        wrong nor fix a wrong one. Its job is (a) to ADMIT a fully-resident grid reduction so it
+        FIRES and gets a sized seed (per_token_group; dropping this check un-fires it -> starved
+        default), and (b) to DECLINE a PARTIAL grid axis (``cdiv > 1``) whose whole-axis
+        ``size_hint`` is NOT what one program reduces -- feeding that lie to the footprint sizer
+        would mis-size. (A kernel that reduces over a partial grid axis WITHOUT a cross-CTA combine
+        is already miscompiled at every config including the default -- that is an upstream lowering
+        bug, unrelated to and unaffected by this seed-time classification.)
+
+        Reads the FIXED block size from ``env.block_sizes`` (keyed by all block_ids incl. grid);
+        a non-static extent or non-fixed source (a tunable grid tile) is never fully resident.
+        """
+        from .compile_environment import FixedBlockSizeSource
+
+        env = CompileEnvironment.current()
+        info = env.block_sizes[block_id]
+        if not isinstance(info.size, (int, torch.SymInt)):
+            return False
+        source = info.block_size_source
+        if not isinstance(source, FixedBlockSizeSource):
+            return False
+        block = source.value
+        if not isinstance(block, (int, torch.SymInt)):
+            return False
+        return bool(env.known_equal(block, info.size))
 
     def _is_materialized_axis(
         self,
@@ -1545,7 +1728,7 @@ class DeviceIR:
         grid, not a ``block_sizes`` tile, not a rolled ``reduction_loops`` axis. Two
         callers pass DIFFERENT candidate sets to this shared predicate:
 
-        - REDUCED-OVER axes (``register_user_tiled_reductions``): the axis a
+        - REDUCED-OVER axes (``register_unrolled_reductions``): the axis a
           ``ReductionLowering`` is lowered over (``red_block_id``).
         - FEATURE-FOOTPRINT axes (``_assemble_reduction_fact``): full-width
           feature/output dims flagged ``bs.reduction`` at REGISTRATION, including a

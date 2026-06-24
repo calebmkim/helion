@@ -89,10 +89,13 @@ class ReductionFact(NamedTuple):
     """Workload facts for one inner reduction dim, recorded at compile time (like
     ``MatmulFact``) so the seed heuristic branches on workload properties, not kernel
     identity. Exactly one per seeded kernel; built in device_ir's
-    ``register_rollable_reductions`` (standard) or ``register_user_tiled_reductions``
-    (user-tiled).
+    ``register_rollable_reductions`` (rolled rdim) or ``register_unrolled_reductions``
+    (unrolled rdim -- feeds either the standard or user-tiled seed by axis shape).
 
-    - ``block_id`` / ``size_hint``: the reduction axis and its extent (rnumel).
+    - ``primary_reduction_block_id`` / ``size_hint``: the reduction axis the SCALAR levers and
+      track discriminator key on, and its extent (rnumel). For a multi-reduction kernel this is
+      the dominant (max-extent) reducing axis -- a HEURISTIC tie-break,
+      not a workload property, hence ``primary``/``max`` rather than a bare ``block_id``.
     - ``m_block_ids``: the non-reduction (kept) tile block_ids.
     - ``static_rnumel``: the extent if statically known, else None.
     - ``itemsize``: bytes/element of the reduced tensor; byte caps key on
@@ -129,12 +132,29 @@ class ReductionFact(NamedTuple):
       its inner reduction tile against (``feature_footprint * itemsize``). For a 2-D norm this
       is ``N``; for a 3-D norm the full ``C*S`` (a per-axis MAX under-counts and spills). Used
       by both M-collapse tracks; 1 when no materialized feature axis exists.
+    - ``secondary_reduction_block_ids``: the NON-primary TILED reducing axes -- the
+      ``ReductionRole.TILED`` members EXCLUDING ``primary_reduction_block_id``, in size-descending
+      order. The primary is NEVER here (it is carried solely by ``primary_reduction_block_id`` and
+      sized by the scalar levers); this field carries ONLY the extra reductions a multi-reduction
+      kernel sizes per-axis on top of the primary. NOT every reduction: a partial grid reduction
+      (``ReductionRole.FLOORED_ROW`` -- jsd's ``amax(dim=0)`` over the grid row axis) and a jagged
+      one (``ReductionRole.DECLINED`` -- ``size=None``) are real reductions but are NOT tiled, so
+      they are absent. A kernel that reduces over two distinct axes in separate passes
+      (``rms_norm_per_block``: ``pow(2).sum(-1)`` over hidden + per-group ``amax(-1)``) records the
+      non-dominant axis here so the PER-AXIS sizer (``_build_block_sizes``) widens it too.
+      ``primary_reduction_block_id`` stays the PRIMARY (max-extent) tiled rdim the SCALAR levers
+      (``num_warps``, ``m_block_cap``) and ``_is_standard_reduction`` key on. Empty default ``()``
+      means "no secondary reductions" -- the single-reduction kernels (all 9 base + 8 transfer + 6
+      m-reduction), so every existing path is byte-identical. The meaning is cardinality-independent:
+      ``()`` always means exactly "primary only", regardless of whether the kernel has 1 reduction.
+      The M-reductions' M-collapse is a loop-carried ``+=`` accumulator (NOT a ``ReductionLowering``),
+      so it never enters this set — it stays on the separate ``per_feature_accumulator`` path.
 
     ``grid_rows`` is NOT stored — a pure function of ``m_block_ids`` + env, computed on
     demand by its one consumer (the narrow-row ``num_warps`` lever).
     """
 
-    block_id: int
+    primary_reduction_block_id: int
     size_hint: int
     m_block_ids: tuple[int, ...]
     static_rnumel: int | None
@@ -149,6 +169,7 @@ class ReductionFact(NamedTuple):
     body_live_tiles: int = 1
     feature_footprint: int = 1
     per_feature_accumulator: bool = False
+    secondary_reduction_block_ids: tuple[int, ...] = ()
 
 
 class MatmulWithReductionEpilogueFact(NamedTuple):

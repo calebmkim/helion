@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
     from ..compile_environment import CompileEnvironment
     from ..device_ir import DeviceIR
 
+
+log = logging.getLogger(__name__)
 
 _B200_MATMUL_HEURISTICS_PATH = Path(__file__).resolve().parent / "matmul_b200.json"
 
@@ -331,21 +334,44 @@ class TritonPointwiseSeedHeuristic(AutotunerHeuristic):
     @classmethod
     def get_seed_config(cls, env: CompileEnvironment, device_ir: DeviceIR) -> Config:
         from ...runtime import get_num_sm
+        from ...runtime.config import Config as _Config
 
         spec = env.config_spec
         fact = spec.pointwise_facts[0]
         num_sm = max(1, get_num_sm(env.device))
         bytes_per_elem = max(1, fact.bytes_per_elem)
-        # Bytes-aware target tile (in elements): a traffic-3 kernel moves 50% more bytes per
-        # element than traffic-2, so for the same byte budget it gets a SMALLER element tile.
-        target = max(cls.BLOCK_FLOOR, cls.TILE_BYTES // bytes_per_elem)
-        # size_hint-aware: cap the tile so the grid keeps the SMs busy on small problems.
-        max_tile = max(1, fact.total_numel // (num_sm * cls.MIN_WAVES))
+        # PINNED per-program elements: a grid-pinned (block_size=1) or specialized full-extent
+        # axis contributes elements to EVERY program but has no tunable tile, so the distributor
+        # (which only sees spec.block_sizes) cannot account for them. Their product is the work
+        # each program already does; the tunable dims only need to fill the REMAINING budget.
+        # (A grid-pinned block_size=1 axis contributes 1 -> no effect; a specialized group_size
+        # contributes its full width.) Read the fixed block size from env.block_sizes (keyed by
+        # ALL ids) via an empty Config, NOT size_hint (which is the whole-axis extent, not the
+        # per-program tile).
+        tunable = set(spec.block_sizes.valid_block_ids())
+        pinned_elems = 1
+        for info in env.block_sizes:
+            if info.block_id in tunable:
+                continue
+            value = info.from_config(_Config(block_sizes=[]))
+            if isinstance(value, (int, torch.SymInt)):
+                pinned_elems *= max(1, int(value))
+        # Bytes-aware target tile (in elements), DISCOUNTED by the pinned per-program work: a
+        # traffic-3 kernel moves 50% more bytes per element than traffic-2, so for the same byte
+        # budget it gets a SMALLER element tile.
+        target = max(1, (cls.TILE_BYTES // bytes_per_elem) // pinned_elems)
+        # size_hint-aware: cap the tile so the grid keeps the SMs busy on small problems (the
+        # occupancy cap already uses the pinned-inclusive total_numel, so divide it too).
+        max_tile = max(1, fact.total_numel // (num_sm * cls.MIN_WAVES) // pinned_elems)
         target = max(1, min(target, max_tile))
+        # Floor (the never-regress-to-bs=32 guard) likewise discounts the pinned work: a program
+        # already covering >= BLOCK_FLOOR elements via pinned axes needs no tunable floor.
+        floor = max(1, cls.BLOCK_FLOOR // pinned_elems)
+        target = max(floor, target)
         # block_sizes is the only non-default field; num_warps/num_stages/pid_type stay at the
         # compiler defaults (4 / 1 / 'flat'), so emitting them would be inert (Gate F). A measured
         # num_warps ramp for large tiles is a BROADEN-queue item.
-        return Config(block_sizes=cls._seed_block_sizes(spec, target))
+        return Config(block_sizes=cls._seed_block_sizes(spec, target, floor))
 
     @staticmethod
     def _pow2_floor(value: int) -> int:
@@ -364,7 +390,9 @@ class TritonPointwiseSeedHeuristic(AutotunerHeuristic):
         return max(1, cand)
 
     @classmethod
-    def _seed_block_sizes(cls, spec: ConfigSpec, target: int) -> list[int]:
+    def _seed_block_sizes(
+        cls, spec: ConfigSpec, target: int, floor: int | None = None
+    ) -> list[int]:
         """Distribute the target tile (in elements) across the block dims, INNERMOST first,
         SPILLING the leftover budget outward. The innermost (contiguous, last) dim takes as much
         of the budget as its extent allows (capped at max_size = next_pow2(extent), so a short row
@@ -376,13 +404,16 @@ class TritonPointwiseSeedHeuristic(AutotunerHeuristic):
         WIDE row (extent >= budget) the inner absorbs the whole budget and the outer dims stay 1
         (``[1, 1024]``) — the 1-D-flatten-equivalent coalesced run; for a 1-D kernel this is just
         ``[clamp(target)]``."""
+        inner_floor = cls.BLOCK_FLOOR if floor is None else floor
         n = len(spec.block_sizes)
         specs = [cast("BlockSizeSpec", spec.block_sizes[i]) for i in range(n)]
         block = [1] * n
         remaining = max(1, target)
-        for i in reversed(range(n)):  # innermost (contiguous) dim first, spill the rest outward
-            floor = cls.BLOCK_FLOOR if i == n - 1 else 1
-            block[i] = cls._clamp_dim(remaining, specs[i], floor)
+        for i in reversed(
+            range(n)
+        ):  # innermost (contiguous) dim first, spill the rest outward
+            dim_floor = inner_floor if i == n - 1 else 1
+            block[i] = cls._clamp_dim(remaining, specs[i], dim_floor)
             remaining = max(1, remaining // block[i])
             if remaining <= 1:
                 break
@@ -402,7 +433,7 @@ def _is_standard_reduction(spec: ConfigSpec, fact: ReductionFact) -> bool:
     (an inner ``reduction=True`` axis the roller declined to roll, in NEITHER spec --
     rms/ln/instance backward); user-tiled is the rdim-is-a-block_sizes case.
     """
-    return fact.block_id not in spec.block_sizes.valid_block_ids()
+    return fact.primary_reduction_block_id not in spec.block_sizes.valid_block_ids()
 
 
 def _grid_rows(env: CompileEnvironment, m_block_ids: tuple[int, ...]) -> int:
@@ -439,6 +470,10 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     backend = "triton"
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
+    # Occupancy floor for the M-axis widen: keep the post-widen grid >= num_sm * MIN_WAVES so
+    # collapsing a fan-out sibling never under-occupies the machine (mirrors the pointwise seed's
+    # MIN_WAVES grid floor).
+    MIN_WAVES = 8
     # Looped-fallback reduction chunk (pow2) for a row that does not fit the persistent
     # residency budget. ``_reduction_rblock`` shrinks it when a raised M_BLOCK divides the
     # footprint budget below it; at M_BLOCK==1 it is used as-is.
@@ -452,6 +487,13 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # below divides the budget by M_BLOCK. Above it a wide resident tile spills register/SMEM,
     # so the reduction loops a chunk instead. ~240 KiB, just over H100 SMEM.
     ROW_PERSIST_MAX_BYTES = 245760
+    # A FORCED-PERSISTENT reduction (fully-resident grid axis, no rollable r_block) is only
+    # cheap to fan a wide parallel sibling out beside when the reduction itself is SMALL; a large
+    # one is already a heavy resident tile. Above this rdim extent the m-axis sibling floors
+    # rather than widens. The _resident_tile_cap also shrinks the sibling as the rdim grows, so
+    # this is primarily an explicit, legible bound (and a backstop against a loose byte budget),
+    # not the sole magnitude control. per_token_group's rdim is group_size (64/128) << this.
+    PERSISTENT_REDUCTION_MAX = 2048
     # Per-program ELEMENT ceiling for a FULL-WIDTH-output row (stores the whole [M, N] row
     # back): its resident tile is fp32-promoted, so it spills at a WIDTH independent of input
     # dtype, which the byte cap above (input bytes) undercounts 2x for a half-precision row.
@@ -549,6 +591,111 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return max(1, bs_spec.min_size, bs_spec.autotuner_min)
 
     @classmethod
+    def _resident_tile_cap(
+        cls,
+        spec: ConfigSpec,
+        fact: ReductionFact,
+        inner_resident_elems: int = 1,
+        r_block_resident: int = 1,
+    ) -> int:
+        """Max pow2 tile (along one axis) that keeps the resident live set inside the
+        per-program register budget: ``tile <= ROW_PERSIST_MAX_BYTES /
+        (M_BLOCK * r_block_resident * inner_resident_elems * itemsize)``.
+
+        ``r_block_resident`` is the resident width of the reduction tile co-held with the axis
+        being capped (default 1). For the M-AXIS widen branch this is the rdim's resident extent
+        (``next_pow2(size_hint)`` when persistent, else the rolled chunk): widening an m-axis by
+        ``k`` holds a ``[k, R_BLOCK]`` reduction tile, so the footprint is ``k * R_BLOCK *
+        itemsize`` and the cap must divide by ``R_BLOCK`` -- WITHOUT it, a wide-reduction kernel
+        (rms_norm, R_BLOCK=16384) is told it can widen M to thousands of rows (the cap returns
+        ~32768) and spills catastrophically (~10x), while a tiny-reduction kernel
+        (per_token_group, R_BLOCK=128) correctly widens its parallel sibling. Dividing by the
+        resident R_BLOCK is what makes the floor-vs-widen decision fall out of the footprint
+        arithmetic alone -- no row-vs-sibling axis classification. Default 1 keeps the
+        apply/normalize-loop caller (a flat ``[M_BLOCK, tile]`` set) byte-identical.
+
+        ``inner_resident_elems`` is the PRODUCT of the extents of any OTHER axes that are
+        co-resident in the same tile alongside the one being capped (default 1). The
+        apply/normalize-loop caller holds a flat ``[M_BLOCK, tile]`` set, so it passes 1 (the
+        cap is byte-identical to the prior formula). The independent-loop caller's tile is
+        ``[M_BLOCK, tile, *pinned_inner]`` (rms_norm_per_block: a ``[1, groups, group_size]``
+        per-group quant tile), so it passes the pinned inner product (``group_size``) -- without
+        it the cap under-counts the footprint by that factor and would admit a spilling tile.
+
+        CAVEAT (best-estimate, subject to change): ``ROW_PERSIST_MAX_BYTES`` is borrowed from
+        the persistent-reduction path -- it was tuned as the resident-row budget for a reduction
+        tree, NOT for an independent map/quant loop, whose register pressure profile differs.
+        The footprint ACCOUNTING above is faithful (it now counts every co-resident axis), but
+        the BUDGET CONSTANT itself is a reused estimate, validated only against rms_norm_per_block
+        (whose real shapes stay well under it, so the cap never actually bites there -- it only
+        guards a hypothetical wide independent loop). When a real kernel exercises a large
+        branch-4 loop that this clamps, re-tune the ceiling for the map case rather than assume
+        the reduction budget transfers; a dedicated constant may be warranted then.
+        """
+        from ..._utils import prev_power_of_2
+
+        m_block = cls._m_block_product(spec, fact)
+        denom = (
+            m_block
+            * max(1, r_block_resident)
+            * max(1, inner_resident_elems)
+            * max(1, fact.itemsize)
+        )
+        budget = cls.ROW_PERSIST_MAX_BYTES // max(1, denom)
+        return prev_power_of_2(max(1, budget))
+
+    @classmethod
+    def _pinned_inner_resident_elems(
+        cls, spec: ConfigSpec, fact: ReductionFact, loop_block_id: int
+    ) -> int:
+        """Product of the extents of the PINNED inner axes co-resident with an independent
+        (branch-4) loop tile -- the factor ``_resident_tile_cap`` must divide the budget by so
+        the ``[M_BLOCK, loop_tile, *pinned_inner]`` footprint is bounded faithfully.
+
+        A pinned inner axis is one that is NOT tunable (absent from
+        ``block_sizes.valid_block_ids()`` -- a ``FixedBlockSizeSource`` materialized at full
+        extent), NOT a grid/M axis (not in ``fact.m_block_ids``), NOT a ROLLED reduction (absent
+        from ``reduction_loops`` -- see below), and NOT the loop being capped itself. For
+        ``rms_norm_per_block`` that is block 3 (``group_size``), the pinned per-group ``amax``
+        axis resident inside the per-group quant tile; for a kernel with no such axis the product
+        is 1 (the cap reduces to the flat ``[M_BLOCK, tile]`` form).
+
+        ROLLED-REDUCTION EXCLUSION: a rolled reduction axis lives in ``reduction_loops`` (its own
+        subgraph, a SEPARATE sequential pass), NOT ``block_sizes``, so it too is non-tunable and
+        passed the old filters -- wrongly counting it as co-resident with this loop's tile. A
+        kernel that rolls a primary reduction over N and hand-writes an independent loop over K
+        would then divide K's residency budget by N's full extent (e.g. 4096), crushing K's tile
+        though N is not live during the K pass. Exclude ``reduction_loops`` axes so only genuinely
+        co-resident pinned axes (full-extent ``FixedBlockSizeSource`` tiles, e.g. ``group_size``)
+        bound the footprint. Byte-identical for the corpus: ``group_size`` is a fixed full-extent
+        axis (not rolled, ``reduction_loops`` empty for the user-tiled multi-reduction kernels),
+        so it is still counted.
+
+        The pinned extents live in ``env.block_sizes`` (keyed by ALL block_ids incl. non-tunable
+        ones); with no active ``CompileEnvironment`` (a unit test exercising the block-size math
+        on a bare ``spec``) there is nothing to enumerate, so the product defaults to 1.
+        """
+        from ..compile_environment import CompileEnvironment
+        from ..compile_environment import NoCurrentEnvironment
+
+        try:
+            env = CompileEnvironment.current()
+        except NoCurrentEnvironment:
+            return 1
+        tunable = set(spec.block_sizes.valid_block_ids())
+        grid = set(fact.m_block_ids)
+        rolled = set(spec.reduction_loops.valid_block_ids())
+        product = 1
+        for info in env.block_sizes:
+            bid = info.block_id
+            if bid == loop_block_id or bid in tunable or bid in grid or bid in rolled:
+                continue
+            size = info.size
+            if isinstance(size, (int, torch.SymInt)):
+                product *= max(1, env.size_hint(size))
+        return product
+
+    @classmethod
     def _m_block_cap(cls, fact: ReductionFact) -> int:
         """Upper bound on M_BLOCK (rows/program) for a FULL-WIDTH-output reduction, so a huge-M
         grid-size ``autotuner_min`` raise cannot force an occupancy-starving M_BLOCK on a
@@ -575,77 +722,233 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         )
 
     @classmethod
+    def _m_axis_occupancy_cap(
+        cls, env: CompileEnvironment, fact: ReductionFact, mbid: int
+    ) -> int:
+        """Largest pow2 tile for M axis ``mbid`` that keeps the POST-widen grid at or above the
+        occupancy floor ``num_sm * MIN_WAVES``. Widening collapses ``tile`` programs into one, so
+        the grid is ``total_m_program_count / tile``; cap ``tile`` so that stays >= the floor.
+
+        Guards the over-collapse failure mode: a fan-out sibling whose footprint budget would
+        permit a very wide tile must not be widened so far the GPU under-occupies. Returns 1 (NO
+        widen) when the grid extents are not statically known: a dynamic grid has no compile-time
+        occupancy to protect, so the conservative choice is to floor rather than risk an
+        under-occupying widen we cannot verify.
+        """
+        from ..._utils import prev_power_of_2
+        from ...runtime import get_num_sm
+
+        grid = _grid_rows(
+            env, fact.m_block_ids
+        )  # product of static m extents, 0 if dynamic
+        if grid <= 0:
+            return 1
+        num_sm = max(1, get_num_sm(env.device))
+        max_tile = grid // (num_sm * cls.MIN_WAVES)
+        return max(1, prev_power_of_2(max(1, max_tile)))
+
+    @classmethod
+    def _m_axis_block_size(cls, spec: ConfigSpec, mbid: int) -> int:
+        """Seed block size (rows/program) for one M-axis (grid) block_id, whether or not it is
+        a tunable ``block_sizes`` entry.
+
+        ``fact.m_block_ids`` is the grid axes (``tuple(sorted(grid_ids))``). A grid axis is a
+        tunable ``block_sizes`` entry ONLY when its tile is unpinned (``hl.tile(M)``); when the
+        user pins it (``hl.tile(M, block_size=1)``) the axis lives solely on the program grid
+        and is absent from ``ConfigSpec.block_sizes`` (which carries only tunable tiles, indexed
+        positionally to lay out the autotuner ``Config``). Reading the pinned axis from the
+        tunable spec raised ``KeyError`` -- the grid-pinned-M idiom every vLLM quant kernel uses.
+
+        Tunable axis: its floored block size (the seed's one-row/program start, honoring a
+        raised ``autotuner_min``). Pinned axis: its FIXED block size, read from
+        ``env.block_sizes`` (keyed by ALL block_ids incl. grid) -- the real pinned value (1 for
+        ``block_size=1``), never a hardcoded fallback.
+        """
+        if mbid in spec.block_sizes.valid_block_ids():
+            m_idx = spec.block_sizes.block_id_to_index(mbid)
+            return cls._block_floor(cast("BlockSizeSpec", spec.block_sizes[m_idx]))
+        from ...runtime.config import Config as _Config
+        from ..compile_environment import CompileEnvironment
+
+        env = CompileEnvironment.current()
+        # A grid-pinned axis carries a FixedBlockSizeSource; from_config returns its pinned value
+        # independent of the config, so an empty Config resolves it.
+        value = env.block_sizes[mbid].from_config(_Config(block_sizes=[]))
+        if isinstance(value, (int, torch.SymInt)):
+            return max(1, int(value))
+        # A non-grid-pinned axis always resolves to a static int/SymInt here (a pinned axis
+        # carries a FixedBlockSizeSource with a concrete value), so this is a should-not-happen
+        # fallback. Defaulting to 1 silently would reintroduce the floor-to-1 starvation the
+        # grid-pinned handling exists to prevent -- warn loudly rather than hide it.
+        log.warning(
+            "reduction seed: M-axis block_id=%s resolved to a non-static block size %r; "
+            "falling back to block_size=1 (this should not happen for a pinned grid axis)",
+            mbid,
+            value,
+        )
+        return 1
+
+    @classmethod
     def _m_block_product(cls, spec: ConfigSpec, fact: ReductionFact) -> int:
-        """Product of the seed's floored M-axis (grid) block sizes -- the number of rows each
-        program processes (1 unless a huge-M shape raised ``autotuner_min``, capped by
-        ``_m_block_cap`` for full-width reductions). Shared by the apply-loop stream cap
-        (``_build_block_sizes``) and the Band-C combine cap so they read the same M_BLOCK.
+        """Product of the seed's M-axis (grid) block sizes -- the number of rows each program
+        processes (1 unless a huge-M shape raised ``autotuner_min``, capped by ``_m_block_cap``
+        for full-width reductions). Shared by the apply-loop stream cap (``_build_block_sizes``)
+        and the Band-C combine cap so they read the same M_BLOCK.
         """
         m_block = 1
         cap = cls._m_block_cap(fact)
         for mbid in fact.m_block_ids:
-            m_idx = spec.block_sizes.block_id_to_index(mbid)
-            m_block *= min(
-                cls._block_floor(cast("BlockSizeSpec", spec.block_sizes[m_idx])), cap
-            )
+            m_block *= min(cls._m_axis_block_size(spec, mbid), cap)
         return m_block
 
     @classmethod
     def _build_block_sizes(
         cls,
+        env: CompileEnvironment | None,
         spec: ConfigSpec,
         fact: ReductionFact,
-        red_block_id: int | None,
-        red_value: int | None,
+        red_values: dict[int, int] | None = None,
         non_reduction_loop_ids: frozenset[int] | set[int] = frozenset(),
     ) -> list[int]:
-        """Build the ``block_sizes`` list: the reduction axis gets ``red_value``, each
-        non-reduction loop tile (``non_reduction_loop_ids``, disjoint from the reduction
-        block_id) gets ``loop_block``, every other axis its ``_block_floor``.
-        ``red_block_id`` is None for standard (the reduction rides ``reduction_loops``, not
-        a block_sizes entry).
+        """Build the ``block_sizes`` list: each reducing axis present in ``red_values`` (a
+        ``block_id -> r_block`` map) gets its sized chunk, each non-reduction loop tile
+        (``non_reduction_loop_ids``, disjoint from the reduction axes) gets ``loop_block``,
+        every other axis its ``_block_floor``.
 
-        The non-reduction loop tile matches the reduction tile — ``red_value`` (user-tiled)
-        or ``next_pow2(size_hint)`` (standard, where ``red_value`` is None). The normalize
-        pass carries no accumulator, so this tile is a pure seed (a sane non-size-1 start,
-        never a correctness constraint); the autotuner refines it from there.
+        ``red_values`` is empty/``None`` for the STANDARD track (the reduction rides
+        ``reduction_loops``, not a ``block_sizes`` entry) -- every axis floors. The USER-TILED
+        track passes ``{primary_rdim: r_block}`` for a single-reduction kernel (byte-identical
+        to the prior scalar form) and ``{axis: r_block_per_axis, ...}`` for a multi-reduction
+        kernel (rms_norm_per_block), sizing EVERY tunable reducing axis instead of flooring the
+        non-dominant ones to 1. A PINNED reducing axis (no tunable ``block_sizes`` slot, already
+        full-extent resident) is simply absent from ``red_values`` -- the caller only inserts
+        axes in ``spec.block_sizes.valid_block_ids()`` (the Error-1 guard).
+
+        The non-reduction loop tile matches the PRIMARY reduction tile — ``red_values[block_id]``
+        (user-tiled) or ``next_pow2(size_hint)`` (standard, where ``red_values`` is empty). The
+        normalize pass carries no accumulator, so this tile is a pure seed (a sane non-size-1
+        start, never a correctness constraint); the autotuner refines it from there.
         """
         from ..._utils import next_power_of_2 as _np2
-        from ..._utils import prev_power_of_2
+        from ..._utils import prev_power_of_2 as _pp2
+
+        red_values = red_values or {}
+        # The primary (dominant) rdim value drives the normalize-loop tile; absent on the
+        # standard track (red_values empty) where it falls back to next_pow2(size_hint).
+        primary_red_value = red_values.get(fact.primary_reduction_block_id)
+
+        # Resident width of the reduction tile co-held when an M axis widens, used by the
+        # footprint cap. The reduction's resident R_BLOCK reaches the cap by one of three routes,
+        # and we must count it EXACTLY once:
+        #   - ROLLED (rdim in ``reduction_loops``): persistent at ``next_pow2(size_hint)``.
+        #   - USER-TILED (rdim in ``red_values``): resident at its sized r_block (already capped,
+        #     e.g. kl_div's carried-tile-capped 4096) -- use that value, NOT the full size_hint.
+        #   - PINNED (full-extent ``FixedBlockSizeSource``, e.g. per_token_group's ``group_size``):
+        #     ALREADY counted by ``_pinned_inner_resident_elems`` in the cap -> count as 1 here to
+        #     avoid double-counting and over-shrinking the sibling.
+        if fact.primary_reduction_block_id in spec.reduction_loops.valid_block_ids():
+            r_block_resident = _np2(fact.size_hint)
+        elif primary_red_value is not None:
+            r_block_resident = primary_red_value
+        else:
+            r_block_resident = 1
 
         loop_block: int | None = None
         if non_reduction_loop_ids:
-            # The apply/normalize tile starts at the reduction tile — red_value (user-tiled) or
-            # next_pow2(size_hint) (standard, where red_value is None)...
-            loop_block = red_value if red_value is not None else _np2(fact.size_hint)
+            # The apply/normalize tile starts at the reduction tile — primary red_value
+            # (user-tiled) or next_pow2(size_hint) (standard, where red_values is empty)...
+            loop_block = (
+                primary_red_value
+                if primary_red_value is not None
+                else _np2(fact.size_hint)
+            )
             # ...then is clamped to the same M_BLOCK-aware footprint cap as the reduction
             # tile (the apply tile is [M_BLOCK, loop_block] resident, so a wide one spills).
             # Only the Band-C reduce-then-apply kernels (welford, groupnorm) have a normalize
             # loop, so everything else is byte-identical (no non_reduction_loop_ids). The cap
             # clamps an otherwise-spilling apply pass back to register residency; the pass is
             # memory-bound so this is a net win. A flat per-row cap always narrowed it.
-            m_block = cls._m_block_product(spec, fact)
-            budget = cls.ROW_PERSIST_MAX_BYTES // (m_block * max(1, fact.itemsize))
-            loop_block = min(loop_block, prev_power_of_2(budget))
+            loop_block = min(loop_block, cls._resident_tile_cap(spec, fact))
 
-        red_idx = (
-            spec.block_sizes.block_id_to_index(red_block_id)
-            if red_block_id is not None
-            else None
-        )
         out: list[int] = []
         for i in range(len(spec.block_sizes)):
             bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])
-            if i == red_idx:
-                out.append(cast("int", red_value))
+            if bs_spec.block_id in red_values:
+                # ANY reducing axis with a tunable slot (the primary rdim, or a secondary
+                # reducing axis in a multi-reduction kernel) -- size it to its own r_block.
+                out.append(red_values[bs_spec.block_id])
             elif bs_spec.block_id in non_reduction_loop_ids and loop_block is not None:
                 out.append(loop_block)
             elif bs_spec.block_id in fact.m_block_ids:
-                # M (grid) axis: floor it, but cap a full-width reduction's M_BLOCK by the
-                # register budget (_m_block_cap) so a huge-M grid raise can't starve occupancy.
-                out.append(min(cls._block_floor(bs_spec), cls._m_block_cap(fact)))
+                # Size this tunable grid (M) axis by the FOOTPRINT it would produce, not by any
+                # row-vs-sibling classification. Widening this axis by ``k`` holds a
+                # ``[k, R_BLOCK]`` resident reduction tile, so ``_resident_tile_cap`` (now keyed on
+                # the resident R_BLOCK) is the largest ``k`` that fits the register budget. The
+                # floor-vs-widen outcome falls out of the arithmetic:
+                #   - a LARGE-R_BLOCK reduction (rms_norm, R_BLOCK=16384) -> cap ~= 1-2 (widening
+                #     would spill), so the axis effectively FLOORS, capped further by _m_block_cap;
+                #   - a TINY-R_BLOCK reduction (per_token_group / a full-slice per-group amax,
+                #     R_BLOCK=128) -> cap is large, so a fan-out sibling WIDENS (the per_token_group
+                #     2x win, and the full-slice variant fix) -- regardless of how the kernel is
+                #     written (grid-pinned, specialized, or rolled-full-extent).
+                # Occupancy guard: never widen so far the POST-widen grid drops below
+                # ``num_sm * MIN_WAVES`` (collapsing too many programs would under-occupy).
+                inner = cls._pinned_inner_resident_elems(spec, fact, bs_spec.block_id)
+                fits = cls._resident_tile_cap(
+                    spec, fact, inner, r_block_resident=r_block_resident
+                )
+                # A carried-2D-tile reduction (Band B: kl_div/jsd) holds an [M_BLOCK, R_BLOCK]
+                # accumulator LIVE across the whole loop, so widening M_BLOCK by k multiplies that
+                # carried tile by k against the tight CARRIED_TILE_MAX_BYTES budget. Cap the widen
+                # by that footprint too (num_carried_2d_tiles tiles of r_block_resident elements).
+                if fact.num_carried_2d_tiles >= 1:
+                    carried = max(
+                        1,
+                        cls.CARRIED_TILE_MAX_BYTES
+                        // (
+                            max(1, r_block_resident)
+                            * max(1, fact.itemsize)
+                            * max(1, fact.num_carried_2d_tiles)
+                        ),
+                    )
+                    fits = min(fits, _pp2(carried))
+                own = _np2(bs_spec.size_hint)
+                # Occupancy cap needs a device (env) to know the grid/SM count; without one (a
+                # bare-spec unit test, or any context with no live env) we cannot verify the
+                # post-widen grid stays saturated, so floor conservatively (occ=1) -- never widen
+                # a value we cannot occupancy-check. Mirrors the dynamic-grid default.
+                occ = (
+                    cls._m_axis_occupancy_cap(env, fact, bs_spec.block_id)
+                    if env is not None
+                    else 1
+                )
+                floor = cls._block_floor(bs_spec)
+                # Widen to the largest pow2 that (a) fits the resident-footprint budget, (b) keeps
+                # the post-widen grid above the occupancy floor, and (c) does not exceed the axis
+                # extent; never below the per-axis floor, never above the M_BLOCK register cap.
+                widened = max(floor, min(own, fits, occ, cls._m_block_cap(fact)))
+                out.append(widened)
             else:
-                out.append(cls._block_floor(bs_spec))
+                # An INDEPENDENT non-grid tunable loop: by elimination, not a reducing axis
+                # (not in ``red_values``), not an extent-matching apply/normalize loop (not in
+                # ``non_reduction_loop_ids``), and not the grid-M axis (not in ``m_block_ids``,
+                # which has its own branch above). The ONLY remaining shape is a standalone
+                # tiled loop at its own extent -- ``rms_norm_per_block``'s ``groups_per_row``
+                # pass is the canonical case. Flooring it to 1 serialized that pass (the
+                # [..., 1] catastrophe); widen to its own extent (read from the passed-in
+                # ``bs_spec``, never the global env), capped by the SAME resident-byte budget as
+                # the apply/normalize tile so a huge loop cannot spill. Flooring was only ever
+                # the right default to catch the grid axis, which is now handled above -- so
+                # widening, not ``_block_floor``, is the principled catch-all. NO existing
+                # reduction kernel reaches this branch (their only non-reducing/non-apply axis
+                # IS the grid-M axis), so it is a no-op for the 23-kernel corpus and changes
+                # only the new block-quant kernels. The cap divides the budget by the PINNED
+                # inner axes co-resident in this loop's tile (rms_norm_per_block: ``group_size``),
+                # so the ``[M_BLOCK, loop_tile, *pinned_inner]`` footprint is bounded faithfully
+                # -- a flat ``[M_BLOCK, tile]`` cap would under-count and admit a spilling tile.
+                inner = cls._pinned_inner_resident_elems(spec, fact, bs_spec.block_id)
+                own = _np2(bs_spec.size_hint)
+                out.append(max(1, min(own, cls._resident_tile_cap(spec, fact, inner))))
         return out
 
     @classmethod
@@ -687,9 +990,18 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         fact: ReductionFact,
         m_block: int,
         footprint_factor: int = 1,
+        rnumel: int | None = None,
     ) -> tuple[int, bool]:
         """The reduction-axis chunk (pow2) AND the persistent verdict, decided together in one
         budgeted formula and shared by both tracks. Returns ``(r_block, persistent)``.
+
+        ``rnumel`` is the reduction-axis extent to size against; it defaults to
+        ``fact.size_hint`` (the PRIMARY rdim) so single-reduction callers are unchanged. A
+        multi-reduction kernel (``rms_norm_per_block``-class) calls this once per TUNABLE
+        secondary reducing axis in ``fact.secondary_reduction_block_ids``, passing that axis's own
+        ``env.block_sizes[b].size_hint()`` so each axis is chunked against its OWN extent (the
+        passes are sequential / not co-resident, so a secondary axis is sized independently --
+        see the per-axis ``red_values`` construction in each ``get_seed_config``).
 
         ``footprint_factor`` = how many resident rdim-shaped tiles one program holds live at
         the peak (1 = a single result tile). It bounds the decision two ways:
@@ -710,7 +1022,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         from ..._utils import next_power_of_2 as _np2
         from ..._utils import prev_power_of_2
 
-        rdim = _np2(fact.size_hint)
+        # extent: the axis being sized. Defaults to the primary rdim (fact.size_hint) so every
+        # single-reduction caller is byte-identical; a multi-reduction caller passes a secondary
+        # axis's own extent.
+        extent = fact.size_hint if rnumel is None else rnumel
+        rdim = _np2(extent)
         itemsize = max(1, fact.itemsize)
         m = max(1, m_block)
         ff = max(1, footprint_factor)
@@ -730,9 +1046,9 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             # num_carried_2d_tiles == 0 keeps kl_div/jsd off persist (they re-read regardless).
             fact.row_reread
             and fact.num_carried_2d_tiles == 0
-            and (element_cap is None or fact.size_hint <= element_cap)
-            and (m * fact.size_hint * itemsize <= cls.ROW_PERSIST_MAX_BYTES)
-            and (ff * m * fact.size_hint * itemsize <= cls.LIVE_PERSIST_BUDGET)
+            and (element_cap is None or extent <= element_cap)
+            and (m * extent * itemsize <= cls.ROW_PERSIST_MAX_BYTES)
+            and (ff * m * extent * itemsize <= cls.LIVE_PERSIST_BUDGET)
         )
         if extent_held:
             r_block = rdim
@@ -868,14 +1184,38 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # or a normalize-loop tile. MATERIALIZED rdim (rms/ln/instance bwd, the roller declined to roll
         # it): emit an EMPTY reduction_loops -- already full-width persistent, and a length-1 list would
         # fail normalize against the 0-length spec.
-        is_materialized = fact.block_id not in spec.reduction_loops.valid_block_ids()
+        is_materialized = (
+            fact.primary_reduction_block_id
+            not in spec.reduction_loops.valid_block_ids()
+        )
         reduction_loops: list[int | None]
         if is_materialized:
             reduction_loops = []
         else:
             reduction_loops = [None] if persistent else [r_block]
+        # The PRIMARY rdim rides reduction_loops, NOT a block_sizes entry, so it is never in
+        # red_values. But a kernel may ROLL its primary yet hand-write a SECONDARY reduction over a
+        # tunable axis (a block_sizes entry, recorded in fact.secondary_reduction_block_ids by
+        # build_reduction_facts). Size each such secondary as a reduction (its own r_block via
+        # _reduction_rblock) instead of letting it fall to the catch-all generic widen -- the
+        # standard-track analogue of the user-tiled multi-reduction sizer. Single-reduction kernels
+        # have secondary_reduction_block_ids=() -> red_values stays empty -> every block_sizes axis
+        # floors, byte-identical to before. (The primary is never in this set, so no skip needed.)
+        red_values: dict[int, int] = {}
+        valid_ids = spec.block_sizes.valid_block_ids()
+        for bid in fact.secondary_reduction_block_ids:
+            if bid not in valid_ids:
+                continue
+            axis_r_block, _ = cls._reduction_rblock(
+                env, fact, m_block, rnumel=env.block_sizes[bid].size_hint()
+            )
+            red_values[bid] = axis_r_block
         block_sizes = cls._build_block_sizes(
-            spec, fact, None, None, non_reduction_loop_ids=non_reduction_loop_ids
+            env,
+            spec,
+            fact,
+            red_values or None,
+            non_reduction_loop_ids=non_reduction_loop_ids,
         )
         # Dual-axis grad-parameter M-collapse (rms/ln/instance/group bwd): the grid M block is re-tiled
         # by an inner loop and feeds a per-feature grad accumulator finalized across CTAs.
@@ -892,7 +1232,7 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
                 b
                 for b in spec.block_sizes.valid_block_ids()
                 if b not in grid_ids
-                and b != fact.block_id
+                and b != fact.primary_reduction_block_id
                 and b not in non_reduction_loop_ids
             ]
             if inner_tile_ids:
@@ -902,7 +1242,10 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
                 # the plain extent ramp (>=4 warps) is faithful. Only instance_norm is affected.
                 m_cta = cls._m_collapse_grid_block(env, fact)
                 for mbid in fact.m_block_ids:
-                    block_sizes[spec.block_sizes.block_id_to_index(mbid)] = m_cta
+                    # A grid-PINNED M axis (block_size=1) has no tunable Config slot and cannot be
+                    # raised to an occupancy block -- skip it. Only unpinned grid tiles re-tile.
+                    if mbid in spec.block_sizes.valid_block_ids():
+                        block_sizes[spec.block_sizes.block_id_to_index(mbid)] = m_cta
                 inner = cls._m_collapse_inner_byte_cap(
                     max(1, fact.feature_footprint) * max(1, fact.itemsize)
                 )
@@ -1019,19 +1362,42 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
             fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)
         )
 
+        # Per-axis r_block map. The primary rdim always gets the r_block computed above (its
+        # m_collapse override included). A multi-reduction kernel (rms_norm_per_block: a tunable
+        # 5120-wide RMS sum + a pinned 128-wide group amax) ALSO sizes each SECONDARY reducing
+        # axis to its OWN extent, so the non-dominant reduction is no longer floored to 1. Only
+        # TUNABLE axes (a block_sizes slot) are inserted -- a PINNED/materialized reducing axis is
+        # already full-extent resident and has no slot (the Error-1 guard, mirrored here). The
+        # passes are sequential / not co-resident, so each axis is chunked against its own extent
+        # (see _reduction_rblock's rnumel). Single-reduction kernels have an empty
+        # secondary_reduction_block_ids, so this map is exactly {fact.primary_reduction_block_id:
+        # r_block} -- byte-identical. The primary is seeded above and is never in the secondary set.
+        red_values: dict[int, int] = {fact.primary_reduction_block_id: r_block}
+        valid_ids = spec.block_sizes.valid_block_ids()
+        for bid in fact.secondary_reduction_block_ids:
+            if bid not in valid_ids:
+                continue
+            axis_rnumel = env.block_sizes[bid].size_hint()
+            axis_r_block, _ = cls._reduction_rblock(
+                env, fact, m_block, rnumel=axis_rnumel
+            )
+            red_values[bid] = axis_r_block
+
         block_sizes = cls._build_block_sizes(
+            env,
             spec,
             fact,
-            fact.block_id,
-            r_block,
+            red_values,
             non_reduction_loop_ids=non_reduction_loop_ids,
         )
         if m_collapse_block is not None:
             # Raise the grid CTA tile(s) from the floor to the occupancy block (the reduction
-            # tile was already set to m_collapse_block via r_block above).
+            # tile was already set to m_collapse_block via r_block above). A grid-PINNED M axis
+            # (block_size=1) has no tunable Config slot and cannot be raised -- skip it.
             for mbid in fact.m_block_ids:
-                idx = spec.block_sizes.block_id_to_index(mbid)
-                block_sizes[idx] = m_collapse_block
+                if mbid in spec.block_sizes.valid_block_ids():
+                    idx = spec.block_sizes.block_id_to_index(mbid)
+                    block_sizes[idx] = m_collapse_block
         seed: dict[str, Any] = {
             "block_sizes": block_sizes,
             "num_warps": num_warps,
