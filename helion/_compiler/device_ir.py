@@ -1975,35 +1975,11 @@ class DeviceIR:
         # the walker liveness slice for this axis (default 1).
         body_live_tiles = max(1, (liveness_by_axis or {}).get(red_block_id, 1))
 
-        # The materialized feature-axis SET (the per_feature_accumulator signal). A structural
-        # read, no graph walk. Its extent PRODUCT (the M-collapse byte-cap denominator) is derived
-        # at the Stage-2 budgeting site, not stored here (PROMPT §2.3 #5).
-        env = CompileEnvironment.current()
-        bs_ids = env.config_spec.block_sizes.valid_block_ids()
-        rl_ids = env.config_spec.reduction_loops.valid_block_ids()
-        grid_ids = {b for bids in self.grid_block_ids for b in bids}
-        # Materialized feature axes: full-width feature/output dims left materialized. NOTE
-        # bs.reduction is the dim's reduction ROLE at registration, not 'a reduction is lowered
-        # over it' (e.g. bias_grad's [N] output), so this set differs from the reduced-over set.
-        # The set is the per_feature_accumulator signal; the PRODUCT of its extents (the resident
-        # feature footprint a byte cap divides by) is NOT stored on the fact -- the Stage-2
-        # allocator derives it at the budgeting site (``_materialized_feature_elems``), per PROMPT
-        # §2.3 #5 (budget inputs are computed at use, not stored labels).
-        materialized_feature_axes = {
-            bs.block_id
-            for bs in env.block_sizes
-            if bs.reduction
-            and isinstance(bs.size, (int, torch.SymInt))
-            and self._is_materialized_axis(bs.block_id, grid_ids, bs_ids, rl_ids)
-        }
-        # per_feature_accumulator: the FAITHFUL M-collapse signature -- a loop-carried accumulator
-        # whose dims are ALL the materialized feature axis (e.g. grad_bias[N]). Per-row / 2-D
-        # accumulators (softmax/kl_div/jsd/welford/grpo) fail this test, excluded structurally.
-        per_feature_accumulator = any(
-            a.dim_block_ids
-            and all(d in materialized_feature_axes for d in a.dim_block_ids)
-            for a in accumulator_facts
-        )
+        # NOTE: the grad-parameter M-collapse signal (formerly the stored
+        # ``per_feature_accumulator`` field -- a loop-carried accumulator over ALL the materialized
+        # feature axes) is no longer computed here. It is a budget-time DERIVATION the Stage-2
+        # allocator makes from the kernel fact's axes (``_is_per_feature_accumulator``), per PROMPT
+        # §2.3 #5 (decisions are outcomes, not stored labels).
 
         return ReductionFact(
             primary_reduction_block_id=red_block_id,
@@ -2019,7 +1995,6 @@ class DeviceIR:
             full_width_output=full_width_output,
             input_load_itemsize=input_load_itemsize,
             body_live_tiles=body_live_tiles,
-            per_feature_accumulator=per_feature_accumulator,
             secondary_reduction_block_ids=secondary_reduction_block_ids,
         )
 

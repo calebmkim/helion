@@ -123,15 +123,11 @@ class ReductionFact(NamedTuple):
       heavy body spills the register file when held persistent, so the standard track passes
       it as ``footprint_factor`` to route such reductions to the looped path. A conservative
       over-count (errs toward looping, never an unsafe spill); defaults to 1.
-    - ``per_feature_accumulator``: the faithful M-collapse discriminator — True iff a
-      loop-carried accumulator exists whose dims are ALL the materialized feature axis (the
-      grad-parameter buffer, e.g. ``grad_bias[N]`` / ``grad_weight[N]``), read from
-      accumulator provenance. The user-tiled seed keys ``is_m_collapse`` on it. False for
-      per-row or 2-D accumulators (softmax_two_pass/kl_div/welford/...). The resident
-      feature-axis PRODUCT the M-collapse byte cap divides by is NOT stored on the fact -- the
-      Stage-2 allocator derives it at the budgeting site
-      (``_TritonReductionSeedBase._materialized_feature_elems``), per PROMPT §2.3 #5 (budget
-      inputs are computed at use, not frozen as fact fields).
+      The grad-parameter M-collapse signal (the former ``per_feature_accumulator`` field) and the
+      resident feature-axis PRODUCT the M-collapse byte cap divides by are NOT stored on the fact --
+      the Stage-2 allocator derives both at the budgeting site
+      (``_TritonReductionSeedBase._is_per_feature_accumulator`` / ``._materialized_feature_elems``),
+      per PROMPT §2.3 #5 (budget inputs are computed at use, not frozen as fact fields).
     - ``secondary_reduction_block_ids``: the NON-primary TILED reducing axes -- the
       ``ReductionRole.TILED`` members EXCLUDING ``primary_reduction_block_id``, in size-descending
       order. The primary is NEVER here (it is carried solely by ``primary_reduction_block_id`` and
@@ -148,7 +144,8 @@ class ReductionFact(NamedTuple):
       m-reduction), so every existing path is byte-identical. The meaning is cardinality-independent:
       ``()`` always means exactly "primary only", regardless of whether the kernel has 1 reduction.
       The M-reductions' M-collapse is a loop-carried ``+=`` accumulator (NOT a ``ReductionLowering``),
-      so it never enters this set — it stays on the separate ``per_feature_accumulator`` path.
+      so it never enters this set — the Stage-2 allocator detects it via the use-site
+      ``_is_per_feature_accumulator`` derivation (accumulator-shape over the materialized features).
 
     ``grid_rows`` is NOT stored — a pure function of ``m_block_ids`` + env, computed on
     demand by its one consumer (the narrow-row ``num_warps`` lever).
@@ -167,7 +164,6 @@ class ReductionFact(NamedTuple):
     full_width_output: bool = True
     input_load_itemsize: int = 0
     body_live_tiles: int = 1
-    per_feature_accumulator: bool = False
     secondary_reduction_block_ids: tuple[int, ...] = ()
 
 

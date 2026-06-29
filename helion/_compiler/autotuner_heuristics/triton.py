@@ -1430,12 +1430,12 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         (rms/layer/instance/group bwd), NO kernel identity.
 
         Returns the inner re-tile block_ids (the axes the byte-capped inner tile sizes) when the
-        shape holds, else ``None``. This is the faithful replacement for the
+        shape holds, else ``None``. This is the faithful replacement for the standard-track
         ``per_feature_accumulator`` recognizer: "a full-slice reduction co-resident with a
         partial grid-tile / user-tile reduction," read off ``category`` + ``coresidency_groups``.
-
-        P2: built + validated to reproduce the override's inner-tile-id set; the override still
-        gates on ``fact.per_feature_accumulator`` (P3 swaps to this).
+        (The user-tiled track's grad-collapse signal is the sibling
+        ``_is_per_feature_accumulator`` accumulator-shape derivation; both are now use-site, no
+        stored field.)
         """
         kf = spec.reduction_kernel_fact
         if kf is None:
@@ -1519,6 +1519,33 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return max(1, block if cap is None else min(cap, block))
 
     @classmethod
+    def _materialized_feature_axes(
+        cls,
+        env: CompileEnvironment,
+        spec: ConfigSpec,
+        device_ir: DeviceIR,
+    ) -> set[int]:
+        """The set of MATERIALIZED feature-axis block_ids -- full-width feature/output dims flagged
+        ``bs.reduction`` at registration AND left materialized (not on the grid, not a tunable
+        ``block_sizes`` tile, not a rolled ``reduction_loops`` axis -- ``_is_materialized_axis``,
+        the canonical predicate, reused so there is ONE definition). The shared primitive behind
+        the m-collapse feature footprint AND the grad-parameter (per-feature-accumulator) signal.
+
+        Derived at the budgeting site from live structure (PROMPT §2.3 #5 / §2.4: a budget input is
+        a DERIVATION over the kernel's axes, not a value stored on the fact at build time).
+        """
+        grid_ids = {b for bids in device_ir.grid_block_ids for b in bids}
+        bs_ids = spec.block_sizes.valid_block_ids()
+        rl_ids = spec.reduction_loops.valid_block_ids()
+        return {
+            bs.block_id
+            for bs in env.block_sizes
+            if bs.reduction
+            and isinstance(bs.size, (int, torch.SymInt))
+            and device_ir._is_materialized_axis(bs.block_id, grid_ids, bs_ids, rl_ids)
+        }
+
+    @classmethod
     def _materialized_feature_elems(
         cls,
         env: CompileEnvironment,
@@ -1527,31 +1554,36 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     ) -> int:
         """The product of the MATERIALIZED feature-axis extents -- the resident ``[*feature]``
         per-row footprint an m-collapse inner tile is byte-capped against (a grad-param
-        ``grad_weight[N]`` / a 3-D norm's ``C*S``).
-
-        Computed HERE, at the budgeting site, from live structure (PROMPT §2.3 #5 / §2.4: a
-        budget input is a DERIVATION over the kernel's axes, not a value stored on the fact at
-        build time -- "decisions are outcomes, not stored labels"). A feature axis is one flagged
-        ``bs.reduction`` at registration AND left materialized (not on the grid, not a tunable
-        ``block_sizes`` tile, not a rolled ``reduction_loops`` axis -- ``_is_materialized_axis``,
-        the canonical predicate, reused so there is one definition). Product (not a per-axis max,
-        else a 3-D norm under-counts and spills); 1 when no materialized feature axis exists.
-        Verified equal to the former stored ``feature_footprint`` across all 443 reduction cells.
+        ``grad_weight[N]`` / a 3-D norm's ``C*S``). Product (not a per-axis max, else a 3-D norm
+        under-counts and spills); 1 when no materialized feature axis exists. Verified equal to the
+        former stored ``feature_footprint`` across all 443 reduction cells.
         """
-        grid_ids = {b for bids in device_ir.grid_block_ids for b in bids}
-        bs_ids = spec.block_sizes.valid_block_ids()
-        rl_ids = spec.reduction_loops.valid_block_ids()
         product = 1
-        for bs in env.block_sizes:
-            if (
-                bs.reduction
-                and isinstance(bs.size, (int, torch.SymInt))
-                and device_ir._is_materialized_axis(
-                    bs.block_id, grid_ids, bs_ids, rl_ids
-                )
-            ):
-                product *= max(1, env.block_sizes[bs.block_id].size_hint())
+        for bid in cls._materialized_feature_axes(env, spec, device_ir):
+            product *= max(1, env.block_sizes[bid].size_hint())
         return product
+
+    @classmethod
+    def _is_per_feature_accumulator(
+        cls,
+        env: CompileEnvironment,
+        spec: ConfigSpec,
+        device_ir: DeviceIR,
+    ) -> bool:
+        """The grad-parameter M-collapse signal (bias_grad/dyt): True iff a loop-carried
+        accumulator's dims are ALL materialized feature axes (e.g. ``grad_bias[N]`` /
+        ``grad_weight[N]``). Per-row / 2-D accumulators (softmax/kl_div/jsd/welford/grpo) fail it.
+
+        Derived HERE from ``accumulator_facts`` + the materialized-feature-axis set, NOT read off a
+        stored ``ReductionFact.per_feature_accumulator`` field -- the faithful accumulator-shape
+        property the user-tiled track's ``is_m_collapse`` keys on, computed at use (PROMPT §2.3 #5).
+        Verified equal to the former stored field across all 443 reduction cells.
+        """
+        mat = cls._materialized_feature_axes(env, spec, device_ir)
+        return any(
+            a.dim_block_ids and all(d in mat for d in a.dim_block_ids)
+            for a in spec.accumulator_facts
+        )
 
     @classmethod
     def _m_collapse_resident_elems(
@@ -1868,9 +1900,12 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         # M-COLLAPSE (grad-parameter reduction, e.g. bias_grad/dyt): collapse the grid/row axis into a
         # per-feature accumulator, sizing the grid CTA for occupancy instead of T2's floored grid.
         m_collapse_block: int | None = None
-        # Faithful signature: per_feature_accumulator -- a loop-carried accumulator over ALL
-        # the materialized feature axis (bias_grad/dyt); per-row / 2-D accumulators are excluded.
-        is_m_collapse = fact.per_feature_accumulator
+        # Faithful signature: a loop-carried accumulator over ALL the materialized feature axis
+        # (bias_grad/dyt); per-row / 2-D accumulators are excluded. DERIVED from the kernel fact's
+        # axes at the budgeting site, not read off the stored ReductionFact.per_feature_accumulator
+        # (PROMPT §2.3 #5 -- the accumulator-shape signal is a use-site derivation; verified equal
+        # to the stored field across 443 cells).
+        is_m_collapse = cls._is_per_feature_accumulator(env, spec, device_ir)
         if is_m_collapse:
             # (a) grid CTA -> OCCUPANCY (_m_collapse_grid_block), capped at M_COLLAPSE_MAX_CTA since the
             #     grid block also bears the reduction slab (sum(0) finalize over ~num_sm partials). An
