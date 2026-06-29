@@ -1456,6 +1456,27 @@ class DeviceIR:
             return ReductionCategory.GRID_TILE
         if block_id in env.config_spec.block_sizes.valid_block_ids():
             return ReductionCategory.USER_TILE
+        # FULL_SLICE is reached by elimination, so guard the structural invariant it relies on:
+        # a genuine full-slice reduction is one the compiler allocated a reduction dimension for,
+        # either ROLLED into reduction_loops (``ReductionLoopBlockSizeSource``) or MATERIALIZED
+        # full-width after the roller declined; a fully-resident specialized axis reduced over in
+        # one program is a ``FixedBlockSizeSource`` (rms_norm_per_block_quant's group_size=128 in a
+        # sequential graph -- on the grid only via a shared hl.tile, so absent from grid_ids here).
+        # ANY OTHER source landing here (e.g. a plain ``LoopSpecBlockSizeSource`` that should have
+        # been USER_TILE) means the kernel fell through for the WRONG reason and may be mis-sized.
+        # Debug-level (this fires on real corpus cells -- rms_norm_per_block_quant -- so it is not
+        # an anomaly, just an inspection hook), never crash.
+        from .compile_environment import FixedBlockSizeSource as _Fixed
+        from .compile_environment import ReductionLoopBlockSizeSource as _RedLoop
+
+        if not isinstance(info.block_size_source, (_RedLoop, _Fixed)):
+            log.debug(
+                "reduction block_id %s classified FULL_SLICE by fallthrough but carries "
+                "%s, not ReductionLoopBlockSizeSource or FixedBlockSizeSource -- the full-slice "
+                "sizing assumption (a compiler-allocated reduction dimension) may not hold",
+                block_id,
+                type(info.block_size_source).__name__,
+            )
         return ReductionCategory.FULL_SLICE
 
     def build_reduction_kernel_fact(
@@ -1499,6 +1520,27 @@ class DeviceIR:
             static_rnumel = info.size if isinstance(info.size, int) else None
             sole_rdim = len(rdims_per_graph.get(gid, ())) == 1
             rollable = sole_rdim if category is ReductionCategory.FULL_SLICE else None
+            # ``rollable`` is the sole-rdim-in-graph PROXY for "the compiler rolled this axis".
+            # The two are NOT definitionally identical: the roller can decline a sole rdim
+            # (matmul/stack/unrollable, see register_rollable_reductions; also p5, whose two inner
+            # reduced axes collapse to ONE rdim the roller leaves materialized), so a sole-rdim
+            # FULL_SLICE can be absent from reduction_loops. Debug-level (not warn): this DOES fire
+            # on the corpus/probes (p5, rms_norm_per_block_quant), so it is an inspection hook, not
+            # an anomaly. NOTE(audit): ``rollable`` currently has ZERO reads in the live heuristic
+            # (grep ``\.rollable``) -- the standard track rides persistent-vs-looped off the
+            # reduction_loops spec, not this field. If no consumer materializes, DELETE rollable
+            # from the descriptor rather than carry a proxy that disagrees with the compiler.
+            if (
+                rollable
+                and bid not in env.config_spec.reduction_loops.valid_block_ids()
+            ):
+                log.debug(
+                    "reduction block_id %s in graph %s has rollable=True (sole rdim in graph) "
+                    "but the compiler registered no reduction_loops roll for it -- the "
+                    "sole-rdim proxy disagrees with the actual rolling decision",
+                    bid,
+                    gid,
+                )
             from .compile_environment import FixedBlockSizeSource
 
             pinned = (
