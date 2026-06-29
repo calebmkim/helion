@@ -709,6 +709,25 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return fact.m_block_ids
 
     @classmethod
+    def _non_reduction_loop_ids(
+        cls, spec: ConfigSpec, fact: ReductionFact
+    ) -> tuple[int, ...]:
+        """The non-reduction user-tiled loops (welford's normalize pass) -- sized as a separate
+        apply pass, NOT reduction-sized. Read off ``ReductionKernelFact.non_reduction_loop_block_ids``
+        (the positive Stage-1 record), NOT the legacy ``fact.non_reduction_loop_block_ids``.
+
+        These differ on a genuinely MULTI-reduction kernel: legacy computed the set relative to the
+        SINGLE primary, so a SECOND user-tiled reduction (rms_norm_dynamic_per_token_quant's bid2)
+        was misfiled as a "non-reduction loop"; the kernel fact correctly types it a USER_TILE
+        reduction and excludes it (it is reduction-sized, not apply-sized). Falls back to the legacy
+        field if the kernel fact is absent (bare-spec unit test).
+        """
+        kf = spec.reduction_kernel_fact
+        if kf is not None:
+            return kf.non_reduction_loop_block_ids
+        return fact.non_reduction_loop_block_ids
+
+    @classmethod
     def _carried_2d_count(cls, spec: ConfigSpec, rdim_block_id: int) -> int:
         """Number of loop-carried 2-D ``[.., R_BLOCK]`` accumulators whose LAST dim is
         ``rdim_block_id`` -- the multiplicity the carried byte cap divides by (kl_div=1, jsd=2,
@@ -1759,7 +1778,7 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # x/s`); its extra block_sizes tile(s) are sized by _build_block_sizes (matched to
         # the reduction tile). Only a seed (a worse tile costs autotuning time, never
         # correctness), so emit and let the autotuner refine.
-        non_reduction_loop_ids = set(fact.non_reduction_loop_block_ids)
+        non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec, fact))
 
         # red_block_id=None: rdim is not a block_sizes entry, so every entry is a grid axis (floored)
         # or a normalize-loop tile. MATERIALIZED rdim (rms/ln/instance bwd, the roller declined to roll
@@ -1919,7 +1938,7 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
 
         spec = env.config_spec
         fact = spec.reduction_facts[0]
-        non_reduction_loop_ids = set(fact.non_reduction_loop_block_ids)
+        non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec, fact))
         m_block = cls._m_block_product(spec, fact)
 
         # user-tiled: rdim IS a block_sizes entry (no reduction_loops knob); persistent == R_BLOCK >=
