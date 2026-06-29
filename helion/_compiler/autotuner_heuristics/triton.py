@@ -662,6 +662,23 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         )
 
     @classmethod
+    def _grid_axis_block_ids(
+        cls, spec: ConfigSpec, fact: ReductionFact
+    ) -> tuple[int, ...]:
+        """The parallel grid (M) axes -- grid block_ids with NO reduction SIZED over them. Read
+        off the Stage-1 ``ReductionKernelFact.grid_axis_block_ids`` (the positive
+        "also categorize the non-reductions" record, PROMPT §2.1), NOT the legacy
+        ``fact.m_block_ids``. Provably identical: among grid axes the SIZED reductions are exactly
+        the FULL_GRID ones (a USER_TILE/FULL_SLICE is never a grid axis), so ``grid_ids − sized`` ≡
+        the legacy ``grid_ids − full_grid``. Falls back to ``fact.m_block_ids`` if the kernel fact
+        is absent (bare-spec unit test).
+        """
+        kf = spec.reduction_kernel_fact
+        if kf is not None:
+            return kf.grid_axis_block_ids
+        return fact.m_block_ids
+
+    @classmethod
     def _carried_2d_count(cls, spec: ConfigSpec, rdim_block_id: int) -> int:
         """Number of loop-carried 2-D ``[.., R_BLOCK]`` accumulators whose LAST dim is
         ``rdim_block_id`` -- the multiplicity the carried byte cap divides by (kl_div=1, jsd=2,
@@ -897,7 +914,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         except NoCurrentEnvironment:
             return 1
         tunable = set(spec.block_sizes.valid_block_ids())
-        grid = set(fact.m_block_ids)
+        grid = set(cls._grid_axis_block_ids(spec, fact))
         rolled = set(spec.reduction_loops.valid_block_ids())
         product = 1
         for info in env.block_sizes:
@@ -953,7 +970,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         from ...runtime import get_num_sm
 
         grid = _grid_rows(
-            env, fact.m_block_ids
+            env, cls._grid_axis_block_ids(env.config_spec, fact)
         )  # product of static m extents, 0 if dynamic
         if grid <= 0:
             return 1
@@ -1011,7 +1028,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         """
         m_block = 1
         cap = cls._m_block_cap(fact)
-        for mbid in fact.m_block_ids:
+        for mbid in cls._grid_axis_block_ids(spec, fact):
             m_block *= min(cls._m_axis_block_size(spec, mbid), cap)
         return m_block
 
@@ -1110,7 +1127,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 out.append(red_values[bs_spec.block_id])
             elif bs_spec.block_id in non_reduction_loop_ids and loop_block is not None:
                 out.append(loop_block)
-            elif bs_spec.block_id in fact.m_block_ids:
+            elif bs_spec.block_id in cls._grid_axis_block_ids(spec, fact):
                 # Size this tunable grid (M) axis by the FOOTPRINT it would produce, not by any
                 # row-vs-sibling classification. Widening this axis by ``k`` holds a
                 # ``[k, R_BLOCK]`` resident reduction tile, so ``_resident_tile_cap`` (now keyed on
@@ -1496,7 +1513,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         from ..._utils import next_power_of_2 as _np2
         from ...runtime import get_num_sm
 
-        grid_rows = _grid_rows(env, fact.m_block_ids)
+        grid_rows = _grid_rows(env, cls._grid_axis_block_ids(env.config_spec, fact))
         num_sm = max(1, get_num_sm(env.device))
         block = _np2(max(1, grid_rows // num_sm))
         return max(1, block if cap is None else min(cap, block))
@@ -1666,7 +1683,9 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             pinned_resident_elems=pinned_co,
         )
         num_warps = cls._num_warps(
-            fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)
+            fact,
+            max(1, get_num_sm(env.device)),
+            _grid_rows(env, cls._grid_axis_block_ids(spec, fact)),
         )
         # CO-RESIDENT multi-reduction cap (PROMPT §6.2.1): when the primary shares a budget with
         # another sized reduction, the program is already heavy -> cap the extent-keyed warp ramp
@@ -1754,7 +1773,7 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             # on rdim extent alone, but the resident tile here is [inner, feature]-wide, so
             # the plain extent ramp (>=4 warps) is faithful. Only instance_norm is affected.
             m_cta = cls._m_collapse_grid_block(env, fact)
-            for mbid in fact.m_block_ids:
+            for mbid in cls._grid_axis_block_ids(spec, fact):
                 # A grid-PINNED M axis (block_size=1) has no tunable Config slot and cannot be
                 # raised to an occupancy block -- skip it. Only unpinned grid tiles re-tile.
                 if mbid in spec.block_sizes.valid_block_ids():
@@ -1878,7 +1897,9 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
                 r_block = max(1, min(m_collapse_block, inner_cap))
 
         num_warps = cls._num_warps(
-            fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)
+            fact,
+            max(1, get_num_sm(env.device)),
+            _grid_rows(env, cls._grid_axis_block_ids(spec, fact)),
         )
 
         # Per-axis r_block map. The primary rdim always gets the r_block computed above (its
@@ -1916,7 +1937,7 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
             # Raise the grid CTA tile(s) from the floor to the occupancy block (the reduction
             # tile was already set to m_collapse_block via r_block above). A grid-PINNED M axis
             # (block_size=1) has no tunable Config slot and cannot be raised -- skip it.
-            for mbid in fact.m_block_ids:
+            for mbid in cls._grid_axis_block_ids(spec, fact):
                 if mbid in spec.block_sizes.valid_block_ids():
                     idx = spec.block_sizes.block_id_to_index(mbid)
                     block_sizes[idx] = m_collapse_block

@@ -113,6 +113,21 @@ fact on the primary across 443 cells — so the substitution is information-pres
 - test_reductions.py + test_autotuner_heuristics.py green.
 - matmul-epilogue: test_examples -k matmul_layernorm green (§2.9 must-not-break).
 
+## Findings while porting (verified)
+- **M1 RESOLVED**: `fact.m_block_ids == kf.grid_axis_block_ids` on every corpus cell, and BY
+  CONSTRUCTION: among grid axes the SIZED ones are exactly the FULL_GRID ones (USER_TILE/FULL_SLICE
+  are never grid axes), so `grid_ids − sized` ≡ `grid_ids − full_grid` (the legacy m_block_ids).
+- **`_primary_fact` = max-ROW-BYTES, NOT tier-order.** The naive §6.2 priority-order primary
+  (category tier first) picks the FULL_SLICE group axis (bid3, sh=128) over the dominant USER_TILE
+  RMS sum (bid1, sh=4096) on rms_norm_per_block_quant → flips track + warps → regression. The
+  §6.2.1 rule (max `size_hint * input_load_itemsize` over backed sized descriptors) is the faithful
+  one for the SCALAR-LEVER primary and is ZERO-divergence from legacy on the whole corpus.
+  Tier-order is for ALLOCATION BIDDING (a different question §6.2 conflated). Corpus has exactly 1
+  reduction_fact per kernel (silu_mul_fp8=0, pointwise), so the multi-fact branch is exercised only
+  by probe p7.
+- **carried_2d bool → carried_2d_count int** (committed): the descriptor was lossier than the
+  legacy fact (count is load-bearing in the carried cap denom); now a faithful superset.
+
 ## Field-equivalence nuances found while mapping (preserve or consciously change)
 - `num_carried_2d_tiles` legacy = count of accumulators whose `dim_block_ids[-1] == PRIMARY
   rdim`. Descriptor `carried_2d` = same `[-1]==block_id` test but per-descriptor. The faithful
