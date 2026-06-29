@@ -446,11 +446,17 @@ def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> 
 
 
 def _primary_fact(env: CompileEnvironment) -> ReductionFact | None:
-    """The PRIMARY ``ReductionFact`` the scalar levers + track discriminator key on, selected by
-    the priority order (PROMPT §6.2): the max-extent SIZED reduction over BACKED axes. For a
-    single-reduction kernel this is ``reduction_facts[0]`` (byte-identical to the legacy code);
-    for a multi-reduction kernel (the relaxed gate) it picks the dominant fact rather than
-    blindly taking index 0. Returns None when there is no reduction fact.
+    """The PRIMARY ``ReductionFact`` the scalar levers (num_warps) + track discriminator key on.
+
+    Selected over the Stage-1 ``ReductionKernelFact`` descriptors by the §6.2.1 rule: the SIZED
+    reduction with the largest resident ROW BYTES (``size_hint * input_load_itemsize``) over BACKED
+    axes -- the tile that owns the warp/lever decision. Row-BYTES, NOT category tier-order (§6.2's
+    bidding order): tier-order would pick a kernel's FULL_SLICE/FULL_GRID group axis over a
+    larger-row USER_TILE (rms_norm_per_block_quant: bid3 sh=128 over bid1 sh=4096), flipping the
+    track + warps. Row-bytes is zero-divergence from the legacy max-size_hint over the whole corpus
+    (input_load_itemsize ties broken by size_hint). Maps the winning descriptor's ``block_id`` back
+    to its ``ReductionFact``; falls back to the legacy ``reduction_facts`` selection if the kernel
+    fact is absent. Returns None when there is no reduction fact.
     """
     spec = env.config_spec
     facts = spec.reduction_facts
@@ -460,13 +466,37 @@ def _primary_fact(env: CompileEnvironment) -> ReductionFact | None:
         return facts[0]
     from torch._inductor.utils import free_unbacked_symbols
 
+    kf = spec.reduction_kernel_fact
+    by_bid = {f.primary_reduction_block_id: f for f in facts}
+    if kf is not None:
+        sized = [
+            d
+            for d in kf.reductions
+            if d.category in SIZED_REDUCTION_CATEGORIES
+            and d.block_id in by_bid
+            and not free_unbacked_symbols(env.block_sizes[d.block_id].size)
+        ]
+        pool = sized or [
+            d
+            for d in kf.reductions
+            if d.category in SIZED_REDUCTION_CATEGORIES and d.block_id in by_bid
+        ]
+        if pool:
+            best = max(
+                pool,
+                key=lambda d: (
+                    d.size_hint * max(1, d.input_load_itemsize),
+                    d.size_hint,
+                ),
+            )
+            return by_bid[best.block_id]
     backed = [
         f
         for f in facts
         if not free_unbacked_symbols(env.block_sizes[f.primary_reduction_block_id].size)
     ]
-    pool = backed or list(facts)
-    return max(pool, key=lambda f: f.size_hint)
+    pool_f = backed or list(facts)
+    return max(pool_f, key=lambda f: f.size_hint)
 
 
 def _is_standard_reduction(spec: ConfigSpec, fact: ReductionFact) -> bool:
