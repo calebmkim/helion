@@ -424,10 +424,47 @@ class TritonPointwiseSeedHeuristic(AutotunerHeuristic):
 
 
 def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> bool:
-    """Gate: exactly one ``ReductionFact`` and no ``matmul_facts``. Admits both tracks
-    (standard rollable, user-tiled); excludes GEMMs and multi-axis manual reductions."""
+    """Gate: the kernel has >= 1 SIZED reduction (PROMPT §6 / §2.6 — the relaxed gate, so a
+    MULTI-reduction kernel fires instead of falling to the default) and no ``matmul_facts``
+    (GEMMs route to the matmul seeds). Admits both tracks (standard rollable, user-tiled).
+
+    The relaxation from the legacy ``len(reduction_facts) == 1`` is corpus-SAFE: every corpus
+    kernel has exactly one reduction fact (verified 452/452), so this only newly admits the
+    genuinely multi-reduction kernels (e.g. two sequential rolled reductions). Falls back to the
+    legacy ``== 1`` rule if the kernel fact is absent (defensive). A reduction with NO sized
+    member (only GRID_TILE / DECLINED) still declines, as today.
+    """
     spec = env.config_spec
-    return len(spec.reduction_facts) == 1 and not spec.matmul_facts
+    if spec.matmul_facts:
+        return False
+    kf = spec.reduction_kernel_fact
+    if kf is None:
+        return len(spec.reduction_facts) == 1
+    return any(d.category in SIZED_REDUCTION_CATEGORIES for d in kf.reductions)
+
+
+def _primary_fact(env: CompileEnvironment) -> ReductionFact | None:
+    """The PRIMARY ``ReductionFact`` the scalar levers + track discriminator key on, selected by
+    the priority order (PROMPT §6.2): the max-extent SIZED reduction over BACKED axes. For a
+    single-reduction kernel this is ``reduction_facts[0]`` (byte-identical to the legacy code);
+    for a multi-reduction kernel (the relaxed gate) it picks the dominant fact rather than
+    blindly taking index 0. Returns None when there is no reduction fact.
+    """
+    spec = env.config_spec
+    facts = spec.reduction_facts
+    if not facts:
+        return None
+    if len(facts) == 1:
+        return facts[0]
+    from torch._inductor.utils import free_unbacked_symbols
+
+    backed = [
+        f
+        for f in facts
+        if not free_unbacked_symbols(env.block_sizes[f.primary_reduction_block_id].size)
+    ]
+    pool = backed or list(facts)
+    return max(pool, key=lambda f: f.size_hint)
 
 
 def _is_standard_reduction(spec: ConfigSpec, fact: ReductionFact) -> bool:
@@ -1279,7 +1316,8 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         if not _triton_reduction_eligible(env, device_ir):
             return False
         spec = env.config_spec
-        return _is_standard_reduction(spec, spec.reduction_facts[0])
+        fact = _primary_fact(env)
+        return fact is not None and _is_standard_reduction(spec, fact)
 
     @classmethod
     def _narrow_seed(cls, env: CompileEnvironment) -> Config:
@@ -1313,7 +1351,9 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         from ...runtime import get_num_sm
 
         spec = env.config_spec
-        fact = spec.reduction_facts[0]
+        fact = _primary_fact(env)
+        if fact is None:
+            return None
         # standard rides persistent-vs-looped on reduction_loops (sized by the shared _reduction_rblock).
         # footprint_factor=body_live_tiles routes a heavy body that would overflow the register file
         # persistent (e.g. fused_linear_jsd) to the looped path instead.
@@ -1345,8 +1385,28 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         reduction_loops: list[int | None]
         if is_materialized:
             reduction_loops = []
-        else:
+        elif len(spec.reduction_loops) <= 1:
+            # Single rolled reduction (every corpus kernel): byte-identical to before.
             reduction_loops = [None] if persistent else [r_block]
+        else:
+            # MULTI rolled reduction (the relaxed gate, e.g. two SEQUENTIAL rolled reductions in
+            # separate graphs / co-residency groups). Size EACH rolled spec independently against
+            # its OWN extent (sequential -> not co-resident -> each gets the full budget), one
+            # ``reduction_loops`` entry per spec in spec order. The primary spec reuses the
+            # (r_block, persistent) computed above; the rest are sized from their own extent.
+            reduction_loops = []
+            for rl_spec in spec.reduction_loops:
+                bid = rl_spec.block_ids[0]
+                if bid == fact.primary_reduction_block_id:
+                    reduction_loops.append(None if persistent else r_block)
+                else:
+                    rb, pers = cls._reduction_rblock(
+                        env,
+                        fact,
+                        m_block,
+                        rnumel=env.block_sizes[bid].size_hint(),
+                    )
+                    reduction_loops.append(None if pers else rb)
         # The PRIMARY rdim rides reduction_loops, NOT a block_sizes entry, so it is never in
         # red_values. But a kernel may ROLL its primary yet hand-write a SECONDARY reduction over a
         # tunable axis (a block_sizes entry, recorded in fact.secondary_reduction_block_ids by

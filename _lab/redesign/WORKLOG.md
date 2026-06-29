@@ -25,9 +25,14 @@
 
 ## Phase status
 - [x] P0 — runway verify + RED baseline of 13 probes (DONE @ 2c38a674)
-- [x] P1 — Stage-1 categorizing fact-builder (DONE; GATE met: ZERO-DIFF + 460/460 fact-validation)
-- [ ] P2 — Stage-2 cap-set + greedy allocator (GATE: within 10% of champion)
+- [x] P1 — Stage-1 categorizing fact-builder (DONE @ 446e6e9d; GATE: ZERO-DIFF + 460/460 fact-validation)
+- [x] P2 — cap fabric + kernel-fact-driven sizing (DONE @ 1877364e/6309d726/3060accf; all ZERO-DIFF). The
+      behavior-CHANGING group-greedy allocation = first P3 step (swap the pfa override → _grad_collapse_group).
 - [ ] P3 — delete special cases, ordered (Defect-1 re-key BEFORE deleting per_feature_accumulator)
+      P3 sub-steps: (a) relax `==1`→`>=1` gate (p7 etc. fire); (b) swap pfa override → group-greedy
+      (_grad_collapse_group + m_collapse caps; decide M_COLLAPSE constant §2.5; re-bench movers incl. the 2
+      square-shape norm-bwds + any [16,2]→[16,1]); (c) delete ReductionRole stored decisions; (d) the
+      group budget with pinned-extent footprint (USER REMINDER above). Each: config-diff + within-10% + probe GREEN.
 - [ ] P4 — probes GREEN + two-check verify
 
 ---
@@ -62,6 +67,20 @@ legacy fact) across 447+13 BEFORE routing live. The relaxed `>=1` gate / multi-g
 change → deferred to P2/P3; P1 preserves current behavior (incl. p7 still declining).
 
 ## Log
+
+### 2026-06-29 — P3a: relaxed gate (==1 → >=1 sized reductions), corpus ZERO-DIFF
+- `_triton_reduction_eligible` now fires when the kernel fact has >=1 SIZED reduction + no matmul (was
+  `len(reduction_facts)==1`). Corpus-safe: all 452 corpus cells have exactly 1 fact → ZERO-DIFF 447/447.
+- `_primary_fact(env)` selects the dominant fact (max backed size_hint) for multi-fact kernels; = facts[0]
+  for single-fact (byte-identical). Standard track `is_eligible`/`get_seed_config` route through it.
+- Standard track emits ONE `reduction_loops` entry PER spec (multi rolled reduction): each sized against its
+  own extent (sequential groups). Single-spec unchanged.
+- **p7 RED→GREEN (fired-right-path):** was declined (`fired=[]`), now `triton_reduction_tile rl=[None,None]
+  bs=[8,8]` — two sequential rolled FULL_SLICE reductions, each persistent. The headline relaxed-gate win.
+- ⚠️ PROBE MOVERS to perf-check in P4 (NOT corpus, so zero-diff gate intact): p2 `[2048]→[1]`, p6
+  `[2048,8]→[8,8]`. CAUSE = P2b's `_secondary_red_values` correctly EXCLUDES the GRID_TILE cross-row accum
+  (bid0) from reduction-sizing (legacy wrongly sized it as a secondary). Faithful, but bid0 now floors → need
+  perf check that [1]/[8,8] ≥ default for these off-corpus witnesses (P4 Tier-2). p4 unchanged [8,8].
 
 ### ⚠️ SQUARE-SHAPE legacy quirk (rms/layer_norm_bwd at M==N, e.g. 4096×8192) — P3 mover, re-bench
 At rms_norm_bwd(4096,8192): inner-M (bid1 USER_TILE sh=8192) and feature (bid2 FULL_SLICE sh=8192) are TIED

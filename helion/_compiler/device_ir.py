@@ -33,8 +33,11 @@ from torch.utils import _pytree as pytree
 from .. import Config
 from .. import exc
 from .. import language as hl
+from ..autotuner.config_spec import FULL_EXTENT_CATEGORIES
+from ..autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
 from ..autotuner.config_spec import CoResidencyGroup
 from ..autotuner.config_spec import CuteVectorWidthSpec
+from ..autotuner.config_spec import MatmulWithReductionEpilogueFact
 from ..autotuner.config_spec import ReductionCategory
 from ..autotuner.config_spec import ReductionDescriptor
 from ..autotuner.config_spec import ReductionFact
@@ -1527,8 +1530,6 @@ class DeviceIR:
         # non-reductions"). The non-reduction loops are the union over the SIZED reductions'
         # apply/normalize candidates; the grid axes are grid block_ids with no reduction sized
         # over them.
-        from ..autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
-
         sized_bids = {
             d.block_id for d in descriptors if d.category in SIZED_REDUCTION_CATEGORIES
         }
@@ -1640,13 +1641,44 @@ class DeviceIR:
         plus the N-extent the seed keys on. Pure-matmul kernels have no epilogue
         ReductionFact and pure-reduction kernels no MatmulFact, so the composed fact
         fires ONLY on the fused family.
+
+        CONSTRAINT (PROMPT §2.9 — must NOT inherit the relaxed reduction gate): the epilogue
+        seed is tuned for ONE specific reduction shape (a single full-extent reduction over the
+        specialized output N, no other reduction co-resident). Expressed in the Stage-1
+        vocabulary: exactly ONE sized reduction, FULL_SLICE/FULL_GRID, in a singleton
+        co-residency group. A MULTI-reduction matmul kernel must NOT compose this fact (its
+        bare ``reduction.size_hint`` would no longer be unambiguously the epilogue's N).
         """
         env = CompileEnvironment.current()
         spec = env.config_spec
-        from ..autotuner.config_spec import MatmulWithReductionEpilogueFact
 
         if len(spec.matmul_facts) != 1 or len(spec.reduction_facts) != 1:
             return
+        # §2.9 guard, in the new vocabulary: the kernel's SIZED reductions must be exactly one
+        # full-extent reduction in a singleton co-residency group. (Belt-and-suspenders with the
+        # ``len(reduction_facts)==1`` above, which already excludes the relaxed multi-reduction
+        # case; this rejects a future kernel that produces one legacy fact yet has a co-resident
+        # second sized reduction in its kernel fact.)
+        kf = spec.reduction_kernel_fact
+        if kf is not None:
+            sized = [
+                d for d in kf.reductions if d.category in SIZED_REDUCTION_CATEGORIES
+            ]
+            if len(sized) != 1 or sized[0].category not in FULL_EXTENT_CATEGORIES:
+                return
+            group = next(
+                (
+                    g
+                    for g in kf.coresidency_groups
+                    if any(
+                        kf.reductions[i].block_id == sized[0].block_id
+                        for i in g.descriptor_indices
+                    )
+                ),
+                None,
+            )
+            if group is not None and len(group.descriptor_indices) != 1:
+                return
         matmul = spec.matmul_facts[0]
         reduction = spec.reduction_facts[0]
         spec.matmul_reduction_epilogue_facts.append(
