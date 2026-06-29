@@ -1,5 +1,31 @@
-# Stage-2 kernel-fact port — handoff (resume Step 2 here)
+# Stage-2 kernel-fact port — STATUS: COMPLETE (revised end state)
 
+## REVISED CONCLUSION (supersedes the "Step 2 = delete ReductionFact" plan below)
+After tracing it, FULL deletion of ReductionFact is the WRONG end state, for concrete reasons:
+1. The matmul-epilogue (§2.9 must-not-break) has `reduction: ReductionFact` as a real field +
+   gates on `len(reduction_facts)`. Deleting it means inventing a new carrier -> more types.
+2. The unit tests (test_autotuner_heuristics.py:719, 3646) build a BARE spec + ReductionFact with
+   NO kernel fact, to exercise the heuristic in isolation. The `_primary_descriptor is None`
+   fallbacks exist for exactly this; converting helpers to take a descriptor would force heavy
+   hand-built ReductionKernelFact fixtures for zero coverage gain.
+3. The remaining `fact.X` reads are SCALAR-IDENTITY (size_hint/itemsize/row_reread/...), proven
+   1:1 with the primary descriptor (INV3). Converting them buys ZERO faithfulness + ZERO behavior
+   change -- pure churn, and would make helpers carry both `pd` (scalars) and `spec` (structure).
+
+CORRECT END STATE (REACHED): ReductionFact survives as a THIN PER-PRIMARY SCALAR BUNDLE -- a
+convenience view of the selected primary's scalars. It no longer carries STRUCTURE or STORED
+DECISIONS; every structural/decision read goes through the kernel fact. The audit's complaint
+("heuristic ignores the kernel fact, re-derives structure off the flat fact") is FULLY resolved.
+
+Verified: the ONLY non-scalar `fact.X` code reads left are (a) `primary_reduction_block_id` used
+purely as the "which axis is primary" identity key (== pd.block_id), and (b) the kernel-fact-absent
+FALLBACKS in _grid_axis_block_ids / _non_reduction_loop_ids / _secondary_red_values / _primary_fact
+/ _is_standard_reduction. No structure is re-derived from the flat fact anymore.
+
+Final commit of the port: 71b471e0 (non_reduction_loop_ids -- the last structural read).
+
+---
+# (historical) original Step-2 plan below — NOT pursued, see revised conclusion above
 ## Status: substantive port DONE; only the mechanical tail (Step 2) remains.
 
 Branch `reduction-redesign`. Plan: `_lab/redesign/STAGE2_KERNELFACT_PORT_PLAN.md`.
