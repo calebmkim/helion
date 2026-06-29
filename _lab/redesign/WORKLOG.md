@@ -63,6 +63,42 @@ change → deferred to P2/P3; P1 preserves current behavior (incl. p7 still decl
 
 ## Log
 
+### 2026-06-29 — P2 START (cap-set + greedy allocator) — strategy: EQUIVALENCE-FIRST (user-chosen)
+Build the cap-set + allocator over the new ReductionKernelFact to reproduce existing configs
+BYTE-IDENTICALLY first (zero-diff gate); generality (relaxed >=1 gate, p1/p5/p7 firing, multi-group
+sizing) lands in P3. The §2.5 M_COLLAPSE-constant shift ([16,2]→[16,1]) is the one anticipated mover —
+decide + re-bench within-10% when reached.
+
+**ANSWER KEY (recorded configs, the targets — from baseline_fc1dbaa0_configs.json):**
+- T1 standard (rdim ROLLS, bs=[m_block], reduction_loops=[None]|[chunk]): rms_norm/layer_norm [4] rl[None] w4
+  (sh768, persistent, m widened to 4 by occupancy); sum [8] rl[None] (sh1024, m widened 8); long_sum [1]
+  rl[16384] w32 (sh65536, looped chunk); cross_entropy [1] rl[None] w32 (sh30522, persistent).
+- T2 user-tiled (rdim IS block_sizes): softmax [16,128] (m16, r=full128); welford [8,1024,1024] nrl=[2]
+  (m8, r=1024, apply-tile 1024); kl_div [4096,1] 2d=1 w32 (carried cap 4096); jsd [2048,1] 2d=2 (carried 2048);
+  dynamic_per_token [4096,4096] nrl=[2]; rms_norm_per_block [4096,32] sec=[3] (RMS r=4096 + groups_per_row=32).
+- per_feature_accumulator (norm-bwds, pfa=True): bias_grad [64,64] w16; dyt [64,2] w16; rms_norm_bwd [64,2]
+  w8 (M_COLLAPSE_TILE_BYTES=32768 → inner 2); instance/group_norm [1,1] w4. ← the §2.5 M_COLLAPSE case.
+
+**Approach:** new module `triton_reduction_alloc.py` (or methods on the base) — `size_reduction_tiles(kernel_fact,
+spec, env)` returning {block_id: size} + reduction_loops + num_warps. Re-express current
+`_reduction_rblock`+`_build_block_sizes`+`_m_collapse_*` onto the cap primitive. The two heuristic classes
+delegate to it. Zero-diff each step.
+
+**EQUIVALENCE FINDINGS (read-only checks, prerequisite for the zero-diff gate):**
+- **Primary-selection for P2 = legacy rule = `max(size_hint over BACKED sized descriptors)`** — verified
+  0/452 divergence from `lf.primary_reduction_block_id`. KEEP THIS for P2 (num_warps byte-identical).
+- The §6.2 "priority-order primary" (category-tier first) DIVERGES on rms_norm_per_block (picks FULL_GRID
+  sh128 over USER_TILE sh4096) — that's a sequential-group artifact. The §6.2.1 "num_warps = max ROW-BYTES
+  owner" rule is the faithful resolution (user CONFIRMED: size across groups not category) and matches legacy
+  EXCEPT the 8 norm-bwd kernels, where legacy num_warps is recomputed inside the per_feature_accumulator
+  override (narrow-w1 dropped) AND the unbacked inner-M placeholder (8192) would mis-rank — excluding unbacked
+  fixes it. **So: max-row-bytes-over-BACKED-sized = legacy primary, 0 divergence.** These refinements
+  (priority-order bidding, row-bytes warps) are P3 generality swaps (re-benched), NOT P2.
+- **P2/P3 split clarified:** P2 builds the cap-set fabric reproducing today's configs (legacy primary rule,
+  the per_feature_accumulator branch still gated on `pfa` for now). P3 swaps proxies for faithful keys where
+  they diverge (delete pfa override → greedy allocator over the co-resident group; row-bytes num_warps), each
+  re-benched. This keeps P2 a pure refactor (zero-diff) and isolates every behavior change to P3.
+
 ### 2026-06-29 — P1 DONE (Stage-1 categorizing fact-builder)
 **What landed (helion/):**
 - `config_spec.py`: `ReductionCategory` enum (FULL_SLICE/FULL_GRID/GRID_TILE/USER_TILE/DECLINED) +

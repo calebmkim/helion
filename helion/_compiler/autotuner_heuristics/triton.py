@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import NamedTuple
 from typing import cast
 
 import torch
@@ -470,6 +471,44 @@ def _grid_rows(env: CompileEnvironment, m_block_ids: tuple[int, ...]) -> int:
     return grid_rows
 
 
+class Cap(NamedTuple):
+    """The cap primitive (PROMPT §2.4): a NAMED, faithful, composable budget on a tile size.
+
+    ``applies`` decides whether the cap is in force for the axis being sized (a function of a
+    workload property, never a kernel-identity gate); ``value`` is the budget it imposes (a
+    function of a workload property + a hardware constant). Sizing any axis is then literally
+    ``max(floor, min(c.value() for c in caps if c.applies()))`` — see :func:`size_axis`.
+
+    Properties (§2.4): COMPOSABLE (a new consideration = a new Cap, never a new branch in the
+    sizing body), FAITHFUL BY CONSTRUCTION (``value`` reads a property + a constant), and
+    INSPECTABLE (``size_axis`` can report which cap bound the result — the per-axis explanation a
+    reviewer/witness checks, and the death of the "decision-as-stored-label" anti-pattern).
+    """
+
+    name: str
+    applies: bool
+    value: int
+
+
+def size_axis(floor: int, caps: list[Cap]) -> tuple[int, str]:
+    """Size one axis = ``max(floor, min(applicable caps))`` (PROMPT §2.3/§2.4) — the
+    generalization of the pointwise seed's ``max(1, min(target, max_tile))``. Returns
+    ``(size, binding_cap_name)`` so the binding cap (the DECISION, computed not stored) is
+    inspectable. With no applicable cap the floor binds.
+    """
+    binding = "floor"
+    best = None
+    for c in caps:
+        if not c.applies:
+            continue
+        if best is None or c.value < best:
+            best = c.value
+            binding = c.name
+    if best is None or best <= floor:
+        return max(1, floor), "floor" if (best is None or best < floor) else binding
+    return max(1, best), binding
+
+
 class _TritonReductionSeedBase(AutotunerHeuristic):
     """Shared base for the two Triton inner-reduction seed heuristics. Both share the
     workload facts (``ReductionFact``), the M_BLOCK-aware reduction-block lever
@@ -912,40 +951,48 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 #     written (grid-pinned, specialized, or rolled-full-extent).
                 # Occupancy guard: never widen so far the POST-widen grid drops below
                 # ``num_sm * MIN_WAVES`` (collapsing too many programs would under-occupy).
+                # Size the M (grid) axis = max(floor, min(applicable caps)) (PROMPT §2.4 fabric).
+                # Each cap is a named function of a faithful property; the binding cap IS the
+                # widen-vs-floor decision (computed, not a stored label):
+                #   - RESIDENT-TILE (byte): widening M by k holds a [k, R_BLOCK] reduction tile,
+                #     so the register-budget cap divides by the resident R_BLOCK -- a large-R_BLOCK
+                #     reduction (rms_norm) caps to ~1 (FLOORS), a tiny-R_BLOCK one (per_token_group)
+                #     caps large (the parallel sibling WIDENS). No row-vs-sibling classification.
+                #   - CARRIED-2D (byte): a kl_div/jsd [M_BLOCK, R_BLOCK] accumulator is live the
+                #     whole loop, so widening multiplies it against the tight carried budget.
+                #   - OCCUPANCY: keep the post-widen grid >= num_sm * MIN_WAVES (no device -> 1).
+                #   - EXTENT: never exceed the axis extent.
+                #   - M_BLOCK register cap (full-width-output rows).
                 inner = cls._pinned_inner_resident_elems(spec, fact, bs_spec.block_id)
-                fits = cls._resident_tile_cap(
-                    spec, fact, inner, r_block_resident=r_block_resident
+                carried_cap = max(
+                    1,
+                    cls.CARRIED_TILE_MAX_BYTES
+                    // (
+                        max(1, r_block_resident)
+                        * max(1, fact.itemsize)
+                        * max(1, fact.num_carried_2d_tiles)
+                    ),
                 )
-                # A carried-2D-tile reduction (Band B: kl_div/jsd) holds an [M_BLOCK, R_BLOCK]
-                # accumulator LIVE across the whole loop, so widening M_BLOCK by k multiplies that
-                # carried tile by k against the tight CARRIED_TILE_MAX_BYTES budget. Cap the widen
-                # by that footprint too (num_carried_2d_tiles tiles of r_block_resident elements).
-                if fact.num_carried_2d_tiles >= 1:
-                    carried = max(
-                        1,
-                        cls.CARRIED_TILE_MAX_BYTES
-                        // (
-                            max(1, r_block_resident)
-                            * max(1, fact.itemsize)
-                            * max(1, fact.num_carried_2d_tiles)
+                m_caps = [
+                    Cap(
+                        "resident_tile",
+                        True,
+                        cls._resident_tile_cap(
+                            spec, fact, inner, r_block_resident=r_block_resident
                         ),
-                    )
-                    fits = min(fits, _pp2(carried))
-                own = _np2(bs_spec.size_hint)
-                # Occupancy cap needs a device (env) to know the grid/SM count; without one (a
-                # bare-spec unit test, or any context with no live env) we cannot verify the
-                # post-widen grid stays saturated, so floor conservatively (occ=1) -- never widen
-                # a value we cannot occupancy-check. Mirrors the dynamic-grid default.
-                occ = (
-                    cls._m_axis_occupancy_cap(env, fact, bs_spec.block_id)
-                    if env is not None
-                    else 1
-                )
-                floor = cls._block_floor(bs_spec)
-                # Widen to the largest pow2 that (a) fits the resident-footprint budget, (b) keeps
-                # the post-widen grid above the occupancy floor, and (c) does not exceed the axis
-                # extent; never below the per-axis floor, never above the M_BLOCK register cap.
-                widened = max(floor, min(own, fits, occ, cls._m_block_cap(fact)))
+                    ),
+                    Cap("carried_2d", fact.num_carried_2d_tiles >= 1, _pp2(carried_cap)),
+                    Cap(
+                        "occupancy",
+                        True,
+                        cls._m_axis_occupancy_cap(env, fact, bs_spec.block_id)
+                        if env is not None
+                        else 1,
+                    ),
+                    Cap("extent", True, _np2(bs_spec.size_hint)),
+                    Cap("m_block_register", True, cls._m_block_cap(fact)),
+                ]
+                widened, _binding = size_axis(cls._block_floor(bs_spec), m_caps)
                 out.append(widened)
             else:
                 # An INDEPENDENT non-grid tunable loop: by elimination, not a reducing axis
@@ -1049,20 +1096,15 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         itemsize = max(1, fact.itemsize)
         m = max(1, m_block)
         ff = max(1, footprint_factor)
-        # Persistent iff (a) a SINGLE result tile fits the per-program caps (the element compile
-        # limit element_cap AND the ROW_PERSIST_MAX_BYTES single-tile byte cap), AND (b) the full
-        # ff-tile resident set fits LIVE_PERSIST_BUDGET. (b) is the liveness ceiling: it only
-        # removes persistence from a heavy body, never grants it (no-op at ff==1).
+        # PERSISTENCE (the floor that RAISES the chunk to the full extent, PROMPT §2.3 #4): hold
+        # the full extent one-shot iff looping would RE-READ the row (``row_reread`` -- a
+        # full-width apply or a second reduction needing the first's result; cross_entropy's
+        # logsumexp which full_width_output misses) AND no carried 2-D tile (kl_div/jsd are too
+        # heavy to hold) AND the resident set clears every per-program ceiling: the element
+        # compile limit, the single-tile byte cap, and the ff-tile live-set cap (the liveness
+        # ceiling only ever REMOVES persistence from a heavy body, never grants it).
         element_cap = env.backend.max_tensor_numel
-        # Hold the full extent one-shot iff it clears every per-program ceiling (element compile
-        # limit element_cap, ROW_PERSIST_MAX_BYTES byte cap, LIVE_PERSIST_BUDGET live-set cap) AND
-        # there is NO carried 2-D accumulator -- a [M_BLOCK, R_BLOCK] tile carried across the loop
-        # is too heavy to hold, so stream.
         extent_held = (
-            # Persist captures a re-read prize iff looping would RE-READ the row: a full-width apply
-            # (rms/layer_norm/softmax/welford) or a second reduction needing the first's result
-            # (cross_entropy's logsumexp -- which full_width_output misses). row_reread catches both;
-            # num_carried_2d_tiles == 0 keeps kl_div/jsd off persist (they re-read regardless).
             fact.row_reread
             and fact.num_carried_2d_tiles == 0
             and (element_cap is None or extent <= element_cap)
@@ -1070,21 +1112,28 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             and (ff * m * extent * itemsize <= cls.LIVE_PERSIST_BUDGET)
         )
         if extent_held:
-            r_block = rdim
-        else:
-            # Can't hold the extent -> stream it at the occupancy-optimal LOOPED_CHUNK (M_BLOCK- and
-            # liveness-shrunk); a capacity-sized chunk would re-read AND lower occupancy.
-            budget = cls.ROW_PERSIST_MAX_BYTES // (m * itemsize * ff)
-            r_block = min(cls.LOOPED_CHUNK, prev_power_of_2(budget))
-            # Carried 2-D accumulators (kl_div, jsd) always reach this branch; cap R_BLOCK by its tighter
-            # byte budget to avoid catastrophic register spills. No-op when num_carried_2d_tiles == 0.
-            if fact.num_carried_2d_tiles >= 1:
-                r_block = min(r_block, cls._carried_tile_r_block_cap(fact))
-        # Never size the chunk past the (padded) extent: clamp to rdim so a sub-cap-N carried reduction
-        # matches the old held branch and keeps `persistent` below correct.
-        r_block = max(1, min(r_block, rdim))
-        # `persistent` is READ OFF the final chunk -- held iff the chunk reached the extent
-        # (reduction_loops=[None] standard, or R_BLOCK == rdim user-tiled), never set separately.
+            return rdim, True
+        # Not held -> stream at the chunk = max(1, min(applicable caps)) (PROMPT §2.4 fabric):
+        #   - LOOPED chunk ceiling (occupancy-optimal; a capacity-sized chunk would re-read AND
+        #     lower occupancy);
+        #   - the M_BLOCK/liveness-shrunk BYTE budget (a heavy body / wide grid gets a smaller
+        #     chunk so the looped resident set fits the register budget);
+        #   - the CARRIED-2D byte cap (kl_div/jsd hold an [M_BLOCK, R_BLOCK] accumulator the whole
+        #     loop -- applies only when num_carried_2d_tiles >= 1);
+        #   - the EXTENT cap (never size past the padded extent).
+        byte_budget = cls.ROW_PERSIST_MAX_BYTES // (m * itemsize * ff)
+        caps = [
+            Cap("looped_chunk", True, cls.LOOPED_CHUNK),
+            Cap("byte_budget", True, prev_power_of_2(byte_budget)),
+            Cap(
+                "carried_2d",
+                fact.num_carried_2d_tiles >= 1,
+                cls._carried_tile_r_block_cap(fact),
+            ),
+            Cap("extent", True, rdim),
+        ]
+        r_block, _binding = size_axis(1, caps)
+        # `persistent` is READ OFF the final chunk -- held iff the chunk reached the extent.
         return r_block, r_block >= rdim
 
     @classmethod
