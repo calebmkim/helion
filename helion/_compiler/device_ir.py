@@ -1572,21 +1572,17 @@ class DeviceIR:
                 )
             )
 
-        # Co-residency groups = ORIGINAL graph_id equivalence classes (PROMPT §2.2). Each group's
-        # feature_footprint is the product of the materialized feature-axis extents (group-level,
-        # PROMPT §2.6 locality note); the corpus has at most one materialized feature set, so the
-        # kernel-wide product is the per-group value (refined in P2 if a multi-group kernel needs
-        # per-group features).
-        feature_footprint = self._materialized_feature_footprint(grid_ids)
+        # Co-residency groups = ORIGINAL graph_id equivalence classes (PROMPT §2.2). The
+        # materialized-feature footprint a group byte-caps against is NOT stored here -- it is a
+        # budgeting DERIVATION the Stage-2 allocator computes at the comparison site
+        # (``_materialized_feature_elems``), per PROMPT §2.3 #5 (decisions are outcomes, not stored
+        # labels). Storing it kernel-wide was both dead (no consumer read it) and wrong for a
+        # genuine multi-group kernel (each group can materialize different feature axes).
         groups_by_gid: dict[int, list[int]] = {}
         for idx, d in enumerate(descriptors):
             groups_by_gid.setdefault(d.graph_id, []).append(idx)
         coresidency_groups = tuple(
-            CoResidencyGroup(
-                graph_id=gid,
-                descriptor_indices=tuple(idxs),
-                feature_footprint=feature_footprint,
-            )
+            CoResidencyGroup(graph_id=gid, descriptor_indices=tuple(idxs))
             for gid, idxs in sorted(groups_by_gid.items())
         )
 
@@ -1679,23 +1675,6 @@ class DeviceIR:
             "full_width_output": full_width_output,
             "input_load_itemsize": input_load_itemsize,
         }
-
-    def _materialized_feature_footprint(self, grid_ids: set[int]) -> int:
-        """Product of the materialized feature-axis extents (PROMPT §2.6) — the resident per-row
-        feature footprint a group byte-caps its inner tile against. Same computation as
-        ``_assemble_reduction_fact``'s ``feature_footprint``."""
-        env = CompileEnvironment.current()
-        bs_ids = env.config_spec.block_sizes.valid_block_ids()
-        rl_ids = env.config_spec.reduction_loops.valid_block_ids()
-        product = 1
-        for bs in env.block_sizes:
-            if (
-                bs.reduction
-                and isinstance(bs.size, (int, torch.SymInt))
-                and self._is_materialized_axis(bs.block_id, grid_ids, bs_ids, rl_ids)
-            ):
-                product *= max(1, env.block_sizes[bs.block_id].size_hint())
-        return product
 
     def build_matmul_reduction_epilogue_facts(self) -> None:
         """Phase 4: compose a ``MatmulWithReductionEpilogueFact`` for a fused matmul +
@@ -1991,16 +1970,20 @@ class DeviceIR:
         # the walker liveness slice for this axis (default 1).
         body_live_tiles = max(1, (liveness_by_axis or {}).get(red_block_id, 1))
 
-        # feature_footprint: resident per-row feature footprint an M-collapse byte-caps its
-        # inner tile against -- the PRODUCT (not a per-axis max, else 3-D norms spill) of the
-        # materialized full-width feature axes. 1 when none. A structural read, no graph walk.
+        # The materialized feature-axis SET (the per_feature_accumulator signal). A structural
+        # read, no graph walk. Its extent PRODUCT (the M-collapse byte-cap denominator) is derived
+        # at the Stage-2 budgeting site, not stored here (PROMPT §2.3 #5).
         env = CompileEnvironment.current()
         bs_ids = env.config_spec.block_sizes.valid_block_ids()
         rl_ids = env.config_spec.reduction_loops.valid_block_ids()
         grid_ids = {b for bids in self.grid_block_ids for b in bids}
-        # Feature-footprint axes: full-width feature/output dims left materialized. NOTE
+        # Materialized feature axes: full-width feature/output dims left materialized. NOTE
         # bs.reduction is the dim's reduction ROLE at registration, not 'a reduction is lowered
         # over it' (e.g. bias_grad's [N] output), so this set differs from the reduced-over set.
+        # The set is the per_feature_accumulator signal; the PRODUCT of its extents (the resident
+        # feature footprint a byte cap divides by) is NOT stored on the fact -- the Stage-2
+        # allocator derives it at the budgeting site (``_materialized_feature_elems``), per PROMPT
+        # §2.3 #5 (budget inputs are computed at use, not stored labels).
         materialized_feature_axes = {
             bs.block_id
             for bs in env.block_sizes
@@ -2008,9 +1991,6 @@ class DeviceIR:
             and isinstance(bs.size, (int, torch.SymInt))
             and self._is_materialized_axis(bs.block_id, grid_ids, bs_ids, rl_ids)
         }
-        feature_footprint = 1
-        for b in materialized_feature_axes:
-            feature_footprint *= max(1, env.block_sizes[b].size_hint())
         # per_feature_accumulator: the FAITHFUL M-collapse signature -- a loop-carried accumulator
         # whose dims are ALL the materialized feature axis (e.g. grad_bias[N]). Per-row / 2-D
         # accumulators (softmax/kl_div/jsd/welford/grpo) fail this test, excluded structurally.
@@ -2034,7 +2014,6 @@ class DeviceIR:
             full_width_output=full_width_output,
             input_load_itemsize=input_load_itemsize,
             body_live_tiles=body_live_tiles,
-            feature_footprint=feature_footprint,
             per_feature_accumulator=per_feature_accumulator,
             secondary_reduction_block_ids=secondary_reduction_block_ids,
         )
@@ -2082,16 +2061,17 @@ class DeviceIR:
         rl_ids: list[int],
     ) -> bool:
         """A *materialized* axis: full-width because the roller declined it -- not the
-        grid, not a ``block_sizes`` tile, not a rolled ``reduction_loops`` axis. Two
-        callers pass DIFFERENT candidate sets to this shared predicate:
+        grid, not a ``block_sizes`` tile, not a rolled ``reduction_loops`` axis. Callers pass
+        DIFFERENT candidate sets to this shared predicate:
 
         - REDUCED-OVER axes (``register_unrolled_reductions``): the axis a
           ``ReductionLowering`` is lowered over (``red_block_id``).
-        - FEATURE-FOOTPRINT axes (``_assemble_reduction_fact``): full-width
-          feature/output dims flagged ``bs.reduction`` at REGISTRATION, including a
-          grad-param output never reduced *over* (the resident ``feature_footprint``).
+        - MATERIALIZED FEATURE axes (``_assemble_reduction_fact``'s per_feature_accumulator set,
+          and the Stage-2 ``_materialized_feature_elems`` budget derivation): full-width
+          feature/output dims flagged ``bs.reduction`` at REGISTRATION, including a grad-param
+          output never reduced *over*.
 
-        bias_grad's ``[N]`` is feature-footprint but not reduced-over -- the gap that
+        bias_grad's ``[N]`` is a materialized feature axis but not reduced-over -- the gap that
         makes these two sets.
         """
         return (

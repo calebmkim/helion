@@ -117,7 +117,6 @@ def dump(name, fn, args):
         for f in spec.reduction_facts:
             print(f"  LEGACY fact: primary={f.primary_reduction_block_id} "
                   f"m_block_ids={f.m_block_ids} size_hint={f.size_hint} "
-                  f"feature_footprint={f.feature_footprint} "
                   f"full_width_output={f.full_width_output} "
                   f"num_carried_2d={f.num_carried_2d_tiles} "
                   f"secondary={f.secondary_reduction_block_ids}")

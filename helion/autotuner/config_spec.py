@@ -127,12 +127,11 @@ class ReductionFact(NamedTuple):
       loop-carried accumulator exists whose dims are ALL the materialized feature axis (the
       grad-parameter buffer, e.g. ``grad_bias[N]`` / ``grad_weight[N]``), read from
       accumulator provenance. The user-tiled seed keys ``is_m_collapse`` on it. False for
-      per-row or 2-D accumulators (softmax_two_pass/kl_div/welford/...).
-    - ``feature_footprint``: the PRODUCT of the materialized feature-axis extents — the
-      resident ``[inner, *features]`` per-row footprint a grad-parameter M-collapse byte-caps
-      its inner reduction tile against (``feature_footprint * itemsize``). For a 2-D norm this
-      is ``N``; for a 3-D norm the full ``C*S`` (a per-axis MAX under-counts and spills). Used
-      by both M-collapse tracks; 1 when no materialized feature axis exists.
+      per-row or 2-D accumulators (softmax_two_pass/kl_div/welford/...). The resident
+      feature-axis PRODUCT the M-collapse byte cap divides by is NOT stored on the fact -- the
+      Stage-2 allocator derives it at the budgeting site
+      (``_TritonReductionSeedBase._materialized_feature_elems``), per PROMPT §2.3 #5 (budget
+      inputs are computed at use, not frozen as fact fields).
     - ``secondary_reduction_block_ids``: the NON-primary TILED reducing axes -- the
       ``ReductionRole.TILED`` members EXCLUDING ``primary_reduction_block_id``, in size-descending
       order. The primary is NEVER here (it is carried solely by ``primary_reduction_block_id`` and
@@ -168,7 +167,6 @@ class ReductionFact(NamedTuple):
     full_width_output: bool = True
     input_load_itemsize: int = 0
     body_live_tiles: int = 1
-    feature_footprint: int = 1
     per_feature_accumulator: bool = False
     secondary_reduction_block_ids: tuple[int, ...] = ()
 
@@ -270,13 +268,13 @@ class ReductionDescriptor(NamedTuple):
 class CoResidencyGroup(NamedTuple):
     """A ``graph_id`` equivalence class of reductions (PROMPT §2.2): their working tiles are live
     at the same time, so ONE budget must fit them all. ``descriptor_indices`` indexes into
-    ``ReductionKernelFact.reductions``; ``feature_footprint`` is the group-level resident feature
-    footprint (the PRODUCT of the materialized feature-axis extents; PROMPT §2.6 locality note).
+    ``ReductionKernelFact.reductions``. The group's resident feature footprint is NOT stored --
+    a budget input is a Stage-2 derivation computed at the comparison site (PROMPT §2.3 #5), not
+    a label frozen here (storing it kernel-wide was both dead and wrong for a multi-group kernel).
     """
 
     graph_id: int
     descriptor_indices: tuple[int, ...]
-    feature_footprint: int = 1
 
 
 class ReductionKernelFact(NamedTuple):

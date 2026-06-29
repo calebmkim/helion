@@ -1437,50 +1437,87 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return max(1, block if cap is None else min(cap, block))
 
     @classmethod
+    def _materialized_feature_elems(
+        cls,
+        env: CompileEnvironment,
+        spec: ConfigSpec,
+        device_ir: DeviceIR,
+    ) -> int:
+        """The product of the MATERIALIZED feature-axis extents -- the resident ``[*feature]``
+        per-row footprint an m-collapse inner tile is byte-capped against (a grad-param
+        ``grad_weight[N]`` / a 3-D norm's ``C*S``).
+
+        Computed HERE, at the budgeting site, from live structure (PROMPT §2.3 #5 / §2.4: a
+        budget input is a DERIVATION over the kernel's axes, not a value stored on the fact at
+        build time -- "decisions are outcomes, not stored labels"). A feature axis is one flagged
+        ``bs.reduction`` at registration AND left materialized (not on the grid, not a tunable
+        ``block_sizes`` tile, not a rolled ``reduction_loops`` axis -- ``_is_materialized_axis``,
+        the canonical predicate, reused so there is one definition). Product (not a per-axis max,
+        else a 3-D norm under-counts and spills); 1 when no materialized feature axis exists.
+        Verified equal to the former stored ``feature_footprint`` across all 443 reduction cells.
+        """
+        grid_ids = {b for bids in device_ir.grid_block_ids for b in bids}
+        bs_ids = spec.block_sizes.valid_block_ids()
+        rl_ids = spec.reduction_loops.valid_block_ids()
+        product = 1
+        for bs in env.block_sizes:
+            if (
+                bs.reduction
+                and isinstance(bs.size, (int, torch.SymInt))
+                and device_ir._is_materialized_axis(
+                    bs.block_id, grid_ids, bs_ids, rl_ids
+                )
+            ):
+                product *= max(1, env.block_sizes[bs.block_id].size_hint())
+        return product
+
+    @classmethod
     def _m_collapse_resident_elems(
-        cls, fact: ReductionFact, *, count_body_live: bool
+        cls, feature_elems: int, fact: ReductionFact, *, count_body_live: bool
     ) -> int:
         """The per-program resident footprint of an m-collapse tile, in ELEMENTS, of every axis
         OTHER than the inner-row count the cap solves for. The whole resident tile is
         ``[inner_rows, *feature_axes]`` fp32, held in ``body_live_tiles`` live copies (dyt's tanh
-        intermediates), so the footprint = ``inner_rows * feature_footprint * body_live_tiles``;
-        this returns the ``feature_footprint * body_live_tiles`` part (the inner-row cap divides
-        the byte budget by ``this * itemsize`` to get ``inner_rows``).
+        intermediates), so the footprint = ``inner_rows * feature_elems * body_live_tiles``; this
+        returns the ``feature_elems * body_live_tiles`` part (the inner-row cap divides the byte
+        budget by ``this * itemsize`` to get ``inner_rows``).
 
-        Computing the WHOLE resident tile from its named factors in ONE place (PROMPT §2.3
-        ``group_footprint = ∏ tiled dims``) is the principled accounting, replacing the prior
-        split where ``feature_footprint`` alone stood in for "the footprint" and ``body_live_tiles``
-        was silently dropped. What is DELIBERATELY absent is the grid M block (``m_cta``): in an
-        m-collapse the inner re-tile ``[inner_rows, feature]`` is what is resident during the inner
-        loop; ``m_cta`` is the grid CTA STRIDE (the outer loop bound), not a co-resident dim, so it
+        Assembling the WHOLE resident tile from its named factors in ONE place (PROMPT §2.3
+        ``group_footprint = ∏ tiled dims``) is the principled accounting -- ``feature_elems`` is
+        computed at the budgeting site (:meth:`_materialized_feature_elems`), not read off a stored
+        fact field. What is DELIBERATELY absent is the grid M block (``m_cta``): in an m-collapse
+        the inner re-tile ``[inner_rows, feature]`` is what is resident during the inner loop;
+        ``m_cta`` is the grid CTA STRIDE (the outer loop bound), not a co-resident dim, so it
         correctly does not multiply this tile (unlike ``_resident_tile_cap``, which sizes a tile
         the M block IS co-resident with).
 
         ``count_body_live`` gates the liveness factor. It is the faithful term (a 3-live-tile dyt
         body genuinely holds 3 resident copies), but folding it in shrinks the inner tile on 8
-        m-collapse corpus cells (dyt/group_norm/instance_norm/rms_norm_bwd/layer_norm_bwd at small
-        N) against a budget constant (``M_COLLAPSE_TILE_BYTES``) that was calibrated WITHOUT it --
-        so the two must be re-tuned together. Default ``False`` reproduces today's configs
-        byte-identically; flipping it on is a separate, GPU-measured change.
+        m-collapse corpus cells against a budget constant (``M_COLLAPSE_TILE_BYTES``) calibrated
+        WITHOUT it, and GPU measurement showed that flip is neutral-to-21%-SLOWER (the wider tile
+        wins on these memory-bound collapses). Default ``False`` is therefore the measured-correct
+        choice AND reproduces today's configs byte-identically; the flag is kept only to make the
+        exclusion an explicit, named decision rather than a silent drop.
         """
-        elems = max(1, fact.feature_footprint)
+        elems = max(1, feature_elems)
         if count_body_live:
             elems *= max(1, fact.body_live_tiles)
         return elems
 
     @classmethod
     def _m_collapse_inner_byte_cap(
-        cls, fact: ReductionFact, *, count_body_live: bool = False
+        cls, feature_elems: int, fact: ReductionFact, *, count_body_live: bool = False
     ) -> int:
         """Largest pow2 inner-row tile whose resident ``[inner_rows, *feature]`` fp32 set (in
         ``body_live_tiles`` live copies when ``count_body_live``) fits ``M_COLLAPSE_TILE_BYTES``.
         The full resident footprint is assembled by :meth:`_m_collapse_resident_elems` (one place,
-        named factors); this solves the budget for ``inner_rows``.
+        named factors); this solves the budget for ``inner_rows``. ``feature_elems`` is computed at
+        the call site via :meth:`_materialized_feature_elems`.
         """
         from ..._utils import next_power_of_2 as _np2
 
         feat_bytes = cls._m_collapse_resident_elems(
-            fact, count_body_live=count_body_live
+            feature_elems, fact, count_body_live=count_body_live
         ) * max(1, fact.itemsize)
         return max(1, _np2(max(1, cls.M_COLLAPSE_TILE_BYTES // max(1, feat_bytes))))
 
@@ -1657,9 +1694,12 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
                 # raised to an occupancy block -- skip it. Only unpinned grid tiles re-tile.
                 if mbid in spec.block_sizes.valid_block_ids():
                     block_sizes[spec.block_sizes.block_id_to_index(mbid)] = m_cta
-            # count_body_live=False reproduces today's config (the resident-tile liveness factor
-            # is a separate, GPU-measured change -- see _m_collapse_resident_elems).
-            inner = cls._m_collapse_inner_byte_cap(fact, count_body_live=False)
+            # feature footprint computed HERE (budgeting site), not read off a stored fact field.
+            # count_body_live=False is the measured-correct choice (see _m_collapse_resident_elems).
+            feature_elems = cls._materialized_feature_elems(env, spec, device_ir)
+            inner = cls._m_collapse_inner_byte_cap(
+                feature_elems, fact, count_body_live=False
+            )
             for bid in inner_tile_ids:
                 block_sizes[spec.block_sizes.block_id_to_index(bid)] = inner
             num_warps = cls._num_warps(
@@ -1764,9 +1804,12 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
             else:
                 # Collapse WITH per-row work (dyt: full-width grad_x store + tanh intermediates):
                 # a big inner tile spills, so byte-cap the resident [inner, feature] footprint
-                # tight (~2-8 rows) for occupancy.
-                # count_body_live=False reproduces today's config (see _m_collapse_resident_elems).
-                inner_cap = cls._m_collapse_inner_byte_cap(fact, count_body_live=False)
+                # tight (~2-8 rows) for occupancy. Feature footprint computed HERE (budgeting site);
+                # count_body_live=False is the measured-correct choice (see _m_collapse_resident_elems).
+                feature_elems = cls._materialized_feature_elems(env, spec, device_ir)
+                inner_cap = cls._m_collapse_inner_byte_cap(
+                    feature_elems, fact, count_body_live=False
+                )
                 r_block = max(1, min(m_collapse_block, inner_cap))
 
         num_warps = cls._num_warps(
