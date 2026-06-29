@@ -72,6 +72,36 @@ change → deferred to P2/P3; P1 preserves current behavior (incl. p7 still decl
 
 ## Log
 
+### 2026-06-29 — P4 ADVERSARIAL SWEEP (workflow wf_4c3427e4) found 2 CONFIRMED regressions
+Fanned out 5 design + 5 critique + synth agents over taxonomy corners; 8 candidates shortlisted. GPU-verified
+the top ones (`_lab/redesign/adversarial_sweep_result.json`):
+- **`fullgrid_plus_carried2d` — CONFIRMED 11.2x SLOWER than default** (seed 1690µs vs 151µs, outputs match).
+  FULL_GRID (GS=128 amax, bid3) co-resident with USER_TILE carried-2D (R=8192 sum, bid0) in one body/group.
+  seed bs=[4096,1], default [32,32].
+- **`carried2d_coresident_fullslice` — CONFIRMED 1.36x slower** (2481µs vs 1830µs). USER_TILE carried-2D +
+  FULL_SLICE amax co-resident. seed bs=[8192,64], default [1,1].
+- carried_3d_rank3: invalid Helion (3-D hl.zeros w/ specialized A → CompilationError) — discard.
+- Others (manycarried nonpow2, c2_persist, E2b eviction, c2_pair) not yet GPU-checked (lower likelihood).
+
+**ROOT CAUSE + FIXES (3 faithful changes, corpus stayed byte-identical bar the 2 square movers):**
+The allocator mishandled the carried-2D footprint when co-resident with another reduction. Three fixes:
+1. **Per-axis `r_block_resident`** (`_build_block_sizes` M-axis): a carried `[M_BLOCK,R_BLOCK]` tile is pinned
+   to its LEADING dim only — a parallel grid axis (FULL_GRID G) does NOT co-hold it, so it's sized with
+   `r_block_resident=1` (`_carried_leading_dims` = accumulator `dim_block_ids[0]`). Was flooring G to 1 via
+   `_resident_tile_cap` dividing by R_BLOCK=4096. **fullgrid_plus_carried2d 11.2x slower → 1.85x FASTER**
+   (seed [4096,1]→[4096,32]).
+2. **`_carried_m_block_cap`** (new): bounds an M axis that is a carried accumulator's leading dim by
+   `M_BLOCK·Σ(carried R_BLOCK)·itemsize ≤ CARRIED_TILE_MAX_BYTES` — FAITHFUL even when the kernel PRIMARY
+   isn't the carrier (reads accumulator_facts + red_values, not `fact.num_carried_2d_tiles` which is 0 off a
+   full-slice primary). Floors T to 1 for carried2d_plus_fullslice.
+3. **grad-collapse excludes carried-2D** (`_grad_collapse_group`): a carried-2D reduction is an ordinary
+   user-tiled reduction, NOT a grad-collapse cross-row re-tile — without this, the collapse MISFIRED on
+   full-slice+carried-2D, overriding the correct carried-cap config. **carried2d_plus_fullslice 1.36x slower
+   → 27x FASTER** (seed [8192,64]→[4096,1]).
+All 3 corpus-safe: kl_div/jsd (carrier IS the single grid axis) + norm-bwds (inner re-tile not carried_2d)
+unaffected — config-diff stayed at the 2 square movers; 460/460 fact-validation; 13/13 probes Tier-1+Tier-2.
+Witness kernels saved in `_lab/redesign/adversarial_kernels/`.
+
 ### 2026-06-29 — P4: probe Tier-2 perf (seed vs default, H100, median-of-9; `probe_perf.py`)
 ALL 13 probes now PASS both checks (Tier-1 fired-right-path + Tier-2 perf ≥ default):
 | probe | fired | seed/default | verdict |
