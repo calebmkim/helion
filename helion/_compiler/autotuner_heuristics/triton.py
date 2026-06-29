@@ -1137,6 +1137,51 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return r_block, r_block >= rdim
 
     @classmethod
+    def _secondary_red_values(
+        cls,
+        env: CompileEnvironment,
+        spec: ConfigSpec,
+        fact: ReductionFact,
+        m_block: int,
+        exclude_block_id: int | None,
+    ) -> dict[int, int]:
+        """Per-axis ``block_id -> r_block`` for every TUNABLE reduction the kernel sizes besides
+        ``exclude_block_id`` (the axis the caller seeds separately).
+
+        Driven by the Stage-1 ``ReductionKernelFact`` (PROMPT §2.3): the sized descriptors
+        (FULL_SLICE / FULL_GRID / USER_TILE) that have a tunable ``block_sizes`` slot. A
+        GRID_TILE (grid-parallelized partial) is NOT sized as a reduction (it stays a grid row),
+        so it is absent -- the faithful fix to the legacy
+        ``secondary_reduction_block_ids ∩ block_sizes`` which wrongly included it. Each axis is
+        chunked against its OWN extent (sequential / not co-resident). Falls back to the legacy
+        ``secondary_reduction_block_ids`` only if the kernel fact is absent (defensive).
+        """
+        valid = spec.block_sizes.valid_block_ids()
+        kf = spec.reduction_kernel_fact
+        if kf is not None:
+            sized_bids = {
+                d.block_id
+                for d in kf.reductions
+                if d.category in SIZED_REDUCTION_CATEGORIES
+            }
+            bids = [
+                b
+                for b in sized_bids
+                if b in valid and b != exclude_block_id
+            ]
+        else:
+            bids = [
+                b for b in fact.secondary_reduction_block_ids if b in valid
+            ]
+        red_values: dict[int, int] = {}
+        for bid in sorted(bids):
+            axis_r_block, _ = cls._reduction_rblock(
+                env, fact, m_block, rnumel=env.block_sizes[bid].size_hint()
+            )
+            red_values[bid] = axis_r_block
+        return red_values
+
+    @classmethod
     def _m_collapse_grid_block(
         cls, env: CompileEnvironment, fact: ReductionFact, cap: int | None = None
     ) -> int:
@@ -1269,15 +1314,12 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # standard-track analogue of the user-tiled multi-reduction sizer. Single-reduction kernels
         # have secondary_reduction_block_ids=() -> red_values stays empty -> every block_sizes axis
         # floors, byte-identical to before. (The primary is never in this set, so no skip needed.)
-        red_values: dict[int, int] = {}
-        valid_ids = spec.block_sizes.valid_block_ids()
-        for bid in fact.secondary_reduction_block_ids:
-            if bid not in valid_ids:
-                continue
-            axis_r_block, _ = cls._reduction_rblock(
-                env, fact, m_block, rnumel=env.block_sizes[bid].size_hint()
-            )
-            red_values[bid] = axis_r_block
+        # Per-axis r_block for the tunable SECONDARY reductions, driven by the Stage-1 kernel
+        # fact (the rolled primary rides reduction_loops, so it is excluded). Single-reduction
+        # kernels get {} -> byte-identical.
+        red_values = cls._secondary_red_values(
+            env, spec, fact, m_block, exclude_block_id=fact.primary_reduction_block_id
+        )
         block_sizes = cls._build_block_sizes(
             env,
             spec,
@@ -1441,15 +1483,18 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         # secondary_reduction_block_ids, so this map is exactly {fact.primary_reduction_block_id:
         # r_block} -- byte-identical. The primary is seeded above and is never in the secondary set.
         red_values: dict[int, int] = {fact.primary_reduction_block_id: r_block}
-        valid_ids = spec.block_sizes.valid_block_ids()
-        for bid in fact.secondary_reduction_block_ids:
-            if bid not in valid_ids:
-                continue
-            axis_rnumel = env.block_sizes[bid].size_hint()
-            axis_r_block, _ = cls._reduction_rblock(
-                env, fact, m_block, rnumel=axis_rnumel
+        # The tunable SECONDARY reductions (driven by the Stage-1 kernel fact), each chunked
+        # against its own extent. The primary is seeded above (with its m_collapse override), so
+        # exclude it. Single-reduction kernels add nothing -> byte-identical.
+        red_values.update(
+            cls._secondary_red_values(
+                env,
+                spec,
+                fact,
+                m_block,
+                exclude_block_id=fact.primary_reduction_block_id,
             )
-            red_values[bid] = axis_r_block
+        )
 
         block_sizes = cls._build_block_sizes(
             env,
