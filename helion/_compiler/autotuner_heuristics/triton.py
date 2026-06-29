@@ -1182,6 +1182,47 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return red_values
 
     @classmethod
+    def _grad_collapse_group(
+        cls, spec: ConfigSpec, device_ir: DeviceIR
+    ) -> tuple[int, ...] | None:
+        """Detect the grad-parameter M-collapse SHAPE from the Stage-1 taxonomy (PROMPT §6 Q4):
+        a co-residency group holding a FULL-EXTENT feature reduction (the ``.mean(-1)`` /
+        feature ``.sum`` materialized over N) CO-RESIDENT with a NON-full-extent inner re-tile
+        (the cross-row grad accumulation over the inner-M range) — the norm-backward family
+        (rms/layer/instance/group bwd), NO kernel identity.
+
+        Returns the inner re-tile block_ids (the axes the byte-capped inner tile sizes) when the
+        shape holds, else ``None``. This is the faithful replacement for the
+        ``per_feature_accumulator`` recognizer: "a full-slice reduction co-resident with a
+        partial grid-tile / user-tile reduction," read off ``category`` + ``coresidency_groups``.
+
+        P2: built + validated to reproduce the override's inner-tile-id set; the override still
+        gates on ``fact.per_feature_accumulator`` (P3 swaps to this).
+        """
+        kf = spec.reduction_kernel_fact
+        if kf is None:
+            return None
+        grid_ids = {b for bids in device_ir.grid_block_ids for b in bids}
+        valid = set(spec.block_sizes.valid_block_ids())
+        for g in kf.coresidency_groups:
+            descs = [kf.reductions[i] for i in g.descriptor_indices]
+            has_full_extent = any(
+                d.category in FULL_EXTENT_CATEGORIES for d in descs
+            )
+            # the inner re-tile: a co-resident reduction that is NOT full-extent (a partial
+            # grid-tile or an inner user-tile), with a tunable slot, not a grid axis.
+            inner = [
+                d.block_id
+                for d in descs
+                if d.category not in FULL_EXTENT_CATEGORIES
+                and d.block_id in valid
+                and d.block_id not in grid_ids
+            ]
+            if has_full_extent and inner:
+                return tuple(sorted(inner))
+        return None
+
+    @classmethod
     def _m_collapse_grid_block(
         cls, env: CompileEnvironment, fact: ReductionFact, cap: int | None = None
     ) -> int:

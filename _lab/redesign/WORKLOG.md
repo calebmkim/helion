@@ -63,6 +63,36 @@ change → deferred to P2/P3; P1 preserves current behavior (incl. p7 still decl
 
 ## Log
 
+### ⚠️ SQUARE-SHAPE legacy quirk (rms/layer_norm_bwd at M==N, e.g. 4096×8192) — P3 mover, re-bench
+At rms_norm_bwd(4096,8192): inner-M (bid1 USER_TILE sh=8192) and feature (bid2 FULL_SLICE sh=8192) are TIED
+at extent 8192. Legacy `_non_reduction_loop_candidates` then mis-claims bid1 as a NON-reduction apply loop
+(its extent coincidentally == the reduction extent), so the pfa override's `inner_tile_ids` comes out EMPTY →
+override no-ops → legacy emits `[1,1]` (a STARVED config: grid M=1, inner=1). The new taxonomy correctly keeps
+bid1 USER_TILE (a reduction), so `_grad_collapse_group` finds inner=(1,) → the group-greedy would emit the
+proper `[m_cta, inner]` (like the non-square `[64,2]`). **This is a legacy STARVATION bug the redesign FIXES**
+— but it's a config CHANGE, so it's a P3 mover to re-bench (expect FASTER than `[1,1]`). Affects the 2 square
+norm-bwd cells (rms_norm_bwd + layer_norm_bwd at 4096×8192). `_grad_collapse_group` vs legacy inner_tile_ids:
+14/16 match, these 2 diverge (correctly).
+
+### 2026-06-29 — P2 progress (P2a cap fabric @1877364e, P2b kernel-fact red_values @6309d726)
+- P2a: `Cap`/`size_axis` primitive (§2.4); re-expressed `_reduction_rblock` (looped chunk) + `_build_block_sizes`
+  M-axis widen onto it. ZERO-DIFF.
+- P2b: `_secondary_red_values` reads sized descriptors from the kernel fact (GRID_TILE correctly NOT
+  reduction-sized). ZERO-DIFF. Equivalence checks: primary = max-backed-size_hint (0/452 divergence);
+  sized∩block_sizes = legacy red_values keys (only p2/p6 probes diverge, more-faithfully).
+
+### ⚠️ USER REMINDER (pinned block sizes factor DOWN the budget) — record for the group budget (P3/P4)
+Pinned axes (FixedBlockSizeSource, full-extent: per_token_group/rms_norm_per_block `group_size=128`) have a
+FIXED size but MUST still factor down the resident budget. Status:
+- ALREADY HANDLED per-axis: `_pinned_inner_resident_elems` returns the pinned product (128) and
+  `_resident_tile_cap` divides the byte budget by it (verified: per_token_group bid1→128, rms_norm_per_block
+  bid1/bid2→128). Pointwise seed does the analogous `target // pinned_elems`.
+- TODO for the GROUP BUDGET (§2.3 group_footprint, when the greedy per-group allocation lands in P3/P4): a
+  pinned/FULL_GRID axis resident in a co-residency group must appear as a MULTIPLIER in the group_footprint
+  denominator (it consumes budget like any resident tile, just at a fixed extent the allocator can't tune).
+  i.e. group_footprint = Σ distinct resident tensors (∏ tiled dims INCLUDING pinned dims' fixed extents). The
+  FULL_GRID reduction "claims ~nothing tunable" but its pinned extent still costs footprint → don't drop it.
+
 ### 2026-06-29 — P2 START (cap-set + greedy allocator) — strategy: EQUIVALENCE-FIRST (user-chosen)
 Build the cap-set + allocator over the new ReductionKernelFact to reproduce existing configs
 BYTE-IDENTICALLY first (zero-diff gate); generality (relaxed >=1 gate, p1/p5/p7 firing, multi-group
