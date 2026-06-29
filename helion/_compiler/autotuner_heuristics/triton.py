@@ -14,6 +14,7 @@ import torch
 from ...autotuner.config_fragment import EnumFragment
 from ...autotuner.config_spec import FULL_EXTENT_CATEGORIES
 from ...autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
+from ...autotuner.config_spec import ReductionCategory
 from ...runtime.config import Config
 from .common import REDUCTION_TARGET_NAMES
 from .common import clamp_block_size_targets
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from ...autotuner.config_spec import BlockSizeSpec
     from ...autotuner.config_spec import ConfigSpec
     from ...autotuner.config_spec import MatmulFact
+    from ...autotuner.config_spec import ReductionDescriptor
     from ...autotuner.config_spec import ReductionFact
     from ..compile_environment import CompileEnvironment
     from ..device_ir import DeviceIR
@@ -637,6 +639,45 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return _np2(max(1, cap))
 
     @classmethod
+    def _primary_descriptor(
+        cls, spec: ConfigSpec, primary_block_id: int
+    ) -> ReductionDescriptor | None:
+        """The Stage-1 :class:`ReductionDescriptor` for the primary reduction axis -- the
+        positive, faithful source the Stage-2 caps read (``category`` / ``size_hint`` /
+        ``itemsize`` / ``carried_2d`` …) instead of re-deriving structure off ``spec``
+        membership. ``None`` only if the kernel fact is absent (off-corpus / a bare-spec unit
+        test); callers fall back to the legacy ``ReductionFact`` read.
+        """
+        kf = spec.reduction_kernel_fact
+        if kf is None:
+            return None
+        return next(
+            (
+                d
+                for d in kf.reductions
+                if d.block_id == primary_block_id
+                and d.category in SIZED_REDUCTION_CATEGORIES
+            ),
+            None,
+        )
+
+    @classmethod
+    def _carried_2d_count(cls, spec: ConfigSpec, rdim_block_id: int) -> int:
+        """Number of loop-carried 2-D ``[.., R_BLOCK]`` accumulators whose LAST dim is
+        ``rdim_block_id`` -- the multiplicity the carried byte cap divides by (jsd=2,
+        group_norm_bwd=5, layer_norm_bwd=3). Derived at the budgeting site from
+        ``accumulator_facts`` (same ``dim_block_ids[-1] == rdim`` test the Stage-1 builder uses for
+        ``ReductionDescriptor.carried_2d``), because the descriptor stores only the BOOL -- the
+        count is a budget input, computed where it is needed (PROMPT §2.3 #5), not a stored field.
+        Replaces the legacy ``ReductionFact.num_carried_2d_tiles`` read.
+        """
+        return sum(
+            1
+            for a in spec.accumulator_facts
+            if len(a.dim_block_ids) >= 2 and a.dim_block_ids[-1] == rdim_block_id
+        )
+
+    @classmethod
     def _carried_leading_dims(cls, spec: ConfigSpec) -> set[int]:
         """The block_ids that are the LEADING (M_BLOCK) dim of a loop-carried 2-D accumulator
         ``[M_BLOCK, R_BLOCK]`` -- the grid axis whose widening genuinely MULTIPLIES the carried
@@ -1008,15 +1049,32 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         primary_red_value = red_values.get(fact.primary_reduction_block_id)
 
         # Resident width of the reduction tile co-held when an M axis widens, used by the
-        # footprint cap. The reduction's resident R_BLOCK reaches the cap by one of three routes,
-        # and we must count it EXACTLY once:
-        #   - ROLLED (rdim in ``reduction_loops``): persistent at ``next_pow2(size_hint)``.
-        #   - USER-TILED (rdim in ``red_values``): resident at its sized r_block (already capped,
+        # footprint cap. Keyed on the primary's Stage-1 CATEGORY (the faithful, positive source),
+        # not re-derived from ``reduction_loops`` membership. The reduction's resident R_BLOCK
+        # reaches the cap by one of three routes, counted EXACTLY once:
+        #   - FULL_SLICE (rolled OR materialized): the whole axis is resident in one program, so it
+        #     is co-held at its full padded width ``next_pow2(size_hint)``. (The legacy proxy keyed
+        #     this on ``reduction_loops`` membership, which a MATERIALIZED full-slice -- norm-bwd's
+        #     feature axis, in neither spec -- fails, so legacy mis-counted it as 1; faithfully it
+        #     is full-width resident. Corpus-safe: those norm-bwds take the grad-collapse override
+        #     which overwrites these block sizes, so the prior 1 never shipped.)
+        #   - USER_TILE (rdim in ``red_values``): resident at its sized r_block (already capped,
         #     e.g. kl_div's carried-tile-capped 4096) -- use that value, NOT the full size_hint.
-        #   - PINNED (full-extent ``FixedBlockSizeSource``, e.g. per_token_group's ``group_size``):
-        #     ALREADY counted by ``_pinned_inner_resident_elems`` in the cap -> count as 1 here to
-        #     avoid double-counting and over-shrinking the sibling.
-        if fact.primary_reduction_block_id in spec.reduction_loops.valid_block_ids():
+        #   - FULL_GRID (pinned full-extent, e.g. per_token_group's ``group_size``): ALREADY counted
+        #     by ``_pinned_inner_resident_elems`` in the cap -> count as 1 here to avoid double-
+        #     counting and over-shrinking the sibling.
+        pd = cls._primary_descriptor(spec, fact.primary_reduction_block_id)
+        if pd is not None:
+            if pd.category is ReductionCategory.FULL_SLICE:
+                r_block_resident = _np2(pd.size_hint)
+            elif pd.category is ReductionCategory.USER_TILE:
+                r_block_resident = (
+                    primary_red_value if primary_red_value is not None else 1
+                )
+            else:  # FULL_GRID -- pinned, counted by _pinned_inner_resident_elems
+                r_block_resident = 1
+        elif fact.primary_reduction_block_id in spec.reduction_loops.valid_block_ids():
+            # Defensive legacy fallback (kernel fact absent: bare-spec unit test).
             r_block_resident = _np2(fact.size_hint)
         elif primary_red_value is not None:
             r_block_resident = primary_red_value
@@ -1085,7 +1143,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 # fullgrid_plus_carried2d ~11x regression). A NON-carried reduction (rms_norm,
                 # per_token_group) holds a ``[k, R]`` tile on EVERY grid row, so every M axis
                 # co-holds it -- keep the full ``r_block_resident`` (byte-identical for the corpus).
-                is_carried = fact.num_carried_2d_tiles >= 1
+                # Carried-2D multiplicity for the primary rdim, derived from accumulator_facts at
+                # the budgeting site (the descriptor stores only a bool; the COUNT -- jsd=2,
+                # group_norm_bwd=5 -- is load-bearing in the cap denominator).
+                n_carried = cls._carried_2d_count(spec, fact.primary_reduction_block_id)
+                is_carried = n_carried >= 1
                 axis_co_holds = (not is_carried) or (
                     bs_spec.block_id in cls._carried_leading_dims(spec)
                 )
@@ -1096,7 +1158,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     // (
                         max(1, r_block_resident)
                         * max(1, fact.itemsize)
-                        * max(1, fact.num_carried_2d_tiles)
+                        * max(1, n_carried)
                     ),
                 )
                 # The carried-2D byte cap likewise applies to this M axis ONLY if widening it
