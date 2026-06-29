@@ -352,3 +352,21 @@ sized reductions is a BEHAVIOR change = P2/P3 (allocator + relaxed gate), not P1
 - **NOTE on p4:** two rollable reductions over different axes landed in ONE fact (graph_ids all 4 graphs). Per §2.7
   invariant "two rollable reductions are NEVER co-resident" → they should be 2 sequential facts. Investigate in P1
   (may be the `_rollable_reduction_records` stashing one rdim, or both rolled into one). Flag, don't block P0.
+
+---
+
+## Stage 2 cleanliness — reduction heuristic is now ReductionFact-FREE (2026-06-29)
+Followed `STAGE2_REDUCTIONFACT_REMOVAL_RECIPE.md`; full step trail in
+`REDUCTIONFACT_REMOVAL_LOG.md`. The two reduction seed tracks now read the primary
+`ReductionDescriptor` (`pd`) for ALL scalar reads — no `_TritonReductionSeedBase` helper takes
+`fact: ReductionFact` any more, `_primary_fact` is gone, and the reduction tracks (triton.py
+581-1980) contain zero `fact.` reads (the only `fact.` reads left are the untouched
+matmul-epilogue class @1981+ and the pre-existing matmul/pointwise module helpers). `ReductionFact`
+stays BUILT (matmul-epilogue + eligibility gate). ONE deviation from the bare §3 field map:
+`full_width_output` is per-rdim on the descriptor but the legacy scalar also OR'd in a normalize-loop
+full-width store (welford) — added `_full_width_output(spec, pd)` reconstructing it (verified ==
+legacy across all 443 reduction cells; without it 13 welford cells regressed). All gates green:
+config recorder diff = only the 2 known movers (mreduction/{layer,rms}_norm_bwd/[4096,8192]/fp16),
+validate_kernel_fact 460/460, probes 13/13, test_reductions+test_autotuner_heuristics 52 passed /
+22 skipped, test_examples -k matmul_layernorm green, ruff clean.
+Final SHA: 04dd14a31b83905ef7cf427bafa619945ee68833.
