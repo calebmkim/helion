@@ -1431,40 +1431,36 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # Dual-axis grad-parameter M-collapse (rms/ln/instance/group bwd): the grid M block is re-tiled
         # by an inner loop and feeds a per-feature grad accumulator finalized across CTAs.
         # _build_block_sizes floors it to 1 (leaving a grid-wide finalize); size it for occupancy so the
-        # finalize shrinks to ~num_sm partials. Gated on per_feature_accumulator, which is False for the
-        # 9 standard + 8 transfer kernels, so their seeds stay byte-identical.
-        if fact.per_feature_accumulator:
-            # The lever needs the grow-grid / byte-cap-inner decomposition to exist: a non-grid
-            # inner tile bearing residency. per_feature_accumulator implies a device carry loop
-            # (not the grid or rdim) that appears in inner_tile_ids, so an EMPTY inner_tile_ids
-            # means no inner re-tile -- skip the lever and keep the base materialized seed.
-            grid_ids = {b for bids in device_ir.grid_block_ids for b in bids}
-            inner_tile_ids = [
-                b
-                for b in spec.block_sizes.valid_block_ids()
-                if b not in grid_ids
-                and b != fact.primary_reduction_block_id
-                and b not in non_reduction_loop_ids
-            ]
-            if inner_tile_ids:
-                # Occupancy-size the grid M block (the dominant lever), byte-cap the inner
-                # re-tile to the feature footprint, and drop the narrow-w1 warps lever: it keys
-                # on rdim extent alone, but the resident tile here is [inner, feature]-wide, so
-                # the plain extent ramp (>=4 warps) is faithful. Only instance_norm is affected.
-                m_cta = cls._m_collapse_grid_block(env, fact)
-                for mbid in fact.m_block_ids:
-                    # A grid-PINNED M axis (block_size=1) has no tunable Config slot and cannot be
-                    # raised to an occupancy block -- skip it. Only unpinned grid tiles re-tile.
-                    if mbid in spec.block_sizes.valid_block_ids():
-                        block_sizes[spec.block_sizes.block_id_to_index(mbid)] = m_cta
-                inner = cls._m_collapse_inner_byte_cap(
-                    max(1, fact.feature_footprint) * max(1, fact.itemsize)
-                )
-                for bid in inner_tile_ids:
-                    block_sizes[spec.block_sizes.block_id_to_index(bid)] = inner
-                num_warps = cls._num_warps(
-                    fact
-                )  # num_sm/grid_rows default 0 -> no narrow-w1
+        # finalize shrinks to ~num_sm partials.
+        #
+        # Keyed on the TAXONOMY (PROMPT §6 Q4), NOT the ``per_feature_accumulator`` recognizer:
+        # ``_grad_collapse_group`` returns the inner re-tile ids of a co-residency group holding a
+        # full-extent feature reduction co-resident with a non-full-extent inner re-tile -- "a
+        # FULL_SLICE reduction co-resident with a partial GRID_TILE/USER_TILE reduction," read off
+        # category + coresidency_groups. This replaces BOTH the ``pfa`` gate (Defect #1/#6 the
+        # recognizer) AND the subtractive ``inner_tile_ids`` filter (Defect #2 "an axis defined by
+        # what it is NOT"). The 9 standard + 8 transfer kernels have no such group -> None -> their
+        # seeds stay byte-identical.
+        inner_tile_ids = cls._grad_collapse_group(spec, device_ir)
+        if inner_tile_ids:
+            # Occupancy-size the grid M block (the dominant lever), byte-cap the inner
+            # re-tile to the feature footprint, and drop the narrow-w1 warps lever: it keys
+            # on rdim extent alone, but the resident tile here is [inner, feature]-wide, so
+            # the plain extent ramp (>=4 warps) is faithful. Only instance_norm is affected.
+            m_cta = cls._m_collapse_grid_block(env, fact)
+            for mbid in fact.m_block_ids:
+                # A grid-PINNED M axis (block_size=1) has no tunable Config slot and cannot be
+                # raised to an occupancy block -- skip it. Only unpinned grid tiles re-tile.
+                if mbid in spec.block_sizes.valid_block_ids():
+                    block_sizes[spec.block_sizes.block_id_to_index(mbid)] = m_cta
+            inner = cls._m_collapse_inner_byte_cap(
+                max(1, fact.feature_footprint) * max(1, fact.itemsize)
+            )
+            for bid in inner_tile_ids:
+                block_sizes[spec.block_sizes.block_id_to_index(bid)] = inner
+            num_warps = cls._num_warps(
+                fact
+            )  # num_sm/grid_rows default 0 -> no narrow-w1
         seed: dict[str, Any] = {
             "block_sizes": block_sizes,
             "reduction_loops": reduction_loops,

@@ -68,6 +68,23 @@ change → deferred to P2/P3; P1 preserves current behavior (incl. p7 still decl
 
 ## Log
 
+### ⚠️ DESIGN NUANCE — per_feature_accumulator is TWO shapes, not one (refines §6 Q4)
+The §6 Q4 thesis ("pfa = FULL_SLICE co-resident with partial GRID_TILE") describes ONLY the norm-bwd
+STANDARD-track family (rms/layer/instance/group_bwd): a `.mean(-1)`/`.sum(-1)` FULL_SLICE feature reduction
+co-resident (same graph) with an inner-M grad-accum reduction. `_grad_collapse_group` catches these.
+BUT bias_grad/dyt (USER-TILED track) are DIFFERENT: a SINGLE inner-M reduction (`sum(grad_out[mb,:],dim=0)`)
+that accumulates into a per-feature `gb[n]` buffer — NO feature reduction co-resident. Source: outer grid
+tile `mb_cta` (the collapse CTA) + inner re-tile `mb`; the reduction is over `mb`, result → per-feature accum.
+**The unifying FAITHFUL property = "a reduction whose result accumulates into a buffer spanning the full
+materialized feature axis" (the grad-param)** — which IS what `per_feature_accumulator` actually computes
+(accumulator dim_block_ids == materialized feature axes), reading accumulator provenance, NOT kernel identity.
+**DECISION:** `per_feature_accumulator` is ALREADY faithful (an accumulator-shape property, not a recognizer);
+the Defect-2 complaint was the OVERRIDE BRANCH (recomputing block_sizes) + the subtractive `inner_tile_ids`
+filter, not the signal. So: (1) STANDARD track norm-bwd → key the collapse on `_grad_collapse_group` (taxonomy,
+co-residency) — DONE. (2) USER-TILED bias_grad/dyt → keep keying on `per_feature_accumulator` (the faithful
+accumulator-shape property) but SOURCE the inner ids positively. Both deletions remove the SUBTRACTIVE filter
+(Defect #2); the accumulator-shape signal stays. Re-bench the norm-bwd movers.
+
 ### 2026-06-29 — P3a: relaxed gate (==1 → >=1 sized reductions), corpus ZERO-DIFF
 - `_triton_reduction_eligible` now fires when the kernel fact has >=1 SIZED reduction + no matmul (was
   `len(reduction_facts)==1`). Corpus-safe: all 452 corpus cells have exactly 1 fact → ZERO-DIFF 447/447.
