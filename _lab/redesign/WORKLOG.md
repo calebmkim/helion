@@ -72,6 +72,45 @@ change → deferred to P2/P3; P1 preserves current behavior (incl. p7 still decl
 
 ## Log
 
+### 2026-06-29 — P4: probe Tier-2 perf (seed vs default, H100, median-of-9; `probe_perf.py`)
+ALL 13 probes now PASS both checks (Tier-1 fired-right-path + Tier-2 perf ≥ default):
+| probe | fired | seed/default | verdict |
+|---|---|---|---|
+| p1 outer-product (rewritten) | reduction_tile | 1.01 | ≥default ✓ (near-optimal, ties) |
+| p2 feat+rowaccum | reduction_tile | 1.00 | ✓ (after coresident warp cap) |
+| p3 full-grid-nonquant | reduction_tile | 0.86 | 1.16x faster ✓ |
+| p4 two-rollable-seq | reduction_tile | 0.75 | 1.33x faster ✓ |
+| p5 3d-tile (rewritten) | reduction_tile | 0.62 | 1.6x faster ✓ |
+| p6 mixed-coresident | reduction_tile | 0.90 | 1.1x faster ✓ |
+| p7 gridtile-then-usertile | reduction_tile | 0.46 | **2.2x faster ✓ (was DECLINED)** |
+| p8 fullgrid+usertile | reduction_tile | 0.99 | ✓ (after m_block + warp fixes; was 3.08x SLOWER) |
+| p9 nonred-loop-then-full | reduction_tile | 0.043 | **23x faster ✓** |
+| p10 usertile+gridtile | reduction_tile | 0.32 | 3.1x faster ✓ |
+| p11 fullextent-then-nonred | reduction_tile | 0.045 | **22x faster ✓** |
+| oos1 jagged | (declined) | — | correctly DECLINED ✓ |
+| oos2 strided-dim0 | reduction_tile | 0.56 | 1.8x faster ✓ (the known cliff, still beats default) |
+
+**Two regressions found + FIXED during P4 (both off-corpus, corpus stayed at the 2 square movers):**
+1. **p8 FULL_GRID m_block inflation:** the rolled path's `m_block_ids = grid_ids` counted the co-resident
+   FULL_GRID group axis (GS=128) as a grid ROW → m_block=128 crushed the K=2048 reduction's chunk to looped
+   [128]. FIX: rolled-path `m_block_ids` excludes FULL_GRID grid reductions (a resident reduction, not a row).
+   3.08x→1.75x. Corpus byte-identical (no corpus kernel has a rolled+FULL_GRID co-residence).
+2. **p2/p8 num_warps over-provision:** a co-resident multi-reduction program is heavy; the extent-keyed warp
+   ramp (tuned for ONE reduction row) picked w8 where w4 wins (§6.2.1). FIX: `_coresident_with_other_sized`
+   caps num_warps at CORESIDENT_MAX_WARPS=4 when the primary shares a group with ANY other reduction.
+   Corpus-safe: every corpus multi-descriptor group routes through grad-collapse (sets warps itself). p8
+   1.75x→0.99x, p2 1.10x→1.00x.
+
+### 2026-06-29 — P4: p1 & p5 probe kernels are MISCOMPILED as authored (rewrite needed)
+p1 (`for tile_m,tile_n in hl.tile([M,N]): blk.sum(0); blk.sum(-1)`) and p5 (`hl.tile([M,A,B])`,
+`blk.sum(-1).sum(-1)`) GRID-TILE their reduction axes (cdiv>1), so the reductions are PARTIAL (each
+program reduces only its tile) with NO cross-CTA combine → **WRONG RESULTS**: p1 max abs err 39564
+(allclose False at bs[32,32]); p5 max abs err 213 (False at bs[16,16,16]). They do NOT exercise the
+intended FULL_SLICE/3D-resident taxonomy points — they're the upstream "reduce a partial grid axis w/o
+combine = miscompile" case. The redesign CORRECTLY classifies their axes as GRID_TILE (not sized) → fires
+pointwise. **FIX: rewrite both to grid over M (`hl.tile(M)`) + full inner slices (`x[tile_m,:]` / `x[tile_m,:,:]`)
+so the inner reductions are genuinely full-extent within one program.** Then re-verify classification.
+
 ### ⚠️ DESIGN NUANCE — per_feature_accumulator is TWO shapes, not one (refines §6 Q4)
 The §6 Q4 thesis ("pfa = FULL_SLICE co-resident with partial GRID_TILE") describes ONLY the norm-bwd
 STANDARD-track family (rms/layer/instance/group_bwd): a `.mean(-1)`/`.sum(-1)` FULL_SLICE feature reduction

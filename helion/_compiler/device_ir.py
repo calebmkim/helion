@@ -1345,7 +1345,21 @@ class DeviceIR:
         # one config's graphs).
         for rdim, used_graphs in self._rollable_reduction_records:
             grid_ids = {b for bids in self.grid_block_ids for b in bids}
-            m_block_ids = tuple(sorted(grid_ids))
+            # The kept (non-reduction) grid axes = grid_ids MINUS any axis that is itself a
+            # FULL-EXTENT grid reduction (FULL_GRID, cdiv==1 -- e.g. a co-resident specialized
+            # group_size that a per-program reduction reduces over). Such an axis is a RESIDENT
+            # reduction, NOT a parallel "row", so counting it in the M_BLOCK product would inflate
+            # the per-program footprint and crush a co-resident reduction's chunk (p8: the GS=128
+            # FULL_GRID group inflated m_block=128 and looped the K=2048 sum that should persist).
+            # A PARTIAL grid reduction (GRID_TILE) IS a row (kept), matching the FLOORED_ROW rule.
+            full_grid_axes = {
+                b
+                for b in self._all_reduction_axes()
+                if b in grid_ids
+                and self._categorize_reduction(b, grid_ids)
+                is ReductionCategory.FULL_GRID
+            }
+            m_block_ids = tuple(sorted(grid_ids - full_grid_axes))
             static_rnumel = rdim.size if isinstance(rdim.size, int) else None
             non_reduction_loop_block_ids = self._non_reduction_loop_candidates(
                 rdim.block_id, grid_ids

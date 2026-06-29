@@ -1259,6 +1259,35 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 return tuple(sorted(inner))
         return None
 
+    # Warp ceiling for a primary reduction CO-RESIDENT with another sized reduction. A
+    # co-resident multi-reduction program already does heavy per-CTA work (two resident tiles),
+    # so the extent-keyed warp ramp -- tuned for a SINGLE reduction row -- over-provisions warps;
+    # measured w8->w4 wins ~1.1-1.75x on p2 (FULL_SLICE+GRID_TILE) and p8 (FULL_SLICE+FULL_GRID).
+    CORESIDENT_MAX_WARPS = 4
+
+    @classmethod
+    def _coresident_with_other_sized(
+        cls, spec: ConfigSpec, primary_block_id: int
+    ) -> bool:
+        """True iff the primary reduction shares a co-residency group with ANOTHER reduction of
+        ANY category (PROMPT §2.2/§6.2.1) -- a second resident reduction tile makes the program
+        heavy regardless of whether that second reduction is *sized as* a reduction (a GRID_TILE
+        cross-row accum still costs residency, p2). Corpus-safe: every corpus kernel with a
+        multi-descriptor group routes through the grad-collapse path (which sets num_warps
+        itself), so this only caps the off-corpus multi-reduction kernels' warps. Read off the
+        kernel fact; False if absent.
+        """
+        kf = spec.reduction_kernel_fact
+        if kf is None:
+            return False
+        for g in kf.coresidency_groups:
+            if any(
+                kf.reductions[i].block_id == primary_block_id
+                for i in g.descriptor_indices
+            ):
+                return len(g.descriptor_indices) > 1
+        return False
+
     @classmethod
     def _m_collapse_grid_block(
         cls, env: CompileEnvironment, fact: ReductionFact, cap: int | None = None
@@ -1367,6 +1396,11 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         num_warps = cls._num_warps(
             fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)
         )
+        # CO-RESIDENT multi-reduction cap (PROMPT §6.2.1): when the primary shares a budget with
+        # another sized reduction, the program is already heavy -> cap the extent-keyed warp ramp
+        # (corpus-safe: such corpus kernels take the grad-collapse path below, which sets warps).
+        if cls._coresident_with_other_sized(spec, fact.primary_reduction_block_id):
+            num_warps = min(num_warps, cls.CORESIDENT_MAX_WARPS)
 
         # A standard reduction may be followed by a normalize loop (e.g. `s = x.sum(); out =
         # x/s`); its extra block_sizes tile(s) are sized by _build_block_sizes (matched to
