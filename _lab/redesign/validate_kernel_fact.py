@@ -156,19 +156,35 @@ def _check(name: str, fn, args) -> list[str]:
                  if any(descs[i].block_id == prim for i in g.descriptor_indices)),
                 None,
             )
-            recon_fw = False
-            if prim_group is not None:
-                recon_fw = any(
-                    descs[i].full_width_output for i in prim_group.descriptor_indices
+            # Only meaningful when the primary's group is a SINGLETON (the legacy single-fact
+            # assumption). For a MULTI-sized-co-resident group (a genuine multi-reduction kernel
+            # the legacy single-primary view can't represent, e.g. the rewritten p1 outer-product
+            # with two co-resident FULL_SLICE reductions), the per-descriptor full_width_output is
+            # MORE faithful than the legacy kernel-scalar, so they legitimately differ — skip.
+            n_sized_in_group = (
+                sum(
+                    1
+                    for i in prim_group.descriptor_indices
+                    if descs[i].category in SIZED_REDUCTION_CATEGORIES
                 )
-            recon_fw = recon_fw or _loop_has_full_width_store(
-                spec, lf.non_reduction_loop_block_ids
+                if prim_group is not None
+                else 1
             )
-            if recon_fw != lf.full_width_output:
-                fails.append(
-                    f"INV3 full_width_output reconstruct: legacy={lf.full_width_output} "
-                    f"recon={recon_fw}"
+            if n_sized_in_group <= 1:
+                recon_fw = False
+                if prim_group is not None:
+                    recon_fw = any(
+                        descs[i].full_width_output
+                        for i in prim_group.descriptor_indices
+                    )
+                recon_fw = recon_fw or _loop_has_full_width_store(
+                    spec, lf.non_reduction_loop_block_ids
                 )
+                if recon_fw != lf.full_width_output:
+                    fails.append(
+                        f"INV3 full_width_output reconstruct: legacy={lf.full_width_output} "
+                        f"recon={recon_fw}"
+                    )
             # Every legacy secondary must be REPRESENTED as a descriptor (any category) — the
             # legacy code's secondaries include grid-tile reductions it mis-sized as reductions.
             for sb in lf.secondary_reduction_block_ids:
