@@ -361,10 +361,6 @@ def _h100_matmul_tile(
     while bm * bn > ACC_BUDGET and bm > DOT_MIN:
         bm //= 2
 
-    # (3) width-scaled K tile (SMEM at operand width)
-    bk = {1: 128, 2: 64, 4: 32}.get(itemsize, 64)
-    bk = min(bk, max(DOT_MIN, _p2le(k)))
-
     # (4) occupancy / wave-quantization fill — shrink the wide axis (then M) only while it
     # measurably improves wave efficiency. pinned_grid folds in any block_size=1 grid axes
     # (mamba's batch·nchunks·nheads), so a grid-saturated fused dot is never shrunk.
@@ -390,14 +386,30 @@ def _h100_matmul_tile(
         else:
             break
 
-    # (5) num_warps ramp + SMEM-capped num_stages
+    # (5) num_warps ramp
     num_warps = 8 if bm * bn >= 16384 else 4
-    per_stage_bytes = (bm * bk + bk * bn) * max(1, itemsize)
-    num_stages = 2
-    for s in (4, 3, 2):
-        if per_stage_bytes * s <= SMEM_BUDGET:
-            num_stages = s
-            break
+
+    # (3') K tile (block_k) + num_stages — SMEM-budgeted, pipeline-depth-capped, computed on
+    # the FINAL bm,bn. bk is the largest pow2 that:
+    #   (a) leaves >= PIPE K-iterations to fill the pipeline (bk <= K/PIPE): collapsing K into
+    #       1-2 steps defeats software pipelining and over-pressures registers. This is what keeps
+    #       mamba's small-K (chunk) dot at a shallow bk while a large-K GEMM gets a deep one;
+    #   (b) is <= BK_CAP (a deep K amortizes the K-loop for a latency-bound small-M GEMM, but
+    #       past ~256 the returns vanish and registers spill);
+    #   (c) fits the [bm,bk]+[bk,bn] operands in SMEM at num_stages — width enters HERE via
+    #       itemsize, so a narrower operand (fp8) affords a deeper K than a wider one (fp32):
+    #       the 8/16/32 budget knob, faithful (a byte budget, never a dtype literal).
+    # Drop num_stages only if even min_bk overflows SMEM (an unusually large tile).
+    BK_CAP = 256
+    PIPE = 4  # target K-loop pipeline depth
+    min_bk = 32 if itemsize == 1 else 16  # tl.dot K min (fp8 needs 32)
+    num_stages = 4
+    bk = min(BK_CAP, _p2le(k), max(min_bk, _p2le(max(1, k // PIPE))))
+    bk = max(min_bk, bk)
+    while bk > min_bk and (bm * bk + bk * bn) * itemsize * num_stages > SMEM_BUDGET:
+        bk //= 2
+    while num_stages > 2 and (bm * bk + bk * bn) * itemsize * num_stages > SMEM_BUDGET:
+        num_stages -= 1
     return bm, bn, bk, num_warps, num_stages
 
 
