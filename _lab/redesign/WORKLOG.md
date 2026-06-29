@@ -35,8 +35,29 @@
       property reading AccumulatorFact provenance, fires on exactly the 6 norm-bwds — NOT a recognizer, the
       Defect-2 complaint was the override+subtractive-filter, both deleted). CUMULATIVE vs frozen baseline:
       only 2 cells moved (both faster), 445 byte-identical.
-- [ ] P4 — probes GREEN + two-check verify (Tier-1 fired-right-path + Tier-2 perf ≥ default). Includes the
-      p2/p6 probe movers ([1]/[8,8]) perf-check + p7 GREEN + adversarial taxonomy sweep.
+- [x] P4 — probes GREEN + two-check verify (DONE @ 1bad917b/f1871391/29d14342/4ae850fa):
+      13/13 probes Tier-1 (fired-right-path, probe_assertions.py) + Tier-2 (perf≥default, probe_perf.py).
+      p1/p5 rewritten (were miscompiled). p7 the relaxed-gate witness 2.2x faster. p2/p6/p8 regressions fixed
+      via the coresident num_warps cap + FULL_GRID m_block exclusion. Adversarial sweep (workflow) found +
+      GPU-confirmed 2 carried-2D-co-resident regressions → fixed (11x→1.85x, 1.36x→27x faster).
+
+## FINAL STATE (all phases complete)
+- Branch `reduction-redesign`, 16 green-gated commits off `de2c545f`. Corpus: **445/447 byte-identical**,
+  2 cells (square-shape rms/layer_norm_bwd) 1.9x/2.7x FASTER (legacy starvation fix). 13/13 probes GREEN.
+- Two-stage redesign: Stage-1 categorizing `ReductionKernelFact` (taxonomy + graph_id co-residency) +
+  Stage-2 cap-set/`size_axis` fabric + greedy allocation. Special cases SUBSUMED: per_feature_accumulator
+  override (standard) deleted → `_grad_collapse_group` taxonomy; ReductionRole → view of ReductionCategory;
+  `==1` gate relaxed → `>=1` (multi-reduction kernels fire); matmul-epilogue §2.9 guard in new vocabulary.
+- Faithfulness wins beyond the spec: square-shape starvation fix; 2 adversarial carried-2D regressions found
+  + fixed. Open follow-up (documented, not blocking): the user-tiled `per_feature_accumulator` retained as a
+  faithful accumulator-shape signal (bias_grad/dyt).
+- **THIRD adversarial regression found + FIXED** (the user's pinned-extent reminder, GPU-confirmed):
+  `c2_fullgrid_plus_big_persistent_slice` — a 61440-wide FULL_SLICE held persistent ON TOP of a multi-MB
+  co-resident FULL_GRID pinned tile spills (4.84x slower than the looped default). FIX:
+  `_reduction_rblock` persistence gate now MULTIPLIES the co-resident pinned tile into the footprint
+  (`m*extent*pinned*itemsize ≤ ROW_PERSIST_MAX_BYTES`, matching `_resident_tile_cap`'s `[M,R,*pinned]`
+  model — user corrected an earlier additive draft). Persistence correctly DENIED → looped [16384] →
+  1.25x FASTER. Corpus byte-identical (per_token_group's tiny pinned row stays under the cap). All gates green.
 - [ ] P4 — probes GREEN + two-check verify
 
 ---

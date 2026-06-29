@@ -1198,9 +1198,19 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         m_block: int,
         footprint_factor: int = 1,
         rnumel: int | None = None,
+        pinned_resident_elems: int = 1,
     ) -> tuple[int, bool]:
         """The reduction-axis chunk (pow2) AND the persistent verdict, decided together in one
         budgeted formula and shared by both tracks. Returns ``(r_block, persistent)``.
+
+        ``pinned_resident_elems`` (default 1) is the element count of any PINNED tile co-resident
+        with this reduction's row -- a FULL_GRID specialized tile (per_token_group's group_size, a
+        co-resident group-amax) that sits resident ALONGSIDE the persistent row but the heuristic
+        can't tune. It scales the persistence-gate footprint (PROMPT §2.3 group_footprint: a
+        pinned axis still costs residency), so a big co-resident pinned tile correctly DENIES
+        persistence (the ``c2_fullgrid_plus_big_persistent_slice`` ~4.8x regression: a 61440-wide
+        slice held persistent ON TOP of a multi-MB FULL_GRID tile spills; the looped default
+        wins). Default 1 is a no-op for every single-reduction kernel (byte-identical).
 
         ``rnumel`` is the reduction-axis extent to size against; it defaults to
         ``fact.size_hint`` (the PRIMARY rdim) so single-reduction callers are unchanged. A
@@ -1245,12 +1255,21 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         # compile limit, the single-tile byte cap, and the ff-tile live-set cap (the liveness
         # ceiling only ever REMOVES persistence from a heavy body, never grants it).
         element_cap = env.backend.max_tensor_numel
+        # The co-resident PINNED axis (a FULL_GRID specialized dim) lives on the SAME resident
+        # tile as [M_BLOCK, R_BLOCK], so it MULTIPLIES the footprint -- matching the established
+        # ``_resident_tile_cap`` model (denom = m_block * r_block_resident * inner_resident_elems
+        # * itemsize; the tile is ``[M_BLOCK, R_BLOCK, *pinned_inner]``). PROMPT §2.3: a pinned
+        # dim is a tiled dim of the resident tensor, so it enters the ∏, not an additive Σ term.
+        # 1 for every single-reduction kernel -> no-op (byte-identical). For
+        # c2_fullgrid_plus_big_persistent_slice the multi-MB pinned amax tile blows the cap ->
+        # persistence correctly DENIED (the ~4.8x-slower persistent seed becomes the looped win).
+        pinned = max(1, pinned_resident_elems)
         extent_held = (
             fact.row_reread
             and fact.num_carried_2d_tiles == 0
             and (element_cap is None or extent <= element_cap)
-            and (m * extent * itemsize <= cls.ROW_PERSIST_MAX_BYTES)
-            and (ff * m * extent * itemsize <= cls.LIVE_PERSIST_BUDGET)
+            and (m * extent * pinned * itemsize <= cls.ROW_PERSIST_MAX_BYTES)
+            and (ff * m * extent * pinned * itemsize <= cls.LIVE_PERSIST_BUDGET)
         )
         if extent_held:
             return rdim, True
@@ -1498,11 +1517,20 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # footprint_factor=body_live_tiles routes a heavy body that would overflow the register file
         # persistent (e.g. fused_linear_jsd) to the looped path instead.
         m_block = cls._m_block_product(spec, fact)
+        # A co-resident PINNED tile (a FULL_GRID specialized axis, e.g. a group-amax) sits
+        # resident alongside the persistent row; pass its element product so the persistence gate
+        # counts it (PROMPT §2.3 -- a big pinned tile DENIES persistence; the
+        # c2_fullgrid_plus_big_persistent_slice ~4.8x regression). 1 for the corpus (no co-resident
+        # pinned tile alongside a rolled/materialized row) -> byte-identical.
+        pinned_co = cls._pinned_inner_resident_elems(
+            spec, fact, fact.primary_reduction_block_id
+        )
         r_block, persistent = cls._reduction_rblock(
             env,
             fact,
             m_block,
             footprint_factor=fact.body_live_tiles,
+            pinned_resident_elems=pinned_co,
         )
         num_warps = cls._num_warps(
             fact, max(1, get_num_sm(env.device)), _grid_rows(env, fact.m_block_ids)
