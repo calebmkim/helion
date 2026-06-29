@@ -1,0 +1,1040 @@
+{
+ "p1-outer-product-coresident": {
+  "grid_block_ids": [
+   [
+    0,
+    1
+   ]
+  ],
+  "bs_valid": [
+   0,
+   1
+  ],
+  "rl_valid": [],
+  "n_graphs": 1,
+  "per_graph_rdims": {
+   "0": [
+    0,
+    1
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 0,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     0,
+     1
+    ]
+   },
+   {
+    "graph_id": 0,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     0,
+     1
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 0,
+  "fired": [
+   "triton_pointwise"
+  ]
+ },
+ "p2-feature-plus-rowaccum-offcorpus": {
+  "grid_block_ids": [
+   [
+    0
+   ]
+  ],
+  "bs_valid": [
+   0
+  ],
+  "rl_valid": [
+   1
+  ],
+  "n_graphs": 3,
+  "per_graph_rdims": {
+   "0": [
+    0,
+    1
+   ],
+   "1": [
+    1
+   ],
+   "2": [
+    0
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 0,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     0,
+     1
+    ]
+   },
+   {
+    "graph_id": 0,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     0,
+     1
+    ]
+   },
+   {
+    "graph_id": 1,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 2,
+    "block_id": 0,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     0
+    ]
+   }
+  ],
+  "accumulators": [
+   {
+    "dim_block_ids": [
+     0,
+     null
+    ],
+    "itemsize": 4
+   },
+   {
+    "dim_block_ids": [
+     0,
+     null
+    ],
+    "itemsize": 4
+   }
+  ],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ },
+ "p3-full-grid-nonquant": {
+  "grid_block_ids": [
+   [
+    0,
+    1,
+    2
+   ]
+  ],
+  "bs_valid": [
+   1
+  ],
+  "rl_valid": [],
+  "n_graphs": 1,
+  "per_graph_rdims": {
+   "0": [
+    2
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 2,
+    "size_hint": null,
+    "src": "FixedBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": true,
+    "in_block_sizes": false,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     2
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ },
+ "p4-two-rollable-sequential": {
+  "grid_block_ids": [
+   [
+    0
+   ],
+   [
+    2
+   ]
+  ],
+  "bs_valid": [
+   0,
+   2
+  ],
+  "rl_valid": [
+   1
+  ],
+  "n_graphs": 4,
+  "per_graph_rdims": {
+   "0": [
+    1
+   ],
+   "1": [
+    1
+   ],
+   "2": [
+    1
+   ],
+   "3": [
+    1
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 1,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 2,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 3,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ },
+ "p5-3d-reduction-tile": {
+  "grid_block_ids": [
+   [
+    0,
+    1,
+    2
+   ]
+  ],
+  "bs_valid": [
+   0,
+   1,
+   2
+  ],
+  "rl_valid": [],
+  "n_graphs": 1,
+  "per_graph_rdims": {
+   "0": [
+    1,
+    2
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     1,
+     2
+    ]
+   },
+   {
+    "graph_id": 0,
+    "block_id": 2,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     1,
+     2
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 0,
+  "fired": [
+   "triton_pointwise"
+  ]
+ },
+ "p6-mixed-coresident-plus-sequential": {
+  "grid_block_ids": [
+   [
+    0
+   ],
+   [
+    2
+   ]
+  ],
+  "bs_valid": [
+   0,
+   2
+  ],
+  "rl_valid": [
+   1
+  ],
+  "n_graphs": 5,
+  "per_graph_rdims": {
+   "0": [
+    0,
+    1
+   ],
+   "1": [
+    1
+   ],
+   "2": [
+    1
+   ],
+   "3": [
+    0
+   ],
+   "4": [
+    1
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 0,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     0,
+     1
+    ]
+   },
+   {
+    "graph_id": 0,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     0,
+     1
+    ]
+   },
+   {
+    "graph_id": 1,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 2,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 3,
+    "block_id": 0,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     0
+    ]
+   },
+   {
+    "graph_id": 4,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ },
+ "p7-gridtile-then-usertile": {
+  "grid_block_ids": [
+   [
+    0
+   ],
+   [
+    2
+   ]
+  ],
+  "bs_valid": [
+   0,
+   2
+  ],
+  "rl_valid": [
+   1,
+   3
+  ],
+  "n_graphs": 4,
+  "per_graph_rdims": {
+   "0": [
+    1
+   ],
+   "1": [
+    3
+   ],
+   "2": [
+    1
+   ],
+   "3": [
+    3
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 1,
+    "block_id": 3,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     3
+    ]
+   },
+   {
+    "graph_id": 2,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 3,
+    "block_id": 3,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     3
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 2,
+  "fired": []
+ },
+ "p8-fullgrid-plus-usertile": {
+  "grid_block_ids": [
+   [
+    0,
+    1,
+    2
+   ]
+  ],
+  "bs_valid": [
+   1
+  ],
+  "rl_valid": [
+   3
+  ],
+  "n_graphs": 2,
+  "per_graph_rdims": {
+   "0": [
+    2,
+    3
+   ],
+   "1": [
+    3
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 2,
+    "size_hint": null,
+    "src": "FixedBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": true,
+    "in_block_sizes": false,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     2,
+     3
+    ]
+   },
+   {
+    "graph_id": 0,
+    "block_id": 3,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": false,
+    "distinct_rdims_in_graph": [
+     2,
+     3
+    ]
+   },
+   {
+    "graph_id": 1,
+    "block_id": 3,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     3
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ },
+ "p9-nonred-loop-then-fullextent": {
+  "grid_block_ids": [
+   [
+    0
+   ]
+  ],
+  "bs_valid": [
+   0,
+   1
+  ],
+  "rl_valid": [
+   2
+  ],
+  "n_graphs": 3,
+  "per_graph_rdims": {
+   "1": [
+    2
+   ],
+   "2": [
+    2
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 1,
+    "block_id": 2,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     2
+    ]
+   },
+   {
+    "graph_id": 2,
+    "block_id": 2,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     2
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ },
+ "p10-usertile-and-gridtile": {
+  "grid_block_ids": [
+   [
+    0
+   ]
+  ],
+  "bs_valid": [
+   1
+  ],
+  "rl_valid": [
+   2
+  ],
+  "n_graphs": 3,
+  "per_graph_rdims": {
+   "0": [
+    0
+   ],
+   "1": [
+    2
+   ],
+   "2": [
+    2
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 0,
+    "size_hint": null,
+    "src": "FixedBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     0
+    ]
+   },
+   {
+    "graph_id": 1,
+    "block_id": 2,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     2
+    ]
+   },
+   {
+    "graph_id": 2,
+    "block_id": 2,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     2
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ },
+ "p11-fullextent-then-nonred-loop": {
+  "grid_block_ids": [
+   [
+    0
+   ]
+  ],
+  "bs_valid": [
+   0,
+   2
+  ],
+  "rl_valid": [
+   1
+  ],
+  "n_graphs": 3,
+  "per_graph_rdims": {
+   "1": [
+    1
+   ],
+   "2": [
+    1
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 1,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 2,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   }
+  ],
+  "accumulators": [
+   {
+    "dim_block_ids": [
+     0
+    ],
+    "itemsize": 4
+   }
+  ],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ },
+ "oos1-jagged-declined": {
+  "grid_block_ids": [
+   [
+    0
+   ]
+  ],
+  "bs_valid": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "rl_valid": [],
+  "n_graphs": 4,
+  "per_graph_rdims": {
+   "0": [
+    2
+   ],
+   "2": [
+    0
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 2,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     2
+    ]
+   },
+   {
+    "graph_id": 2,
+    "block_id": 0,
+    "size_hint": null,
+    "src": "LoopSpecBlockSizeSource",
+    "in_grid": true,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": true,
+    "in_reduction_loops": false,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     0
+    ]
+   }
+  ],
+  "accumulators": [
+   {
+    "dim_block_ids": [
+     0
+    ],
+    "itemsize": 8
+   },
+   {
+    "dim_block_ids": [
+     0
+    ],
+    "itemsize": 8
+   },
+   {
+    "dim_block_ids": [
+     0,
+     1
+    ],
+    "itemsize": 4
+   },
+   {
+    "dim_block_ids": [
+     0,
+     1
+    ],
+    "itemsize": 4
+   },
+   {
+    "dim_block_ids": [
+     0,
+     1
+    ],
+    "itemsize": 4
+   },
+   {
+    "dim_block_ids": [
+     0
+    ],
+    "itemsize": 8
+   },
+   {
+    "dim_block_ids": [
+     0
+    ],
+    "itemsize": 8
+   },
+   {
+    "dim_block_ids": [
+     0,
+     1
+    ],
+    "itemsize": 4
+   },
+   {
+    "dim_block_ids": [
+     0,
+     1
+    ],
+    "itemsize": 4
+   },
+   {
+    "dim_block_ids": [
+     0
+    ],
+    "itemsize": 8
+   },
+   {
+    "dim_block_ids": [
+     0
+    ],
+    "itemsize": 8
+   }
+  ],
+  "n_reduction_facts": 0,
+  "fired": []
+ },
+ "oos2-strided-dim0": {
+  "grid_block_ids": [
+   [
+    0
+   ]
+  ],
+  "bs_valid": [
+   0
+  ],
+  "rl_valid": [
+   1
+  ],
+  "n_graphs": 2,
+  "per_graph_rdims": {
+   "0": [
+    1
+   ],
+   "1": [
+    1
+   ]
+  },
+  "reduction_axes": [
+   {
+    "graph_id": 0,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   },
+   {
+    "graph_id": 1,
+    "block_id": 1,
+    "size_hint": null,
+    "src": "ReductionLoopBlockSizeSource",
+    "in_grid": false,
+    "full_grid_cdiv1": false,
+    "in_block_sizes": false,
+    "in_reduction_loops": true,
+    "rollable_sole_rdim_in_graph": true,
+    "distinct_rdims_in_graph": [
+     1
+    ]
+   }
+  ],
+  "accumulators": [],
+  "n_reduction_facts": 1,
+  "fired": [
+   "triton_reduction_tile"
+  ]
+ }
+}

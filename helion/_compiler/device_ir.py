@@ -33,8 +33,12 @@ from torch.utils import _pytree as pytree
 from .. import Config
 from .. import exc
 from .. import language as hl
+from ..autotuner.config_spec import CoResidencyGroup
 from ..autotuner.config_spec import CuteVectorWidthSpec
+from ..autotuner.config_spec import ReductionCategory
+from ..autotuner.config_spec import ReductionDescriptor
 from ..autotuner.config_spec import ReductionFact
+from ..autotuner.config_spec import ReductionKernelFact
 from ..autotuner.config_spec import ReductionLoopSpec
 from ..language import _tracing_ops
 from ..language._decorators import args_to_proxies
@@ -1370,6 +1374,263 @@ class DeviceIR:
             self.register_unrolled_reductions(
                 memory_op_facts, accumulator_facts, liveness_by_axis
             )
+
+    def _original_graph_reductions(self) -> list[tuple[int, int]]:
+        """Every reduction OCCURRENCE on the ORIGINAL (pre-roll) device graphs as
+        ``(graph_id, block_id)`` pairs, de-duplicated within a graph (one descriptor per
+        distinct rdim per original graph).
+
+        Rolled ``ReductionLoopGraphInfo`` subgraphs are EXCLUDED: they are copies the roller
+        creates for one config, so their ``graph_id`` is contingent on the autotuner flipping a
+        ``reduction_loops`` knob. The original graphs carry the faithful co-residency structure
+        (PROMPT §2.2 / §2.7): two distinct rdims sharing an original graph were fused by the
+        compiler -> co-resident; the same rdim in two original graphs is two sequential passes
+        (jsd's two V-reductions). Verified against the IR (``_lab/redesign/ir_*.json``): rolled
+        subgraphs are exactly ``ReductionLoopGraphInfo``.
+        """
+        from .inductor_lowering import ReductionLowering
+
+        seen: set[tuple[int, int]] = set()
+        out: list[tuple[int, int]] = []
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            for node in gi.graph.nodes:
+                lowering = node.meta.get("lowering")
+                if not isinstance(lowering, ReductionLowering):
+                    continue
+                bid = getattr(lowering, "block_index", None)
+                if bid is None:
+                    continue
+                key = (gi.graph_id, bid)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(key)
+        return out
+
+    def _categorize_reduction(
+        self, graph_id: int, block_id: int, grid_ids: set[int], distinct_rdims: int
+    ) -> ReductionCategory:
+        """Classify one reduction occurrence into the §2.1 taxonomy from FAITHFUL structure:
+        ``(block_size_source kind, on the grid?, cdiv==1?, sole rdim in graph?)``.
+
+        - no static extent -> DECLINED (jagged).
+        - on the grid + fully resident (cdiv==1) -> FULL_GRID; on the grid + partial -> GRID_TILE.
+        - a tunable ``block_sizes`` entry, not on the grid -> USER_TILE.
+        - otherwise (rolled ``reduction_loops`` OR materialized full-width) -> FULL_SLICE.
+        """
+        env = CompileEnvironment.current()
+        info = env.block_sizes[block_id]
+        if not isinstance(info.size, (int, torch.SymInt)):
+            return ReductionCategory.DECLINED
+        if block_id in grid_ids:
+            if self._is_fully_resident_grid_axis(block_id):
+                return ReductionCategory.FULL_GRID
+            return ReductionCategory.GRID_TILE
+        if block_id in env.config_spec.block_sizes.valid_block_ids():
+            return ReductionCategory.USER_TILE
+        return ReductionCategory.FULL_SLICE
+
+    def build_reduction_kernel_fact(
+        self,
+        memory_op_facts: list[MemoryOpFact],
+        accumulator_facts: list[AccumulatorFact],
+        liveness_by_axis: dict[int, int] | None = None,
+    ) -> None:
+        """Stage 1 (PROMPT §2.1/§2.2/§2.6): build the categorizing ``ReductionKernelFact`` — the
+        first-class list of reduction descriptors + their ``graph_id`` co-residency groups + the
+        non-reduction loops + the parallel grid axes.
+
+        Behavior-preserving in P1: built ALONGSIDE the legacy ``reduction_facts`` (the live
+        heuristic still consumes those); Stage 2 (P2) switches the allocator to consume this.
+        """
+        env = CompileEnvironment.current()
+        spec = env.config_spec
+        liveness_by_axis = liveness_by_axis or {}
+        grid_ids = {b for bids in self.grid_block_ids for b in bids}
+
+        occurrences = self._original_graph_reductions()
+        # distinct rdims per ORIGINAL graph -> rollable (sole-rdim-in-graph) + co-residency.
+        rdims_per_graph: dict[int, set[int]] = {}
+        for gid, bid in occurrences:
+            rdims_per_graph.setdefault(gid, set()).add(bid)
+
+        # carried-2D tiles: accumulators whose last dim is the rdim (per block_id, kernel-wide --
+        # an accumulator is carried across the whole inner loop, so it is not graph-scoped).
+        carried_2d_by_bid: dict[int, bool] = {}
+        for a in accumulator_facts:
+            if len(a.dim_block_ids) >= 2 and a.dim_block_ids[-1] is not None:
+                carried_2d_by_bid[a.dim_block_ids[-1]] = True
+
+        descriptors: list[ReductionDescriptor] = []
+        for gid, bid in occurrences:
+            category = self._categorize_reduction(
+                gid, bid, grid_ids, len(rdims_per_graph.get(gid, ()))
+            )
+            info = env.block_sizes[bid]
+            size_hint = (
+                info.size_hint() if isinstance(info.size, (int, torch.SymInt)) else 0
+            )
+            static_rnumel = info.size if isinstance(info.size, int) else None
+            sole_rdim = len(rdims_per_graph.get(gid, ())) == 1
+            rollable = sole_rdim if category is ReductionCategory.FULL_SLICE else None
+            from .compile_environment import FixedBlockSizeSource
+
+            pinned = (
+                isinstance(info.block_size_source, FixedBlockSizeSource)
+                if category
+                in (ReductionCategory.GRID_TILE, ReductionCategory.FULL_GRID)
+                else None
+            )
+            per = self._per_reduction_memory_fields(
+                bid, gid, memory_op_facts, liveness_by_axis
+            )
+            descriptors.append(
+                ReductionDescriptor(
+                    category=category,
+                    block_id=bid,
+                    graph_id=gid,
+                    size_hint=size_hint,
+                    static_rnumel=static_rnumel,
+                    itemsize=self._reduction_input_itemsize(bid),
+                    input_load_itemsize=per["input_load_itemsize"],
+                    rollable=rollable,
+                    pinned=pinned,
+                    carried_2d=carried_2d_by_bid.get(bid, False),
+                    row_reread=per["row_reread"],
+                    reread_eviction_index=per["reread_eviction_index"],
+                    num_load=per["num_load"],
+                    body_live_tiles=max(1, liveness_by_axis.get(bid, 1)),
+                    full_width_output=per["full_width_output"],
+                )
+            )
+
+        # Co-residency groups = ORIGINAL graph_id equivalence classes (PROMPT §2.2). Each group's
+        # feature_footprint is the product of the materialized feature-axis extents (group-level,
+        # PROMPT §2.6 locality note); the corpus has at most one materialized feature set, so the
+        # kernel-wide product is the per-group value (refined in P2 if a multi-group kernel needs
+        # per-group features).
+        feature_footprint = self._materialized_feature_footprint(grid_ids)
+        groups_by_gid: dict[int, list[int]] = {}
+        for idx, d in enumerate(descriptors):
+            groups_by_gid.setdefault(d.graph_id, []).append(idx)
+        coresidency_groups = tuple(
+            CoResidencyGroup(
+                graph_id=gid,
+                descriptor_indices=tuple(idxs),
+                feature_footprint=feature_footprint,
+            )
+            for gid, idxs in sorted(groups_by_gid.items())
+        )
+
+        # non-reduction loops + parallel grid axes (PROMPT §2.1 "also categorize the
+        # non-reductions"). The non-reduction loops are the union over the SIZED reductions'
+        # apply/normalize candidates; the grid axes are grid block_ids with no reduction sized
+        # over them.
+        from ..autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
+
+        sized_bids = {
+            d.block_id for d in descriptors if d.category in SIZED_REDUCTION_CATEGORIES
+        }
+        non_reduction_loops: set[int] = set()
+        for bid in sized_bids:
+            non_reduction_loops.update(
+                self._non_reduction_loop_candidates(bid, grid_ids)
+            )
+        non_reduction_loops -= sized_bids
+        grid_axis_block_ids = tuple(sorted(grid_ids - sized_bids))
+
+        spec.reduction_kernel_fact = ReductionKernelFact(
+            reductions=tuple(descriptors),
+            coresidency_groups=coresidency_groups,
+            non_reduction_loop_block_ids=tuple(sorted(non_reduction_loops)),
+            grid_axis_block_ids=grid_axis_block_ids,
+        )
+
+    def _per_reduction_memory_fields(
+        self,
+        red_block_id: int,
+        graph_id: int,
+        memory_op_facts: list[MemoryOpFact],
+        liveness_by_axis: dict[int, int],
+    ) -> dict:
+        """The memory-op-derived per-reduction fields, computed exactly as
+        ``_assemble_reduction_fact`` does (so a descriptor is field-equal to the legacy fact),
+        but SCOPED to this reduction's original graph for ``num_load`` (a co-resident pass loads
+        in its own graph). ``row_reread`` / ``full_width_output`` / ``input_load_itemsize`` are
+        axis-keyed and graph-agnostic (a re-read is global to the axis), matching the legacy
+        computation.
+        """
+        num_load = sum(
+            1 for f in memory_op_facts if f.kind == "load" and f.graph_id == graph_id
+        )
+        row_reread = False
+        reread_eviction_index: int | None = None
+        for f in memory_op_facts:
+            if f.kind != "load":
+                continue
+            cnt = next((c for ax, c in f.reductions_fed if ax == red_block_id), 0)
+            if cnt >= 2 or (cnt >= 1 and f.stores_fed):
+                row_reread = True
+                reread_eviction_index = f.eviction_index
+                break
+        full_width_output = any(
+            f.kind == "store"
+            and f.ndim >= 2
+            and (
+                (f.subscript_block_ids and f.subscript_block_ids[-1] == red_block_id)
+                or (f.indexed_block_ids and f.indexed_block_ids[-1] == red_block_id)
+            )
+            for f in memory_op_facts
+        )
+        fed_sizes = [
+            f.dtype.itemsize
+            for f in memory_op_facts
+            if f.kind == "load"
+            and f.dtype is not None
+            and any(ax == red_block_id for ax, _ in f.reductions_fed)
+        ]
+        if fed_sizes:
+            input_load_itemsize = min(fed_sizes)
+        else:
+            row_sizes = [
+                f.dtype.itemsize
+                for f in memory_op_facts
+                if f.kind == "load"
+                and f.dtype is not None
+                and (
+                    (
+                        f.subscript_block_ids
+                        and f.subscript_block_ids[-1] == red_block_id
+                    )
+                    or (f.indexed_block_ids and f.indexed_block_ids[-1] == red_block_id)
+                )
+            ]
+            input_load_itemsize = min(row_sizes) if row_sizes else 0
+        return {
+            "num_load": num_load,
+            "row_reread": row_reread,
+            "reread_eviction_index": reread_eviction_index,
+            "full_width_output": full_width_output,
+            "input_load_itemsize": input_load_itemsize,
+        }
+
+    def _materialized_feature_footprint(self, grid_ids: set[int]) -> int:
+        """Product of the materialized feature-axis extents (PROMPT §2.6) — the resident per-row
+        feature footprint a group byte-caps its inner tile against. Same computation as
+        ``_assemble_reduction_fact``'s ``feature_footprint``."""
+        env = CompileEnvironment.current()
+        bs_ids = env.config_spec.block_sizes.valid_block_ids()
+        rl_ids = env.config_spec.reduction_loops.valid_block_ids()
+        product = 1
+        for bs in env.block_sizes:
+            if (
+                bs.reduction
+                and isinstance(bs.size, (int, torch.SymInt))
+                and self._is_materialized_axis(bs.block_id, grid_ids, bs_ids, rl_ids)
+            ):
+                product *= max(1, env.block_sizes[bs.block_id].size_hint())
+        return product
 
     def build_matmul_reduction_epilogue_facts(self) -> None:
         """Phase 4: compose a ``MatmulWithReductionEpilogueFact`` for a fused matmul +
@@ -3506,6 +3767,12 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
         # Phase 3: build the ReductionFacts (standard from the stashed rollable rdims, then user-tiled
         # if none fired); liveness_by_axis supplies each fact's body_live_tiles slice.
         device_ir.build_reduction_facts(memory_op_facts, liveness_by_axis)
+        # Phase 3b (PROMPT §2.1/§2.2): build the categorizing ReductionKernelFact alongside the
+        # legacy facts. Behavior-preserving in P1 (the live heuristic still consumes
+        # reduction_facts); Stage 2 switches to consume this.
+        device_ir.build_reduction_kernel_fact(
+            memory_op_facts, config_spec.accumulator_facts, liveness_by_axis
+        )
         # Phase 4: compose a matmul + reduction-over-output epilogue fact when a matmul AND a
         # register-resident epilogue reduction co-occur (matmul_rms_norm etc.).
         device_ir.build_matmul_reduction_epilogue_facts()

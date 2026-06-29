@@ -11,6 +11,8 @@ from typing import cast
 import torch
 
 from ...autotuner.config_fragment import EnumFragment
+from ...autotuner.config_spec import FULL_EXTENT_CATEGORIES
+from ...autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
 from ...runtime.config import Config
 from .common import REDUCTION_TARGET_NAMES
 from .common import clamp_block_size_targets
@@ -428,11 +430,28 @@ def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> 
 
 
 def _is_standard_reduction(spec: ConfigSpec, fact: ReductionFact) -> bool:
-    """standard vs user-tiled discriminator: standard iff the rdim is NOT a ``block_sizes``
-    entry. Covers a roller-rolled rdim (a ``reduction_loops`` entry) AND a MATERIALIZED rdim
-    (an inner ``reduction=True`` axis the roller declined to roll, in NEITHER spec --
-    rms/ln/instance backward); user-tiled is the rdim-is-a-block_sizes case.
+    """standard vs user-tiled discriminator, keyed on the Stage-1 TAXONOMY (PROMPT §2.1/§4
+    ACCESS): standard iff the primary reduction's category is FULL_SLICE (a rolled rdim OR a
+    materialized full-width rdim the roller declined) or FULL_GRID; user-tiled is the USER_TILE
+    (rdim-is-a-block_sizes-entry) case. This replaces the legacy ``primary ∉ block_sizes``
+    proxy with the positive category — proven equivalent across the 447-cell corpus + 13 probes
+    (``_lab/redesign/validate_kernel_fact.py``). Falls back to the legacy proxy only if the
+    kernel fact or the primary's descriptor is somehow absent (defensive; never hit on the
+    corpus).
     """
+    kf = spec.reduction_kernel_fact
+    if kf is not None:
+        prim = next(
+            (
+                d
+                for d in kf.reductions
+                if d.block_id == fact.primary_reduction_block_id
+                and d.category in SIZED_REDUCTION_CATEGORIES
+            ),
+            None,
+        )
+        if prim is not None:
+            return prim.category in FULL_EXTENT_CATEGORIES
     return fact.primary_reduction_block_id not in spec.block_sizes.valid_block_ids()
 
 

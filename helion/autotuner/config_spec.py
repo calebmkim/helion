@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import functools
 import hashlib
 import itertools
@@ -170,6 +171,129 @@ class ReductionFact(NamedTuple):
     feature_footprint: int = 1
     per_feature_accumulator: bool = False
     secondary_reduction_block_ids: tuple[int, ...] = ()
+
+
+class ReductionCategory(enum.Enum):
+    """The Stage-1 reduction taxonomy (PROMPT §2.1) — a POSITIVE category per reduction,
+    replacing the cascade of subtractive filters. Orthogonal fields (``rollable``, ``pinned``,
+    ``carried_2d``) live on the descriptor and are populated only when relevant to the category.
+
+    - ``FULL_SLICE`` — the whole reduction axis is reduced within one program, written
+      ``x[m, :]``; the axis is NOT on the program grid (a rolled ``reduction_loops`` axis OR a
+      materialized full-width axis in neither block_sizes nor reduction_loops). ``rollable``
+      says whether the compiler rolled it.
+    - ``FULL_GRID`` — a full-extent axis on the program grid (``cdiv == 1``, a
+      ``FixedBlockSizeSource`` whose block == extent): fully resident per program
+      (per_token_group's specialized ``group_size``).
+    - ``GRID_TILE`` — a grid axis reduced over but NOT full-extent (``cdiv > 1``): the grid
+      PARALLELIZES the reduction across programs, so the whole-axis size is not a per-program
+      extent (the legacy ``FLOORED_ROW``; jsd's grid amax).
+    - ``USER_TILE`` — an inner sequential ``hl.tile`` the user wrote over the reduction axis (a
+      ``block_sizes`` entry, not on the grid): softmax, kl_div/jsd carried-2D, welford.
+    - ``DECLINED`` — no static extent (jagged / data-dependent, ``size=None``): recorded so the
+      pass is intentional, but never sized (the extent-keyed seed is undefined).
+    """
+
+    FULL_SLICE = "full_slice"
+    FULL_GRID = "full_grid"
+    GRID_TILE = "grid_tile"
+    USER_TILE = "user_tile"
+    DECLINED = "declined"
+
+
+# Categories that are SIZED as a reduction (a per-program reduction extent the seed tiles).
+# GRID_TILE (grid-parallelized partial) and DECLINED (no static extent) are real reductions but
+# are not sized as one — GRID_TILE stays a grid ROW, DECLINED falls back to the default.
+SIZED_REDUCTION_CATEGORIES = frozenset(
+    {
+        ReductionCategory.FULL_SLICE,
+        ReductionCategory.FULL_GRID,
+        ReductionCategory.USER_TILE,
+    }
+)
+# Categories that occupy the full reduction extent within one program (the "necessary, rigid"
+# bidders at the top of the §2.3 allocation priority order).
+FULL_EXTENT_CATEGORIES = frozenset(
+    {ReductionCategory.FULL_SLICE, ReductionCategory.FULL_GRID}
+)
+
+
+class ReductionDescriptor(NamedTuple):
+    """One reduction OCCURRENCE (PROMPT §2.6): a (``graph_id``, ``block_id``) reduction on the
+    ORIGINAL (pre-roll) device graphs. The first-class multi-reduction representation that
+    replaces the single ``primary + secondaries`` ``ReductionFact``. Stage 1 emits a list of
+    these; Stage 2 (the allocator) is a pure consumer.
+
+    A reduction axis may occur in MORE THAN ONE original graph (jsd reduces V in two separate
+    passes; a co-resident pair and a sequential pass over the same extent in p6) — each
+    occurrence is its own descriptor, so sequential passes over the same axis are NOT collapsed.
+
+    Co-residency (PROMPT §2.2): descriptors with the SAME ``graph_id`` are co-resident (the
+    compiler fused them into one graph -> shared resident working set). ``graph_id`` is read off
+    the ORIGINAL graphs only (rolled ``ReductionLoopGraphInfo`` subgraphs are excluded), so it is
+    invariant to the autotuner flipping a ``reduction_loops`` knob.
+
+    Category fields (taxonomy + orthogonal, PROMPT §2.1):
+    - ``category``: the :class:`ReductionCategory`.
+    - ``block_id`` / ``graph_id``: the reduction axis + its original-graph co-residency key.
+    - ``size_hint`` / ``static_rnumel`` / ``itemsize`` / ``input_load_itemsize``: extent (element
+      count), the static extent or None, the fp32-promoted accumulator itemsize, and the HBM-load
+      element width feeding it.
+    - ``rollable``: FULL_SLICE only — sole rdim in its graph (PROMPT §3); drives ``reduction_loops``
+      emission, NOT sizing.
+    - ``pinned``: GRID_TILE/FULL_GRID — a ``FixedBlockSizeSource`` (no tunable slot).
+    - ``carried_2d``: USER_TILE — a >=2-D ``[M_BLOCK, R_BLOCK]`` accumulator whose last dim is this
+      rdim (kl_div/jsd); the full tile stays resident the whole loop.
+
+    Per-reduction memory-op-derived fields (re-homed from ``ReductionFact``, same computation):
+    - ``row_reread`` / ``reread_eviction_index`` / ``num_load`` / ``body_live_tiles`` /
+      ``full_width_output``.
+    """
+
+    category: ReductionCategory
+    block_id: int
+    graph_id: int
+    size_hint: int
+    static_rnumel: int | None
+    itemsize: int
+    input_load_itemsize: int = 0
+    rollable: bool | None = None
+    pinned: bool | None = None
+    carried_2d: bool = False
+    row_reread: bool = False
+    reread_eviction_index: int | None = None
+    num_load: int = 0
+    body_live_tiles: int = 1
+    full_width_output: bool = True
+
+
+class CoResidencyGroup(NamedTuple):
+    """A ``graph_id`` equivalence class of reductions (PROMPT §2.2): their working tiles are live
+    at the same time, so ONE budget must fit them all. ``descriptor_indices`` indexes into
+    ``ReductionKernelFact.reductions``; ``feature_footprint`` is the group-level resident feature
+    footprint (the PRODUCT of the materialized feature-axis extents; PROMPT §2.6 locality note).
+    """
+
+    graph_id: int
+    descriptor_indices: tuple[int, ...]
+    feature_footprint: int = 1
+
+
+class ReductionKernelFact(NamedTuple):
+    """The per-kernel Stage-1 product (PROMPT §2.6) — what Stage 2 consumes. Holds the
+    first-class list of reduction descriptors, their co-residency groups (``graph_id`` classes),
+    the non-reduction user-tiled loops (sized as a separate pass), and the parallel grid axes
+    (the "rows" with no reduction over them).
+
+    Built alongside the legacy ``ReductionFact`` list during P1 (behavior-preserving); the
+    allocator consumes it in P2. ``reductions`` may be empty (a kernel with only GRID_TILE /
+    DECLINED reductions, or none) — the seed then declines, as today.
+    """
+
+    reductions: tuple[ReductionDescriptor, ...]
+    coresidency_groups: tuple[CoResidencyGroup, ...]
+    non_reduction_loop_block_ids: tuple[int, ...] = ()
+    grid_axis_block_ids: tuple[int, ...] = ()
 
 
 class MatmulWithReductionEpilogueFact(NamedTuple):
@@ -549,6 +673,8 @@ class ConfigSpec:
         self.autotuner_heuristics: list[str] = []
         self.matmul_facts: list[MatmulFact] = []
         self.reduction_facts: list[ReductionFact] = []
+        # The Stage-1 categorizing product (PROMPT §2.6); built alongside reduction_facts in P1.
+        self.reduction_kernel_fact: ReductionKernelFact | None = None
         self.matmul_reduction_epilogue_facts: list[MatmulWithReductionEpilogueFact] = []
         self.accumulator_facts: list[AccumulatorFact] = []
         self.pointwise_facts: list[PointwiseElementwiseFact] = []
