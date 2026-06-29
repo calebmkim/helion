@@ -26,13 +26,17 @@
 ## Phase status
 - [x] P0 — runway verify + RED baseline of 13 probes (DONE @ 2c38a674)
 - [x] P1 — Stage-1 categorizing fact-builder (DONE @ 446e6e9d; GATE: ZERO-DIFF + 460/460 fact-validation)
-- [x] P2 — cap fabric + kernel-fact-driven sizing (DONE @ 1877364e/6309d726/3060accf; all ZERO-DIFF). The
-      behavior-CHANGING group-greedy allocation = first P3 step (swap the pfa override → _grad_collapse_group).
-- [ ] P3 — delete special cases, ordered (Defect-1 re-key BEFORE deleting per_feature_accumulator)
-      P3 sub-steps: (a) relax `==1`→`>=1` gate (p7 etc. fire); (b) swap pfa override → group-greedy
-      (_grad_collapse_group + m_collapse caps; decide M_COLLAPSE constant §2.5; re-bench movers incl. the 2
-      square-shape norm-bwds + any [16,2]→[16,1]); (c) delete ReductionRole stored decisions; (d) the
-      group budget with pinned-extent footprint (USER REMINDER above). Each: config-diff + within-10% + probe GREEN.
+- [x] P2 — cap fabric + kernel-fact-driven sizing (DONE @ 1877364e/6309d726/3060accf; all ZERO-DIFF).
+- [x] P3 — delete special cases (DONE @ b4c92bbb/28491fc2/ff7927ed):
+      (a) relaxed gate ==1→>=1 (p7 fires); (b) standard-track collapse keys on _grad_collapse_group taxonomy
+      (Defect #1/#2/#6 standard copy gone); 2 square-shape movers re-benched 1.9x/2.7x FASTER; M_COLLAPSE
+      constant KEPT (32768, faithful distinct cap); (c) classifier unified, ReductionRole→view (Defect #3).
+      DEFECT STATUS: #1/#2/#6 standard ✓gone; #3 ✓unified; user-tiled pfa KEPT (faithful accumulator-shape
+      property reading AccumulatorFact provenance, fires on exactly the 6 norm-bwds — NOT a recognizer, the
+      Defect-2 complaint was the override+subtractive-filter, both deleted). CUMULATIVE vs frozen baseline:
+      only 2 cells moved (both faster), 445 byte-identical.
+- [ ] P4 — probes GREEN + two-check verify (Tier-1 fired-right-path + Tier-2 perf ≥ default). Includes the
+      p2/p6 probe movers ([1]/[8,8]) perf-check + p7 GREEN + adversarial taxonomy sweep.
 - [ ] P4 — probes GREEN + two-check verify
 
 ---
