@@ -111,7 +111,7 @@ def dump(name, fn, args):
                 ext = env.block_sizes[d.block_id].size_hint()
                 print(f"  desc block_id={d.block_id} cat={d.category.value} "
                       f"graph_id={d.graph_id} extent={ext} pinned={d.pinned} "
-                      f"rollable={d.rollable} carried_2d={d.carried_2d} "
+                      f"rollable={d.rollable} carried_2d_count={d.carried_2d_count} "
                       f"row_reread={d.row_reread}")
             print(f"  coresidency_groups={[sorted(g.descriptor_indices) for g in kf.coresidency_groups]}")
         for f in spec.reduction_facts:

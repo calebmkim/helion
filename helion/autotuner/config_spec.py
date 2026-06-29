@@ -174,7 +174,7 @@ class ReductionFact(NamedTuple):
 class ReductionCategory(enum.Enum):
     """The Stage-1 reduction taxonomy (PROMPT §2.1) — a POSITIVE category per reduction,
     replacing the cascade of subtractive filters. Orthogonal fields (``rollable``, ``pinned``,
-    ``carried_2d``) live on the descriptor and are populated only when relevant to the category.
+    ``carried_2d_count``) live on the descriptor and are populated only when relevant.
 
     - ``FULL_SLICE`` — the whole reduction axis is reduced within one program, written
       ``x[m, :]``; the axis is NOT on the program grid (a rolled ``reduction_loops`` axis OR a
@@ -240,8 +240,11 @@ class ReductionDescriptor(NamedTuple):
     - ``rollable``: FULL_SLICE only — sole rdim in its graph (PROMPT §3); drives ``reduction_loops``
       emission, NOT sizing.
     - ``pinned``: GRID_TILE/FULL_GRID — a ``FixedBlockSizeSource`` (no tunable slot).
-    - ``carried_2d``: USER_TILE — a >=2-D ``[M_BLOCK, R_BLOCK]`` accumulator whose last dim is this
-      rdim (kl_div/jsd); the full tile stays resident the whole loop.
+    - ``carried_2d_count``: the NUMBER of >=2-D ``[M_BLOCK, R_BLOCK]`` loop-carried accumulators
+      whose last dim is this rdim (kl_div=1, jsd=2, group_norm_bwd=5); the full tiles stay resident
+      the whole loop. The COUNT (not a bool) -- the carried byte cap divides the budget by it, so
+      the multiplicity is load-bearing (this is the faithful successor to the legacy
+      ``ReductionFact.num_carried_2d_tiles``). 0 = no carried 2-D accumulator on this axis.
 
     Per-reduction memory-op-derived fields (re-homed from ``ReductionFact``, same computation):
     - ``row_reread`` / ``reread_eviction_index`` / ``num_load`` / ``body_live_tiles`` /
@@ -257,7 +260,7 @@ class ReductionDescriptor(NamedTuple):
     input_load_itemsize: int = 0
     rollable: bool | None = None
     pinned: bool | None = None
-    carried_2d: bool = False
+    carried_2d_count: int = 0
     row_reread: bool = False
     reread_eviction_index: int | None = None
     num_load: int = 0

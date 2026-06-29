@@ -644,7 +644,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     ) -> ReductionDescriptor | None:
         """The Stage-1 :class:`ReductionDescriptor` for the primary reduction axis -- the
         positive, faithful source the Stage-2 caps read (``category`` / ``size_hint`` /
-        ``itemsize`` / ``carried_2d`` …) instead of re-deriving structure off ``spec``
+        ``itemsize`` / ``carried_2d_count`` …) instead of re-deriving structure off ``spec``
         membership. ``None`` only if the kernel fact is absent (off-corpus / a bare-spec unit
         test); callers fall back to the legacy ``ReductionFact`` read.
         """
@@ -664,13 +664,16 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     @classmethod
     def _carried_2d_count(cls, spec: ConfigSpec, rdim_block_id: int) -> int:
         """Number of loop-carried 2-D ``[.., R_BLOCK]`` accumulators whose LAST dim is
-        ``rdim_block_id`` -- the multiplicity the carried byte cap divides by (jsd=2,
-        group_norm_bwd=5, layer_norm_bwd=3). Derived at the budgeting site from
-        ``accumulator_facts`` (same ``dim_block_ids[-1] == rdim`` test the Stage-1 builder uses for
-        ``ReductionDescriptor.carried_2d``), because the descriptor stores only the BOOL -- the
-        count is a budget input, computed where it is needed (PROMPT §2.3 #5), not a stored field.
-        Replaces the legacy ``ReductionFact.num_carried_2d_tiles`` read.
+        ``rdim_block_id`` -- the multiplicity the carried byte cap divides by (kl_div=1, jsd=2,
+        group_norm_bwd=5). Read off the Stage-1 ``ReductionDescriptor.carried_2d_count`` (the
+        faithful successor to the legacy ``ReductionFact.num_carried_2d_tiles``); falls back to a
+        direct ``accumulator_facts`` count if the kernel fact is absent (bare-spec unit test).
         """
+        kf = spec.reduction_kernel_fact
+        if kf is not None:
+            d = next((d for d in kf.reductions if d.block_id == rdim_block_id), None)
+            if d is not None:
+                return d.carried_2d_count
         return sum(
             1
             for a in spec.accumulator_facts
@@ -1437,7 +1440,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 d.block_id
                 for d in descs
                 if d.category not in FULL_EXTENT_CATEGORIES
-                and not d.carried_2d
+                and d.carried_2d_count == 0
                 and d.block_id in valid
                 and d.block_id not in grid_ids
             ]

@@ -1503,12 +1503,17 @@ class DeviceIR:
         for gid, bid in occurrences:
             rdims_per_graph.setdefault(gid, set()).add(bid)
 
-        # carried-2D tiles: accumulators whose last dim is the rdim (per block_id, kernel-wide --
-        # an accumulator is carried across the whole inner loop, so it is not graph-scoped).
-        carried_2d_by_bid: dict[int, bool] = {}
+        # carried-2D tiles: COUNT of accumulators whose last dim is the rdim (per block_id,
+        # kernel-wide -- an accumulator is carried across the whole inner loop, so it is not
+        # graph-scoped). The COUNT (not a bool) is load-bearing: the carried byte cap divides by
+        # it (jsd=2, group_norm_bwd=5, layer_norm_bwd=3), so the descriptor must carry the
+        # multiplicity to be a faithful superset of the legacy ``num_carried_2d_tiles``.
+        carried_2d_by_bid: dict[int, int] = {}
         for a in accumulator_facts:
             if len(a.dim_block_ids) >= 2 and a.dim_block_ids[-1] is not None:
-                carried_2d_by_bid[a.dim_block_ids[-1]] = True
+                carried_2d_by_bid[a.dim_block_ids[-1]] = (
+                    carried_2d_by_bid.get(a.dim_block_ids[-1], 0) + 1
+                )
 
         descriptors: list[ReductionDescriptor] = []
         for gid, bid in occurrences:
@@ -1563,7 +1568,7 @@ class DeviceIR:
                     input_load_itemsize=per["input_load_itemsize"],
                     rollable=rollable,
                     pinned=pinned,
-                    carried_2d=carried_2d_by_bid.get(bid, False),
+                    carried_2d_count=carried_2d_by_bid.get(bid, 0),
                     row_reread=per["row_reread"],
                     reread_eviction_index=per["reread_eviction_index"],
                     num_load=per["num_load"],
