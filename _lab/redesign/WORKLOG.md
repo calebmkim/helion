@@ -85,6 +85,26 @@ co-residency) — DONE. (2) USER-TILED bias_grad/dyt → keep keying on `per_fea
 accumulator-shape property) but SOURCE the inner ids positively. Both deletions remove the SUBTRACTIVE filter
 (Defect #2); the accumulator-shape signal stays. Re-bench the norm-bwd movers.
 
+### ⚠️ p2 witness is STRUCTURALLY SIMPLER than rms_norm_bwd (refines the Defect-2 witness claim)
+p2 (`grad_scale[:] += (...).sum(0)` over `tile_m` directly) has NO inner re-tile loop — the cross-row accum
+reduces the GRID axis (bid0 GRID_TILE) directly. rms_norm_bwd/bias_grad have an INNER re-tile (`mb` within
+`mb_cta`). So `_grad_collapse_group` (which looks for a non-grid inner re-tile co-resident with a full-extent
+feature reduction) returns None for p2 — correctly, p2 isn't the same collapse shape. p2 = "FULL_SLICE feature
+reduction (bid1) + a reduction OVER the grid-M (bid0)", co-resident. The faithful sizing: the GRID_TILE claims
+~nothing tunable, the grid-M sibling takes the remainder (occupancy-widen) — the §2.3 greedy. Whether p2's
+current `bs=[1]` is right is a P4 Tier-2 perf-check (it may need grid-M widening). DEFER p2 correctness to P4;
+pfa fires on exactly the 6 real norm-bwds (no false positive on p2 — that's the recognizer's blindness the
+taxonomy must cover, but p2's shape differs from the norm-bwd collapse so it's a separate sizing path).
+
+### 2026-06-29 — P3b @28491fc2: standard grad-collapse keys on _grad_collapse_group (taxonomy)
+Deleted the `fact.per_feature_accumulator` gate + subtractive `inner_tile_ids` filter on the STANDARD track;
+keys on `_grad_collapse_group` (co-residency taxonomy), sources inner ids positively. 14/16 norm-bwd cells
+byte-identical; 2 movers = square-shape (4096×8192) rms/layer_norm_bwd `[1,1]→[32,1]`. **Re-benched H100:
+rms_norm_bwd 183.5→96.2µs (1.9x FASTER), layer_norm_bwd 290.4→106.7µs (2.7x FASTER), outputs match** — a
+legacy STARVATION-BUG fix, far within the no-regression bar. Tests green.
+REMAINING P3: (c) user-tiled bias_grad/dyt — keep faithful pfa accumulator-shape signal, drop subtractive
+filter; (d) ReductionRole stored decisions; (e) probe perf-checks (p2/p6 movers) → P4.
+
 ### 2026-06-29 — P3a: relaxed gate (==1 → >=1 sized reductions), corpus ZERO-DIFF
 - `_triton_reduction_eligible` now fires when the kernel fact has >=1 SIZED reduction + no matmul (was
   `len(reduction_facts)==1`). Corpus-safe: all 452 corpus cells have exactly 1 fact → ZERO-DIFF 447/447.

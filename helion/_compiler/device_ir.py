@@ -1128,11 +1128,18 @@ class DeviceIR:
         Replaces the prior three cascading filters (``inner_red`` grid filter, the
         ``all_reducing_axes`` static filter, the ``backed_reducing_axes`` unbacked filter),
         each of which silently dropped a different slice under a name claiming completeness.
+
+        SINGLE CLASSIFIER (PROMPT §6.1 #3): delegates to :meth:`_categorize_reduction` (the
+        Stage-1 taxonomy) and maps the positive :class:`ReductionCategory` onto the legacy
+        ``ReductionRole`` the user-tiled fact builder still consumes — so there is ONE
+        categorization rule, not two parallel ones. ``ReductionRole`` is now a thin VIEW of the
+        category (DECLINED->DECLINED, GRID_TILE->FLOORED_ROW, the sized categories->TILED), kept
+        only to feed the unchanged legacy fact assembly (byte-identical).
         """
-        info = CompileEnvironment.current().block_sizes[block_id]
-        if not isinstance(info.size, (int, torch.SymInt)):
+        category = self._categorize_reduction(block_id, grid_ids)
+        if category is ReductionCategory.DECLINED:
             return ReductionRole.DECLINED
-        if block_id in grid_ids and not self._is_fully_resident_grid_axis(block_id):
+        if category is ReductionCategory.GRID_TILE:
             return ReductionRole.FLOORED_ROW
         return ReductionRole.TILED
 
@@ -1412,10 +1419,13 @@ class DeviceIR:
         return out
 
     def _categorize_reduction(
-        self, graph_id: int, block_id: int, grid_ids: set[int], distinct_rdims: int
+        self, block_id: int, grid_ids: set[int]
     ) -> ReductionCategory:
         """Classify one reduction occurrence into the §2.1 taxonomy from FAITHFUL structure:
-        ``(block_size_source kind, on the grid?, cdiv==1?, sole rdim in graph?)``.
+        ``(block_size_source kind, on the grid?, cdiv==1?)``. The single categorization rule,
+        shared by the kernel-fact builder AND ``_classify_reduction_axis`` (the legacy
+        ``ReductionRole`` view). ``rollable`` (sole-rdim-in-graph) is a SEPARATE per-graph field
+        computed by the kernel-fact builder, not part of the category.
 
         - no static extent -> DECLINED (jagged).
         - on the grid + fully resident (cdiv==1) -> FULL_GRID; on the grid + partial -> GRID_TILE.
@@ -1467,9 +1477,7 @@ class DeviceIR:
 
         descriptors: list[ReductionDescriptor] = []
         for gid, bid in occurrences:
-            category = self._categorize_reduction(
-                gid, bid, grid_ids, len(rdims_per_graph.get(gid, ()))
-            )
+            category = self._categorize_reduction(bid, grid_ids)
             info = env.block_sizes[bid]
             size_hint = (
                 info.size_hint() if isinstance(info.size, (int, torch.SymInt)) else 0
