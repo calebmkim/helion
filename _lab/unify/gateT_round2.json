@@ -1,0 +1,124 @@
+{
+  "summary": "GATE T (independent totality dry-sweep): 3 strategy-divergent fresh-context adversaries each MINT new kernels blind, run the mechanical checker, and certify dry or report holes. Owns counter 4.",
+  "agentCount": 3,
+  "logs": [],
+  "result": {
+    "GATE_T_VERDICT": "NOT-DRY",
+    "dry": false,
+    "n_sweeps": 3,
+    "anyRed": true,
+    "anyUnreached": false,
+    "anyMissing": true,
+    "anyCaptured": false,
+    "new_RED": [
+      {
+        "strategy": "ADVERSARIAL-AGAINST-THE-LAST-CHANGED-KEYS: minted kernels targeting each re-keyed area — multi-fact dominant pick + relaxed >=1 gate (k1,k2), PARTIAL_GRID exclusion / grid collapse (k3), max(itemsize,4) dtype residency floor (k4), grid_reduction_origin occupancy edge (k5,k6,k8), and a co-residency multi-reduction cross-check (k7).",
+        "kernel": "/tmp/gateT_kp/k5_gro_placeholder_dominance.py (gro_plus_rolled)",
+        "fall_through": "GRID-COLLAPSE-CROSS-LOOP-BLEED (unjustified grid collapse to ~1 program). A kernel with a grid-collapse reduction (unbacked inner re-tile -> grid_reduction_origin=True) in loop A and a SEPARATE ordinary reduction in loop B merges into ONE ReductionFact whose m_block_ids=(0,3) spans BOTH loops' grid axes. _build_block_sizes(grid_origin=True) then applies _m_collapse_grid_block occupancy-sizing to EVERY m_block_ids axis, including loop B's grid axis (bid=3, the y per-row sum, My=256). It is collapsed to block_size=256 = full My extent -> cdiv(256,256)=1 program, vs the correct block_size=1 the isolated y-reduction baseline produces (256 programs). Each program then holds 256x2048x4=2MB resident, 8x over ROW_PERSIST_MAX_BYTES=240KiB. The grid_rows fed to _m_collapse_grid_block is the product over m_block_ids spanning both loops (M*My), a count that conflates two independent loops, so the value is not justifiable from loop B's own properties. PROVENANCE: bid=3 is backed-static (SymInt hint 256, LoopSpecBlockSizeSource) and contiguous -> NOT JAGGED, NOT STRIDED-DIM0 (in-scope). NOT a recently-fixed Gate-T hole (this is the grid_reduction_origin flag bleeding across loops, distinct from multi-rolled slot-misplacement and joint-multi-grid occupancy within one loop). Confirmed across My in {256,4096,65536} (always block_size=256, 256x/16x/1x collapse) and reproduced in k6 (user-tiled 2nd loop, axis3=256 over Mz=512) and k8 (Mw=131072 huge grid collapsed to 512 programs from the correct 131072).",
+        "normalized_cfg": "block_sizes=[256, 8, 256] (axes [0,1,3]); reduction_loops=[None]; num_stages=1; pid_type='flat'. axis 0 = x-collapse grid (occupancy 256, OK); axis 1 = unbacked collapse re-tile (8, OK); axis 3 = y-loop grid (256 = full My extent = grid collapse to 1 program = the RED)."
+      }
+    ],
+    "UNREACHED": [],
+    "missing_axis": [
+      {
+        "property": "CROSS-LOOP grid_reduction_origin scope (a per-FACT collapse flag applied to m_block_ids that span MULTIPLE independent reduction loops)",
+        "unjustified_config": "block_sizes axis 3 = 256 (= full My extent, cdiv=1 program) on the non-collapse y/w-loop grid; _m_collapse_grid_block occupancy-collapses every m_block_ids axis using a grid_rows count (M*My) that conflates two independent loops. The model has no per-loop scoping of which grid axes the grid_reduction_origin collapse may touch — a fact whose m_block_ids unions two loops' grids over-collapses the loop that has no collapse origin."
+      }
+    ],
+    "sweeps": [
+      {
+        "strategy": "NOVELTY (un-sampled cross-product regions of the §1 axes): minted kernels combining DIMENSIONALITY x N-REDUCING-AXES x CO-RESIDENCY x ACCESS x ORIGIN x NON-REDUCTION-LOOP x PINNED-GRID-AXIS in arrangements the corpus does not name -- 3-4 reductions in mixed same-loop/different-loop layouts, a non-reduction normalize pass co-occurring with two reductions, a 4-D carried-resident reduction beside a separate inner reduction, a specialized full-extent grid axis reduced over alongside a tunable inner reduction (both R-dominant and C-dominant orderings), a rolled primary beside an independent non-reducing loop, and a grid-collapse with an inner re-tile.",
+        "verdict": "dry",
+        "minted": 8,
+        "reasoning": "CAPTURE CHECK: I was given only SHA + original §1 axis list + the L1-L5 structure checklist + the two closed out-of-scope predicates + the corpus-avoid-list + my NOVELTY strategy. No coverage tally, no refined axis model, no greenness claim. The L1-L5 checklist describes the CURRENT code state (faithful-fact verification targets), not a pre-loaded coverage answer -- I independently re-verified L1 (per_feature_accumulator is gone as a field/symbol; only 3 historical comment mentions explaining its replacement by grid_reduction_origin remain) and L4 (ReductionRole enum 0 hits, replaced by ReductionAxisKind). So NOT captured; proceeded blind.\n\nI minted 8 fresh kernels under /tmp/gateT_novel/ as module-level @helion.kernel(static_shapes=False) functions, ran each through _lab/unify/probes/checker.check_kernel at HELION_AUTOTUNE_EFFORT=none with helion resolving under /home/dev/local/helion-unify, and confirmed each LANDED on its intended novel property-point (verified observed.fired / n_reduction_facts / lowering_reduction_axes / secondary_reduction_block_ids / m_block_ids before recording). All 8 are GREEN and stable across re-runs:\n\n- k1_three_usertiled_sameloop: 3 user-tiled reductions over 3 distinct axes (extents 384/192/96) folded in ONE same-loop nest -> 1 fact, primary+2 secondaries, block_sizes=[512,256,128] (each next_pow2 of its own extent, NONE floored). Justified by per-axis red_values via _reduction_rblock.\n- k2b_normloop_two_reduce_diffaxis: two DIFFERENT-axis reductions (A=320, B=192) + a separate non-reducing apply loop over B; block_sizes=[512,256,256] -- primary, secondary, and the independent apply loop all widened (the loop rode the _build_block_sizes else catch-all, not floored).\n- k3c_carried_plus_independent_reduce: a carried [M,R] accumulator across a K loop + an independent inner reduction over a distinct axis S; block_sizes=[512,512], both reducing axes sized, none floored.\n- k4_specialized_grid_plus_tunable_inner: hl.specialize'd full-extent grid axis C (cdiv==1, RESIDENT) reduced over (PINNED, no block_sizes slot, correctly excluded from red_values) alongside a tunable inner R=2048 (dominant -> primary). block_sizes=[32,1024]: G sibling widened to 32, R streamed at a 1024 looped chunk (row_reread=False -> not persistent -> LOOPED path; r_block 1024>1 is a justified looped chunk, NOT a FLOOR1).\n- k5_four_reduce_mixed_loops: FOUR reduction ops over TWO axes (A: sum+sq same loop; B: sum+max same loop, different loop) -> 2 reducing axes A=512/B=320; block_sizes=[512,512], both sized, none floored.\n- k6c_gridcollapse_inner_retile: grad-bias column-collapse over the grid M (block 0) with an inner re-tile over N. The grid-M reduction is correctly classified PARTIAL_GRID (cdiv>1) so it produces NO ReductionFact (n_rfacts=0); the kernel falls to the pointwise track (fired triton_pointwise, block_sizes=[1,2048]) -- the grid M floored to a grid row (block 0=1, EXCLUDED from FLOOR1_TILED as a grid axis) is correct, not a hole.\n- k7_rolled_primary_plus_independent_loop: standard-rolled primary over N (reduction_loops=[None] persistent) + an independent non-reducing loop over K=2048; K widened to 2048 (NOT divided by N's extent, NOT floored) -- directly exercises the _pinned_inner_resident_elems ROLLED-REDUCTION EXCLUSION and the branch-4 catch-all; behaves correctly.\n- k8_specialized_grid_primary: inverted-dominance corner -- the PINNED specialized full-extent grid axis C (extent 4096) is the MAX-extent PRIMARY with no tunable block_sizes slot, smaller tunable R=256 is the secondary. Fired standard track (triton_reduction_tile, since primary is not a block_sizes entry); no crash from the slot-less primary, R secondary sized to 256, none floored.\n\nThree intermediate authoring attempts crashed (k3/k3b: ReductionOnNonTile / InvalidIndexingType reducing-over / indexing a carried non-tiled accumulator dim; k6/k6b: TopLevelStatementBetweenLoops / LoopDependencyError needing hl.barrier()). All three are GENERIC Helion language/lowering limitations that raise during lower_to_device_ir / tracing BEFORE the reduction seed heuristic (get_seed_config) ever runs -- they are NOT seed/bind/normalize fall-throughs in the sizing path, and they crash identically independent of the heuristic. I reached the SAME property cells via compiling retries (k3c, k6c) within the 3-try budget, and independently confirmed the grid_reduction_origin path is exercised by the existing corpus (grid_origin_nonnorm fires grid_reduction_origin=True, green, grid-M sized to 32 / inner re-tile to 8) -- so no heuristic-level cell is UNREACHED.\n\nNo NO_FIRE (every eligible >=1-fact no-matmul kernel emitted a seed), no CRASH in the sizing path, no silent FLOOR1 of a resident tunable reduction (every resident tunable reducing axis was sized to a >1 chunk; the only block_size=1 values were grid/M axes correctly floored as grid rows, and PINNED full-extent axes with no tunable slot), no grid-collapse-to-1 (grid axes either floored as rows or occupancy-sized), no unjustified config (every seed value traces to a recorded property + a named cap: next_pow2(extent) for held reductions, the LOOPED_CHUNK/ROW_PERSIST_MAX_BYTES budget for streamed ones, occupancy/footprint caps for M widens), and no out-of-scope-by-provenance escape hatch was needed (no JAGGED size_hint=None, no strided-dim0). Certifying dry: 8 fresh novel kernels minted (>=6), no new RED, no UNREACHED, no missing-axis."
+      },
+      {
+        "strategy": "ADVERSARIAL-AGAINST-THE-LAST-CHANGED-KEYS: minted kernels targeting each re-keyed area — multi-fact dominant pick + relaxed >=1 gate (k1,k2), PARTIAL_GRID exclusion / grid collapse (k3), max(itemsize,4) dtype residency floor (k4), grid_reduction_origin occupancy edge (k5,k6,k8), and a co-residency multi-reduction cross-check (k7).",
+        "verdict": "not-dry",
+        "minted": 8,
+        "reasoning": "CAPTURE CHECK: briefing gave only SHA + axes + checklist + closed predicates + corpus-avoid-list, no coverage tally / refined-axis-model / greenness claim -> proceeded BLIND (captured=false). Minted 8 fresh kernels biased by the assigned strategy; all compiled and landed on their intended property-points (k4/k5 had 2 initial DSL authoring crashes, fixed within the 3-try budget -> no UNREACHED). Reachability confirmed via the mechanical checker (observed.fired / n_reduction_facts / lowering_reduction_axes) plus direct spec.normalize inspection. Result: NOT-DRY. k1 (mixed-track multifact), k2 (two rolled facts + wide user-tiled secondary), k3 (resident col-sum, no collapse), k4 (int8 carried-2D: max(itemsize,4) floor honored, accumulator genuinely fp32) — all GREEN, the re-keyed multi-fact/secondary/dtype paths hold. k7 (two co-resident RESIDENT reductions in one loop, 4-D) is over-budget (joint 8MB tile) but is the SAME property-point as the corpus boundary_5d (3 co-resident reductions, joint 16MB, accepted GREEN) — an over-wide REDUCTION tile is 'a worse seed not a bug' per the heuristic's philosophy and is not a checker RED, so NOT novel. The genuine NEW RED is the grid_reduction_origin cross-loop bleed (k5, confirmed by k6 and k8): the collapse flag is per-fact but applied across m_block_ids spanning two independent loops, collapsing the non-collapse loop's grid axis from the correct block_size=1 to a near/full-extent grid collapse (verified against the isolated y-only baseline which gives block_size=1). This is the briefing's named fall-through (a GRID axis widened to full extent = grid collapse to ~1 program) and is in-scope by provenance (backed-static contiguous grid axis, not JAGGED, not STRIDED-DIM0) and distinct from the two recently-fixed Gate-T holes. Structural checklist L1/L4/L5 verified intact (per_feature_accumulator gone, ReductionAxisKind enum present, secondary_reduction_block_ids field present) — no structural regression. The missing axis is per-loop scoping of the grid_reduction_origin collapse."
+      },
+      {
+        "strategy": "BOUNDARY-EXTENTS + HIGH-DIM + SATURATION. Minted 12 novel kernels under /tmp/gateT_boundsat/: extreme/edge extents (prime 8191, extent-2, extent-1, 2^22, prime 2097169 > 2^21), high-dim multi-axis reductions (4-D all-grid tile, inner 3-D 2-axis resident reduce), and >=4 saturation points varying a property NOT in the §1 axis list (reduction-op identity: prod / argmax / variance; dtype/itemsize: int64-8B, bf16-2B). For each I ran the mechanical checker, confirmed it LANDED on the intended property-point (read observed.fired / n_reduction_facts / lowering_reduction_axes / recorded fact fields), then confirmed every emitted config traces to a recorded property + named cap.",
+        "verdict": "dry",
+        "minted": 12,
+        "reasoning": "CAPTURE CHECK: briefing gave only SHA + original §1 axes + greppable checklist + 2 closed predicates + corpus-avoid-list. No coverage tally, no refined axis model, no greenness claim was smuggled. Proceeded BLIND. (commit msg mentions a prior 'open_RED->0' state but that is not a pre-loaded answer for my assigned strategy.) Helion verified under worktree at /home/dev/local/helion-unify/helion/__init__.py; H100/sm90 confirmed so both reduction tracks actually fire.\n\nMINTED 12 NOVEL kernels (none copy/parameterize the corpus), all compile-only (HELION_AUTOTUNE_EFFORT=none, no GPU autotune). All landed on their intended property points and all configs are JUSTIFIED:\n\nBOUNDARY-EXTENTS:\n- K1 prime 8191 (standard): persistent reduction_loops=[None], nw=16. Justified: LOOPED_CHUNK budget (245760/4=61440 -> pp2 32768 -> min 16384) clamped to next_pow2(8191)=8192 >= rdim -> persistent by arithmetic; nw=16 from extent ramp (<=16384).\n- K2 extent-2 (user-tiled): block_sizes=[2] (full extent, NOT floored), nw=1 (narrow-w1, 2*4=8B<=2048). No FLOOR1.\n- K9 extent-1 (user-tiled): block_sizes=[1], extent==1 so FLOOR1 (extent>1 guard) correctly does NOT fire; only-correct value. No crash on degenerate boundary.\n- K3 huge 2^22 (standard): reduction_loops=[16384] LOOPED (8*4M*4B >> 240KiB persist cap), nw=32 (>16384). Justified.\n- K10 bf16 prime 2097169 > 2^21 (standard): itemsize reported 4 (fp32 accumulator floor via _resident_itemsize max(itemsize,4)) though input_load_itemsize=2; reduction_loops=[16384] LOOPED (2097169*4 ~ 8MB >> persist cap), nw=32. The documented bf16-under-cap weakness HOLDS at the >2^21 prime boundary -- cap saw 4B not 2B, so it correctly looped.\n\nHIGH-DIM:\n- K4 4-D tile block_size=[1,None,None,None] reducing (b,c): all 4 axes are GRID axes (grid_block_ids=[[0,1,2,3]]); reduced axes 2,3 recorded as ReductionAxisKind.PARTIAL_GRID (cdiv>1, LoopSpecBlockSizeSource, not fully-resident) -> build_reduction_facts emits 0 facts and pointwise claims it. GREEN by RECORDED PROVENANCE (read _classify_reduction_axis = PARTIAL_GRID for bids 2,3), NOT analogy: a reduction over a partial grid axis without a cross-CTA combine is the documented upstream-miscompile case (device_ir.py:1726-1729) the seed neither causes nor fixes; declining to size it as resident is correct, and the pointwise config is itself justified by total_numel/bytes_per_elem + TILE_BYTES cap. This DRIFTED from my intended inner-multireduce cell, so I re-minted K4b.\n- K4b inner 3-D, grid M(bs=1) + nested inner hl.tile([A,B]) (user-tiled): nRF=1, primary=512, secondary=[256], block_sizes=[256,512] -- BOTH resident reduce axes sized to full extent (no FLOOR1), nw=1. The 'block_sizes loop N is floored (no widening rule)' log is a stale/cosmetic warn-instead-of-decline message; actual emit sizes the secondary via red_values. Justified.\n\nSATURATION (>=3 required; 4 delivered, reduction-op identity + dtype, the exempt property being contiguity/stride):\n- K6 prod 16384 (standard): persistent [None], nw=16 -- IDENTICAL justified config a sum of extent 16384 gets. Op identity is NOT a hidden axis.\n- K7 argmax 8192 (standard, int64 index output): persistent [None], nw=16 -- sized like an amax of the same extent. Index-op accumulator does not perturb the byte-cap (keys on reduced-tensor itemsize). Justified.\n- K8 int64 sum 65536 (standard): fact.itemsize=8 correctly recorded (NOT under-counted to 4); 65536*8=512KiB > 240KiB persist cap -> reduction_loops=[16384] LOOPED, nw=32. dtype/itemsize IS modeled faithfully -- no missing dtype axis.\n- K5b manual variance + K5c torch.var (standard): variance/welford accumulator op; K5b row_reread=True -> persistent [None] nw=8 (justified by row_reread + extent ramp); K5c persistent [None] nw=8. Variance op-identity reached and justified.\n\nTHE K5 torch.var_mean CRASH is NOT a heuristic fall-through: it is an InductorLoweringError on the aten.var_mean.correction op DECOMPOSITION (returns a bare TensorBox instead of TensorBox(StorageBox(...))), raised inside _compiler/inductor_lowering BEFORE any reduction-heuristic eligibility/sizing runs and independent of the seed -- a pre-existing upstream Helion op-support limitation, not a seed/normalize crash. The var_mean WORKLOAD PROPERTY (variance accumulator) is nonetheless REACHED via K5c (torch.var builtin lowers fine) and K5b (manual decomposition), both producing justified configs. So this cell is NOT UNREACHED in the heuristic sense.\n\nCLOSED-PREDICATE checks: no kernel hit JAGGED (all extents static) and none was a STRIDED-DIM0 grid-row reduction; the one grid-axis reduction (K4) was confirmed PARTIAL_GRID by recorded provenance, which the checker correctly excludes from FLOOR1. Greppable structure intact in the read source (grid_reduction_origin property present; ReductionAxisKind enum; single residency-budget caller _resident_tile_cap; flat-primary+secondary ReductionFact representation).\n\nCONCLUSION: minted >=6 (12) fresh kernels biased by the assigned strategy; NO new RED, NO UNREACHED cell, NO missing-axis (reduction-op identity and dtype/itemsize are both correctly NOT modeled-as-config-perturbing / faithfully modeled respectively; the only exempt property is contiguity/stride). Certify dry."
+      }
+    ]
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Sweep"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Verdict"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "gateT:sweep1",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "afe7ff71d3a93eba3",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782560138791,
+      "queuedAt": 1782560138777,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are a FRESH-CONTEXT adversary (Gate T). Your ONLY job is to BREAK the\nHelion reduction SEED sizing heuristic by MINTING NEW kernels across the OPEN property space. You do NOT\nknow any prior coverage and you owe no \"done\" claim anything. Default to \"I found a hole\": you certify\ndry ONLY if you mint fresh adversarial kernels and find NO new fall-through.\n\nIMMUTABLE COMMIT: d9eeca73681ddc09d6fe0a…",
+      "lastProgressAt": 1782560836054,
+      "tokens": 132861,
+      "toolCalls": 46,
+      "durationMs": 697263,
+      "resultPreview": "{\"skill\":\"\",\"verdict\":\"dry\",\"strategy_used\":\"NOVELTY (un-sampled cross-product regions of the §1 axes): minted kernels combining DIMENSIONALITY x N-REDUCING-AXES x CO-RESIDENCY x ACCESS x ORIGIN x NON-REDUCTION-LOOP x PINNED-GRID-AXIS in arrangements the corpus does not name -- 3-4 reductions in mixed same-loop/different-loop layouts, a non-reduction normalize pass co-occurring with two reductions…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "gateT:sweep2",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "a89af60e84a2581b6",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782560138802,
+      "queuedAt": 1782560138778,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "You are a FRESH-CONTEXT adversary (Gate T). Your ONLY job is to BREAK the\nHelion reduction SEED sizing heuristic by MINTING NEW kernels across the OPEN property space. You do NOT\nknow any prior coverage and you owe no \"done\" claim anything. Default to \"I found a hole\": you certify\ndry ONLY if you mint fresh adversarial kernels and find NO new fall-through.\n\nIMMUTABLE COMMIT: d9eeca73681ddc09d6fe0a…",
+      "lastProgressAt": 1782560832138,
+      "tokens": 160185,
+      "toolCalls": 49,
+      "durationMs": 693336,
+      "resultPreview": "{\"skill\":\"\",\"verdict\":\"not-dry\",\"strategy_used\":\"ADVERSARIAL-AGAINST-THE-LAST-CHANGED-KEYS: minted kernels targeting each re-keyed area — multi-fact dominant pick + relaxed >=1 gate (k1,k2), PARTIAL_GRID exclusion / grid collapse (k3), max(itemsize,4) dtype residency floor (k4), grid_reduction_origin occupancy edge (k5,k6,k8), and a co-residency multi-reduction cross-check (k7).\",\"kernels_minted\":…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "gateT:sweep3",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "a68973992e657ee2f",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782560138810,
+      "queuedAt": 1782560138778,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "dry",
+      "promptPreview": "You are a FRESH-CONTEXT adversary (Gate T). Your ONLY job is to BREAK the\nHelion reduction SEED sizing heuristic by MINTING NEW kernels across the OPEN property space. You do NOT\nknow any prior coverage and you owe no \"done\" claim anything. Default to \"I found a hole\": you certify\ndry ONLY if you mint fresh adversarial kernels and find NO new fall-through.\n\nIMMUTABLE COMMIT: d9eeca73681ddc09d6fe0a…",
+      "lastProgressAt": 1782560651962,
+      "tokens": 114818,
+      "toolCalls": 43,
+      "durationMs": 513152,
+      "resultPreview": "{\"verdict\":\"dry\",\"strategy_used\":\"BOUNDARY-EXTENTS + HIGH-DIM + SATURATION. Minted 12 novel kernels under /tmp/gateT_boundsat/: extreme/edge extents (prime 8191, extent-2, extent-1, 2^22, prime 2097169 > 2^21), high-dim multi-axis reductions (4-D all-grid tile, inner 3-D 2-axis resident reduce), and >=4 saturation points varying a property NOT in the §1 axis list (reduction-op identity: prod / arg…"
+    }
+  ],
+  "totalTokens": 407864,
+  "totalToolCalls": 138
+}

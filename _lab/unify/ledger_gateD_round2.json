@@ -1,0 +1,65 @@
+{
+  "gate": "D",
+  "round": 2,
+  "branch": "reduction-unify",
+  "sha": "5b18ef9a",
+  "mode": "compile-only (bind(), no GPU)",
+  "helion_file_under_worktree": true,
+  "claims": [
+    {
+      "claim": "defect1-narrowed",
+      "refuted": false,
+      "verdict": "PASS",
+      "reads_reduction_loops": false,
+      "conservatism_direction": "toward-smaller",
+      "looped_dump": {
+        "kernel": "wide_rowsum [1024, 65536] (standard track, rolls)",
+        "size_hint": 65536,
+        "r_block_resident": 65536,
+        "true_chunk": 16384,
+        "reduction_loops_seed": [16384],
+        "over_count_factor": 4.0,
+        "primary_in_red_values": false,
+        "primary_in_reduction_loops": true
+      },
+      "cap_monotonicity_dump": {
+        "_resident_tile_cap(r_block_resident=true_chunk=16384)": 2,
+        "_resident_tile_cap(r_block_resident=used=65536)": 1,
+        "used_cap_<=_true_cap": true,
+        "meaning": "larger r_block_resident -> smaller footprint cap -> SMALLER M-widen -> never a spill"
+      },
+      "access_signal_flip_dump": {
+        "looped_standard": {"in_red_values": false, "r_block_resident": 65536},
+        "user_tiled": {"in_red_values": true, "r_block_resident": 16384, "seed_block_sizes": [16384]}
+      },
+      "under_count_search": {
+        "persistent_standard_N256_1024_4096": "r_block_resident == np2(size_hint) == live (EXACT)",
+        "user_tiled_N4096_16384_65536": "r_block_resident == carried tunable r_block (4096/16384/16384) == live width (EXACT, capped to 16384 at N=65536 and the carried tile IS 16384)",
+        "any_r_block_resident_<_live_width": false
+      },
+      "reasoning": "PASS on all three parts of the NARROWED claim. (a) The executable body of _build_block_sizes (lines 844-1016) contains ZERO references to spec.reduction_loops (grep-confirmed: only docstring/comment mentions). r_block_resident (lines 909-912) is gated ONLY by `primary_red_value = red_values.get(fact.primary_reduction_block_id)` (the ACCESS signal) and falls back to next_pow2(fact.size_hint). Behavioral witness: the looped standard kernel has primary_in_reduction_loops=True yet r_block_resident=np2(size_hint)=65536 -- the Defect-1 contingent reduction_loops key is gone. (b) For the looped standard reduction wide_rowsum[1024,65536], reduction_loops seeds to [16384] (the true live chunk) while r_block_resident=next_pow2(65536)=65536 -- a 4x OVER-count. _resident_tile_cap is monotone NON-INCREASING in r_block_resident (budget // (m_block*r_block_resident*inner*itemsize)), so the over-count yields cap=1 vs the true-residency cap=2: a SMALLER M-widen. Over-counting residency can only shrink the widen -> never a spill, only a possibly-too-small tile, exactly as claimed. (c) The access signal genuinely flips the branch: user-tiled usertiled_rowsum -> in_red_values=True, r_block_resident=16384 (the carried tunable tile, seed_block_sizes=[16384]); standard-looped -> in_red_values=False, r_block_resident=np2(size_hint). 'full-slice access width' is a real workload property (is the primary a tunable tile vs a full-slice resident reduction), read from the red_values dict the caller builds from spec/fact -- not a curriculum proxy. ADVERSARIAL under-count search: in EVERY branch r_block_resident >= the true live width -- looped standard over-counts (np2(size_hint) >= chunk always, since chunk <= size_hint <= np2(size_hint)); persistent standard is EXACT (full extent IS live); user-tiled is EXACT (r_block_resident == the carried [M_BLOCK, r_block] tile, e.g. 16384 at N=65536, which IS the live width). No kernel produces r_block_resident < live_width, so the conservatism is provably toward-smaller-or-equal (safe). NOTE: a PRIOR Gate-D (ledger_gateD_defect1.json) REFUTED the BROADER claim ('computes the resident width') precisely because of this looped over-count; the NARROWED claim concedes that point and reframes the over-count as honest conservatism. Under the narrowed wording -- access width + toward-smaller conservatism + never-a-spill -- every assertion holds."
+    },
+    {
+      "claim": "M_COLLAPSE_TILE_BYTES",
+      "refuted": false,
+      "verdict": "PASS",
+      "equal_footprint_same_cap": true,
+      "misclassify_succeeded": false,
+      "dumps": {
+        "constant": 32768,
+        "cap_function": "_m_collapse_inner_byte_cap(feat_bytes) = max(1, next_pow2(32768 // feat_bytes)); feat_bytes = feature_footprint * itemsize",
+        "single_executable_use": "triton.py:1168 -- numerator in integer division only; NEVER compared via ==/</>/membership/startswith against any kernel fact (grep-confirmed)",
+        "purity_sweep": {"512": 64, "1024": 32, "2048": 16, "4096": 8, "8192": 4, "16384": 2, "32768": 1, "65536": 1, "131072": 1},
+        "equal_footprint_pair": {
+          "A_col_energy_fp32_M4096_N1024": {"feature_footprint": 1024, "itemsize": 4, "feat_bytes": 4096, "inner_byte_cap": 8, "body_live_tiles": 2, "accumulators": 1},
+          "B_col_mean_abs_fp32_M8192_N1024": {"feature_footprint": 1024, "itemsize": 4, "feat_bytes": 4096, "inner_byte_cap": 8, "body_live_tiles": 2, "accumulators": 2, "note": "DIFFERENT grid extent (8192 vs 4096), DIFFERENT structure (2 accumulators + abs intermediate)"},
+          "C_prime_col_energy_fp16_N1024": {"feature_footprint": 1024, "itemsize": 4, "feat_bytes": 4096, "inner_byte_cap": 8, "note": "fp16 input, itemsize fp32-promoted to 4"},
+          "result": "ALL THREE -> feat_bytes=4096 -> inner_byte_cap=8 (SAME), despite differing grid/dtype/structure"
+        },
+        "seed_path_confirmation": "both A and B fire triton_reduction_user_tile; the live seed call is _m_collapse_inner_byte_cap(4096)=8 and the UT seed emits block_sizes inner tile = 8 (the cap value) for both",
+        "cap_moves_with_footprint": {"distinct_caps_over_N_sweep": 6, "meaning": "not a degenerate constant; keys on bytes"}
+      },
+      "reasoning": "PASS. M_COLLAPSE_TILE_BYTES=32768 is used in exactly ONE executable line (triton.py:1168) as the NUMERATOR of an integer division by feat_bytes = feature_footprint*itemsize -- the resident [inner,*features] tile footprint in bytes. It is NEVER an operand of an equality/threshold/membership/startswith fence against any kernel fact (grep over helion/ confirms the only non-comment occurrences are the assignment and the division). EQUAL-FOOTPRINT DIVERGENCE TEST (the core bar): kernels A (col_energy: 1 accumulator, grid M=4096, fp32) and B (col_mean_abs: 2 accumulators + per-row abs intermediate, grid M=8192, fp32) are structurally distinct (different grid extent, different body, different accumulator count) yet BOTH have feature_footprint=1024, itemsize=4 -> feat_bytes=4096 -> inner_byte_cap=8; a fp16 variant C' with matched footprint also gets cap=8. Seed-path trace confirms both kernels actually fire triton_reduction_user_tile and the live get_seed_config calls _m_collapse_inner_byte_cap(4096)=8, emitting an inner block_size of 8 for both. The cap bites by RESIDENCY (feat_bytes), identically for any kernel with that footprint, NOT by which kernels were measured -- exactly as claimed. The cap also MOVES across the footprint sweep (6 distinct values), so it is a genuine byte-budget, not a degenerate constant. MISCLASSIFICATION ATTEMPT (honest failure): kernel B holds TWO simultaneously-live accumulators, so its true resident footprint is ~2x A's, yet feature_footprint=1024 counts only ONE feature-axis extent and the budget gives B the SAME cap as A -- arguably B should want a smaller inner tile. This is a real granularity/SIGNAL limitation, but it is NOT a fence: the cap function gives the SAME answer for the SAME feat_bytes deterministically for any kernel; the only 'wrong' tile arises because the upstream feature_footprint fact (computed in device_ir.py, a SEPARATE fact) under-counts multi-accumulator bodies -- it does not arise from M_COLLAPSE_TILE_BYTES keying on kernel identity or a measured set. A fence would return DIFFERENT caps for the SAME footprint keyed on which kernel it is; this returns identical caps. So misclassify-as-a-fence FAILED (success would have required equal feat_bytes -> different cap, which is impossible since the cap is a pure function of feat_bytes alone). The constant is a factor inside a hardware-unit (bytes) budget, not a fact-vs-literal fence."
+    }
+  ]
+}

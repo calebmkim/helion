@@ -1,0 +1,114 @@
+{
+  "summary": "GATE T (independent totality dry-sweep): 3 strategy-divergent fresh-context adversaries each MINT new kernels blind, run the mechanical checker, and certify dry or report holes. Owns counter 4.",
+  "agentCount": 3,
+  "logs": [],
+  "result": {
+    "GATE_T_VERDICT": "DRY (3 consecutive strategy-divergent clean sweeps)",
+    "dry": true,
+    "n_sweeps": 3,
+    "anyRed": false,
+    "anyUnreached": false,
+    "anyMissing": false,
+    "anyCaptured": false,
+    "new_RED": [],
+    "UNREACHED": [],
+    "missing_axis": [],
+    "sweeps": [
+      {
+        "strategy": "NOVELTY (un-sampled cross-products of the §1 axes): 3-4 reductions in mixed same-loop/different-loop arrangements; a normalize (non-reduction) loop co-occurring with a carried-2D tile; a 4-D carried-resident reduction plus a separate inner reduction; a specialized full-extent (cdiv==1 RESIDENT) grid axis reduced over as the DOMINANT primary alongside a tunable inner reduction; the _build_block_sizes catch-all else branch (independent non-grid tunable loop at a different extent); the rolled-reduction-exclusion in _pinned_inner_resident_elems at rank 3; a huge-M multi-reduction FLOOR1 probe; grid_reduction_origin M-collapse with a carried/atomic finalize. Compile-only on H100 sm90 (full sizing path), HELION_AUTOTUNE_EFFORT=none, no GPU autotune.",
+        "verdict": "dry",
+        "minted": 9,
+        "reasoning": "BLIND capture check passed: briefing carried only SHA + original §1 axes + L1-L5 checklist + the two closed predicates + corpus-avoid-list — no coverage tally / refined axis model / greenness claim — so not captured. Verified HEAD 2742a6a2 is a lab-only commit whose helion/ tree is byte-identical to the immutable 479df334 (git diff --stat empty), and helion resolves to /home/dev/local/helion-unify on an H100 (sm90), so the full sizing path is exercised. Minted 9 NOVEL kernels under /tmp/gateT_novx/ as module-level @helion.kernel(static_shapes=False) fns, each run through _lab/unify/probes/checker.check_kernel; 2 early drifts (k3 landed PARTIAL_GRID not the intended RESIDENT fully-resident grid -> an upstream no-cross-CTA-combine miscompile shape, out of scope; k5 collapsed its carry to scalar -> num_carried_2d_tiles=0) were rejected and superseded by faithful retries (k3b, k5b) that landed on the intended cells, leaving 9 landed novel points. ALL GREEN: every kernel FIRED (>=1 ReductionFact, no matmul, no NO_FIRE), no CRASH in bind/seed/normalize, no FLOOR1 of a resident reduction, no else/exception in the sizing path. Every config traced to a recorded fact + a named cap: k2's secondary 2048 = CARRIED_TILE_MAX_BYTES/(itemsize*num_carried_2d_tiles); k3b's resident-grid primary correctly removed from m_block_ids (line 1257) with secondary looped; k7 verified arithmetically that _pinned_inner_resident_elems EXCLUDES the rolled primary (pinned_inner=128=G only; if the rolled N were counted Q would floor to block_size=1, but it got 256 — the exclusion fix holds at rank 3); k6 reached the catch-all else the docstring says no corpus kernel reaches and widened to own extent 16384 under the resident_tile_cap (32768); k8's huge-M (262144) widened M to 16 via the occupancy cap keeping both reductions at 2048 (no secondary FLOOR1); k9's grid_reduction_origin M-collapse occupancy-sized to next_pow2(grid/num_sm)=64 capped at M_COLLAPSE_MAX_CTA. No JAGGED/STRIDED-DIM0 declines were needed (none triggered, so no provenance reads required). No missing axis: every property the kernels exercised (carried-2D coexisting with normalize loop, resident-grid-primary, mixed co-residency, rolled-exclusion, catch-all widen, grid-collapse) produced a config justified by a fact field plus a documented constant. >=6 fresh novel kernels, zero new RED, zero UNREACHED, zero missing-axis -> dry."
+      },
+      {
+        "strategy": "ADVERSARIAL-AGAINST-THE-LAST-CHANGED-KEYS: minted 8 landed novel kernels biased to make each of the 4 re-keyed seams misfire — (a) grid_reduction_origin / M-collapse occupancy sizing, (b) the relaxed >=1 multi-fact eligibility gate + dominant-fact pick, (c) the grid-tile PARTIAL_GRID exclusion, (d) the max(itemsize,4) dtype residency floor — plus their cross-fact interactions.",
+        "verdict": "dry",
+        "minted": 8,
+        "reasoning": "CAPTURE CHECK: briefing gave only SHA + original §1 axes + L1-L5 structure checklist + 2 closed predicates + corpus-avoid-list + strategy. No coverage tally, no refined axis model, no greenness claim. The L1-L5 checklist describes the target refactor STRUCTURE (orientation), not a coverage assertion. Not captured; proceeded blind.\n\nSETUP: HEAD=2742a6a2 is one _lab commit ahead of the immutable 479df334, but `git diff 479df334 HEAD -- helion/` is EMPTY (code byte-identical), and helion imports from the worktree. Verified seams in helion/_compiler/autotuner_heuristics/triton.py (_reduction_primary_fact L439, _is_standard_reduction L450, _resident_itemsize=max(4,itemsize) L543, _reduction_rblock L1101, _build_block_sizes grid_origin branch L982, _m_axis_occupancy_cap geometric split L779) and helion/_compiler/device_ir.py (grid_reduction_origin L1764, _grid_collapse_block_ids L1603, secondary_reduction_block_ids, _classify_reduction_axis PARTIAL_GRID L1105).\n\n8 LANDED novel kernels (all GREEN), each confirmed to hit its intended property-point via observed.fired / n_reduction_facts / lowering_reduction_axes, all in /tmp/gateT_lastkeys/:\n- K1 multifact_nondominant_floor: 2 fused user-tiled loops -> 1 fact, secondary axis captured + sized (bs=[2,4096,2,1024]); no floor.\n- K2 rolled_plus_usertiled_other_loop: standard rolled primary + user-tiled resident secondary in a separate loop -> secondary captured (secondary_reduction_block_ids=[3]) and sized 2048, NOT floored.\n- K3 two_rolled_facts_dominant_pick: nRF=2, dominant-wide LOOP / non-dom-narrow PERSIST -> reduction_loops=[16384, None] per-slot correct.\n- K4b bf16_raw_persist_boundary (fact.itemsize=2): N=65536 LOOPS (rl=[16384]), N=49152 PERSISTS (rl=[None]) -> the max(itemsize,4) fp32 floor decides persist/loop faithfully at the 245760-byte boundary.\n- K5 partial_grid_widen_collapse: column reduce over a tunable grid tile -> grid tile floored to bs=[2] (a grid ROW), NOT collapsed to its 4096 extent.\n- K6 collapse_plus_dominant_plain: ONE fused fact merging a grid-collapse loop (grid_collapse_block_ids=[0], grid_reduction_origin=True via unbacked secondary) and a dominant plain backed reduction -> block0 occupancy-collapsed to 16, loop-B grid axis (block3) floored to 1, no cross-loop bleed.\n- K7 partial_grid_plus_resident: tiny resident R=64 + large M=262144 -> M widened to 32 (post-widen grid 8192 >> occupancy floor ~1056), R sized to 64; occupancy guard bounds the widen.\n- K8 three_resident_reductions: 3 resident reductions mixed extents -> each sized to its own extent bs=[1,4096,256,1024] via per-axis red_values (beyond the corpus single-secondary case).\n- K9 two_rolled_both_loop: nRF=2, BOTH facts wide -> reduction_loops=[16384, 16384], no positional slot-misplace, neither None.\n\nDRIFT/RETRY: original K8 (carried-2D) and K9 (dyt-collapse) drifted off their intended cells (num_carried_2d_tiles=0 due to scalar carry; ShapeSpecializingAllocation authoring crash) or overlapped corpus probe r3_fp16_mcollapse (bf16==fp16 perf); both re-authored within 3 tries onto genuinely novel landed cells. No cell left UNREACHED.\n\nMETHODOLOGY ARTIFACT (ruled out, NOT a hole): binding the SAME kernel object across multiple shapes in one process yields a stale spec/fact (my instr_seed_internal.py falsely showed N=65536 bf16 PERSISTING). Re-running each shape in a FRESH process (or a distinct kernel object) gave the correct LOOP verdict, matching the checker. Logged as a harness trap. All final verdicts taken from fresh-process single-bind runs.\n\nClosed predicates respected by PROVENANCE: K6/K9's unbacked inner re-tile axes (size_hint = create_unbacked_symint placeholder, free_unbacked_symbols true) are JAGGED-extent -> a floor/decline there is GREEN by reading recorded size, not analogy. No STRIDED-DIM0 cases minted (all kernels reduce contiguous innermost slabs, stride==itemsize).\n\nNo CRASH (the two crashes were authoring errors: TopLevelStatementBetweenLoops, ShapeSpecializingAllocation — fixed before landing), no NO_FIRE, no FLOOR1_TILED of a resident reduction, no grid-collapse, no unjustifiable config. All four re-keyed seams held under novel adversarial pressure including their cross-fact interactions. Certifying dry."
+      },
+      {
+        "strategy": "BOUNDARY-EXTENTS + HIGH-DIM + SATURATION: minted 13 novel kernels across extreme/edge extents (extent 1, extent 2, primes 257/769/1031/4099/8191/50021, >2^21 at 2^22 and 131072), 4-D and 3-D tiles with multi-axis/multi-grid reductions, and >=5 saturation points varying a property NOT in the §1 axis list (reduction-op identity: prod, amax/argmax, var via 2-pass, cumsum/scan; dtype/itemsize: int64=8, fp8=1, bf16=2, scan=0). For each, ran the mechanical checker, confirmed it LANDED on the intended property-point via observed.fired/n_reduction_facts/lowering_reduction_axes, and confirmed the emitted config traces to a recorded property + named cap.",
+        "verdict": "dry",
+        "minted": 13,
+        "reasoning": "CAPTURE CHECK: briefing gave only the SHA, original §1 axes, greppable checklist, two closed predicates, corpus-avoid-list, and my strategy -- NO coverage tally / refined axis model / greenness claim. The \"2 most-recent holes now FIXED\" is an avoid-instruction, not a global greenness claim. Proceeded BLIND (not captured). Verified helion.__file__ under worktree; HEAD 2742a6a2 has empty `git diff 479df334 HEAD -- helion/` (only a _lab resume commit on top), so the heuristic code IS at the pinned SHA.\n\nAll 13 minted kernels are GREEN with justified configs:\n\nBOUNDARY: K1 extent-2 RESIDENT user-tiled -> bs=[2,2] reduction sized to extent (no floor1). K2 extent 2^22 standard reread -> rl=[16384] LOOPED (16MiB>>ROW_PERSIST_MAX_BYTES 240KiB), w32. K6 extent-1 -> block=1 CORRECT (extent==1, not a floor). K10 huge M=2^20 + R=96 user-tiled -> bs=[32,128], reduction NOT floored under raised autotuner_min. Many prime extents throughout.\n\nHIGH-DIM: K3b 4-D (3 grid + prime inner reduce) -> bs=[1,1,1] rl=[None] persistent. K8 3-D grid + tiny-R -> bs=[4,4,4]; the JOINT occupancy cap's cube-root path keeps post-widen grid 4096 >= num_sm*MIN_WAVES floor 1056 (verified). K7 two inner reductions (one rolled, one materialized full-width) -> no crash; the materialized 2nd reduction (extent 769) is full-width resident (4KiB, fits), correctly not in any tunable slot.\n\nSATURATION (op-identity + dtype, the not-modeled-property check): The sizing is keyed on itemsize+extent+access, NEVER on the op name -- proven across prod/amax/var/cumsum. K4 prod+int64 itemsize=8 -> loops at 256KiB. K5 amax+fp8 input_load_itemsize=1 -> narrow-w1 lever fires (w1, occupancy-gated). K9b var(2-pass)+bf16 itemsize floored to 4 -> loops at 256KiB (the bf16 fp32-accumulator fix bites exactly). K11/K12 cumsum/scan: itemsize recorded as 0, but _resident_itemsize=max(4,0)=4 governs the persist(8192,fits)/loop(131072,512KiB) decision correctly. K13 wide user-tiled bf16 prime 50021 -> R_BLOCK=16384 looped. Every itemsize boundary (0/1/2/8) is robustly absorbed by max(4,itemsize); op-identity is correctly exempt.\n\nTWO non-holes, correctly classified (not RED): (1) K9 torch.var_mean -> CRASH in UPSTREAM aten.var_mean.correction Inductor lowering; traceback has NO config_spec / autotuner_heuristics frames, so the seed heuristic never ran -- an upstream lowering limitation, not a seed fall-through (replaced by K9b which lands the same welford-class property cleanly). (2) K3-original (.sum(-1).sum(-1) over grid-tile axes) routes to pointwise (nRF=0) because the reduced axes are PARTIAL_GRID; the kernel is itself a numerically-WRONG malformed reduction (verified max abs err 575 -- grid races on out[tb,th]). The heuristic correctly declines to size a malformed grid-collapse; the real defect is the upstream idiom miscompile (matches the known working-as-intended correctness-guard case). Neither matches the two closed predicates by analogy -- both are read from real provenance (an upstream lowering raise; a PARTIAL_GRID classification + verified miscompile).\n\nFound NO new RED, NO UNREACHED cells, NO missing axis. >=6 fresh novel kernels minted (13), none copied/parameterized from the corpus-avoid-list. Certifying dry."
+      }
+    ]
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Sweep"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Verdict"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "gateT:sweep1",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "a88061417cf80220e",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782562344991,
+      "queuedAt": 1782562344977,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "dry",
+      "promptPreview": "You are a FRESH-CONTEXT adversary (Gate T). Your ONLY job is to BREAK the\nHelion reduction SEED sizing heuristic by MINTING NEW kernels across the OPEN property space. You do NOT\nknow any prior coverage and you owe no \"done\" claim anything. Default to \"I found a hole\": you certify\ndry ONLY if you mint fresh adversarial kernels and find NO new fall-through.\n\nIMMUTABLE COMMIT: 479df33437ca4d0a33ed0d…",
+      "lastProgressAt": 1782563058938,
+      "tokens": 141879,
+      "toolCalls": 55,
+      "durationMs": 713946,
+      "resultPreview": "{\"verdict\":\"dry\",\"strategy_used\":\"NOVELTY (un-sampled cross-products of the §1 axes): 3-4 reductions in mixed same-loop/different-loop arrangements; a normalize (non-reduction) loop co-occurring with a carried-2D tile; a 4-D carried-resident reduction plus a separate inner reduction; a specialized full-extent (cdiv==1 RESIDENT) grid axis reduced over as the DOMINANT primary alongside a tunable inn…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "gateT:sweep2",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "a5c997bc3f1541a18",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782562345001,
+      "queuedAt": 1782562344977,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "dry",
+      "promptPreview": "You are a FRESH-CONTEXT adversary (Gate T). Your ONLY job is to BREAK the\nHelion reduction SEED sizing heuristic by MINTING NEW kernels across the OPEN property space. You do NOT\nknow any prior coverage and you owe no \"done\" claim anything. Default to \"I found a hole\": you certify\ndry ONLY if you mint fresh adversarial kernels and find NO new fall-through.\n\nIMMUTABLE COMMIT: 479df33437ca4d0a33ed0d…",
+      "lastProgressAt": 1782563362124,
+      "tokens": 145405,
+      "toolCalls": 73,
+      "durationMs": 1017122,
+      "resultPreview": "{\"captured\":false,\"verdict\":\"dry\",\"strategy_used\":\"ADVERSARIAL-AGAINST-THE-LAST-CHANGED-KEYS: minted 8 landed novel kernels biased to make each of the 4 re-keyed seams misfire — (a) grid_reduction_origin / M-collapse occupancy sizing, (b) the relaxed >=1 multi-fact eligibility gate + dominant-fact pick, (c) the grid-tile PARTIAL_GRID exclusion, (d) the max(itemsize,4) dtype residency floor — plus …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "gateT:sweep3",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "a430a8fd049286f4f",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782562345010,
+      "queuedAt": 1782562344977,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "dry",
+      "promptPreview": "You are a FRESH-CONTEXT adversary (Gate T). Your ONLY job is to BREAK the\nHelion reduction SEED sizing heuristic by MINTING NEW kernels across the OPEN property space. You do NOT\nknow any prior coverage and you owe no \"done\" claim anything. Default to \"I found a hole\": you certify\ndry ONLY if you mint fresh adversarial kernels and find NO new fall-through.\n\nIMMUTABLE COMMIT: 479df33437ca4d0a33ed0d…",
+      "lastProgressAt": 1782562954669,
+      "tokens": 121979,
+      "toolCalls": 40,
+      "durationMs": 609659,
+      "resultPreview": "{\"verdict\":\"dry\",\"strategy_used\":\"BOUNDARY-EXTENTS + HIGH-DIM + SATURATION: minted 13 novel kernels across extreme/edge extents (extent 1, extent 2, primes 257/769/1031/4099/8191/50021, >2^21 at 2^22 and 131072), 4-D and 3-D tiles with multi-axis/multi-grid reductions, and >=5 saturation points varying a property NOT in the §1 axis list (reduction-op identity: prod, amax/argmax, var via 2-pass, cu…"
+    }
+  ],
+  "totalTokens": 409263,
+  "totalToolCalls": 168
+}

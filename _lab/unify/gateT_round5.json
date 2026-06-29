@@ -1,0 +1,225 @@
+{
+  "summary": "Independent Gate-T totality dry-sweep (round 5): 3 strategy-divergent adversaries mint fresh kernels blind, run the mechanical checker + A/B de-fuse divergence, certify dry or report holes",
+  "agentCount": 4,
+  "logs": [],
+  "result": {
+    "sweeps": [
+      {
+        "sweep_dry": false,
+        "kernels_minted": 10,
+        "property_points_covered": [
+          "multi-loop fusion: two independent user-tiled reductions in separate loops, distinct extents (K1) -- folds to ONE fact with secondaries",
+          "extent-COLLISION: grid-collapse unbacked placeholder 8192 == independent backed reduction 8192, collapse wins primary tie (K2)",
+          "grid-collapse + INDEPENDENT user-tiled reduction loop, NO collision, indep clearly dominant (K3)",
+          "4-D-shaped carried + a separate plain inner reduction fused (K4) -- two reductions one fact",
+          "STANDARD track (Helion-rolled) two rolled reductions in separate loops, dominant must LOOP / non-dominant PERSIST (K5) -- nRF=2, correct by-slot",
+          "bf16 dtype + two pinned-grid (block_size=1) reduction loops (K6) -- itemsize floor, GREEN",
+          "3-D independent reduction (grid[B], inner reduce C) fused with grid-collapse (K7)",
+          "mixed same-loop (two co-resident reductions) + different-loop reduction (K8)",
+          "triple fusion: grid-collapse + normalize/apply loop + independent reduction loop (K9) -- combines round-4 finding-1 and finding-2",
+          "two independent reductions BOTH unpinned hl.tile(m) so BOTH grid axes widen -- double contamination (K10)"
+        ],
+        "holes": [
+          {
+            "kernel_file": "/tmp/gateT_nov/k10_two_unpinned_reduce.py",
+            "red_kind": "UNDERSIZE_AB",
+            "axis_divergence": "primary reduction bid=1 (extent 8192): fused=128 standalone=8192 (64x under); secondary reduction bid=3 (extent 4096): fused=128 standalone=4096 (32x under)",
+            "explanation": "CLEANEST repro of the root-cause class. Two independent user-tiled reductions in two SEPARATE top-level hl.tile loops (grid=[[0],[2]]) are folded by register_unrolled_reductions into ONE ReductionFact with m_block_ids=[0,2] (grid axes from BOTH disjoint loops) and secondary_reduction_block_ids=[3]. TritonUserTiledReductionHeuristic.get_seed_config sizes R_BLOCK via _reduction_rblock(env, fact, m_block) where m_block = _m_block_product(spec, fact) = product over ALL m_block_ids = 16*16 = 256. Each loop's program only holds ONE loop's M_BLOCK rows (16, not 256), so the true per-program footprint is [16, R_BLOCK], yet R_BLOCK is divided by the cross-loop product 256 -> budget 245760/(256*4)=240 -> prev_pow2 128. Checker reads GREEN (no floor-to-1, axes are tunable and >1). A/B de-fuse: each loop standalone sizes its reduction to full extent (8192/4096) with M_BLOCK NOT widened. Root cause: _m_block_product (helion/_compiler/autotuner_heuristics/triton.py:872) blindly multiplies grid blocks from grid axes belonging to DIFFERENT fused loops; its own docstring 'rows each program processes' has no single meaning for a multi-loop fact. Same class as round-4 finding-2 (cross-loop residency leak) but on the REDUCTION R_BLOCK path, not the apply-loop denominator. Out-of-scope predicates ruled out: reduced axes are contiguous inner dims (not STRIDED-DIM0), backed (not JAGGED), RESIDENT not grid (not PARTIAL_GRID)."
+          },
+          {
+            "kernel_file": "/tmp/gateT_nov/k3_collapse_indep_nocollide.py",
+            "red_kind": "UNDERSIZE_AB",
+            "axis_divergence": "primary reduction bid=4 (extent 16384, independent loop, grid axis 3 pinned block_size=1): fused=2048 standalone=16384 (8x under)",
+            "explanation": "grid-collapse loop (CTA axis 0 occupancy-widened to 16/64) fused with an INDEPENDENT dominant user-tiled reduction over Q=16384 (loop 2, grid axis 3 pinned to block_size=1). One fact, m_block_ids=[0,3]. _m_block_product = m_axis(0)=16 * m_axis(3)=1 = 16. The Q reduction's program holds [1, R_BLOCK] (its grid axis 3 is pinned 1), so it could hold the full 16384 persistent (64KB < 240KB). But R_BLOCK is divided by the COLLAPSE loop's CTA=16: extent_held fails (16*16384*4=1MB > ROW_PERSIST 240KB) so it streams at budget 245760/(16*4)=3840 -> prev_pow2 2048. The collapse loop's occupancy CTA (correct, 64 in _build_block_sizes) leaks into a DIFFERENT loop's reduction sizing. m-collapse override correctly did NOT fire (primary backed), but the cross-loop m_block_product still contaminates. Verified via instrumented probe k2_debug.py / k3 probe: fused m_block_product=16, standalone=1."
+          },
+          {
+            "kernel_file": "/tmp/gateT_nov/k4_4d_carried_plus_inner.py",
+            "red_kind": "UNDERSIZE_AB",
+            "axis_divergence": "primary bid=1 (extent 8192): fused=128 standalone=8192 (64x); secondary bid=3 (extent 4096): fused=128 standalone=4096 (32x)",
+            "explanation": "Two reductions in separate loops both unpinned hl.tile(m). m_block_ids=[0,2], each m-axis widened to 16 -> m_block_product=256, both reductions sized to 128 vs full extent standalone. Same root cause as K10; confirms the contamination is independent of body_live_tiles (here body_live=3) and reduction op shape."
+          },
+          {
+            "kernel_file": "/tmp/gateT_nov/k7_3d_indep_plus_collapse.py",
+            "red_kind": "UNDERSIZE_AB",
+            "axis_divergence": "primary reduction bid=5 (3-D inner reduce over C=16384): fused=2048 standalone=16384 (8x under)",
+            "explanation": "3-D independent reduction (grid[B] pinned, inner reduce over C, keep R) fused with a grid-collapse loop. m_block_ids=[0,3]; collapse CTA axis 0 widened to 64 contaminates the 3-D reduction R_BLOCK -> 2048 vs standalone 16384. Confirms the hole at rank 3 with a kept (non-reduced) middle axis R, not just rank 2."
+          }
+        ],
+        "narrative": "STRATEGY=NOVELTY (multi-loop fusion). I minted 10 fresh kernels (plus 14 standalone de-fuse partners) targeting un-sampled cross-products, ran the mechanical checker AND the A/B de-fuse divergence on every one, and instrumented _m_block_product / _reduction_rblock directly (k2_debug.py, k3 probe) to nail the arithmetic.\\n\\nFOUND a systematic NEW hole class (4 confirmed instances: K3, K4, K7, K9; K10 is the cleanest minimal repro): when MULTIPLE reduction loops fuse into ONE user-tiled ReductionFact (register_unrolled_reductions folds all tiled reduction axes across all graphs into a single fact with secondaries), the fact's m_block_ids contains grid axes from DISJOINT loops, and _m_block_product (triton.py:872) cross-multiplies them. _reduction_rblock then divides EVERY reduction's R_BLOCK by that cross-loop product, even though each loop's program only holds its OWN M_BLOCK rows. Result: 8x-64x under-sizes of ordinary contiguous, backed, RESIDENT per-program reductions. The mechanical checker reads GREEN every time (no floor-to-1; axes stay tunable >1) -- exactly the under-size blind spot the brief warned about; ALL four were caught only by A/B de-fuse. This is the same conflation family as round-4 finding-2 (cross-loop residency leak into the apply-loop denominator), but on the REDUCTION R_BLOCK sizing path, which was not patched.\\n\\nTRIGGER boundary precisely characterized: the hole fires iff a fused user-tiled fact has >=2 grid loops where at least one m-axis WIDENS above 1 (a collapse CTA occupancy-widen to 64, or an unpinned hl.tile(m) reduction widening to 16). When ALL grid axes are pinned block_size=1 (K1, K6, K8), m_block_product stays 1 and the seed is byte-identical to standalone (GREEN) -- which is why the existing corpus + round-4 probes never exposed it (every prior multi-loop probe pinned its independent loop to block_size=1: see grid_collapse_fused_indep_loop.py's collapse_plus_indep_usertiled which pins tile_p block_size=1, masking the contamination on the now-2048 primary).\\n\\nThe STANDARD track is GREEN under the same shape (K5): rolled reductions become SEPARATE facts (nRF=2) and reduction_loops is built by-slot per fact, so no cross-loop conflation -- the asymmetry confirms the defect is specific to the user-tiled single-fact fold. Out-of-scope predicates ruled out for every hole: reduced axes are contiguous inner dims (not STRIDED-DIM0), statically backed (not JAGGED), and RESIDENT not grid (not PARTIAL_GRID). Round-4 regression probes re-verified 0/2 RED at HEAD ea24dd1a; the finding-2 apply-loop floor fix still holds in the triple-fusion K9 (normalize axis got 2048, not floored to 1)."
+      },
+      {
+        "sweep_dry": false,
+        "kernels_minted": 19,
+        "property_points_covered": [
+          "single-loop grid-collapse (bias_grad style), fp32, body_live<=1 -- Fix 1c intact: grid occupancy-sized (128<=256 cap), primary=inner re-tile sized to CTA wave, is_m_collapse stays True",
+          "grid-collapse FUSED with independent user-tiled per-row reduction, fp32, extent-tie (collapse unbacked placeholder 8192 == loop-2 backed Q 8192), both loop orderings (collapse-first and usertiled-first)",
+          "TWO independent user-tiled per-row reductions, NO collapse, different-loop co-residency, multi-fact dominant pick, fp32 -- isolates _m_block_product",
+          "THREE independent reduction loops -- m_block product accumulates across all grid axes (64x under-size)",
+          "bf16 two independent reductions (itemsize=4 fp32-accumulator floor confirmed, still contaminated)",
+          "reduce-then-normalize (rms-style) co-resident apply loop, materialized primary, normalize loop NOT floored (Fix 2 positive)",
+          "grouped reduce-over-N with co-resident apply loop + wide pinned axis (Fix 2 over-exclusion attempt -- apply tile identical with/without reduction = no over-widen)",
+          "rms_norm_per_block-style pinned non-reduction feature co-resident with quant loop (Fix 2 group_size still counted)"
+        ],
+        "holes": [
+          {
+            "kernel_file": "/tmp/advsweep/probe_twoindep.py (also /tmp/advsweep/k_more.py three_indep; /tmp/advsweep/probe_doc_template.py = exact documented finding-1 template; /tmp/advsweep/k_fix1_attacks.py tie_collapse_first/tie_usertiled_first)",
+            "red_kind": "UNDERSIZE_AB",
+            "axis_divergence": "two_indep: loop-B reduction bid=3 (extent 8192): fused=2048 standalone=8192 (4x). three_indep: loop-C reduction bid=5 (extent 8192, P tiled block_size=1): fused=128 standalone=8192 (64x). doc finding-1 template collapse_plus_indep_usertiled: loop-2 primary bid=4 (extent 8192): fused=2048 standalone=8192 (4x -- the r4 fix only restored it from 64 to 2048, not to 8192).",
+            "explanation": "ROOT CAUSE: _m_block_product (triton.py:872) returns the PRODUCT of _m_axis_block_size over ALL fact.m_block_ids, which on a multi-fact kernel spans the grid axes of UNRELATED fused loops. That global m_block is then passed to _reduction_rblock for the primary AND every secondary reducing axis (get_seed_config lines ~1481/1554), where it divides the per-program residency budget (budget = ROW_PERSIST_MAX_BYTES // (m * itemsize * ff), triton.py:1182). A reduction loop that tiles its own M axis at block_size=1 (1 row resident per program) thus gets its r_block shrunk by the FOREIGN loop's M-block: m_block=16 -> r_block clamps 8192->2048 (proven directly: _reduction_rblock(m=16)->2048 vs _reduction_rblock(m=1)->8192). The under-size compounds multiplicatively with each additional fused grid loop (2 loops: 16x->4x rblock cut; 3 loops: 256x->64x). The round-4 Fix 1 scoped the m-collapse override and grid-occupancy to the primary's own loop, and Fix 2 scoped the co-residency PINNED product, but the shared m_block feeding _reduction_rblock is still the global product across all loops -- the same cross-loop-contamination class, one level deeper. NOT a closed predicate: extents are static (not jagged), the reductions are contiguous inner per-row reductions (not strided-dim0), and they are RESIDENT reductions parallelized per-row over a block_size=1 grid (not a tunable PARTIAL_GRID axis). The checker reads GREEN (2048/128 != floor-to-1); only A/B de-fuse exposes it. The existing permanent probe gateT/grid_collapse_fused_indep_loop.py accepts 2048 because its guard threshold is primary_block>64, not the standalone 8192. FIX DIRECTION: size each reduction fact's r_block against the m_block of ITS OWN loop (the m_block_ids that co-occur with that fact's reducing axes), not the global product over every fused loop's grid axis."
+          }
+        ],
+        "narrative": "Independent Gate-T adversary, ADVERSARIAL strategy (attack the two round-4 fixes directly). Verified worktree heuristic at ea24dd1a (helion.__file__ under helion-unify). Read both fix diffs (1650a3c6 m-collapse-override primary-unbacked scoping; 9f094896 _pinned_inner_resident_elems reduction-axis exclusion) and the sizing path (_m_block_product, _reduction_rblock, _build_block_sizes, _m_collapse_grid_block). Minted 19 kernels in fresh processes (EFFORT=none, fresh HELION_CACHE_DIR), ran the mechanical checker + A/B de-fuse on each.\\n\\nFIX 1c (single-loop collapse, bias_grad): confirmed NOT broken -- grid stays occupancy-sized (128<=256 cap), primary inner re-tile sized to the CTA wave, is_m_collapse stays True because the primary IS the unbacked re-tile.\\n\\nFIX 1a (unbacked-primary-deserves-wide): collapse_few_grid_rows matched its standalone byte-for-byte; no divergence -- the pure-collapse body_live<=1 path sizes r_block to the (capped) CTA wave, which is what a standalone collapse does too.\\n\\nFIX 1b (backed/unbacked extent-tie routing): this is where the hole surfaced. The fix correctly keeps the collapse grid at 64 and routes the backed loop-2 reduction off the m-collapse override -- BUT the de-fuse A/B showed the loop-2 reduction sized 2048 vs standalone 8192. Drilling in (direct _reduction_rblock calls) traced it to _m_block_product multiplying the FOREIGN collapse loop's m_block (16) into loop-2's residency m_block. I then ISOLATED it with two_indep (two independent per-row reductions, NO collapse at all) -- same 2048 vs 8192 -- proving it is a general multi-fact m_block-contamination bug, not collapse-specific. three_indep shows it compounds to a 64x under-size (8192->128) with 3 fused loops. The EXACT documented finding-1 template (collapse_plus_indep_usertiled) reproduces 2048 vs standalone 8192, and the shipped permanent probe reports green on it (guard threshold 64, not the standalone width) -- so the r4 fix under-corrected by 4x.\\n\\nFIX 2 (reduction-axis exclusion from co-residency denominator): attacked over-exclusion two ways (grouped_reduce_apply with a wide co-resident reduction; reduce_then_normalize). Both apply/normalize loops sized full-width 8192 identically with and without the co-resident reduction -- no wrongful widening. Architecturally over-exclusion is unreachable: a reduction's RESULT is captured by the primary residency (r_block_resident), not the pinned-feature product, so the only thing the product can still count is a full-extent NON-reduction feature axis (group_size), which I confirmed is still counted in rms_per_block. Fix 2 is sound.\\n\\nNET: Fix 2 dry; Fix 1 closed the catastrophic 64-floor but left a structural 4x-to-64x reduction under-size from the global _m_block_product, exposed only by A/B de-fuse (checker-green)."
+      },
+      {
+        "holes": [
+          {
+            "kernel_file": "/home/dev/local/helion-unify/_lab/unify/probes/gateT_boundary/dt_collision_collapse_indep.py",
+            "red_kind": "UNDERSIZE_AB",
+            "axis_divergence": "primary_reduction_block_id=4 (loop-2 Q reduction, extent 8192): fused=2048 standalone=8192 (4x under-size); also at Q=4096: fused=2048 standalone=4096 (2x under-size, extent-independent). m_block_ids=(0,3) where bid 0 is the FOREIGN loop-1 collapse CTA.",
+            "explanation": "Cross-loop m_block BLEED in _m_block_product (helion/_compiler/autotuner_heuristics/triton.py:872). When a two-level grid-COLLAPSE loop (loop 1, grid axis bid 0 = register_block_size CTA defaulting to 16) is FUSED in one kernel with an INDEPENDENT grid loop (loop 2, grid axis bid 3, block_size=1) whose backed inner reduction the dominant-fact picker selects as primary (bid 4), fact.m_block_ids aggregates BOTH grid axes -> (0,3). _m_block_product multiplies them: bid0=16 * bid3=1 = 16. But the primary reduction lives ONLY in loop 2, whose true co-resident M_BLOCK is 1 (the loops are SEQUENTIAL grid loops, grid_block_ids=[[0],[3]], NOT co-resident). _reduction_rblock then sizes the streamed R_BLOCK with budget = ROW_PERSIST_MAX_BYTES // (m_block * itemsize * ff) = 245760//(16*4*1)=3840 -> prev_pow2 -> 2048, vs the correct 245760//(1*4)=61440 -> clamp to extent (8192 or 4096). So the foreign collapse CTA inflates the residency denominator 16x, under-sizing the independent reduction's R_BLOCK by the foreign m_block factor (2-4x here). This is the SAME cross-loop-bleed CLASS as round-4 findings 1 (grid-occupancy override) and 2 (_pinned_inner_resident_elems co-residency denominator), but on a THIRD unguarded field: the _m_block_product denominator feeding _reduction_rblock. The round-4 finding-1 FIX only gated the floor-to-occupancy-block (is_m_collapse on primary_unbacked) so primary_block no longer floors to 64 -- but it did NOT restore the correct R_BLOCK width, because _m_block_product still sums foreign m-axes. PROOF the round-4 guard misses it: gateT/grid_collapse_fused_indep_loop.py [F1] (the IDENTICAL kernel: x=8192x1024, z=4096x8192) reports primary_block=2048 as GREEN -- its only test is primary_block<=64; 2048>64 passes, yet the standalone de-fuse gives 8192. The mechanical checker reads GREEN (under-size, not FLOOR1_TILED). Found ONLY by A/B de-fuse. Fix direction: _m_block_product (or _reduction_rblock's m_block arg) should multiply only the m_block_ids CO-RESIDENT with the primary reduction's loop (e.g. exclude grid_collapse_block_ids / foreign-loop grid axes), mirroring the round-4 rolled/reduction-role exclusions on the other two denominators. SCOPE confirmation: in-scope (not JAGGED -- Q has static extent; not STRIDED-DIM0 -- z[tile_p,tile_q] is a contiguous inner axis; not PARTIAL_GRID -- the reduction is a resident inner reduction, not over a grid axis)."
+          }
+        ],
+        "kernels_minted": 9,
+        "property_points_covered": [
+          "extent-1 degenerate reduction axis fused with a wide reduction (different-loop, static{1,65536}) -- green, wide axis matches standalone 16384",
+          "3 simultaneous tunable grid axes + inner reduction (joint cube-root occupancy, 4-D, bf16) -- green, each grid axis 8, post-widen grid 32768 >> floor, reduction over R=512 persistent (justified)",
+          "extreme-wide reduction >1e6 (N=2^22) standard row-reread, fp32 + bf16 + fp16 -- green, reduction_loops=[16384] dtype-invariant (fp32-acc resident_itemsize floor holds under saturation)",
+          "grid-collapse FUSED with independent backed reduction (collision + non-collision extent), bf16 + fp16 -- HOLE FOUND (cross-loop m_block bleed in _m_block_product)",
+          "JAGGED (data-dependent unbacked extent) reduction mixed with a static wide reduction (different-loop) -- green, jagged correctly declines (n_reduction_facts=1), static axis seeds 16384 matching standalone (JAGGED out-of-scope predicate confirmed)",
+          "PINNED-GRID (block_size=1) two sequential wide reductions consuming bf16/fp16 input DIRECTLY (fact.itemsize=2), fp32 sibling -- green, both axes 16384 dtype-invariant (resident_itemsize floor + input_load_itemsize num_warps lever both correct at half precision)",
+          "argmax reduction op (index-producing, non-sum) over extreme-wide axis 2^21, fp32 + bf16 -- green, reduction_loops=[16384] dtype-invariant, fires (op-kind saturation)",
+          "3-D batched carried/inline reduction over wide K=131072, fp32 + bf16 -- green, block_sizes=[1,4,8192] dtype-invariant"
+        ],
+        "narrative": "Minted 9 fresh boundary/saturation/dtype kernels at /home/dev/local/helion-unify/_lab/unify/probes/gateT_boundary/, ran the mechanical checker AND the A/B de-fuse divergence on each. Verified helion.__file__ is the worktree. Strategy coverage: extent-1 axis; >1e6 extreme reductions (2^22, 2^21); 3 simultaneous tunable grid axes; bf16 AND fp16 variants of the multi-loop-fusion collision kernel; the collision regime at the unbacked placeholder boundary (8192) AND off it (4096); a JAGGED+static mix. FOUND ONE HOLE via A/B de-fuse (invisible to the checker, which read GREEN): in the round-4 collision regime (grid-collapse FUSED with an independent backed reduction selected as primary), the independent loop-2 reduction's R_BLOCK is under-sized 2-4x because _m_block_product aggregates the FOREIGN loop-1 collapse CTA's m_block (default 16) into the residency denominator, even though that CTA is in a sequential, non-co-resident grid loop. Isolated it as extent-INDEPENDENT (Q=4096 -> 2048 vs 4096; Q=8192 -> 2048 vs 8192) so it is the foreign m_block factor, not the placeholder collision. Proved the existing round-4 guard gateT/grid_collapse_fused_indep_loop.py MISSES it: that guard's own kernel reports primary_block=2048 as green (its test is only primary_block<=64), while the standalone de-fuse is 8192. This is the SAME cross-loop-bleed class as round-4 findings 1 & 2, on a third unguarded denominator field. dtype-invariance held everywhere (resident_itemsize=max(itemsize,4) fp32-acc floor robust under extreme saturation and the collision regime). JAGGED correctly declined while the co-resident static reduction still seeded. Not dry: one UNDERSIZE_AB hole reported.",
+        "sweep_dry": false
+      }
+    ],
+    "adjudication": {
+      "gate_t_verdict": "NOT-DRY",
+      "genuine_holes": [
+        {
+          "kernel_file": "/tmp/gateT_nov/k10_two_unpinned_reduce.py",
+          "red_kind": "UNDERSIZE_AB",
+          "axis_divergence": "primary reduction bid=1 (extent 8192): fused block_size=128 vs standalone 8192 (64x under-size); secondary reduction bid=3 (extent 4096): fused=128 vs standalone 4096 (32x under-size). Fused fact m_block_ids=[0,2] aggregates grid axes from two DISJOINT loops (grid=[[0],[2]]), each widened to 16, so _m_block_product=256.",
+          "root_cause": "_m_block_product (helion/_compiler/autotuner_heuristics/triton.py:872) returns the product of _m_axis_block_size over ALL fact.m_block_ids, which on a fused multi-loop user-tiled ReductionFact spans grid axes of UNRELATED loops. TritonUserTiledReductionHeuristic.get_seed_config (triton.py:1475) passes this global product as m_block to _reduction_rblock (triton.py:1481), which at line 1182 divides the residency budget = ROW_PERSIST_MAX_BYTES // (m * itemsize * ff). With m=256: 245760/(256*4)=240 -> prev_pow2 128. Each loop's program actually holds only its OWN loop's M_BLOCK rows, so the cross-loop product is wrong. register_unrolled_reductions folds all tiled reduction axes into ONE fact; the standard track (K5) keeps them as separate facts with by-slot reduction_loops and is GREEN, confirming the defect is specific to the user-tiled single-fact fold. Fix direction: size each reduction fact's r_block against only the m_block_ids co-resident with that fact's own reducing-axis loop, not the global product (mirroring the round-4 rolled/reduction-role exclusions on the other two denominators).",
+          "reproduced": true
+        },
+        {
+          "kernel_file": "/tmp/gateT_nov/k3_collapse_indep_nocollide.py",
+          "red_kind": "UNDERSIZE_AB",
+          "axis_divergence": "primary reduction bid=4 (extent 16384, independent loop-2, its own grid axis bid 3 pinned block_size=1): fused r_block=2048 vs standalone 16384 (8x under). Instrumented direct call confirmed: fused m_block_product=16 per_axis={0:16,3:1} -> r_block=2048; standalone m_block_product=1 -> r_block=16384. Same hole reproduced by sweep-3 dt_collision_collapse_indep.py (fused=2048 vs standalone=8192) at Q=8192 and Q=4096 (4x and 2x, extent-independent foreign m_block factor).",
+          "root_cause": "Same _m_block_product cross-loop bleed: a grid-collapse loop's CTA (grid_collapse_block_ids=[0], occupancy-widened to 16/64) is in fact.m_block_ids alongside the independent loop-2's pinned grid axis (bid 3). The collapse CTA's block size multiplies into loop-2's reduction residency denominator even though the two loops are sequential and non-co-resident. The round-4 Fix-1 (1650a3c6) correctly gated the m-collapse primary-rdim override on the primary being unbacked, so the primary no longer floors to the 64 occupancy block -- but it left _m_block_product still summing the foreign collapse m-axis, so the fix UNDER-CORRECTED (restored 64->2048, not to the true 16384/8192). PROOF the round-4 guard misses it: the shipped permanent probe _lab/unify/probes/gateT/grid_collapse_fused_indep_loop.py reports primary_block=2048 as GREEN because its [F1] guard only tests primary_block<=64; the A/B de-fuse standalone is 16384.",
+          "reproduced": true
+        }
+      ],
+      "dismissed_holes": [
+        "JAGGED (size_hint None) reductions: sweep-3 bnd_jagged_plus_static correctly DECLINES (n_reduction_facts=1, jagged axis dropped) while the co-resident static axis still seeds full width -- out-of-scope closed predicate, correctly handled, not a hole.",
+        "K6 bf16 multiloop and K1/K8 pinned-grid multiloop: reported GREEN by sweeps, and I confirmed K6 fused primary block_size=8192 == standalone 8192. These are NOT holes -- they fall outside the trigger boundary (all grid axes pinned to block_size=1, so _m_block_product stays 1). Correctly green.",
+        "Sweep-2 Fix-2 over-exclusion attacks (grouped_reduce_apply, reduce_then_normalize, rms_per_block): apply/normalize loops sized full-width identically with and without the co-resident reduction; Fix 2 (_pinned_inner_resident_elems reduction-axis exclusion, 9f094896) is sound -- no wrongful widening. Correctly dismissed by the sweep as not-a-hole.",
+        "STRIDED-DIM0 / PARTIAL_GRID: ruled out for the genuine hole -- the reduced axes are contiguous inner .sum(-1) axes (stride==itemsize), grid_reduction_origin=False for the K10 primary, and the reductions are RESIDENT inner reductions not over a tunable grid axis. So the floor/under-size is NOT the correct grid-row behavior."
+      ],
+      "divergence_ok": true,
+      "coverage_ok": true,
+      "summary": "NOT-DRY. All three strategy-divergent sweeps converged on ONE genuine totality hole class: _m_block_product (triton.py:872) cross-loop m-axis bleed. When >=2 reduction loops fuse into a single user-tiled ReductionFact (via register_unrolled_reductions), the fact's m_block_ids aggregates grid axes from DISJOINT loops; _m_block_product cross-multiplies them and feeds the product as m_block to _reduction_rblock, dividing each reduction's R_BLOCK residency budget by foreign loops' M-blocks. Result: 2x-64x under-sizes of ordinary contiguous, backed, RESIDENT per-program reductions, invisible to the mechanical checker (no floor-to-1; axes stay tunable >1) and exposed ONLY by A/B de-fuse. I independently reproduced it three ways: (1) K10 pure two-unpinned-tile reductions, no collapse -> primary 128 vs 8192 (64x), secondary 128 vs 4096 (32x); (2) K3 grid-collapse + independent loop -> 2048 vs 16384 (8x), with an instrumented direct call confirming m_block_product=16 (fused) vs 1 (standalone); (3) sweep-3 dt_collision -> 2048 vs 8192/4096, extent-independent foreign-factor. Source trace confirms the arithmetic exactly (budget=245760/(256*4)=240->128). The round-4 Fix-1 closed the catastrophic floor-to-64 but UNDER-CORRECTED: the shipped regression probe grid_collapse_fused_indep_loop.py accepts 2048 as green because its guard is primary_block<=64 while the standalone is 16384. Standard track (K5) is GREEN under the same shape (separate facts, by-slot reduction_loops), confirming the defect is specific to the user-tiled single-fact fold; Fix-2 (co-residency reduction-axis exclusion) verified sound; JAGGED correctly declines. DIVERGENCE OK: novelty (pure multi-loop fold, no collapse), adversarial (isolated _m_block_product via two_indep/three_indep), and boundary/dtype (bf16/fp16/extreme/jagged) explored genuinely different regions and corroborated rather than duplicated. COVERAGE OK: both round-4 fix regions (multi-loop fusion, extent collision) and both specific fixes were directly attacked. Fix direction: size each reduction fact's r_block against only the m_block_ids co-resident with its own loop, excluding foreign-loop / grid_collapse grid axes -- the same exclusion pattern the round-4 fixes applied to the other two denominators."
+    },
+    "n_reported_holes": 6
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Sweep"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Adjudicate"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "gateT-r5:NOVELTY",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "acca3acb894ff2caf",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782582731486,
+      "queuedAt": 1782582731472,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "STRATEGY=NOVELTY (multi-loop fusion). I minted 10 fresh ker…",
+      "promptPreview": "You are an INDEPENDENT Gate-T adversary (sweep NOVELTY) for the Helion reduction-seed unification. You did NOT write the heuristic; your job is to FALSIFY its totality by minting fresh novel kernels and proving they get a justified seed (or finding where they do not).\n\n\nENVIRONMENT (read carefully -- this is a real GPU box, compile-only, no do_bench timing):\n- Worktree: /home/dev/local/helion-unif…",
+      "lastProgressAt": 1782583285899,
+      "tokens": 107717,
+      "toolCalls": 47,
+      "durationMs": 554413,
+      "resultPreview": "{\"sweep_dry\":false,\"kernels_minted\":10,\"property_points_covered\":[\"multi-loop fusion: two independent user-tiled reductions in separate loops, distinct extents (K1) -- folds to ONE fact with secondaries\",\"extent-COLLISION: grid-collapse unbacked placeholder 8192 == independent backed reduction 8192, collapse wins primary tie (K2)\",\"grid-collapse + INDEPENDENT user-tiled reduction loop, NO collisio…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "gateT-r5:ADVERSARIAL",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "a7852ba93bcaaf1f5",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782582731487,
+      "queuedAt": 1782582731472,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Independent Gate-T adversary, ADVERSARIAL strategy (attack …",
+      "promptPreview": "You are an INDEPENDENT Gate-T adversary (sweep ADVERSARIAL) for the Helion reduction-seed unification. You did NOT write the heuristic; your job is to FALSIFY its totality by minting fresh novel kernels and proving they get a justified seed (or finding where they do not).\n\n\nENVIRONMENT (read carefully -- this is a real GPU box, compile-only, no do_bench timing):\n- Worktree: /home/dev/local/helion-…",
+      "lastProgressAt": 1782583304852,
+      "tokens": 90928,
+      "toolCalls": 39,
+      "durationMs": 573365,
+      "resultPreview": "{\"sweep_dry\":false,\"kernels_minted\":19,\"property_points_covered\":[\"single-loop grid-collapse (bias_grad style), fp32, body_live<=1 -- Fix 1c intact: grid occupancy-sized (128<=256 cap), primary=inner re-tile sized to CTA wave, is_m_collapse stays True\",\"grid-collapse FUSED with independent user-tiled per-row reduction, fp32, extent-tie (collapse unbacked placeholder 8192 == loop-2 backed Q 8192), …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "gateT-r5:BOUNDARY",
+      "phaseIndex": 1,
+      "phaseTitle": "Sweep",
+      "agentId": "ab0d1e0dee83baa3a",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782582731487,
+      "queuedAt": 1782582731472,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Minted 9 fresh boundary/saturation/dtype kernels at /home/d…",
+      "promptPreview": "You are an INDEPENDENT Gate-T adversary (sweep BOUNDARY) for the Helion reduction-seed unification. You did NOT write the heuristic; your job is to FALSIFY its totality by minting fresh novel kernels and proving they get a justified seed (or finding where they do not).\n\n\nENVIRONMENT (read carefully -- this is a real GPU box, compile-only, no do_bench timing):\n- Worktree: /home/dev/local/helion-uni…",
+      "lastProgressAt": 1782583316893,
+      "tokens": 93694,
+      "toolCalls": 49,
+      "durationMs": 585406,
+      "resultPreview": "{\"holes\":[{\"kernel_file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gateT_boundary/dt_collision_collapse_indep.py\",\"red_kind\":\"UNDERSIZE_AB\",\"axis_divergence\":\"primary_reduction_block_id=4 (loop-2 Q reduction, extent 8192): fused=2048 standalone=8192 (4x under-size); also at Q=4096: fused=2048 standalone=4096 (2x under-size, extent-independent). m_block_ids=(0,3) where bid 0 is the FOREIGN lo…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "gateT-r5:adjudicate",
+      "phaseIndex": 2,
+      "phaseTitle": "Adjudicate",
+      "agentId": "a717a68ad847986e3",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782583316907,
+      "queuedAt": 1782583316894,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "NOT-DRY",
+      "promptPreview": "You are the INDEPENDENT Gate-T adjudicator (round 5) for the Helion reduction-seed unification hillclimb. Three strategy-divergent adversary sweeps each minted fresh kernels and ran the mechanical checker + A/B de-fuse divergence against the heuristic at HEAD ea24dd1a (which just fixed 2 round-4 holes: a primary-rdim m-collapse under-size and an apply-loop floor-to-1).\n\n\nENVIRONMENT (read carefull…",
+      "lastProgressAt": 1782583468296,
+      "tokens": 47071,
+      "toolCalls": 14,
+      "durationMs": 151388,
+      "resultPreview": "{\"gate_t_verdict\":\"NOT-DRY\",\"genuine_holes\":[{\"kernel_file\":\"/tmp/gateT_nov/k10_two_unpinned_reduce.py\",\"red_kind\":\"UNDERSIZE_AB\",\"axis_divergence\":\"primary reduction bid=1 (extent 8192): fused block_size=128 vs standalone 8192 (64x under-size); secondary reduction bid=3 (extent 4096): fused=128 vs standalone 4096 (32x under-size). Fused fact m_block_ids=[0,2] aggregates grid axes from two DISJOIN…"
+    }
+  ],
+  "totalTokens": 339410,
+  "totalToolCalls": 149
+}

@@ -1,0 +1,431 @@
+{
+ "task": "reduction-unification-hillclimb",
+ "objective": "faithfulness > generality > perf (perf=10%-vs-fc1dbaa0-champion guardrail, NO tc)",
+ "base_sha": "fc1dbaa0",
+ "runway_sha": "dc0e330d",
+ "branch": "reduction-unify",
+ "counters_history": [
+  {
+   "at_sha": "dc0e330d",
+   "phase": "bootstrap",
+   "special_case_count": 6,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": null,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "bootstrap snapshot before any refactor; open_RED unknown until RED probes + first Gate-T sweep"
+  },
+  {
+   "at_sha": "9f2d9bbf",
+   "phase": "bootstrap-refactor",
+   "special_case_count": 5,
+   "divergence_test_debt": 1,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Defect-1 re-keyed onto ACCESS (byte-identical). divergence-debt=1: Gate-D refuted original wording, retired-with-narrowed-claim pending fresh Gate-D on narrowed claim. M-widen latency gap -> BROADEN queue + human-review."
+  },
+  {
+   "at_sha": "27506dea",
+   "phase": "bootstrap-refactor",
+   "special_case_count": 4,
+   "divergence_test_debt": 2,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Defect 2 done: PFA->GRO re-key (byte-identical, Gate-D PASS) + bolt-on override fold (byte-identical). STRUCTURE L1+L2 done. divergence-debt=2 (Defect-1 access-width narrowed claim; M_COLLAPSE_TILE_BYTES equal-footprint test pending)."
+  },
+  {
+   "at_sha": "HEAD",
+   "phase": "bootstrap-refactor",
+   "special_case_count": 3,
+   "divergence_test_debt": 2,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Defect 3 (ReductionRole->ReductionAxisKind, byte-identical) + carried-tile budget collapse (byte-identical). STRUCTURE L1+L2+L4 done; L3 carried-tile done. levers_since_refactor=5 -> fire refactor-critic."
+  },
+  {
+   "at_sha": "cf065557",
+   "phase": "steady-state",
+   "special_case_count": 2,
+   "divergence_test_debt": 2,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "P1 dead consts deleted + P3 len==1 fence relaxed (both byte-identical on corpus; P3 fires multi-fact kernels). refactor-critic: L3 met-in-substance (size_reduction_tiles rename=churn REJECT), L5 flat form faithful (rewrite=churn REJECT). P2 deferred Gate-R. special_case=2 (remaining smell#6 residue: ROW_PERSIST/CARRIED/LOOPED constants validated-live + the max-extent tie-break; assess if reducible)."
+  },
+  {
+   "at_sha": "cf065557",
+   "phase": "steady-state",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Gate-D round2: BOTH divergence-debt items PASS -> debt=0. Generator round1: 8/8 green. Gen round2 in flight. Next: more gen rounds + Gate T (independent dry verdict)."
+  },
+  {
+   "at_sha": "2e5926ab",
+   "phase": "steady-state",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Generator round2 found+fixed 2 holes (grid-collapse RED + bf16 dtype missing-axis), both byte-identical on corpus. open_RED=0. Next: more gen rounds (round3) then Gate T (independent dry verdict)."
+  },
+  {
+   "at_sha": "4735ac7d",
+   "phase": "steady-state",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 2,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "GATE T NOT-DRY (binding): 2 holes found by independent sweeps -> open_RED=2, clean_sweeps reset to 0. (1) multi-rolled slot-misplacement; (2) joint multi-grid-axis occupancy. Both in-scope, both real. Fix both, then re-run Gate T."
+  },
+  {
+   "at_sha": "e9440ae4",
+   "phase": "steady-state",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Fixed both Gate-T holes (slot-misplacement RED + joint-grid-occupancy missing-axis), both byte-identical on corpus. open_RED back to 0. clean_sweeps still 0 (Gate-T reset). Re-run Gate T at e9440ae4."
+  },
+  {
+   "at_sha": "d9eeca73",
+   "phase": "steady-state",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 1,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Gate-T round2 NOT-DRY: 1 new RED (grid_origin cross-loop bleed: occupancy-collapse applied to all m_block_ids incl an independent loop B grid axis -> grid collapse). 2 sweeps DRY. Fix: scope grid_origin occupancy-collapse to the collapse-origin loop grid only."
+  },
+  {
+   "at_sha": "479df334",
+   "phase": "steady-state",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Fixed Gate-T r2 cross-loop bleed (grid_collapse_block_ids loop-scoping). Byte-identical. open_RED=0. Re-run Gate T r3 at 479df334."
+  },
+  {
+   "at_sha": "479df334",
+   "phase": "DoD-milestone",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 3
+   },
+   "deferred_unification_debt": 0,
+   "note": "GATE T DRY (clean_divergent_sweeps=3). DoD conjunction: TOTALITY=certified(Gate-T), STRUCTURE=L1/L2/L4 done+L3/L5 ruled, FAITHFULNESS=debt 0(Gate-D), PERF=0 regression(byte-identical), COVERAGE=all RED->GREEN probes. DoD MET -- bank + keep climbing."
+  },
+  {
+   "at_sha": "072e7e08",
+   "phase": "post-DoD-climb",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 2,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Gate-T r4 NOT-DRY: 2 holes in the grid-collapse+independent-loop fusion. open_RED=2, clean reset to 0. Fix (2) is clean (exclude reduction axes from pinned_inner). (1) is the unbacked-placeholder collision. DoD TOTALITY re-opened -- fix both, re-run Gate T."
+  },
+  {
+   "at_sha": "1650a3c6",
+   "phase": "post-DoD-climb",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Gate-T r4 BOTH holes fixed byte-identically (447/447 zero-diff vs fc1dbaa0). Finding 2 (55ab8110 parent 9f094896): _pinned_inner_resident_elems excludes info.reduction axes (apply loop [64,64,1]->[64,64,4096]). Finding 1 (55ab8110): m-collapse primary-rdim override scoped to UNBACKED primary; grid-CTA sizing split onto unscoped grid_origin (collapse_plus_indep_usertiled [64,2048,64]->[64,2048,2048]). open_RED 2->0. Permanent RED->GREEN probe gateT/grid_collapse_fused_indep_loop.py (2/2 RED at parent, 0/2 at HEAD). clean_divergent_sweeps reset to 0 pending fresh independent Gate-T (re-establish >=3)."
+  },
+  {
+   "at_sha": "d35bfa6f",
+   "phase": "post-DoD-climb",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 1,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Gate-T r5 NOT-DRY (independent, divergence_ok+coverage_ok both True): 1 genuine hole CLASS = _m_block_product cross-loop m-axis bleed (triton.py:872). When >=2 reduction loops fuse into ONE user-tiled ReductionFact, m_block_ids aggregates grid axes from DISJOINT loops; _m_block_product cross-multiplies them and feeds the product as m_block to _reduction_rblock, dividing EACH reduction R_BLOCK budget by FOREIGN loops M-blocks -> 2-64x under-size of contiguous/backed/RESIDENT reductions. Invisible to mechanical checker (no floor-to-1), caught only by A/B de-fuse. The 2 r4 findings were symptoms of this same single-fact-multi-loop conflation family; r4 fixes hold (Fix-2 over-exclusion attacks all DISMISSED, no regression). Trigger: >=2 grid loops AND >=1 m-axis widens >1; corpus masked it (every corpus multi-loop pins indep loop to block_size=1). STANDARD track GREEN (rolled reductions = SEPARATE facts, by-slot). open_RED=1. gateT_round5.json. Fix: loop-scope the co-resident M product to the primary reductions OWN grid loop (mirror grid_collapse_block_ids loop-scoping)."
+  },
+  {
+   "at_sha": "8f41a19d",
+   "phase": "post-DoD-climb",
+   "special_case_count": 2,
+   "divergence_test_debt": 0,
+   "perf_regression_count": 0,
+   "failed_falsification": {
+    "open_RED": 0,
+    "UNREACHED": 0,
+    "clean_divergent_sweeps": 0
+   },
+   "deferred_unification_debt": 0,
+   "note": "Gate-T r5 hole CLASS FIXED (full per-axis, user chose fix-both-sums + safety-proof-only). Loop-scoped M co-residency: (1) co_resident_m_block_ids_by_axis -> _m_block_product(axis) for primary+each secondary; (2) m_block_id_loop_groups -> _m_axis_occupancy_cap scoped to own loop. Corpus BYTE-IDENTICAL 447/447 zero-diff vs fc1dbaa0. K3/K7 indep-loop reductions now match standalone (16384->16384). K10 residual M=16/R=2048 PROVEN to be the upstream autotuner_min grid floor (n_dims=2, platform-imposed on any config), NOT the bleed: single-loop kernel forced m_block=16 emits identical r_block=2048. 52 tests green, lint clean. open_RED 1->0. PENDING: (a) add permanent RED->GREEN probe for the cross-loop class under probes/gateT/; (b) re-run Gate T (round 6) to re-establish clean_divergent_sweeps>=3 and re-bank DoD totality conjunct. Other 4 DoD conjuncts intact throughout (every fix byte-identical). STOPPED here at user request."
+  }
+ ],
+ "config_anchor": "_lab/unify/baseline_fc1dbaa0_configs.json",
+ "perf_anchor": "in-process config-replay per changed cell (replay_bench.py); CONFIG anchor = baseline_fc1dbaa0_configs.json",
+ "gate_verdicts": [
+  {
+   "sha": "9f2d9bbf",
+   "gate": "D",
+   "claim": "Defect-1 r_block_resident re-key onto ACCESS computes resident width",
+   "verdict": "refuted",
+   "file": "ledger_gateD_defect1.json",
+   "note": "materialized-primary fix REAL+byte-identical; but new key computes full-slice ACCESS width, over-counts looped residency (chunk). Over-count is byte-identical to OLD (pre-existing, conservative-safe). True-resident-width refinement REGRESSED cross_entropy 4096x65536 1.35x -> reverted. Debt retired with NARROWED claim (faithful to access width); looped-residency = separate latent M-widen issue (BROADEN queue)."
+  },
+  {
+   "sha": "2bf66355",
+   "gate": "D",
+   "claim": "grid_reduction_origin faithful M-collapse property",
+   "verdict": "PASS",
+   "file": "_lab/unify/probes/gro_divergence.py",
+   "note": "GRO==PFA on corpus (0 div), fires on non-norm col_energy_collapse, excludes near-misses. >=2 distinct families."
+  },
+  {
+   "sha": "cf065557",
+   "gate": "H",
+   "claim": "relax len==1 reduction-fact fence (BROADEN)",
+   "verdict": "KEEP/BROADEN",
+   "note": "under-firing fence confirmed reachable (two_tensor_two_loop). Relaxed to >=1, seed dominant fact. Corpus byte-identical; newly-fired kernel acc-correct + clears model-well floor (seed/default 0.876/1.016)."
+  },
+  {
+   "sha": "cf065557",
+   "gate": "D",
+   "claim": "Defect-1 narrowed (access-width, conservative-for-looped) + M_COLLAPSE_TILE_BYTES factor-in-budget",
+   "verdict": "PASS",
+   "file": "ledger_gateD_round2.json",
+   "note": "BOTH PASS. Defect-1 key reads only ACCESS signal (0 reduction_loops refs in body), conservatism toward-smaller (never spill). M_COLLAPSE_TILE_BYTES = one //feat_bytes use, equal-footprint same cap, no misclassify. NOTE latent: feature_footprint under-counts multi-accumulator bodies (granularity gap, not a fence -> BROADEN queue)."
+  },
+  {
+   "sha": "4735ac7d",
+   "gate": "T",
+   "claim": "totality dry (3 strategy-divergent sweeps)",
+   "verdict": "NOT-DRY",
+   "file": "gateT_round1.json",
+   "note": "2 of 3 sweeps found holes (1 DRY: boundary+saturation). BINDING -> clean_divergent_sweeps reset to 0. RED: multi-rolled-reduction slot-misplacement (dominant rolled reduction in slot!=0 -> length-1 reduction_loops mis-placed by positional normalize -> dominant held persistent vs its own LOOP decision, 1MB tile). MISSING-AXIS: joint multi-tunable-grid-axis occupancy (_m_axis_occupancy_cap is single-axis; 2 tunable grid axes co-widen -> joint grid collapse 66x under floor)."
+  },
+  {
+   "sha": "d9eeca73",
+   "gate": "T",
+   "claim": "totality dry round2",
+   "verdict": "NOT-DRY",
+   "file": "gateT_round2.json",
+   "note": "2 of 3 sweeps DRY (novelty + boundary/saturation clean). 1 RED: grid_reduction_origin CROSS-LOOP BLEED -- a grid-collapse reduction in loop A + an ordinary reduction in loop B merge to ONE fact whose m_block_ids spans both loops grids; _build_block_sizes(grid_origin) occupancy-collapses EVERY m_block_ids axis incl loop B grid -> full-extent grid collapse. Per-fact flag applied across multiple independent loops. BINDING, clean_sweeps stays 0."
+  },
+  {
+   "sha": "479df334",
+   "gate": "T",
+   "claim": "totality dry (3 strategy-divergent sweeps)",
+   "verdict": "DRY",
+   "file": "gateT_round3_DRY.json",
+   "note": "DRY: 3 CONSECUTIVE strategy-divergent clean sweeps (novelty 9 + adversarial-against-changed-keys 8 + boundary/saturation 13 = 30 fresh novel kernels), 0 RED, 0 UNREACHED, 0 missing-axis. DoD #1 TOTALITY certified. All 4 re-keyed seams + the 4 prior-fixed holes hold under novel adversarial pressure. dtype fix validated (bf16/fp8/int64/cumsum all justified via max(4,itemsize))."
+  },
+  {
+   "sha": "479df334",
+   "gate": "completeness-critic",
+   "verdict": "2 framing blockers + Priority-2",
+   "file": "completeness_critic_1.json",
+   "note": "BLOCKER A: P1-P5 GREEN at fc1dbaa0 (regression guards, not RED->GREEN); 6 generator/Gate-T holes ARE the RED->GREEN. Fixed red_probes docstring+REPORT. BLOCKER B: built perf_tripwire.py + model-well sweep on 7 newly-fired cells = 0 RED. Both framing/instrument, not code regressions."
+  },
+  {
+   "sha": "479df334",
+   "gate": "model-well-tripwire",
+   "verdict": "0 RED / 7 cells",
+   "note": "seed beats-or-ties default everywhere (backed_col_sum 0.45 WIN, dual_grid 0.77, two_rolled 0.71, multi-fact 0.88/1.02-tie). Closes Blocker B on newly-fired regions."
+  },
+  {
+   "sha": "479df334",
+   "gate": "D-round3",
+   "verdict": "2 PASS + 2 acknowledged-heuristic, 0 REFUTE",
+   "file": "ledger_gateD_round3.json",
+   "note": "grid_collapse_block_ids PASS (proxy=all m_block_ids vs property=collapse-origin only, disagree, no misclassify). _resident_itemsize PASS (fp32-float family; int8/16-sum int64 8B under-count is out-of-scope non-corpus edge). geometric-split + dominant-fact-pick = acknowledged-heuristic (faithful best-guess, no fence, kept in counter-1). FINDING: geometric split joint floor still violated on ASYMMETRIC grids (512<1056) due to _block_floor/autotuner_min overriding the occ cap -- orthogonal interaction, BROADEN queue."
+  },
+  {
+   "sha": "479df334",
+   "gate": "R",
+   "claim": "occupancy-override fix for asymmetric multi-grid joint-floor violation",
+   "verdict": "REJECTED (1.6x regression on grpo)",
+   "note": "Tried to fix the Gate-D-r3 KEY-3 residual (asymmetric 2-grid joint occupancy floor violation, 512<1056) by letting occ override autotuner_min in the m_block_ids widen. Changed 7 grpo cells [.,16,.]->[.,2,.]. Gate-R A/B: grpo (8,2048,64000) 1099us->1777us = 1.617x REGRESSION; (4,2048,128256) 1.633x. REVERTED. LESSON: the synthetic asymmetric-grid floor-violation is DIABOLICAL-only -- the real 2-grid corpus kernel (grpo) PREFERS the wider L tile (16); forcing occupancy regresses it. The geometric-split stays acknowledged-heuristic (faithful, no fence); the residual floor-violation is correctly NOT chased (a narrow rescue would hurt the real kernel). Gate-H downside=diabolical-only."
+  },
+  {
+   "sha": "479df334",
+   "gate": "decision",
+   "claim": "int8/16-sum int64-accumulator under-count in _resident_itemsize",
+   "verdict": "LOG-DO-NOT-CHASE",
+   "note": "Gate-D r3 KEY-2 honest edge: int8/16 sum promotes accumulator to int64(8B) but max(4,itemsize)=4 under-counts (unsafe dir). OUT-OF-SCOPE: no corpus kernel sums sub-int32 rows; the dtype-perf scope is float (memory: only loop-carried-fp32-accumulator caps get max(itemsize,4)); a faithful fix needs an accumulator-dtype fact field (speculative, more risk than gain on an out-of-scope edge). Logged, not chased."
+  },
+  {
+   "sha": "479df334",
+   "gate": "D-constants",
+   "verdict": "6/6 PASS (2 faithful, 4 acknowledged-heuristic, 0 fence)",
+   "file": "ledger_gateD_constants.json",
+   "note": "Equal-footprint divergence test on the 6 budget constants. ALL are factor-in-budget (numerator/multiplier of a byte/occupancy budget), NONE a fact-vs-literal fence, all bite identically across dtype, all hardware-grounded. FAITHFUL: ROW_PERSIST_MAX_BYTES (240KiB ~ H100 SMEM/regfile; killer test E=98304 LOOPS all 3 dtypes where a raw-itemsize fence would split bf16/fp32), MIN_WAVES (occupancy wave-count, shared w/ pointwise seed). ACKNOWLEDGED-HEURISTIC (faithful-enough hardware estimates, counter-1): LIVE_PERSIST_BUDGET (3x regfile headroom), LOOPED_CHUNK (streaming granularity), CARRIED_TILE_MAX_BYTES (tight resident estimate), M_COLLAPSE_MAX_CTA (register/tree ceiling). counter-1 residual budget-cluster fully audited: no fences."
+  },
+  {
+   "sha": "072e7e08",
+   "gate": "T-round4",
+   "verdict": "NOT-DRY",
+   "file": "gateT_round4.json",
+   "note": "1 DRY (boundary/sat). 2 holes, same family (grid-collapse FUSED with an independent non-collapse loop -- the newly-opened multi-loop territory): (1) extent-collision: non-collapse reduction extent == unbacked-placeholder 8192 -> dominant-pick + _non_reduction_loop_candidates size_hint-equality mis-route -> grid floors to 1 / primary mis-sized; (2) _pinned_inner_resident_elems over-count: rolled-exclusion keys on reduction_loops (EMPTY on user-tiled) so grid-collapse reduction-role axes leak into the residency denom -> normalize loop floors to 1. Agent verified fix for (2): also exclude info.reduction axes (normalize 1->4096). BINDING; clean_sweeps reset 3->0."
+  }
+ ],
+ "banked_levers": [
+  {
+   "n": 1,
+   "sha": "9f2d9bbf",
+   "what": "Defect-1 r_block_resident re-key onto ACCESS",
+   "byte_identical": true,
+   "counter_delta": "special_case 6->5",
+   "cosmetic": false
+  },
+  {
+   "n": 2,
+   "sha": "2bf66355",
+   "what": "Defect-2 PFA->GRO re-key",
+   "byte_identical": true,
+   "counter_delta": "(part of special_case 5->4)",
+   "cosmetic": false
+  },
+  {
+   "n": 3,
+   "sha": "27506dea",
+   "what": "Defect-2 bolt-on override fold into _build_block_sizes",
+   "byte_identical": true,
+   "counter_delta": "special_case 5->4",
+   "cosmetic": false
+  },
+  {
+   "n": 4,
+   "sha": "a3efb619",
+   "what": "Defect-3 ReductionRole->ReductionAxisKind (properties in, decision out)",
+   "byte_identical": true,
+   "counter_delta": "special_case 4->3",
+   "cosmetic": false
+  },
+  {
+   "n": 5,
+   "sha": "HEAD",
+   "what": "carried-tile byte-cap collapse into _carried_tile_budget",
+   "byte_identical": true,
+   "counter_delta": "L3 cap-stack dup removed",
+   "cosmetic": false
+  },
+  {
+   "n": 6,
+   "sha": "d9b5d95a",
+   "what": "P1 delete 2 dead constants",
+   "byte_identical": true,
+   "counter_delta": "special_case smell#6 (2 consts)",
+   "cosmetic": false
+  },
+  {
+   "n": 7,
+   "sha": "cf065557",
+   "what": "P3 relax len==1 fence (BROADEN)",
+   "byte_identical": true,
+   "counter_delta": "special_case smell#6 (fence removed); open_RED 1->0",
+   "cosmetic": false
+  },
+  {
+   "n": 8,
+   "sha": "bfa012cc",
+   "what": "grid-tile-reduction exclusion (PARTIAL_GRID not sized as secondary)",
+   "byte_identical": true,
+   "counter_delta": "open_RED 1->0 (round2 adv_gro_falsify)",
+   "cosmetic": false
+  },
+  {
+   "n": 9,
+   "sha": "2e5926ab",
+   "what": "dtype-faithful residency caps max(itemsize,4)",
+   "byte_identical": true,
+   "counter_delta": "missing-axis (dtype) closed",
+   "cosmetic": false
+  },
+  {
+   "n": 10,
+   "sha": "e9440ae4",
+   "what": "multi-rolled reduction_loops by-slot + joint multi-grid occupancy cap",
+   "byte_identical": true,
+   "counter_delta": "open_RED 2->0 (Gate-T holes)",
+   "cosmetic": false
+  },
+  {
+   "n": 11,
+   "sha": "479df334",
+   "what": "grid_collapse_block_ids: scope GRO occupancy-collapse to collapse-origin loop",
+   "byte_identical": true,
+   "counter_delta": "open_RED 1->0 (Gate-T r2 cross-loop bleed)",
+   "cosmetic": false
+  }
+ ],
+ "structure_checklist": "_lab/unify/STRUCTURE_CHECKLIST.md"
+}

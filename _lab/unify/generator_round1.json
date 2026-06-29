@@ -1,0 +1,332 @@
+{
+  "summary": "Mint adversarial Helion reduction kernels across the property cross-product, verify they land + run the mechanical checker, report fall-throughs (totality holes)",
+  "agentCount": 8,
+  "logs": [],
+  "result": {
+    "summary": "minted 8: green=8 holes(RED)=0 unreached=0 out_of_scope=0",
+    "holes": [],
+    "unreached": [],
+    "green": [
+      {
+        "cell": "multifact_3way",
+        "observed": "GREEN (red=None). Landed on intended cell: 3 independent reductions in 3 separate grid-pinned loops over 3 different tensors. n_reduction_facts=3 with distinct extents [4096 (rbid1), 2048 (rbid3), 1024 (rbid5)], n_matmul_facts=0. fired=['triton_reduction_tile'] -- the relaxed >=1 eligibility gate let the 3-fact kernel fire (the old ==1 fence would have declined into default). _reduction_primary_fact dominant pick correctly selects the widest extent (4096, rbid=1), grid_reduction_origin=False for all three (standard/rolled track, correct for grid-pinned full-slice). lowering_reduction_axes=[1,3,5]; reduction_loops_valid_ids=[1,3,5] (all rolled); block_sizes_valid_ids=[] (no tiled reduction axes, so FLOOR1_TILED inapplicable). Seed sizes sanely: normalized reduction_loops=[None,None,None] (persistent -- all extents fit residency budget), num_warps=8. grid_block_ids=[[0],[2],[4]] (three independent pinned loops, CO-RESIDENCY=different-loop). One bind crash on the first attempt (LoopDependencyError from writing a shared out tensor across loops -- an idiom bug, not a heuristic hole) fixed by using three separate output buffers. Benign TensorOperationInWrapper warning on the host-side return add, irrelevant to the seed. No compile-time totality hole at this property-point; the dominant-fact seed fires and sizes correctly."
+      },
+      {
+        "cell": "multifact_mixed_access",
+        "observed": "Target arms A/B (rolled full-slice N + user-tiled K, separate grid loops): fired=['triton_reduction_tile'], n_reduction_facts=1, n_matmul_facts=0, lowering_reduction_axes=[1,3], grid_block_ids=[[0],[2]], block_sizes_valid_ids=[3], reduction_loops_valid_ids=[1], normalized block_sizes=[2048], reduction_loops=[None], fact primary_reduction_block_id=1 size_hint=8192 secondary_reduction_block_ids=[3]. red=None (GREEN). Reachability arm C (two rolled): n_reduction_facts=2, reduction_loops=[None,None], block_sizes=[], red=None (GREEN). No compile-time totality hole at this cell; the heuristic routes the mixed-access pair to the standard track and sizes both the rolled primary and the user-tiled secondary correctly."
+      },
+      {
+        "cell": "grid_origin_nonnorm",
+        "observed": "GREEN (no compile-time hole) on first try. Kernel col_max_collapse: a NON-norm per-feature MAX-over-batch grid collapse (two-level grid tile: for cta in hl.tile(M, m_block): acc=full(-inf,[N]); for mb in hl.tile(cta.begin,cta.end): acc=maximum(acc, amax(x[mb,:],dim=0)); blocks[cta.id,:]=acc; return amax(blocks,0)). Shape 4096x1024 fp32. LANDED on the intended property-point: fired=['triton_reduction_user_tile'], n_reduction_facts=1, n_matmul_facts=0, lowering_reduction_axes=[1], grid_block_ids=[[0]]. The faithful M-collapse property grid_reduction_origin=True fired (m_block_ids=[0] grid axis present AND the inner re-tile cta.begin..cta.end has unbacked extent), proving it is a PROPERTY not a norm-bwd recognizer (matches the GRO Gate-D claim). feature_footprint=1024, body_live_tiles=2. The seed SIZED the grid CTA for occupancy rather than flooring it: normalized block_sizes=[32, 8] (block_sizes[0]=grid m_block=32 occupancy-sized; block_sizes[1]=inner reduction re-tile=8), num_warps=16, num_stages=1, pid_type='flat'. No FLOOR1_TILED: the tiled reduction axis bid=1 (a valid block_sizes entry) got block_size=8 not 1. Distinct from existing gro_divergence.col_energy_collapse (sum-of-squares +=) by exercising a torch.maximum combine into an hl.full(-inf) accumulator. Note: harmless host-side TensorOperationInWrapper warning on the cross-CTA finalize torch.amax(blocks,0) (expected for the two-level decomposition; not a compile error). The heuristic MISHANDLES nothing here."
+      },
+      {
+        "cell": "carried_3d_highdim",
+        "observed": "GREEN (red=null). Heuristic FIRED: fired=[\"triton_reduction_tile\"], n_reduction_facts=1, n_matmul_facts=0. lowering_reduction_axes=[2,3] -> TWO reduction axes: bid=3 (the user-tiled inner K loop, in reduction_loops_valid_ids=[3]) and bid=2 (the carried-resident R dim, a tunable block_sizes entry, block_sizes_valid_ids=[0,1,2]). ReductionFact: primary_reduction_block_id=3, secondary_reduction_block_ids=[2], num_carried_2d_tiles=2 (the carried-2d residency cap IS exercised at rank>2 as intended), size_hint=32, grid_reduction_origin=false, row_reread=false. Normalized seed: block_sizes=[16,16,2048], reduction_loops=[None]. No FLOOR1_TILED: lowering axis 2 maps to block_sizes index 2 and got block_size=2048 (extent>1, not floored to 1); axis 3 lives in reduction_loops (not a block_sizes tile). Kernel: 4-D input [M,P,R,K]=[512,48,32,2048], grid over [M,P], user-tile over K, carry rank-3 accumulator [M_BLOCK,P_BLOCK,R] whose last dim R is a resident reduction dim, fold with .sum(-1). Landed exactly on the intended property-point (rank-3 carried-resident reduction, user-tiled inner origin); no drift. 2 tries: try1 CRASH (UndefinedVariable tile_n in a carried-accumulator placeholder), try2 clean land."
+      },
+      {
+        "cell": "unbacked_inner_nonbackward",
+        "observed": "Kernel `chunked_segment_sum`: a chunked segment-sum of a contiguous 1-D values vector. Outer grid loop `for cta in hl.tile(E, block_size=cta_block)`; inner `for inner in hl.tile(cta.begin, cta.end)` re-tiles each CTA's data-dependent (UNBACKED) slab and sums values[inner] into a per-CTA scalar. Compiled clean on try 2 (try 1 CRASHed on `acc[0]` Python indexing, a kernel-authoring bug unrelated to the heuristic; fixed by writing `out[cta.id, :] = acc`). LANDED exactly on the intended property-point: fired=['triton_reduction_user_tile'] (ACCESS=user-tiled, NOT NO_FIRE); n_reduction_facts=1; lowering_reduction_axes=[1]; grid_block_ids=[[0]] (block 0 = outer grid CTA, ORIGIN=grid); block_sizes_valid_ids=[0,1] (block 1, the reduction axis, is a TUNABLE block_sizes entry — user-tiled, reduction_loops empty). ReductionFact: primary_reduction_block_id=1, size_hint=8192 (the UNBACKED create_unbacked_symint placeholder), static_rnumel=None (extent NOT static — confirms unbacked, NOT the JAGGED size=None predicate so IN scope), itemsize=4, m_block_ids=[0], num_carried_2d_tiles=0 (scalar acc), grid_reduction_origin=True, secondary_reduction_block_ids=[]. VERDICT GREEN (red=None). The heuristic CORRECTLY classifies: (1) grid_reduction_origin=True is faithful by its documented definition (bool(m_block_ids) AND a reducing axis has free_unbacked_symbols on its size) — same as the established col_energy_collapse non-norm grid-collapse fixture, NOT a mis-fire; (2) the 8192 unbacked placeholder did NOT mis-size — the tunable reduction axis (block 1) got block_size=256 in the normalized seed (block_sizes=[256,256]), NOT floored to 1, so no FLOOR1_TILED. Stride over reduced elements == itemsize (contiguous 1-D values indexed by dim-0 tile), so NOT the STRIDED-DIM0 out-of-scope predicate. No compile-time totality hole."
+      },
+      {
+        "cell": "reduce_apply_reduce",
+        "observed": "GREEN (no compile-time hole). Fired=['triton_reduction_tile']; n_reduction_facts=1; n_matmul_facts=0; lowering_reduction_axes=[1]; grid_block_ids=[[0]]; block_sizes_valid_ids=[]; reduction_loops_valid_ids=[1]. Fact confirms the intended cell: row_reread=True, reread_eviction_index=0, non_reduction_loop_block_ids=[], secondary_reduction_block_ids=[], primary_reduction_block_id=1, size_hint=4096 (static, not jagged), grid_reduction_origin=False, full_width_output=False, num_load=1, input_load_itemsize=2, body_live_tiles=2. normalized_cfg: block_sizes=[], reduction_loops=[None] (persistent over N=4096, NOT floored), load_eviction_policies=['first','first','first'] (3 loads -> re-read recognized), num_warps=8, num_stages=1, pid_type=flat. The two full-slice reductions over N (amax then sum-over-applied) merge into one ReductionFact on axis-1 block_id 1; the second reduce data-depends on the first stat (numerically-stable softmax-style exp(x-m)), and the row is re-read across passes (row_reread=True). Since axis 1 is a reduction_loops entry (not a block_sizes tile) the FLOOR1_TILED check does not apply; reduction_loops=[None] is a valid persistent choice, not a silent floor."
+      },
+      {
+        "cell": "wide_pinned_grid_sibling",
+        "observed": "GREEN (red=null), landed on intended cell on first try. fired=[triton_reduction_tile]; n_reduction_facts=1, n_matmul_facts=0 (eligible reduction, fired -> no NO_FIRE). lowering_reduction_axes=[2] -> the reduction is over the INNERMOST contiguous axis C (block_id 2, stride==itemsize), so NOT strided-dim0, NOT jagged (static_rnumel=128) -> in-scope. fact: primary_reduction_block_id=2, size_hint=128 (SMALL pinned reduction over C), m_block_ids=[0,1] (BOTH M pinned + G the WIDE fan-out sibling are kept grid axes), full_width_output=false (per-group scalar, no carried tile). block_sizes_valid_ids=[1] -> only G (block 1) is a tunable block_sizes entry; M is grid-pinned (block_size=1) so absent from the tunable spec (the per_token_group idiom that used to KeyError). G (extent 8192) is the axis hitting the elif bs_spec.block_id in fact.m_block_ids footprint-widen branch. THE CELL QUESTION (over-widen vs floor): seed block_sizes=[32] -> the wide sibling G was widened from floor 1 to 32, NOT over-widened to thousands despite the tiny reduction R_BLOCK (=128) leaving _resident_tile_cap large. The occupancy guard (_m_axis_occupancy_cap, never collapse post-widen grid below num_sm*MIN_WAVES) plus _m_block_cap correctly bounded the widen. No FLOOR1_TILED: G is a NON-reduction axis (lowering axis is 2, not 1) so it is not even a FLOOR1 candidate, and its block_size 32 > 1 anyway; the reduction axis C (block 2) is pinned full-extent (not a tunable block_sizes entry) so also not a FLOOR1 candidate. Heuristic handles this point correctly -> no totality hole."
+      },
+      {
+        "cell": "tiny_extent_boundary",
+        "observed": "Kernel tiny_and_extreme_reduce reduces over a TINY non-pow2 axis (K=7, bid 1) and an EXTREME axis (N=2^21=2,097,152, bid 2) in two separate user-tiled inner loops, grid-pinned over M=4096 (block_size=1). LANDED on the intended cell: lowering_reduction_axes=[1,2] (both are real ReductionLowerings), block_sizes_valid_ids=[1,2] (both are tunable reduction tiles the FLOOR1_TILED check applies to). FIRED with triton_reduction_user_tile; n_reduction_facts=1 (extreme axis 2 recorded as the dominant/primary fact, tiny axis 1 as secondary_reduction_block_ids=[1]). Seed normalized_cfg.block_sizes=[8, 16384]: bid 1 (tiny, extent 7) -> idx 0 -> block_size 8 = next_pow2(7), i.e. the whole tiny axis in one tile (>1, NOT floored); bid 2 (extreme, extent 2097152) -> idx 1 -> block_size 16384 (looped at the extreme edge, >1, NOT floored). Stderr notes 'block_sizes loop 1 (size s27) is floored (no widening rule for this loop shape yet)' but the sizer set the tiny tile to 8 (=full extent), not 1, so this is a no-widen decision, not a FLOOR1 hole. No CRASH, no NO_FIRE, no FLOOR1_TILED. Verdict GREEN: no compile-time totality hole at the tiny/extreme boundary. Cross-check: a solo single-tiny-axis kernel at K in {2,3,7,17} also stays GREEN, sizing the tiny tile to block_size=2 (>1) in every case."
+      }
+    ],
+    "oos": [],
+    "all": [
+      {
+        "cell": "multifact_3way",
+        "file": "/home/dev/local/helion-unify/_lab/unify/probes/gen/multifact_3way.py",
+        "landed": true,
+        "red": null,
+        "out_of_scope": false,
+        "out_of_scope_which": null,
+        "unreached": false,
+        "unreached_errors": null,
+        "reasons": [],
+        "observed_summary": "GREEN (red=None). Landed on intended cell: 3 independent reductions in 3 separate grid-pinned loops over 3 different tensors. n_reduction_facts=3 with distinct extents [4096 (rbid1), 2048 (rbid3), 1024 (rbid5)], n_matmul_facts=0. fired=['triton_reduction_tile'] -- the relaxed >=1 eligibility gate let the 3-fact kernel fire (the old ==1 fence would have declined into default). _reduction_primary_fact dominant pick correctly selects the widest extent (4096, rbid=1), grid_reduction_origin=False for all three (standard/rolled track, correct for grid-pinned full-slice). lowering_reduction_axes=[1,3,5]; reduction_loops_valid_ids=[1,3,5] (all rolled); block_sizes_valid_ids=[] (no tiled reduction axes, so FLOOR1_TILED inapplicable). Seed sizes sanely: normalized reduction_loops=[None,None,None] (persistent -- all extents fit residency budget), num_warps=8. grid_block_ids=[[0],[2],[4]] (three independent pinned loops, CO-RESIDENCY=different-loop). One bind crash on the first attempt (LoopDependencyError from writing a shared out tensor across loops -- an idiom bug, not a heuristic hole) fixed by using three separate output buffers. Benign TensorOperationInWrapper warning on the host-side return add, irrelevant to the seed. No compile-time totality hole at this property-point; the dominant-fact seed fires and sizes correctly."
+      },
+      {
+        "cell": "multifact_mixed_access",
+        "file": "/home/dev/local/helion-unify/_lab/unify/probes/gen/multifact_mixed_access.py",
+        "landed": true,
+        "red": null,
+        "out_of_scope": false,
+        "out_of_scope_which": null,
+        "unreached": false,
+        "unreached_errors": null,
+        "reasons": [
+          "GREEN: red=None on both target arms (A standard-dominant, B usertiled-dominant). No CRASH, no NO_FIRE, no FLOOR1_TILED.",
+          "Kernel compiled first try; landed on the intended mixed-access cell: lowering_reduction_axes=[1,3] with axis 1 = ROLLED full-slice (in reduction_loops) and axis 3 = USER-TILED (a block_sizes tile). Both reductions present in the LOWERING role across two separate grid loops.",
+          "DISCOVERY about routing: the relaxed gate does NOT keep the mix as two facts. When a rolled reduction co-exists, register_unrolled_reductions is gated `if not spec.reduction_loops`, so the user-tiled K axis is COMPOSED into the single standard-track fact as secondary_reduction_block_ids=[3] (via _user_tiled_reduction_block_ids), NOT a second ReductionFact. Result: n_reduction_facts=1 for both arms.",
+          "Both reductions are sized CORRECTLY: reduction_loops=[None] (rolled N persistent) and block_sizes=[2048] (user-tiled K at full extent 2048, NOT floored to block_size=1). So the checker's FLOOR1_TILED guard passes: bid=3 in valid block_sizes, extent=2048, bs=2048 != 1.",
+          "Arms A and B are byte-identical (same fired/facts/normalized_cfg) regardless of which axis is dominant by size_hint, confirming the standard track ALWAYS wins when a rolled reduction is present (the dominance tie-break only picks the primary WITHIN the composed fact; it never flips the track to user-tiled).",
+          "Reachability control (arm C, two ROLLED full-slice in separate loops = the gate docstring's own out1=x.sum/out2=y.sum example): n_reduction_facts=2, reduction_loops=[None,None], both standard track, both fire, GREEN. Confirms 2-fact is reachable only when BOTH are rolled; a rolled+user-tiled mix collapses to 1 composed fact."
+        ],
+        "observed_summary": "Target arms A/B (rolled full-slice N + user-tiled K, separate grid loops): fired=['triton_reduction_tile'], n_reduction_facts=1, n_matmul_facts=0, lowering_reduction_axes=[1,3], grid_block_ids=[[0],[2]], block_sizes_valid_ids=[3], reduction_loops_valid_ids=[1], normalized block_sizes=[2048], reduction_loops=[None], fact primary_reduction_block_id=1 size_hint=8192 secondary_reduction_block_ids=[3]. red=None (GREEN). Reachability arm C (two rolled): n_reduction_facts=2, reduction_loops=[None,None], block_sizes=[], red=None (GREEN). No compile-time totality hole at this cell; the heuristic routes the mixed-access pair to the standard track and sizes both the rolled primary and the user-tiled secondary correctly."
+      },
+      {
+        "cell": "grid_origin_nonnorm",
+        "file": "/home/dev/local/helion-unify/_lab/unify/probes/gen/grid_origin_nonnorm.py",
+        "landed": true,
+        "red": null,
+        "out_of_scope": false,
+        "out_of_scope_which": null,
+        "unreached": false,
+        "unreached_errors": null,
+        "reasons": [],
+        "observed_summary": "GREEN (no compile-time hole) on first try. Kernel col_max_collapse: a NON-norm per-feature MAX-over-batch grid collapse (two-level grid tile: for cta in hl.tile(M, m_block): acc=full(-inf,[N]); for mb in hl.tile(cta.begin,cta.end): acc=maximum(acc, amax(x[mb,:],dim=0)); blocks[cta.id,:]=acc; return amax(blocks,0)). Shape 4096x1024 fp32. LANDED on the intended property-point: fired=['triton_reduction_user_tile'], n_reduction_facts=1, n_matmul_facts=0, lowering_reduction_axes=[1], grid_block_ids=[[0]]. The faithful M-collapse property grid_reduction_origin=True fired (m_block_ids=[0] grid axis present AND the inner re-tile cta.begin..cta.end has unbacked extent), proving it is a PROPERTY not a norm-bwd recognizer (matches the GRO Gate-D claim). feature_footprint=1024, body_live_tiles=2. The seed SIZED the grid CTA for occupancy rather than flooring it: normalized block_sizes=[32, 8] (block_sizes[0]=grid m_block=32 occupancy-sized; block_sizes[1]=inner reduction re-tile=8), num_warps=16, num_stages=1, pid_type='flat'. No FLOOR1_TILED: the tiled reduction axis bid=1 (a valid block_sizes entry) got block_size=8 not 1. Distinct from existing gro_divergence.col_energy_collapse (sum-of-squares +=) by exercising a torch.maximum combine into an hl.full(-inf) accumulator. Note: harmless host-side TensorOperationInWrapper warning on the cross-CTA finalize torch.amax(blocks,0) (expected for the two-level decomposition; not a compile error). The heuristic MISHANDLES nothing here."
+      },
+      {
+        "cell": "carried_3d_highdim",
+        "file": "/home/dev/local/helion-unify/_lab/unify/probes/gen/carried_3d_highdim.py",
+        "landed": true,
+        "red": null,
+        "reasons": [],
+        "observed_summary": "GREEN (red=null). Heuristic FIRED: fired=[\"triton_reduction_tile\"], n_reduction_facts=1, n_matmul_facts=0. lowering_reduction_axes=[2,3] -> TWO reduction axes: bid=3 (the user-tiled inner K loop, in reduction_loops_valid_ids=[3]) and bid=2 (the carried-resident R dim, a tunable block_sizes entry, block_sizes_valid_ids=[0,1,2]). ReductionFact: primary_reduction_block_id=3, secondary_reduction_block_ids=[2], num_carried_2d_tiles=2 (the carried-2d residency cap IS exercised at rank>2 as intended), size_hint=32, grid_reduction_origin=false, row_reread=false. Normalized seed: block_sizes=[16,16,2048], reduction_loops=[None]. No FLOOR1_TILED: lowering axis 2 maps to block_sizes index 2 and got block_size=2048 (extent>1, not floored to 1); axis 3 lives in reduction_loops (not a block_sizes tile). Kernel: 4-D input [M,P,R,K]=[512,48,32,2048], grid over [M,P], user-tile over K, carry rank-3 accumulator [M_BLOCK,P_BLOCK,R] whose last dim R is a resident reduction dim, fold with .sum(-1). Landed exactly on the intended property-point (rank-3 carried-resident reduction, user-tiled inner origin); no drift. 2 tries: try1 CRASH (UndefinedVariable tile_n in a carried-accumulator placeholder), try2 clean land.",
+        "out_of_scope": false,
+        "out_of_scope_which": null,
+        "unreached": false,
+        "unreached_errors": null
+      },
+      {
+        "cell": "unbacked_inner_nonbackward",
+        "file": "/home/dev/local/helion-unify/_lab/unify/probes/gen/unbacked_inner_nonbackward.py",
+        "landed": true,
+        "red": null,
+        "reasons": [],
+        "observed_summary": "Kernel `chunked_segment_sum`: a chunked segment-sum of a contiguous 1-D values vector. Outer grid loop `for cta in hl.tile(E, block_size=cta_block)`; inner `for inner in hl.tile(cta.begin, cta.end)` re-tiles each CTA's data-dependent (UNBACKED) slab and sums values[inner] into a per-CTA scalar. Compiled clean on try 2 (try 1 CRASHed on `acc[0]` Python indexing, a kernel-authoring bug unrelated to the heuristic; fixed by writing `out[cta.id, :] = acc`). LANDED exactly on the intended property-point: fired=['triton_reduction_user_tile'] (ACCESS=user-tiled, NOT NO_FIRE); n_reduction_facts=1; lowering_reduction_axes=[1]; grid_block_ids=[[0]] (block 0 = outer grid CTA, ORIGIN=grid); block_sizes_valid_ids=[0,1] (block 1, the reduction axis, is a TUNABLE block_sizes entry — user-tiled, reduction_loops empty). ReductionFact: primary_reduction_block_id=1, size_hint=8192 (the UNBACKED create_unbacked_symint placeholder), static_rnumel=None (extent NOT static — confirms unbacked, NOT the JAGGED size=None predicate so IN scope), itemsize=4, m_block_ids=[0], num_carried_2d_tiles=0 (scalar acc), grid_reduction_origin=True, secondary_reduction_block_ids=[]. VERDICT GREEN (red=None). The heuristic CORRECTLY classifies: (1) grid_reduction_origin=True is faithful by its documented definition (bool(m_block_ids) AND a reducing axis has free_unbacked_symbols on its size) — same as the established col_energy_collapse non-norm grid-collapse fixture, NOT a mis-fire; (2) the 8192 unbacked placeholder did NOT mis-size — the tunable reduction axis (block 1) got block_size=256 in the normalized seed (block_sizes=[256,256]), NOT floored to 1, so no FLOOR1_TILED. Stride over reduced elements == itemsize (contiguous 1-D values indexed by dim-0 tile), so NOT the STRIDED-DIM0 out-of-scope predicate. No compile-time totality hole.",
+        "out_of_scope": false,
+        "out_of_scope_which": null,
+        "unreached": false,
+        "unreached_errors": null
+      },
+      {
+        "cell": "reduce_apply_reduce",
+        "file": "/home/dev/local/helion-unify/_lab/unify/probes/gen/reduce_apply_reduce.py",
+        "landed": true,
+        "red": null,
+        "reasons": [],
+        "observed_summary": "GREEN (no compile-time hole). Fired=['triton_reduction_tile']; n_reduction_facts=1; n_matmul_facts=0; lowering_reduction_axes=[1]; grid_block_ids=[[0]]; block_sizes_valid_ids=[]; reduction_loops_valid_ids=[1]. Fact confirms the intended cell: row_reread=True, reread_eviction_index=0, non_reduction_loop_block_ids=[], secondary_reduction_block_ids=[], primary_reduction_block_id=1, size_hint=4096 (static, not jagged), grid_reduction_origin=False, full_width_output=False, num_load=1, input_load_itemsize=2, body_live_tiles=2. normalized_cfg: block_sizes=[], reduction_loops=[None] (persistent over N=4096, NOT floored), load_eviction_policies=['first','first','first'] (3 loads -> re-read recognized), num_warps=8, num_stages=1, pid_type=flat. The two full-slice reductions over N (amax then sum-over-applied) merge into one ReductionFact on axis-1 block_id 1; the second reduce data-depends on the first stat (numerically-stable softmax-style exp(x-m)), and the row is re-read across passes (row_reread=True). Since axis 1 is a reduction_loops entry (not a block_sizes tile) the FLOOR1_TILED check does not apply; reduction_loops=[None] is a valid persistent choice, not a silent floor.",
+        "out_of_scope": false,
+        "out_of_scope_which": null,
+        "unreached": false,
+        "unreached_errors": null
+      },
+      {
+        "cell": "wide_pinned_grid_sibling",
+        "file": "/home/dev/local/helion-unify/_lab/unify/probes/gen/wide_pinned_grid_sibling.py",
+        "landed": true,
+        "red": null,
+        "out_of_scope": false,
+        "out_of_scope_which": null,
+        "unreached": false,
+        "unreached_errors": null,
+        "reasons": [],
+        "observed_summary": "GREEN (red=null), landed on intended cell on first try. fired=[triton_reduction_tile]; n_reduction_facts=1, n_matmul_facts=0 (eligible reduction, fired -> no NO_FIRE). lowering_reduction_axes=[2] -> the reduction is over the INNERMOST contiguous axis C (block_id 2, stride==itemsize), so NOT strided-dim0, NOT jagged (static_rnumel=128) -> in-scope. fact: primary_reduction_block_id=2, size_hint=128 (SMALL pinned reduction over C), m_block_ids=[0,1] (BOTH M pinned + G the WIDE fan-out sibling are kept grid axes), full_width_output=false (per-group scalar, no carried tile). block_sizes_valid_ids=[1] -> only G (block 1) is a tunable block_sizes entry; M is grid-pinned (block_size=1) so absent from the tunable spec (the per_token_group idiom that used to KeyError). G (extent 8192) is the axis hitting the elif bs_spec.block_id in fact.m_block_ids footprint-widen branch. THE CELL QUESTION (over-widen vs floor): seed block_sizes=[32] -> the wide sibling G was widened from floor 1 to 32, NOT over-widened to thousands despite the tiny reduction R_BLOCK (=128) leaving _resident_tile_cap large. The occupancy guard (_m_axis_occupancy_cap, never collapse post-widen grid below num_sm*MIN_WAVES) plus _m_block_cap correctly bounded the widen. No FLOOR1_TILED: G is a NON-reduction axis (lowering axis is 2, not 1) so it is not even a FLOOR1 candidate, and its block_size 32 > 1 anyway; the reduction axis C (block 2) is pinned full-extent (not a tunable block_sizes entry) so also not a FLOOR1 candidate. Heuristic handles this point correctly -> no totality hole."
+      },
+      {
+        "cell": "tiny_extent_boundary",
+        "file": "/home/dev/local/helion-unify/_lab/unify/probes/gen/tiny_extent_boundary.py",
+        "landed": true,
+        "red": null,
+        "reasons": [],
+        "observed_summary": "Kernel tiny_and_extreme_reduce reduces over a TINY non-pow2 axis (K=7, bid 1) and an EXTREME axis (N=2^21=2,097,152, bid 2) in two separate user-tiled inner loops, grid-pinned over M=4096 (block_size=1). LANDED on the intended cell: lowering_reduction_axes=[1,2] (both are real ReductionLowerings), block_sizes_valid_ids=[1,2] (both are tunable reduction tiles the FLOOR1_TILED check applies to). FIRED with triton_reduction_user_tile; n_reduction_facts=1 (extreme axis 2 recorded as the dominant/primary fact, tiny axis 1 as secondary_reduction_block_ids=[1]). Seed normalized_cfg.block_sizes=[8, 16384]: bid 1 (tiny, extent 7) -> idx 0 -> block_size 8 = next_pow2(7), i.e. the whole tiny axis in one tile (>1, NOT floored); bid 2 (extreme, extent 2097152) -> idx 1 -> block_size 16384 (looped at the extreme edge, >1, NOT floored). Stderr notes 'block_sizes loop 1 (size s27) is floored (no widening rule for this loop shape yet)' but the sizer set the tiny tile to 8 (=full extent), not 1, so this is a no-widen decision, not a FLOOR1 hole. No CRASH, no NO_FIRE, no FLOOR1_TILED. Verdict GREEN: no compile-time totality hole at the tiny/extreme boundary. Cross-check: a solo single-tiny-axis kernel at K in {2,3,7,17} also stays GREEN, sizing the tiny tile to block_size=2 (>1) in every case.",
+        "out_of_scope": false,
+        "out_of_scope_which": null,
+        "unreached": false,
+        "unreached_errors": null
+      }
+    ]
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Mint"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Triage"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "mint:multifact_3way",
+      "phaseIndex": 1,
+      "phaseTitle": "Mint",
+      "agentId": "a020785458d21c23c",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782556690188,
+      "queuedAt": 1782556690167,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "multifact_3way",
+      "promptPreview": "You author + verify a Helion reduction kernel at /home/dev/local/helion-unify (branch reduction-unify)\nto probe the reduction SEED heuristic for a TOTALITY hole (a fall-through). This is the generator's\nminting role. The heuristic just underwent a faithfulness refactor (Defects 1/2/3 re-keyed, the\nper_feature_accumulator recognizer -> grid_reduction_origin property, the len==1 eligibility fence\nre…",
+      "lastProgressAt": 1782556805044,
+      "tokens": 39415,
+      "toolCalls": 16,
+      "durationMs": 114856,
+      "resultPreview": "{\"cell\":\"multifact_3way\",\"file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gen/multifact_3way.py\",\"landed\":true,\"red\":null,\"out_of_scope\":false,\"out_of_scope_which\":null,\"unreached\":false,\"unreached_errors\":null,\"reasons\":[],\"observed_summary\":\"GREEN (red=None). Landed on intended cell: 3 independent reductions in 3 separate grid-pinned loops over 3 different tensors. n_reduction_facts=3 with…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "mint:multifact_mixed_access",
+      "phaseIndex": 1,
+      "phaseTitle": "Mint",
+      "agentId": "a62bca1a73bb2a210",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782556690203,
+      "queuedAt": 1782556690167,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "multifact_mixed_access",
+      "promptPreview": "You author + verify a Helion reduction kernel at /home/dev/local/helion-unify (branch reduction-unify)\nto probe the reduction SEED heuristic for a TOTALITY hole (a fall-through). This is the generator's\nminting role. The heuristic just underwent a faithfulness refactor (Defects 1/2/3 re-keyed, the\nper_feature_accumulator recognizer -> grid_reduction_origin property, the len==1 eligibility fence\nre…",
+      "lastProgressAt": 1782556869526,
+      "tokens": 63263,
+      "toolCalls": 24,
+      "durationMs": 179323,
+      "resultPreview": "{\"cell\":\"multifact_mixed_access\",\"file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gen/multifact_mixed_access.py\",\"landed\":true,\"red\":null,\"out_of_scope\":false,\"out_of_scope_which\":null,\"unreached\":false,\"unreached_errors\":null,\"reasons\":[\"GREEN: red=None on both target arms (A standard-dominant, B usertiled-dominant). No CRASH, no NO_FIRE, no FLOOR1_TILED.\",\"Kernel compiled first try; landed…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "mint:grid_origin_nonnorm",
+      "phaseIndex": 1,
+      "phaseTitle": "Mint",
+      "agentId": "a4b25ab8398e4f1a1",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782556690215,
+      "queuedAt": 1782556690167,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "grid_origin_nonnorm",
+      "promptPreview": "You author + verify a Helion reduction kernel at /home/dev/local/helion-unify (branch reduction-unify)\nto probe the reduction SEED heuristic for a TOTALITY hole (a fall-through). This is the generator's\nminting role. The heuristic just underwent a faithfulness refactor (Defects 1/2/3 re-keyed, the\nper_feature_accumulator recognizer -> grid_reduction_origin property, the len==1 eligibility fence\nre…",
+      "lastProgressAt": 1782556765619,
+      "tokens": 38416,
+      "toolCalls": 13,
+      "durationMs": 75404,
+      "resultPreview": "{\"cell\":\"grid_origin_nonnorm\",\"file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gen/grid_origin_nonnorm.py\",\"landed\":true,\"red\":null,\"out_of_scope\":false,\"out_of_scope_which\":null,\"unreached\":false,\"unreached_errors\":null,\"reasons\":[],\"observed_summary\":\"GREEN (no compile-time hole) on first try. Kernel col_max_collapse: a NON-norm per-feature MAX-over-batch grid collapse (two-level grid tile…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "mint:carried_3d_highdim",
+      "phaseIndex": 1,
+      "phaseTitle": "Mint",
+      "agentId": "a76edcd3119a443a1",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782556690227,
+      "queuedAt": 1782556690168,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "carried_3d_highdim",
+      "promptPreview": "You author + verify a Helion reduction kernel at /home/dev/local/helion-unify (branch reduction-unify)\nto probe the reduction SEED heuristic for a TOTALITY hole (a fall-through). This is the generator's\nminting role. The heuristic just underwent a faithfulness refactor (Defects 1/2/3 re-keyed, the\nper_feature_accumulator recognizer -> grid_reduction_origin property, the len==1 eligibility fence\nre…",
+      "lastProgressAt": 1782556859663,
+      "tokens": 39590,
+      "toolCalls": 19,
+      "durationMs": 169436,
+      "resultPreview": "{\"cell\":\"carried_3d_highdim\",\"file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gen/carried_3d_highdim.py\",\"landed\":true,\"red\":null,\"reasons\":[],\"observed_summary\":\"GREEN (red=null). Heuristic FIRED: fired=[\\\"triton_reduction_tile\\\"], n_reduction_facts=1, n_matmul_facts=0. lowering_reduction_axes=[2,3] -> TWO reduction axes: bid=3 (the user-tiled inner K loop, in reduction_loops_valid_ids=[3])…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "mint:unbacked_inner_nonbackward",
+      "phaseIndex": 1,
+      "phaseTitle": "Mint",
+      "agentId": "ae123a08015776ce1",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782556690239,
+      "queuedAt": 1782556690168,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "unbacked_inner_nonbackward",
+      "promptPreview": "You author + verify a Helion reduction kernel at /home/dev/local/helion-unify (branch reduction-unify)\nto probe the reduction SEED heuristic for a TOTALITY hole (a fall-through). This is the generator's\nminting role. The heuristic just underwent a faithfulness refactor (Defects 1/2/3 re-keyed, the\nper_feature_accumulator recognizer -> grid_reduction_origin property, the len==1 eligibility fence\nre…",
+      "lastProgressAt": 1782556842988,
+      "tokens": 64578,
+      "toolCalls": 23,
+      "durationMs": 152749,
+      "resultPreview": "{\"cell\":\"unbacked_inner_nonbackward\",\"file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gen/unbacked_inner_nonbackward.py\",\"landed\":true,\"red\":null,\"reasons\":[],\"observed_summary\":\"Kernel `chunked_segment_sum`: a chunked segment-sum of a contiguous 1-D values vector. Outer grid loop `for cta in hl.tile(E, block_size=cta_block)`; inner `for inner in hl.tile(cta.begin, cta.end)` re-tiles each CT…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "mint:reduce_apply_reduce",
+      "phaseIndex": 1,
+      "phaseTitle": "Mint",
+      "agentId": "a6257127d29bee445",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782556690250,
+      "queuedAt": 1782556690168,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "reduce_apply_reduce",
+      "promptPreview": "You author + verify a Helion reduction kernel at /home/dev/local/helion-unify (branch reduction-unify)\nto probe the reduction SEED heuristic for a TOTALITY hole (a fall-through). This is the generator's\nminting role. The heuristic just underwent a faithfulness refactor (Defects 1/2/3 re-keyed, the\nper_feature_accumulator recognizer -> grid_reduction_origin property, the len==1 eligibility fence\nre…",
+      "lastProgressAt": 1782556747923,
+      "tokens": 28465,
+      "toolCalls": 7,
+      "durationMs": 57673,
+      "resultPreview": "{\"cell\":\"reduce_apply_reduce\",\"file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gen/reduce_apply_reduce.py\",\"landed\":true,\"red\":null,\"reasons\":[],\"observed_summary\":\"GREEN (no compile-time hole). Fired=['triton_reduction_tile']; n_reduction_facts=1; n_matmul_facts=0; lowering_reduction_axes=[1]; grid_block_ids=[[0]]; block_sizes_valid_ids=[]; reduction_loops_valid_ids=[1]. Fact confirms the i…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 7,
+      "label": "mint:wide_pinned_grid_sibling",
+      "phaseIndex": 1,
+      "phaseTitle": "Mint",
+      "agentId": "a7eafae73f1b8a8e1",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782556690260,
+      "queuedAt": 1782556690168,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "wide_pinned_grid_sibling",
+      "promptPreview": "You author + verify a Helion reduction kernel at /home/dev/local/helion-unify (branch reduction-unify)\nto probe the reduction SEED heuristic for a TOTALITY hole (a fall-through). This is the generator's\nminting role. The heuristic just underwent a faithfulness refactor (Defects 1/2/3 re-keyed, the\nper_feature_accumulator recognizer -> grid_reduction_origin property, the len==1 eligibility fence\nre…",
+      "lastProgressAt": 1782556810231,
+      "tokens": 53896,
+      "toolCalls": 18,
+      "durationMs": 119971,
+      "resultPreview": "{\"cell\":\"wide_pinned_grid_sibling\",\"file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gen/wide_pinned_grid_sibling.py\",\"landed\":true,\"red\":null,\"out_of_scope\":false,\"out_of_scope_which\":null,\"unreached\":false,\"unreached_errors\":null,\"reasons\":[],\"observed_summary\":\"GREEN (red=null), landed on intended cell on first try. fired=[triton_reduction_tile]; n_reduction_facts=1, n_matmul_facts=0 (elig…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 8,
+      "label": "mint:tiny_extent_boundary",
+      "phaseIndex": 1,
+      "phaseTitle": "Mint",
+      "agentId": "a53f6f85d7c2e4e47",
+      "model": "us.anthropic.claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782556690270,
+      "queuedAt": 1782556690168,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "tiny_extent_boundary",
+      "promptPreview": "You author + verify a Helion reduction kernel at /home/dev/local/helion-unify (branch reduction-unify)\nto probe the reduction SEED heuristic for a TOTALITY hole (a fall-through). This is the generator's\nminting role. The heuristic just underwent a faithfulness refactor (Defects 1/2/3 re-keyed, the\nper_feature_accumulator recognizer -> grid_reduction_origin property, the len==1 eligibility fence\nre…",
+      "lastProgressAt": 1782556798834,
+      "tokens": 34801,
+      "toolCalls": 13,
+      "durationMs": 108564,
+      "resultPreview": "{\"cell\":\"tiny_extent_boundary\",\"file\":\"/home/dev/local/helion-unify/_lab/unify/probes/gen/tiny_extent_boundary.py\",\"landed\":true,\"red\":null,\"reasons\":[],\"observed_summary\":\"Kernel tiny_and_extreme_reduce reduces over a TINY non-pow2 axis (K=7, bid 1) and an EXTREME axis (N=2^21=2,097,152, bid 2) in two separate user-tiled inner loops, grid-pinned over M=4096 (block_size=1). LANDED on the intended …"
+    }
+  ],
+  "totalTokens": 362424,
+  "totalToolCalls": 133
+}
