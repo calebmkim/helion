@@ -1,0 +1,4 @@
+{
+  "_comment": "H100 (sm90) matmul-seed OVERRIDE table. Formula-first: TritonH100MatmulHeuristic's budget/roofline formula (_h100_matmul_tile) is the catch-all that fires on every clean 2-D static MatmulFact. A rule here overrides the formula ONLY for a measured REGIME where the formula is wrong, scoped to the widest band the mechanism implies (never fenced to a single curriculum shape). shape_bucket keys: width (exact int bits 8/16/32), m_bucket/n_bucket/k_bucket (intervals like \"(512,4096]\"), m_value/n_value/k_value (exact). Most-specific (most keys) wins. Empty rules => the formula is the sole seed.",
+  "rules": []
+}

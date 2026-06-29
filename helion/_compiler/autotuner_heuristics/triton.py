@@ -254,6 +254,262 @@ class TritonB200MatmulHeuristic(AutotunerHeuristic):
         return _seed_config_for_config_spec(env.config_spec)
 
 
+_H100_MATMUL_HEURISTICS_PATH = Path(__file__).resolve().parent / "matmul_h100.json"
+
+
+def _width_bits_from_dtype(dtype: torch.dtype) -> int:
+    """Operand bit-width — the faithful matmul-seed family key (4/8/16/32). Derived
+    from the dtype's itemsize (bytes), NOT a dtype-kind literal: bf16==fp16 collapse to
+    one 16-bit band (same itemsize), fp8=8, fp32=32, int4=4 (deferred). The compiler's
+    tl.dot tile cost scales with operand bytes, so the byte-width IS the budget knob."""
+    return dtype.itemsize * 8
+
+
+@functools.cache
+def _h100_matmul_rules() -> tuple[dict[str, object], ...]:
+    """Override rules from ``matmul_h100.json`` (a region the budget formula gets wrong,
+    scoped to that region — never to a single curriculum shape). Empty/absent file ⇒ the
+    formula is the sole, catch-all seed. Cached: the file is immutable per process."""
+    if not _H100_MATMUL_HEURISTICS_PATH.exists():
+        return ()
+    with _H100_MATMUL_HEURISTICS_PATH.open(encoding="utf-8") as handle:
+        data = cast("dict[str, list[dict[str, object]]]", json.load(handle))
+    return tuple(data.get("rules", []))
+
+
+def _h100_shape_bucket_from_fact(fact: MatmulFact) -> dict[str, object]:
+    assert fact.static_m is not None
+    assert fact.static_n is not None
+    assert fact.static_k is not None
+    return {
+        "width": _width_bits_from_dtype(fact.lhs_dtype),
+        "m_value": fact.static_m,
+        "n_value": fact.static_n,
+        "k_value": fact.static_k,
+    }
+
+
+def _h100_rules_for_bucket(
+    shape_bucket: dict[str, object],
+) -> list[dict[str, object]]:
+    """Override rules whose ``shape_bucket`` matches, most-specific first (reuses the
+    B200 interval/exact matcher; ``width`` is an exact int key, ``m/n/k_bucket`` are
+    intervals)."""
+    matches = [
+        rule
+        for rule in _h100_matmul_rules()
+        if _shape_bucket_matches(
+            cast("dict[str, object]", rule["shape_bucket"]),
+            shape_bucket,
+        )
+    ]
+    matches.sort(
+        key=lambda rule: len(cast("dict[str, object]", rule["shape_bucket"])),
+        reverse=True,
+    )
+    return matches
+
+
+def _h100_matmul_tile(
+    m: int, n: int, k: int, itemsize: int, num_sm: int, pinned_grid: int = 1
+) -> tuple[int, int, int, int, int]:
+    """The H100 (sm90) matmul budget/roofline formula — the catch-all that turns
+    ``(M, N, K, operand-width)`` into a strong ``(block_m, block_n, block_k, num_warps,
+    num_stages)`` with NO lookup. The model (task §3 inspiration):
+
+    1. **Register budget** — the fp32 ``[bm, bn]`` accumulator dominates per-CTA registers,
+       so ``bm * bn <= ACC_BUDGET`` (elems). Base aspect is wide-N (``bn = 2*bm`` →
+       ``[128, 256]``, the measured H100 compute-bound winner), since N is the coalesced
+       store axis and is usually ≥ M (FFN/proj).
+    2. **Shape clamp + spill-outward** — never tile past a dim (``bm <= M``, ``bn <= N``,
+       pow2); when one axis is clamped small (tall-skinny / decode), spend the leftover
+       register budget on the other axis so the tile stays productive instead of starved.
+    3. **Width scales block_k via SMEM** — the ``[bm,bk]``+``[bk,bn]`` operand tiles live in
+       SMEM at the OPERAND width, so a narrower operand affords a bigger K tile:
+       ``bk = {1B:128, 2B:64, 4B:32}`` — width IS the budget knob (the 8/16/32 key).
+    4. **Occupancy / wave-quantization fill** — the launched grid is ``pinned_grid ·
+       ⌈M/bm⌉·⌈N/bn⌉``, where ``pinned_grid`` is the product of any PINNED (block_size=1)
+       grid axes — 1 for a bare GEMM, but ``batch·nchunks·nheads`` for the fused
+       ``mamba2_chunk_state`` dot, which is already massively grid-saturated (so its dot tile
+       must NOT be shrunk). Shrink the wide axis (then M) only while it MEASURABLY improves the
+       wave-quantization efficiency ``grid / (⌈grid/num_sm⌉·num_sm)`` — so a shape already at
+       ~one full wave (e.g. a 2048³ cube at 128≈132 tiles) keeps its big tile, while a starved
+       small-M GEMM (16 tiles) is split to fill the machine.
+    5. **num_warps** ramps with the tile (≥16K elems → 8 else 4); **num_stages** pipelines the
+       K-loop, the largest that fits SMEM (the compiler default of 1 leaves the MMA un-pipelined).
+    """
+    from ..._utils import prev_power_of_2
+
+    ACC_BUDGET = 32768  # fp32 [bm,bn] accumulator elems (= 128*256), register-bound
+    SMEM_BUDGET = 228 * 1024  # H100 per-CTA shared memory ceiling (bytes)
+    DOT_MIN = 16  # tl.dot min M/N; K min is 16 (32 for fp8) — finalized by the spec floor
+
+    def _p2le(v: int) -> int:
+        return max(1, prev_power_of_2(max(1, v)))
+
+    # (1)+(2) register-budgeted, shape-clamped, spill-outward [bm, bn]
+    bm = min(128, max(DOT_MIN, _p2le(m)))
+    bn = min(256, max(DOT_MIN, _p2le(n)))
+    cap_m = max(DOT_MIN, _p2le(m))
+    cap_n = max(DOT_MIN, _p2le(n))
+    if bm * bn < ACC_BUDGET:  # a clamped axis freed budget — spend it on the other axis
+        bn = min(cap_n, max(bn, ACC_BUDGET // max(1, bm)))
+        if bm * bn < ACC_BUDGET:
+            bm = min(cap_m, max(bm, ACC_BUDGET // max(1, bn)))
+    while bm * bn > ACC_BUDGET and bn > DOT_MIN:  # enforce the ceiling (wide axis first)
+        bn //= 2
+    while bm * bn > ACC_BUDGET and bm > DOT_MIN:
+        bm //= 2
+
+    # (3) width-scaled K tile (SMEM at operand width)
+    bk = {1: 128, 2: 64, 4: 32}.get(itemsize, 64)
+    bk = min(bk, max(DOT_MIN, _p2le(k)))
+
+    # (4) occupancy / wave-quantization fill — shrink the wide axis (then M) only while it
+    # measurably improves wave efficiency. pinned_grid folds in any block_size=1 grid axes
+    # (mamba's batch·nchunks·nheads), so a grid-saturated fused dot is never shrunk.
+    # Decode (tiny M) keeps the DOT_MIN floor; otherwise floor at 64 (don't over-shrink a
+    # medium-M tile into a low-arithmetic-intensity sliver).
+    floor_dim = DOT_MIN if m <= DOT_MIN else 64
+
+    WAVE_FULL = 0.8  # "saturated": >= ~one full wave of CTAs; below this, fill by shrinking
+
+    def _wave_eff(_bm: int, _bn: int) -> float:
+        g = max(1, pinned_grid) * ((m + _bm - 1) // _bm) * ((n + _bn - 1) // _bn)
+        waves = (g + num_sm - 1) // num_sm
+        return g / (waves * num_sm)
+
+    # Shrink the LARGER tile axis (keeps the tile square-ish, not a starved sliver) while the
+    # grid is under one full wave AND shrinking helps. Already-saturated tiles (a cube at
+    # ~one wave, or a mamba dot with a huge pinned grid) are left untouched.
+    while _wave_eff(bm, bn) < WAVE_FULL:
+        if bn >= bm and bn > floor_dim and _wave_eff(bm, bn // 2) >= _wave_eff(bm, bn):
+            bn //= 2
+        elif bm > floor_dim and _wave_eff(bm // 2, bn) >= _wave_eff(bm, bn):
+            bm //= 2
+        else:
+            break
+
+    # (5) num_warps ramp + SMEM-capped num_stages
+    num_warps = 8 if bm * bn >= 16384 else 4
+    per_stage_bytes = (bm * bk + bk * bn) * max(1, itemsize)
+    num_stages = 2
+    for s in (4, 3, 2):
+        if per_stage_bytes * s <= SMEM_BUDGET:
+            num_stages = s
+            break
+    return bm, bn, bk, num_warps, num_stages
+
+
+def _h100_build_block_sizes(
+    spec: ConfigSpec, fact: MatmulFact, bm: int, bn: int, bk: int
+) -> list[int]:
+    """Map ``(bm, bn, bk)`` onto the spec's block_sizes by the fact's M/N/K block-ids,
+    clamping each to its valid [min, max] (other axes — none for a clean 2-D fact — floored)."""
+    targets = {fact.m_block_id: bm, fact.n_block_id: bn, fact.k_block_id: bk}
+    out: list[int] = []
+    for i in range(len(spec.block_sizes)):
+        bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])
+        v = targets.get(bs_spec.block_id)
+        if v is None:
+            v = max(1, bs_spec.min_size, bs_spec.autotuner_min)
+        v = max(v, bs_spec.min_size, bs_spec.autotuner_min)
+        v = min(v, bs_spec.max_size)
+        out.append(v)
+    return out
+
+
+def _h100_budget_config(env: CompileEnvironment, fact: MatmulFact) -> Config:
+    """The catch-all budget seed for a clean 2-D static matmul fact (always fires)."""
+    from ...runtime import get_num_sm
+
+    assert fact.static_m is not None
+    assert fact.static_n is not None
+    assert fact.static_k is not None
+    itemsize = max(1, fact.lhs_dtype.itemsize)
+    num_sm = max(1, get_num_sm(env.device))
+    # pinned_grid = product of any PINNED (block_size=1) grid axes other than the dot's
+    # M/N tiles — 1 for a bare GEMM, batch·nchunks·nheads for mamba's fused dot. These
+    # already saturate the SMs, so the occupancy fill must count them (else it wrongly
+    # shrinks an already-grid-saturated dot's tile).
+    pinned_grid = 1
+    spec = env.config_spec
+    for bid in spec.grid_block_ids:
+        if bid in (fact.m_block_id, fact.n_block_id):
+            continue
+        size = env.block_sizes[bid].size
+        if isinstance(size, (int, torch.SymInt)):
+            pinned_grid *= max(1, env.size_hint(size))
+    bm, bn, bk, num_warps, num_stages = _h100_matmul_tile(
+        fact.static_m, fact.static_n, fact.static_k, itemsize, num_sm, pinned_grid
+    )
+    block_sizes = _h100_build_block_sizes(env.config_spec, fact, bm, bn, bk)
+    return Config(
+        block_sizes=block_sizes,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+
+
+class TritonH100MatmulHeuristic(AutotunerHeuristic):
+    """H100 (sm90) seed for any clean 2-D static ``MatmulFact`` — the dense-GEMM seed
+    H100 was missing (only the narrow skinny-aspect rule + the sm100 B200 table existed, so
+    almost every real GEMM fell back to the catastrophic ``block_sizes≈[16,16,16]`` default).
+
+    Fires on EVERY ``_single_2d_static_matmul_fact`` (no aspect-ratio gate — re-imposing it
+    is the bug): ``matmul``, ``fp8_gemm``, and ``mamba2_chunk_state``'s fused inner dot all
+    qualify. The seed is a **budget/roofline FORMULA** (``_h100_matmul_tile``) keyed on
+    ``(M, N, K, operand-width)`` — the catch-all that guarantees no shape hits the default —
+    with optional ``matmul_h100.json`` overrides for any region the formula measurably gets
+    wrong (formula-first; an override must earn its place on a whole REGIME, never a single
+    curriculum shape). ``promote_seed_to_default=False`` for now: the seed is planted into the
+    autotuner and used for no-autotune Product A, but the compiler default is left untouched
+    (promoting the catch-all is a later, separate change)."""
+
+    name = "triton_h100_matmul"
+    backend = "triton"
+    promote_seed_to_default = False
+    HARDWARE_TARGETS = (("cuda", "sm90"),)
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return False
+        return _single_2d_static_matmul_fact(env.config_spec) is not None
+
+    @classmethod
+    def _ranked(cls, env: CompileEnvironment) -> list[Config]:
+        spec = env.config_spec
+        fact = _single_2d_static_matmul_fact(spec)
+        if fact is None:
+            return []
+        # Override table first (most-specific regime rule wins); else the formula catch-all.
+        bucket = _h100_shape_bucket_from_fact(fact)
+        ranked: list[Config] = []
+        for rule in _h100_rules_for_bucket(bucket):
+            for template in cast("list[dict[str, object]]", rule["templates"]):
+                ranked.append(_materialize_config(template, config_spec=spec))
+            if ranked:
+                break
+        if not ranked:
+            ranked.append(_h100_budget_config(env, fact))
+        return ranked
+
+    @classmethod
+    def get_seed_config(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> Config | None:
+        ranked = cls._ranked(env)
+        return ranked[0] if ranked else None
+
+    @classmethod
+    def get_seed_configs(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> list[Config] | None:
+        ranked = cls._ranked(env)
+        return ranked or None
+
+
 class TritonSplitJoinRotateHeuristic(AutotunerHeuristic):
     """Seed all-ones ``block_sizes`` for split/join rotate kernels (rope).
 
