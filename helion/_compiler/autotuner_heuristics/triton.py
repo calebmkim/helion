@@ -23,6 +23,7 @@ from .common import op_name_parts
 from .registry import AutotunerHeuristic
 
 if TYPE_CHECKING:
+    from ...autotuner.config_spec import AccumulatorFact
     from ...autotuner.config_spec import BlockSizeSpec
     from ...autotuner.config_spec import ConfigSpec
     from ...autotuner.config_spec import MatmulFact
@@ -697,23 +698,50 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return kf.non_reduction_loop_block_ids
 
     @classmethod
-    def _carried_leading_dims(cls, spec: ConfigSpec) -> set[int]:
-        """The block_ids that are the LEADING (M_BLOCK) dim of a loop-carried 2-D accumulator
-        ``[M_BLOCK, R_BLOCK]`` -- the grid axis whose widening genuinely MULTIPLIES the carried
-        tile, so the carried byte cap applies to it.
+    def _reduction_block_ids(cls, spec: ConfigSpec) -> set[int]:
+        """The set of REDUCTION-axis block_ids (the Stage-1 kernel fact's reductions). The
+        MEMBERSHIP key for classifying a carried accumulator's dims: a dim is a reduction width
+        (an rdim) iff it is in this set -- NOT inferred from its POSITION in ``dim_block_ids``
+        (#3a: the rdim is not always last; instance_norm_bwd ``[2,1,None]``, group_norm_bwd
+        ``[2,3,4,1]``). Empty when no kernel fact (a bare-spec unit test)."""
+        kf = spec.reduction_kernel_fact
+        return {d.block_id for d in kf.reductions} if kf is not None else set()
 
-        Widening a DIFFERENT (parallel) grid axis does NOT scale the carried tile: a FULL_GRID
-        group axis (G) co-resident with a per-token carried sum (the ``fullgrid_plus_carried2d``
-        adversarial case) must NOT be capped by the carried footprint, or it floors to 1 and the
-        seed regresses ~11x below the default. Read off ``AccumulatorFact.dim_block_ids[0]`` (the
-        accumulator's outer/M dim); kl_div/jsd (a single grid axis that IS the carried M dim) are
-        unchanged. Empty if no carried 2-D accumulator (the cap then applies to no M axis, a no-op
-        guarded by ``num_carried_2d_tiles >= 1`` at the call site too).
-        """
+    @classmethod
+    def _is_carried_reduction_acc(
+        cls, a: AccumulatorFact, reduction_ids: set[int]
+    ) -> bool:
+        """Whether accumulator ``a`` is a loop-carried REDUCTION tile (>=2-D and holding at least
+        one reduction axis), classified by MEMBERSHIP. A per-row scalar accumulator
+        (``[M_BLOCK, None]`` -- rms_norm/layer_norm) carries no reduction width, and a pure
+        grid-product accumulator (``[grid_i, grid_j]`` over two grid axes, NO rdim -- grpo's
+        per-token sum) is not a reduction tile either: neither contributes a carried-reduction
+        footprint. So the carried byte cap fires only on a genuine ``[..., rdim, ...]`` tile,
+        regardless of WHERE the rdim sits (#3a)."""
+        dims = a.dim_block_ids
+        return len(dims) >= 2 and any(d in reduction_ids for d in dims)
+
+    @classmethod
+    def _carried_grid_dims(cls, spec: ConfigSpec) -> set[int]:
+        """The grid (M) axes that CO-HOLD a loop-carried reduction tile -- a grid axis appearing
+        ANYWHERE in a carried >=2-D reduction accumulator's ``dim_block_ids`` (#2: by MEMBERSHIP,
+        not just at index 0). Widening such an axis genuinely MULTIPLIES the resident carried
+        tile, so the carried byte cap applies to it; a parallel grid axis NOT in the tile does not
+        (the ``fullgrid_plus_carried2d`` FULL_GRID group axis G -> uncapped, no ~11x floor-to-1).
+
+        This is the faithful successor to the old ``dim_block_ids[0]`` (leading-dim-only) rule:
+        kl_div/jsd's single grid axis IS the carried M dim (unchanged), but grpo's TWO grid dims
+        ``[0, 1]`` -- which carry no rdim, so are not a reduction tile -- correctly co-hold
+        NOTHING (the old rule wrongly returned ``{0}``). Empty if no carried reduction accumulator
+        (the cap then applies to no M axis; also guarded by ``carried_2d_count >= 1`` at the call
+        site). Grid membership is read off the Stage-1 ``grid_axis_block_ids``."""
+        kf = spec.reduction_kernel_fact
+        grid = set(kf.grid_axis_block_ids) if kf is not None else set()
+        reduction_ids = cls._reduction_block_ids(spec)
         out: set[int] = set()
         for a in spec.accumulator_facts:
-            if len(a.dim_block_ids) >= 2 and a.dim_block_ids[0] is not None:
-                out.add(a.dim_block_ids[0])
+            if cls._is_carried_reduction_acc(a, reduction_ids):
+                out.update(d for d in a.dim_block_ids if d is not None and d in grid)
         return out
 
     @classmethod
@@ -724,51 +752,73 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         m_axis_block_id: int,
         red_values: dict[int, int],
     ) -> int:
-        """Pow2 ceiling on an M (grid) axis that is the LEADING dim of one or more loop-carried
-        2-D accumulators ``[M_BLOCK, R_BLOCK]`` -- so the carried resident set
-        ``M_BLOCK * Σ R_BLOCK * itemsize`` fits ``CARRIED_TILE_MAX_BYTES``.
+        """Pow2 ceiling on an M (grid) axis that CO-HOLDS one or more loop-carried reduction
+        accumulators, so the carried resident set fits ``CARRIED_TILE_MAX_BYTES``. The faithful
+        ``group_footprint`` (PROMPT §2.3): ``M_BLOCK * Σ_buffers(∏ of the buffer's OTHER tiled
+        dims) * itemsize <= budget`` -- a PRODUCT within a buffer (a single rank>=3 tile
+        ``[M, A, B]`` costs ``M*A*B``, not ``M*(A+B)``), a SUM across separate buffers.
 
-        Reads the carried tiles from ``accumulator_facts`` and their R_BLOCK from the SIZED
-        co-resident reduction (``red_values[reduction_axis]``, else its full extent). This is the
-        FAITHFUL footprint even when the kernel's PRIMARY reduction is NOT the carrier (the
-        ``carried2d_plus_fullslice`` adversarial case: a full-slice amax primary co-resident with
-        a carried sum -- the primary's own carried-2-D count reads 0, so the legacy
-        cap was DARK and the leading M axis over-widened ~1.36x past default). Returns a huge cap
-        (no constraint) when this axis carries no 2-D accumulator -- byte-identical for kernels
-        whose carrier IS the primary (kl_div/jsd: handled by the existing r_block_resident path).
-        """
+        Membership-classified (#3), NOT position-based: a buffer carries M iff ``m_axis_block_id
+        in a.dim_block_ids`` (NOT ``== dim_block_ids[0]`` -- the M need not lead, #3b); each OTHER
+        tiled dim's width is its reduction r_block if it is a reduction axis
+        (``_reduction_block_ids``: ``red_values`` else padded extent -- NOT ``dim_block_ids[-1]``,
+        #3a), else its own padded extent; a static (``None``) dim is unrecoverable from
+        ``dim_block_ids`` so it contributes factor 1 (as today). Counts only genuine carried
+        reduction tiles (``_is_carried_reduction_acc``): a per-row scalar ``[M, None]`` or a pure
+        grid-product ``[grid_i, grid_j]`` (grpo, no rdim) is not one -> returns a huge cap (no
+        constraint) when this axis carries no such tile.
+
+        Faithful EVEN when the kernel's PRIMARY reduction is NOT the carrier
+        (``carried2d_plus_fullslice``: a full-slice amax primary, ``carried_2d_count`` reads 0 off
+        it, so the per-primary carried byte cap is dark and the M axis over-widens ~1.36x past
+        default). Byte-identical for kernels whose carrier IS the primary (kl_div/jsd: handled by
+        the existing ``r_block_resident`` path) and for the multi-dim / rdim-not-last carriers
+        (norm-bwd: grad-collapse-overridden; grpo: no rdim) -- verified by the per-axis
+        ``size_axis`` trace (``_lab/redesign/carried_membership_trace.py``: 0 final differences)."""
         from ..._utils import next_power_of_2 as _np2
         from ..._utils import prev_power_of_2
         from ..compile_environment import CompileEnvironment
         from ..compile_environment import NoCurrentEnvironment
 
-        total_r = 0
+        try:
+            env = CompileEnvironment.current()
+        except NoCurrentEnvironment:
+            env = None
+        reduction_ids = cls._reduction_block_ids(spec)
+
+        def _dim_width(d: int) -> int:
+            """The resident width of one OTHER tiled dim: its sized r_block if it is a reduction
+            axis, else its padded full extent (read off env.block_sizes by block_id)."""
+            if d in reduction_ids and d in red_values:
+                return max(1, red_values[d])
+            if env is None:
+                return 1
+            try:
+                return max(1, _np2(env.block_sizes[d].size_hint()))
+            except (IndexError, KeyError):
+                return 1
+
+        total = 0  # Σ_buffers (∏ of that buffer's other tiled dims)
         itemsize = 1
         for a in spec.accumulator_facts:
             if (
-                len(a.dim_block_ids) >= 2
-                and a.dim_block_ids[0] == m_axis_block_id
-                and a.dim_block_ids[-1] is not None
+                not cls._is_carried_reduction_acc(a, reduction_ids)
+                or m_axis_block_id not in a.dim_block_ids
             ):
-                rdim = a.dim_block_ids[-1]
-                # The carried tile's resident R width: the SIZED r_block of its reduction axis,
-                # else the padded full extent.
-                if rdim in red_values:
-                    r_block = red_values[rdim]
-                else:
-                    try:
-                        r_block = _np2(
-                            CompileEnvironment.current().block_sizes[rdim].size_hint()
-                        )
-                    except (NoCurrentEnvironment, IndexError, KeyError):
-                        r_block = 1
-                total_r += max(1, r_block)
-                itemsize = max(itemsize, a.itemsize)
-        if total_r <= 0:
+                continue
+            product = 1
+            for d in a.dim_block_ids:
+                if d is None or d == m_axis_block_id:
+                    # the axis solved for (M); a static None dim is unrecoverable here.
+                    continue
+                product *= _dim_width(d)
+            total += product
+            itemsize = max(itemsize, a.itemsize)
+        if total <= 0:
             return (
                 1 << 30
-            )  # this axis carries no 2-D accumulator -> no carried constraint
-        budget = cls.CARRIED_TILE_MAX_BYTES // max(1, total_r * max(1, itemsize))
+            )  # this axis co-holds no carried reduction tile -> no constraint
+        budget = cls.CARRIED_TILE_MAX_BYTES // max(1, total * max(1, itemsize))
         return max(1, prev_power_of_2(max(1, budget)))
 
     @classmethod
@@ -1187,7 +1237,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 n_carried = pd.carried_2d_count
                 is_carried = n_carried >= 1
                 axis_co_holds = (not is_carried) or (
-                    bs_spec.block_id in cls._carried_leading_dims(spec)
+                    bs_spec.block_id in cls._carried_grid_dims(spec)
                 )
                 axis_r_block_resident = r_block_resident if axis_co_holds else 1
                 carried_cap = max(
@@ -1200,8 +1250,9 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     ),
                 )
                 # The carried-2D byte cap likewise applies to this M axis ONLY if widening it
-                # genuinely MULTIPLIES the carried tile -- i.e. this axis co-holds it (the leading
-                # dim). kl_div/jsd (single grid axis that IS the carried M dim) are unchanged.
+                # genuinely MULTIPLIES the carried tile -- i.e. this axis CO-HOLDS it (appears
+                # anywhere in a carried reduction accumulator's dims, by MEMBERSHIP, #2).
+                # kl_div/jsd (single grid axis that IS the carried M dim) are unchanged.
                 carried_applies = is_carried and axis_co_holds
                 m_caps = [
                     Cap(
@@ -1212,12 +1263,13 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                         ),
                     ),
                     Cap("carried_2d", carried_applies, _pp2(carried_cap)),
-                    # CARRIED-M cap: when THIS axis is the leading dim of a co-resident carried
-                    # 2-D accumulator, bound it so M_BLOCK * Σ(carried R_BLOCK) * itemsize fits the
-                    # carried byte budget -- faithful EVEN when the primary reduction is not the
-                    # carrier (carried2d_plus_fullslice: a full-slice amax primary, num_carried_2d
-                    # reads 0 off it, so the cap above is dark and T over-widens ~1.36x past
-                    # default). Returns a huge value (no constraint) for a non-carrying axis.
+                    # CARRIED-M cap: when THIS axis CO-HOLDS a co-resident carried reduction
+                    # accumulator (membership, #2/#3), bound it so M_BLOCK * group_footprint *
+                    # itemsize fits the carried byte budget -- faithful EVEN when the primary
+                    # reduction is not the carrier (carried2d_plus_fullslice: a full-slice amax
+                    # primary, num_carried_2d reads 0 off it, so the cap above is dark and T
+                    # over-widens ~1.36x past default). Huge value (no constraint) for a
+                    # non-carrying axis.
                     Cap(
                         "carried_m",
                         True,

@@ -45,7 +45,7 @@ CONCLUSION: every >=2D carried accumulator whose rdim is NOT at [-1] or has mult
 EITHER grad-collapse-overridden (norm-bwd) OR has carried_2d_count=0 so the carried caps don't
 fire (grpo). The corpus zero-diff for #2/#3 holds. (Matches the brief's prediction.)
 
-## Step 1 — P1: unified `size_reduction_tiles` allocator (zero-diff) — COMMIT <pending>
+## Step 1 — P1: unified `size_reduction_tiles` allocator (zero-diff) — COMMIT 562e9f15
 
 Built `_TileAllocation` NamedTuple + `size_reduction_tiles(env, spec, device_ir, pd)` on
 `_TritonReductionSeedBase`. It is the ONE allocator that drives every axis of every co-residency
@@ -65,4 +65,36 @@ allocator is `_is_standard_reduction(pd)` (the primary's category, a Stage-1 ACC
 GATE (after ruff format): config recorder = ONLY the 2 known movers; validate_kernel_fact 460/460;
 probe_assertions 13/13; test_reductions+test_autotuner_heuristics 52p/22s; matmul_layernorm 2p/2s;
 ruff format + ruff check helion/ clean. Byte-identical reproduction confirmed.
+
+## Step 2 — P2: #2/#3 membership-based group_footprint — COMMIT <pending>
+
+Replaced the position-based carried-tile caps with membership-based ones (CARRIED_AND_GREEDY #2/#3):
+- NEW `_reduction_block_ids(spec)` = the rdim set off the kernel fact (the MEMBERSHIP key).
+- NEW `_is_carried_reduction_acc(a, rdims)` = a buffer is a carried REDUCTION tile iff >=2D AND
+  holds >=1 rdim (a per-row scalar [M,None] or a pure grid-product [grid_i,grid_j] with NO rdim
+  — grpo — is NOT one). This is the guard the old `dim_block_ids[-1] is not None` was approximating.
+- `_carried_leading_dims` -> `_carried_grid_dims` (#2): any GRID axis appearing ANYWHERE in a
+  carried reduction accum's dims, not just dim_block_ids[0]. grpo's [0,1] (no rdim) -> {} (old
+  rule wrongly returned {0}); kl_div/jsd unchanged.
+- `_carried_m_block_cap` (#3): a buffer carries M iff `m_axis in dim_block_ids` (NOT == [0], #3b);
+  footprint = M * Σ_buffers(∏ OTHER tiled dims) * itemsize — PRODUCT within a buffer (rank>=3
+  [M,A,B] = M*A*B, not M*(A+B)), SUM across buffers; each OTHER dim classified by MEMBERSHIP
+  (rdim -> r_block else padded extent; other block_id -> padded extent; None static -> factor 1,
+  unrecoverable as today) — NOT rdim=dim_block_ids[-1] (#3a). Counts only carried reduction tiles.
+
+PRE-EDIT ZERO-DIFF GUARD (`_lab/redesign/carried_membership_trace.py`): for EVERY corpus kernel
+with a >=2D accumulator, computed the FULL m_caps `size_axis(grid M)` result with BOTH the old and
+the new caps. Result: 0 axes where the FINAL tile differs. Witnesses:
+- grpo (#2): old carried_m=2 (spuriously read grid axis 1 as the rdim) -> new = no-constraint;
+  FINAL = 1 (bound by resident_tile) BOTH ways. ld old=[0] new=[].
+- group_norm_bwd (rank-4, rdim-not-last) / instance_norm_bwd (rdim-not-last) / rms_norm_bwd /
+  layer_norm_bwd: grad-collapse-OVERRIDDEN (their grid M is post-written by the m-collapse path),
+  so the carried caps are dark; FINAL identical (occupancy / m_block_register / resident_tile).
+- kl_div / jsd: genuine [grid_M, rdim] carriers -> carried_m / carried_2d UNCHANGED (FINAL=1).
+So #2/#3's position-based assumptions are gone (membership-based group_footprint) AND the corpus
+stays byte-identical, exactly as the brief predicted. The spurious grpo cap removal is a pure
+faithfulness gain with no config impact.
+
+GATE: config recorder = ONLY the 2 known movers; validate_kernel_fact 460/460; probe_assertions
+13/13; test_reductions+test_autotuner_heuristics 52p/22s; matmul_layernorm 2p/2s; ruff clean.
 
