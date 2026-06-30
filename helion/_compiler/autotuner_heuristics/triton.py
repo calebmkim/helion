@@ -335,10 +335,11 @@ def _h100_matmul_tile(
        ~one full wave (e.g. a 2048³ cube at 128≈132 tiles) keeps its big tile, while a starved
        small-M GEMM (16 tiles) is split to fill the machine.
     5. **num_warps** ramps with the tile (≥16K elems → 8 else 4).
-    3'. **block_k + num_stages** — SMEM-budgeted (operand width via itemsize) and
-       pipeline-depth-capped (``bk <= K/PIPE`` to keep the K-loop ≥ PIPE deep); see step (3').
-    6. **l2_grouping** for a tall tile-grid (B-reuse); 7. **num_stages cap** for a
-       saturated fused batched dot. (Details at each step below.)
+    3'. **block_k + num_stages** — SMEM-budgeted (operand width via itemsize), pipeline-depth-capped
+       (``bk <= K/PIPE`` to keep the K-loop ≥ PIPE deep), and num_stages = the deepest pipeline that
+       fits SMEM, ceiling'd by regime (latency-bound → up to 6; an occupancy-SATURATED batched dot →
+       2). The saturation flag is computed once at step (2.5) and used by both the tile cap and here.
+    6. **l2_grouping** for a tall tile-grid (B-reuse). (Details at each step below.)
     """
     from ..._utils import prev_power_of_2
 
@@ -425,12 +426,20 @@ def _h100_matmul_tile(
     bk = max(min_bk, bk)
     while bk > min_bk and (bm * bk + bk * bn) * itemsize * PIPE > SMEM_BUDGET:
         bk //= 2
-    # num_stages = the largest depth (<= MAX_STAGES, and no deeper than the K-iteration count)
-    # whose operand tiles fit SMEM at the chosen bk.
+    # num_stages = the deepest pipeline that fits SMEM at this bk, bounded by:
+    #   - the K-iteration count (no point pipelining deeper than the loop trips), AND
+    #   - the regime ceiling `max_depth`: a SATURATED BATCHED dot — many independent programs from
+    #     a huge PINNED grid (mamba's batch·nchunks·nheads) — is occupancy-bound, not latency-bound:
+    #     its concurrent CTAs already hide latency, so a deep per-program pipeline only burns
+    #     SMEM/registers and cuts occupancy. Cap it at 2 there (measured s4->s2 +20-28%, VAL-referee
+    #     diagnosed). A bare GEMM (pinned_grid==1) keeps the full depth — its long K-loop genuinely
+    #     IS latency-bound (3072³ forced to s2 = G 0.58 disaster). This is the ONLY place num_stages
+    #     is decided; the two regimes differ only in this ceiling.
+    max_depth = 2 if saturated_batched else MAX_STAGES
     per_stage = (bm * bk + bk * bn) * itemsize
     kit = max(1, k // bk)  # K-loop iterations — no point pipelining deeper than this
     num_stages = 2
-    for s in range(min(MAX_STAGES, max(2, kit)), 1, -1):
+    for s in range(min(max_depth, max(2, kit)), 1, -1):
         if per_stage * s <= SMEM_BUDGET:
             num_stages = s
             break
@@ -448,19 +457,6 @@ def _h100_matmul_tile(
     grid_n = (n + bn - 1) // bn
     l2_grouping = 2 if grid_m > 1 and grid_m >= L2_TALL_RATIO * grid_n else 1
 
-    # (7) num_stages saturation cap. A deep K-pipeline (num_stages=4) only pays when there is
-    # idle memory latency for the pipeline to hide. A fused BATCHED dot — many independent
-    # programs launched by a huge PINNED grid (mamba's batch·nchunks·nheads) — already runs many
-    # concurrent CTAs per SM, so latency is hidden by occupancy and a deep per-program pipeline
-    # is redundant; its extra in-flight SMEM/register buffers only cut occupancy. So cap
-    # num_stages shallow there. Keyed ONLY on the PINNED grid (the batched-dot signature): a bare
-    # GEMM has pinned_grid==1 and keeps the deep pipeline even at many waves (3072³ measured: s2
-    # G=0.58 disaster vs s4 — its long K-loop IS latency-bound). Holds across the dot tile size
-    # (measured s2 best/near-best for [64,128]/[64,256]/[128,128]/[128,256] fused tiles; a bare
-    # GEMM can never reach this branch). Faithful key (pinned-grid extent), never kernel identity.
-    # [VAL referee: mamba s4->s2 recovers ~20-28%]
-    if saturated_batched:
-        num_stages = min(num_stages, 2)
     return bm, bn, bk, num_warps, num_stages, l2_grouping
 
 
