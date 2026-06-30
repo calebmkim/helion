@@ -11,6 +11,7 @@ from helion._compiler.autotuner_heuristics import compiler_seed_configs
 from helion._compiler.autotuner_heuristics.cute import CuteFp8GemmSkinnyMHeuristic
 from helion._compiler.autotuner_heuristics.cute import CuteTcgen05ClusterM2Heuristic
 from helion._compiler.autotuner_heuristics.registry import AutotunerHeuristic
+from helion._compiler.autotuner_heuristics.triton import TritonH100MatmulHeuristic
 from helion._compiler.autotuner_heuristics.triton import TritonSkinnyGemmHeuristic
 from helion._compiler.autotuner_heuristics.triton import TritonSplitJoinRotateHeuristic
 from helion._compiler.autotuner_heuristics.triton import (
@@ -19,6 +20,8 @@ from helion._compiler.autotuner_heuristics.triton import (
 from helion._compiler.autotuner_heuristics.triton import (
     TritonUserTiledReductionHeuristic,
 )
+from helion._compiler.autotuner_heuristics.triton import _h100_matmul_tile
+from helion._compiler.autotuner_heuristics.triton import _width_bits_from_dtype
 from helion._compiler.backend import CuteBackend
 from helion._compiler.backend import TritonBackend
 from helion._compiler.cute.strategies import TCGEN05_LAYOUT_OVERRIDES_D_STORE_BOX_N_KEY
@@ -423,44 +426,29 @@ class TestTritonSkinnyGemmHeuristic(TestCase):
     def test_triton_skinny_gemm_seed_eligibility_and_config(
         self,
     ) -> None:
+        # The dense TritonH100MatmulHeuristic ALSO fires on every clean 2-D static matmul on
+        # sm90 (by design — it is the H100 dense seed). So this test checks the SKINNY
+        # heuristic's OWN contribution (its name + [64,64,256] config present-or-absent),
+        # robust to the H100 seeds co-existing in the list. expected_skinny = the skinny config
+        # when the skinny rule fires, else None.
         cases = (
-            (
-                "hopper",
-                HOPPER_HARDWARE,
-                [self._matmul_fact()],
-                [[64, 64, 256]],
-                [TritonSkinnyGemmHeuristic.name],
-            ),
-            (
-                "mi350",
-                MI350_HARDWARE,
-                [self._matmul_fact()],
-                [[64, 64, 256]],
-                [TritonSkinnyGemmHeuristic.name],
-            ),
-            (
-                "blackwell",
-                BLACKWELL_HARDWARE,
-                [self._matmul_fact()],
-                [],
-                [],
-            ),
+            ("hopper", HOPPER_HARDWARE, [self._matmul_fact()], [64, 64, 256]),
+            ("mi350", MI350_HARDWARE, [self._matmul_fact()], [64, 64, 256]),
+            ("blackwell", BLACKWELL_HARDWARE, [self._matmul_fact()], None),
             (
                 "balanced_shape",
                 HOPPER_HARDWARE,
                 [self._matmul_fact(static_m=4096, static_n=4096)],
-                [],
-                [],
+                None,
             ),
             (
                 "multiple_matmuls",
                 HOPPER_HARDWARE,
                 [self._matmul_fact(), self._matmul_fact()],
-                [],
-                [],
+                None,
             ),
         )
-        for name, hardware, facts, expected_block_sizes, expected_heuristics in cases:
+        for name, hardware, facts, expected_skinny in cases:
             env = self._make_triton_env_with_block_sizes()
             env.config_spec.matmul_facts.extend(facts)
             with (
@@ -472,14 +460,18 @@ class TestTritonSkinnyGemmHeuristic(TestCase):
             ):
                 configs = compiler_seed_configs(env, MagicMock())
 
-            self.assertEqual(
-                [config.config["block_sizes"] for config in configs],
-                expected_block_sizes,
-            )
-            self.assertEqual(
-                env.config_spec.autotuner_heuristics,
-                expected_heuristics,
-            )
+            block_size_lists = [config.config["block_sizes"] for config in configs]
+            if expected_skinny is not None:
+                self.assertIn(
+                    TritonSkinnyGemmHeuristic.name,
+                    env.config_spec.autotuner_heuristics,
+                )
+                self.assertIn(expected_skinny, block_size_lists)
+            else:
+                self.assertNotIn(
+                    TritonSkinnyGemmHeuristic.name,
+                    env.config_spec.autotuner_heuristics,
+                )
 
     def test_triton_skinny_gemm_seed_clamps_to_static_dims(self) -> None:
         env = self._make_triton_env_with_block_sizes(
@@ -592,7 +584,14 @@ class TestTritonSkinnyGemmHeuristic(TestCase):
                         seed_block_sizes,
                     )
                     self.assertIn(seed_block_sizes, compiler_seed_block_sizes)
-                    assert_skinny_gemm_seeded(config_gen.random_population(2))
+                    # The initial population includes every compiler seed; the dense
+                    # H100 heuristic now plants its own seeds alongside skinny's, so ask
+                    # for a population large enough to contain all seeds (not just 2).
+                    assert_skinny_gemm_seeded(
+                        config_gen.random_population(
+                            len(compiler_seed_block_sizes) + 2
+                        )
+                    )
                 else:
                     self.assertFalse(
                         heuristic.is_eligible(bound.env, bound.host_function.device_ir)
@@ -601,6 +600,134 @@ class TestTritonSkinnyGemmHeuristic(TestCase):
                         TritonSkinnyGemmHeuristic.name,
                         bound.config_spec.autotuner_heuristics,
                     )
+
+
+class TestTritonH100MatmulHeuristic(TestCase):
+    """The H100 (sm90) dense-matmul budget-formula seed heuristic."""
+
+    def _matmul_fact(
+        self,
+        static_m: int = 4096,
+        static_n: int = 4096,
+        static_k: int = 4096,
+        *,
+        lhs_ndim: int = 2,
+        rhs_ndim: int = 2,
+        dtype: torch.dtype = torch.bfloat16,
+    ) -> MatmulFact:
+        return MatmulFact(
+            lhs_ndim=lhs_ndim,
+            rhs_ndim=rhs_ndim,
+            m_block_id=0,
+            n_block_id=1,
+            k_block_id=2,
+            static_m=static_m,
+            static_n=static_n,
+            static_k=static_k,
+            lhs_dtype=dtype,
+            rhs_dtype=dtype,
+        )
+
+    def _make_env(self) -> MagicMock:
+        spec = ConfigSpec(backend=TritonBackend())
+        for bid in range(3):
+            spec.block_sizes.append(BlockSizeSpec(block_id=bid, size_hint=8192))
+        env = MagicMock()
+        env.backend_name = "triton"
+        env.config_spec = spec
+        env.device = DEVICE
+        env.settings = Settings()
+        return env
+
+    def test_width_bits_from_dtype(self) -> None:
+        # The faithful 4/8/16/32 family key — bf16 and fp16 collapse to one 16-bit band.
+        self.assertEqual(_width_bits_from_dtype(torch.bfloat16), 16)
+        self.assertEqual(_width_bits_from_dtype(torch.float16), 16)
+        self.assertEqual(_width_bits_from_dtype(torch.float32), 32)
+        self.assertEqual(_width_bits_from_dtype(torch.float8_e4m3fn), 8)
+
+    def test_budget_formula_is_deterministic_per_regime(self) -> None:
+        # Pure formula (fixed num_sm=132, H100), exercising every lever. Returns the tile
+        # tuple (bm, bn, bk, num_warps, num_stages, l2_grouping).
+        sm = 132
+        # big compute-bound cube: wide-N [128,256], num_warps=8, num_stages=4; block_k scales
+        # with operand WIDTH via SMEM (fp8 1B -> 128, bf16 2B -> 64, fp32 4B -> 32).
+        self.assertEqual(_h100_matmul_tile(4096, 4096, 4096, 2, sm, 1),
+                         (128, 256, 64, 8, 4, 1))
+        self.assertEqual(_h100_matmul_tile(4096, 4096, 4096, 1, sm, 1),
+                         (128, 256, 128, 8, 4, 1))
+        self.assertEqual(_h100_matmul_tile(4096, 4096, 4096, 4, sm, 1),
+                         (128, 256, 32, 8, 4, 1))
+        # tall tile-grid (grid_m >> grid_n) -> l2_grouping=2.
+        self.assertEqual(_h100_matmul_tile(16384, 512, 8192, 2, sm, 1)[5], 2)
+        # deep-K small-MN -> deepen the pipeline (num_stages 6, SMEM-permitting).
+        self.assertEqual(_h100_matmul_tile(256, 256, 12288, 2, sm, 1)[4], 6)
+        # saturated fused batched dot (huge pinned grid): tile capped to <=[64,128] for
+        # occupancy AND num_stages capped to 2 (deep pipeline is redundant when occupancy
+        # already hides latency).
+        bm, bn, _bk, _w, ns, _l2 = _h100_matmul_tile(64, 128, 256, 2, sm, 10240)
+        self.assertLessEqual(bm, 64)
+        self.assertLessEqual(bn, 128)
+        self.assertEqual(ns, 2)
+        # a bare GEMM (pinned_grid==1) at the SAME tile keeps the deep pipeline.
+        self.assertGreater(_h100_matmul_tile(64, 128, 256, 2, sm, 1)[4], 2)
+
+    def test_eligibility(self) -> None:
+        cases = (
+            ("hopper_single_static", HOPPER_HARDWARE, [self._matmul_fact()], True),
+            ("blackwell_off", BLACKWELL_HARDWARE, [self._matmul_fact()], False),
+            ("mi350_off", MI350_HARDWARE, [self._matmul_fact()], False),
+            (
+                "multiple_matmuls",
+                HOPPER_HARDWARE,
+                [self._matmul_fact(), self._matmul_fact()],
+                False,
+            ),
+            (
+                "non_static",
+                HOPPER_HARDWARE,
+                [self._matmul_fact(static_m=None)],
+                False,
+            ),
+        )
+        for name, hardware, facts, eligible in cases:
+            env = self._make_env()
+            env.config_spec.matmul_facts.extend(facts)
+            with (
+                self.subTest(name=name),
+                patch("helion._hardware.get_hardware_info", return_value=hardware),
+            ):
+                self.assertEqual(
+                    TritonH100MatmulHeuristic.is_eligible(env, MagicMock()), eligible
+                )
+
+    def test_ranked_multi_seed_and_width_merge(self) -> None:
+        with patch(
+            "helion._hardware.get_hardware_info", return_value=HOPPER_HARDWARE
+        ):
+            # rank-0 (Product A) == get_seed_config; the ranked list has diverse alternates.
+            env = self._make_env()
+            env.config_spec.matmul_facts.append(self._matmul_fact())
+            ranked = TritonH100MatmulHeuristic.get_seed_configs(env, MagicMock())
+            primary = TritonH100MatmulHeuristic.get_seed_config(env, MagicMock())
+            assert ranked is not None and primary is not None
+            self.assertGreaterEqual(len(ranked), 1)
+            self.assertEqual(ranked[0].config["block_sizes"], primary.config["block_sizes"])
+            self.assertEqual(len(ranked), len({repr(dict(c)) for c in ranked}))
+
+            # 16-bit merge: bf16 and fp16 produce the IDENTICAL seed (width key, not dtype kind).
+            env_bf16 = self._make_env()
+            env_bf16.config_spec.matmul_facts.append(
+                self._matmul_fact(dtype=torch.bfloat16)
+            )
+            env_fp16 = self._make_env()
+            env_fp16.config_spec.matmul_facts.append(
+                self._matmul_fact(dtype=torch.float16)
+            )
+            bf16 = TritonH100MatmulHeuristic.get_seed_config(env_bf16, MagicMock())
+            fp16 = TritonH100MatmulHeuristic.get_seed_config(env_fp16, MagicMock())
+            assert bf16 is not None and fp16 is not None
+            self.assertEqual(dict(bf16), dict(fp16))
 
 
 class TestTritonSplitJoinRotateHeuristic(TestCase):
