@@ -431,16 +431,19 @@ def _triton_reduction_eligible(env: CompileEnvironment, device_ir: DeviceIR) -> 
 
     The relaxation from the legacy ``len(reduction_facts) == 1`` is corpus-SAFE: every corpus
     kernel has exactly one reduction fact (verified 452/452), so this only newly admits the
-    genuinely multi-reduction kernels (e.g. two sequential rolled reductions). Falls back to the
-    legacy ``== 1`` rule if the kernel fact is absent (defensive). A reduction with NO sized
-    member (only GRID_TILE / DECLINED) still declines, as today.
+    genuinely multi-reduction kernels (e.g. two sequential rolled reductions). A reduction with NO
+    sized member (only GRID_TILE / DECLINED) still declines, as today.
+
+    Keyed PURELY on the Stage-1 kernel fact -- no ``ReductionFact`` read. ``build_reduction_kernel_fact``
+    runs unconditionally on every live compile, so the fact is absent only for a bare-spec unit
+    test or a kernel with genuinely no reduction; both correctly decline (no sized reduction).
     """
     spec = env.config_spec
     if spec.matmul_facts:
         return False
     kf = spec.reduction_kernel_fact
     if kf is None:
-        return len(spec.reduction_facts) == 1
+        return False
     return any(d.category in SIZED_REDUCTION_CATEGORIES for d in kf.reductions)
 
 
