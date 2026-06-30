@@ -347,3 +347,21 @@ Hill-climbed the budget footprint (NOT recognizers — faithful resident-tensor 
    kernel, near noise — accepted).
 
 Total changed cells vs pre-edit: 131 -> 112 (the recovered cells reverted to their pre-edit configs).
+
+## Step 13 — wider bench caught 2 more regression classes; fixed (102->100 changed)
+
+A 56-cell representative bench (all 22 changed families) surfaced regressions the targeted re-bench
+missed:
+- HEAVY-BODY rolled rows over-widened (dynamic_quant [4]->[8] 1.6x, fused_linear_jsd [1]->[4] 2.0x,
+  gated_rmsnorm, cross_entropy_ls): dropping num_live from the grid-M widen (Step 12, meant for
+  welford) over-widened these. FIX: num_live is dropped from the widen ONLY for a REDUCE-THEN-APPLY
+  kernel (non_reduction_loop present — welford's wide tile is the separate apply pass); a plain
+  rolled/persistent row keeps num_live (a heavy body genuinely limits the widen). Recovered all to
+  pre-edit configs.
+- per_token_group FULL_GRID sibling vs resident-row: WIDEN_MAX_ROWS=8 helped softmax but capped
+  per_token_group's genuinely-wide sibling (8192x7168 wants g64; g8 is 1.15x). FIX: the
+  WIDEN_MAX_ROWS ceiling applies ONLY to a resident-row reduction; a FULL_GRID primary's grid
+  sibling widens freely (occupancy-bound) — the taxonomy distinction from Step 10. per_token_group
+  back to pre-edit [64].
+
+Gates green (460/460, 13/13, 41 unit, matmul). Changed cells vs pre-edit: 112 -> 100.

@@ -1072,20 +1072,18 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 else:
                     # resident parallel rows: widen into the byte remainder, capped by occupancy
                     # (keep post-widen grid >= num_sm·MIN_WAVES), a diminishing-returns ROWS ceiling,
-                    # and extent; floors when budget full. ``num_live`` enters the widen footprint
-                    # ONLY when this grid axis CO-HOLDS a >=2-D loop-carried reduction tile (it is in
-                    # a multi-dim accumulator — kl_div/jsd's ``[grid_M, R]``): then widening by k
-                    # holds k·num_live copies of the heavy carried tile, so num_live must tighten it
-                    # (else the grid wrongly unfloors 1->4 and the carried tile spills). For a plain
-                    # parallel-row axis (welford/softmax: a ``[grid]`` scalar accumulator, no carried
-                    # R) the live-tile peak is WITHIN one row's processing, not a per-batched-row
-                    # multiplier, so num_live=1 (folding it in double-tightened welford 4->2, ~1.2x);
-                    # the WIDEN_MAX_ROWS ceiling bounds the over-batch concern there.
-                    co_holds_carried = any(
-                        _is_carried_reduction_tile(a) and mbid in a.dim_block_ids
-                        for a in accumulators
-                    )
-                    widen_live = num_live if co_holds_carried else 1
+                    # and extent; floors when budget full. ``num_live`` (the body's live-tile peak)
+                    # TIGHTENS the widen footprint for a fused reduce-and-apply ROW reduction — a
+                    # heavy body genuinely holds num_live resident tiles per row, so widening by k
+                    # holds k·num_live (fused_linear_jsd blt=7: widening to 4 spills ~2x; dynamic_quant
+                    # / gated_rmsnorm / cross_entropy likewise want the num_live-tightened narrow
+                    # widen). It is DROPPED (=1) only for a REDUCE-THEN-APPLY kernel (a non-reduction
+                    # normalize loop present — welford): its wide resident tile lives in that SEPARATE
+                    # apply pass, not during the reduction, so num_live over-counts the reduction-phase
+                    # residency and wrongly halved welford's grid 4->2 (~1.2x). The WIDEN_MAX_ROWS
+                    # ceiling bounds the over-batch concern for the welford case.
+                    is_reduce_then_apply = bool(non_reduction_loop_ids)
+                    widen_live = 1 if is_reduce_then_apply else num_live
                     byte_widen = _pp2(
                         max(
                             1,
@@ -1099,14 +1097,23 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                         occ_widen = (
                             1  # dynamic grid -> no compile-time occupancy -> no widen
                         )
-                    # ROWS ceiling: batching more than WIDEN_MAX_ROWS reduction rows per program
-                    # only trades away grid parallelism (a memory-bound reduction does not amortize
-                    # past it — measured g8 optimum, g64/g128 regress softmax ~1.4x AND per_token_
-                    # group ~1.1x). The byte/occupancy caps alone permit a huge widen on a small-row
-                    # huge-M kernel (occ_widen ~128 at 262144 rows); this bounds it. A floor ABOVE
-                    # the ceiling (a large autotuner_min) still wins via max(floor, ...), so a
-                    # genuinely huge-M shape keeps its required floor.
-                    blk = max(floor, min(byte_widen, occ_widen, cls.WIDEN_MAX_ROWS, ext))
+                    # ROWS ceiling: batching more than WIDEN_MAX_ROWS reduction ROWS per program
+                    # only trades away grid parallelism for a RESIDENT-ROW reduction (the grid axis
+                    # carries independent reduction rows — softmax/rms_norm: a memory-bound row does
+                    # not amortize past ~8 rows; g64/g128 regress softmax ~1.4x). It does NOT apply
+                    # when the primary is FULL_GRID: there the grid axis is a SIBLING that batches
+                    # tiny grid-resident per-group reductions (per_token_group's groups_per_row),
+                    # which amortizes per-program overhead and genuinely wants the wide occupancy-
+                    # bound widen (8192x7168 wants g64; g8 is 1.15x slower). The byte/occupancy caps
+                    # alone over-widen a small-row huge-M resident kernel (occ_widen ~128 at 262144
+                    # rows), so the ceiling bounds that case; a raised autotuner_min floor still wins
+                    # via max(floor, ...).
+                    rows_ceiling = (
+                        ext
+                        if pd.category is ReductionCategory.FULL_GRID
+                        else cls.WIDEN_MAX_ROWS
+                    )
+                    blk = max(floor, min(byte_widen, occ_widen, rows_ceiling, ext))
                 seated[mbid] = blk
                 sizes[mbid] = blk
 
