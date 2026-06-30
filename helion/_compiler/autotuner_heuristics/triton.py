@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
@@ -886,21 +887,20 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             dims = a.dim_block_ids
             return len(dims) >= 2 and any(d in reduction_ids for d in dims)
 
-        # The MATERIALIZED feature/output footprint resident in every group's working tile
-        # (a grad-param ``grad_weight[N]`` / a 3-D norm's ``C*S``). A continuous group-footprint
-        # input (PROMPT §2.3): a bigger resident feature tensor tightens the budget and shrinks the
-        # co-resident tiles — this is how the grad-parameter M-collapse INNER re-tile falls out
-        # with no recognizer / no ``M_COLLAPSE_TILE_BYTES``. Materialized features are full-extent
-        # ``env.block_sizes`` entries; with no active env (a bare-spec unit test) there are none.
+        # The MATERIALIZED feature/output axes (a grad-param ``grad_weight[N]`` / a 3-D norm's
+        # ``C*S``) and their full extents — read off ``env.block_sizes`` exactly like the
+        # ``_spec_extent``/``_desc_extent`` dicts above (data, not a precomputed footprint). The
+        # footprint walk treats each as just another resident tile. ONE guarded read because
+        # ``_materialized_feature_axes`` needs env/device_ir; a bare-spec unit test has none.
         from ..compile_environment import NoCurrentEnvironment
 
         try:
-            mat_feature_axes = cls._materialized_feature_axes(env, spec, device_ir)
-            feature_footprint = 1
-            for fbid in mat_feature_axes:
-                feature_footprint *= max(1, env.block_sizes[fbid].size_hint())
+            feature_extent = {
+                fbid: max(1, env.block_sizes[fbid].size_hint())
+                for fbid in cls._materialized_feature_axes(env, spec, device_ir)
+            }
         except (NoCurrentEnvironment, AttributeError, TypeError):
-            feature_footprint = 1
+            feature_extent = {}
 
         # The static grid-row count (program count before any widen), the occupancy numerator.
         grid_rows = 1
@@ -942,61 +942,79 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 continue
             num_live = max([d.body_live_tiles for d in sized] + [1])
 
-            def group_footprint_excluding(
+            def reduction_width(bid: int) -> int:
+                """A reduction/grid dim's resident width by MEMBERSHIP (never by position): a seated
+                reduction r_block (else its extent), or a grid axis's seated row block."""
+                if bid in grid_ids:
+                    return max(1, seated.get(bid, 1))
+                return max(1, seated.get(bid, extent_of(bid)))
+
+            def resident_tensors(
                 axis: int,
-                _num_live: int = num_live,
                 _sized: list = sized,  # bind THIS group's reductions, not the last loop value
-            ) -> int:
-                """``itemsize × _num_live × carried_mult × ∏(resident tiles EXCEPT ``axis``)`` — the
-                budget denominator for sizing ``axis`` (the §2.3 group_footprint). Resident tiles =
-                the seated reduction r_blocks (a grid-tile reduction is not resident -> excluded),
-                the materialized feature footprint, and the resident (in-accumulator) grid rows.
-                ``carried_mult`` = the number of DISTINCT loop-carried accumulator buffers that hold
-                ``axis`` (the §2.3 "Σ across separate resident tensors" / CARRIED_AND_GREEDY #3): a
-                kernel carrying N separate ``[..., axis, ...]`` accumulators holds N resident copies
-                of the axis tile, so its budget is N× tighter (jsd carries 2 -> R 2048 not 4096;
-                kl_div carries 1 -> unchanged 8192). 1 (no extra) for a non-carried axis (rms_norm /
-                softmax: the rdim is in no >=2-D accumulator)."""
-                prod = feature_footprint
-                for d2 in _sized:
-                    if (
-                        d2.block_id == axis
-                        or d2.category is ReductionCategory.GRID_TILE
-                    ):
-                        continue
-                    prod *= max(1, seated.get(d2.block_id, extent_of(d2.block_id)))
-                for gbid in grid_ids:
-                    if gbid == axis:
-                        continue
-                    # a RESIDENT grid axis (it appears in a loop-carried accumulator — kl_div/jsd's
-                    # ``[grid_M, R]`` reduction tile, or grpo's per-token ``[g0, g1]`` accumulator)
-                    # occupies the working set, so it tightens ``axis``'s budget. (A purely parallel
-                    # grid axis in NO accumulator does not.) An over-estimate when the two live in
-                    # SEPARATE tensors, but the resident set is real and the ∏ approximation keeps
-                    # grpo's R correctly tight — dropping it entirely let R blow to the LOOPED_CHUNK
-                    # and spill ~8x.
-                    if in_accumulator(gbid):
-                        prod *= max(1, seated.get(gbid, 1))
-                # ``carried_mult`` = the number of DISTINCT loop-carried reduction-tile buffers
-                # holding ``axis`` (the §2.3 "Σ across separate resident tensors" / CARRIED #3). It
-                # is gated on ``feature_footprint == 1`` — i.e. a PURE carried-2-D kernel (kl_div,
-                # jsd) with no materialized feature tensor. When a materialized feature tensor IS
-                # present (the grad-parameter m-collapse: ``[inner, feature]`` buffers), the feature
-                # footprint already bounds the tile via ``prod`` and ``num_live`` already counts the
-                # sibling buffers, so multiplying by the buffer count too would double-count and
-                # over-floor the inner tile (measured: layer/rms_norm_bwd inner 2->1, ~1.2x). The
-                # two accountings are mutually exclusive: a kernel is carried-2-D OR grad-collapse.
-                carried_mult = 1
-                if feature_footprint == 1:
-                    carried_mult = max(
-                        1,
-                        sum(
-                            1
-                            for a in accumulators
-                            if _is_carried_reduction_tile(a) and axis in a.dim_block_ids
-                        ),
-                    )
-                return max(1, itemsize * _num_live * carried_mult * prod)
+            ) -> list[list[tuple[int, int]]]:
+                """The group's resident working set as a LIST OF TENSORS, each a list of
+                ``(block_id, tile_width)`` dims — the ONLY place the two regimes differ.
+                ``group_footprint_excluding`` then sizes any axis with the SAME formula over whatever
+                this returns. The width travels WITH the dim so the same block_id can appear as two
+                different tiles (a materialized feature row AND the reduction over that axis — the
+                grad-parameter case — each at its own width).
+
+                **CARRIED regime** — a >=2-D loop-carried accumulator holds a reduction axis
+                (kl_div/jsd's ``[grid_M, R]``) AND no materialized feature tile is resident: each
+                loop-carried >=2-D reduction buffer is its OWN resident tensor, so they ADD. A kernel
+                carrying N separate ``[..., axis, ...]`` buffers holds N copies -> N× tighter budget
+                (jsd carries 2 -> R 2048; kl_div carries 1 -> 8192). This additive set SUBSUMES the
+                old ``carried_mult`` (the buffer count) AND the old ``in_accumulator``-multiplied grid
+                term (the grid dim is just another buffer dim) — no multiplier patch, no gate.
+
+                **STREAMED regime** — everything else (rms_norm/softmax/sum/cross_entropy/
+                fused_linear_jsd/grpo; AND the grad-parameter m-collapse, whose feature tile dominates
+                a single multiplicative working tile): ONE resident tensor = the materialized feature
+                tiles (at full extent) + every seated reduction in the group + the resident
+                (in-accumulator) grid rows. (grpo's working ``[grid, R]`` tile and its ``[g0, g1]``
+                accumulator are really SEPARATE tensors that add; folding them into one multiplicative
+                tile over-estimates — a known ~1.2x residual, accepted; the faithful fix is an
+                axis-resolved live-tile count, a flagged Stage-1 follow-up.)
+
+                The regimes are disjoint by construction (pure carried-2-D XOR has-a-feature-tile),
+                so this is structural, not a kernel recognizer."""
+                carried = [
+                    a
+                    for a in accumulators
+                    if _is_carried_reduction_tile(a) and axis in a.dim_block_ids
+                ]
+                if not feature_extent and carried:
+                    return [
+                        [
+                            (d, reduction_width(d))
+                            for d in a.dim_block_ids
+                            if d is not None
+                        ]
+                        for a in carried
+                    ]
+                return [
+                    list(feature_extent.items())
+                    + [(d.block_id, reduction_width(d.block_id)) for d in _sized]
+                    + [(g, reduction_width(g)) for g in grid_ids if in_accumulator(g)]
+                ]
+
+            def group_footprint_excluding(axis: int, _num_live: int = num_live) -> int:
+                """The §2.3 group_footprint (the budget denominator for sizing ``axis``): ONE formula
+                over the group's resident tensors —
+                    ``itemsize × _num_live × Σ_tensors ∏_(dim != axis) width``.
+                The whole resident set is computed HERE (no precomputed footprint term); the two
+                regimes feed in only via ``resident_tensors``. ``_num_live`` (the body's live-tile
+                peak) is load-bearing — dropping it widens fused_linear_jsd's grid and spills ~2x; the
+                transient body tiles are NOT recoverable from ``accumulator_facts``."""
+                footprint = 0
+                for tensor in resident_tensors(axis):
+                    prod = 1
+                    for bid, width in tensor:
+                        if bid != axis:
+                            prod *= width
+                    footprint += prod
+                return max(1, itemsize * _num_live * footprint)
 
             # ---- seat the reductions (full-extent -> user-tile -> grid-tile) ----
             order = sorted(
@@ -1127,9 +1145,13 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         # ---- the non-reduction / independent loops LAST (own budget vs the headroom) ----
         # welford's normalize loop / rms_norm_per_block's groups_per_row. Co-resident with nothing
         # in a group's tile (a separate sequential pass), so each gets a FRESH budget against its
-        # own extent: ``min(extent, ROW_PERSIST / (itemsize × feature footprint))``.
+        # own extent: ``min(extent, ROW_PERSIST / (itemsize × ∏ resident feature tiles))``.
         loop_budget = _pp2(
-            max(1, cls.ROW_PERSIST_MAX_BYTES // max(1, itemsize * feature_footprint))
+            max(
+                1,
+                cls.ROW_PERSIST_MAX_BYTES
+                // max(1, itemsize * math.prod(feature_extent.values())),
+            )
         )
         for i in range(len(spec.block_sizes)):
             bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])

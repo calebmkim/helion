@@ -431,3 +431,110 @@ size_reduction_tiles test). ruff clean.
 
 ### Commits: 5362ea04 (allocator+delete) -> 851455ca (hill-climb footprint+warps) -> 51f2b3d3
 (reduce-then-apply + FULL_GRID gates) -> aae034cd (grpo revert) -> 3d20f1f4 (docstring).
+
+---
+
+# CRITIQUE-FIXES PASS (HEAD 20011b63, brief = _lab/redesign/ALLOCATOR_CRITIQUE_FIXES.md)
+
+## CF-Step 0 — baseline regenerated + gates green
+- /tmp/before_rewrite.json regenerated at 20011b63: 447 cells, 0 errored (the "before" diff ref).
+- validate_kernel_fact 460/460; probe_assertions 13/13. Tree clean (only the untracked brief).
+- Tripwire ref captured: fused_linear_jsd grid stays bs=[1] (grid=1) on all transfer cells.
+
+## CF-Step 1 — OFFLINE MODEL built + validated (the trusted oracle for #1)
+Built `_lab/redesign/dump_facts.py` (full Stage-1 facts -> /tmp/corpus_facts.json) + `model_alloc.py`
+(a pure-arithmetic replica of size_reduction_tiles). VALIDATED: the model's reconstructed
+block_sizes vector == the recorded seed for **443/443 cells** (4 gemm/declined skipped). This is the
+ground-truth instrument for the #1 diff — no GPU, no bind, instant formula sweeps.
+
+## CF-Step 2 — THE #1 DECISION-POINT FINDINGS (numerically proven against the oracle)
+
+### Finding A — the additive-Σ CORE FIX is CONFIG-NEUTRAL across the entire corpus.
+Replacing `num_live × carried_mult × ∏` with the TWO-REGIME structure (STREAMED keeps num_live;
+CARRIED = additive Σ over carried buffers, ∏-within / Σ-across, dims classified by membership)
+reproduces **every one of the 443 cells** — full block_sizes vector + primary_r_block + persistent.
+WHY it is identical, not approximately: each carried buffer is `[grid, R]` with grid seated=1, so
+`Σ over buffers (∏ other dims)` == buffer count == the old `carried_mult`, and the grid dim folds
+into the per-buffer ∏ (subsuming the lossy `in_accumulator`-multiplied grid term, complaint C). For
+the m-collapse CARRIED kernels (layer/group_norm_bwd) the additive coeff DIFFERS from current
+(it adds the feature footprint additively), but both coeffs are already astronomically over-budget
+(1e8–1e11 ≫ 240KB), so the primary floors to 1 either way -> SAME config. ⇒ #1 deletes carried_mult
++ the feature_footprint==1 gate + the multiplied grid term with ZERO config movement. Pure
+principle-restoration, no recognizers, no perf risk.
+
+### Finding B — grpo is in the STREAMED regime, NOT carried. #1 does NOT touch grpo.
+grpo's ONLY accumulator is `[g0, g1]` — the two GRID axes, with NO reduction axis (rids={2}).
+So `_is_carried_reduction_tile` (>=2-D AND holds an rdim) is **False** -> grpo routes to STREAMED.
+The brief's "additive Σ fixes grpo" was a MISREAD (it assumed grpo carried; it is not). grpo's R
+is sized by the STREAMED footprint `coeff = itemsize(4) × num_live(2) × g1_block`:
+  g1=8  -> coeff=64  -> R=pp2(245760/64)=2048  (== optimum)
+  g1=16 -> coeff=128 -> R=pp2(245760/128)=1024 (optimum 2048 -> the standing ~1.2x)
+So the ~1.2x grpo residual is INDEPENDENT of #1 and persists after it. **DECISION (user, this pass):
+ACCEPT grpo ~1.2x as-is.**
+
+### Finding C — the PRINCIPLED grpo fix (flagged Stage-1 follow-up, NOT done this pass).
+The over-tightening is `num_live(2)` multiplying the resident grid block `g1`. The faithful fix
+(user's idea): count a live tile against an axis ONLY if the tile actually spans that axis —
+i.e. an AXIS-RESOLVED liveness, the same decomposition the carried walk does for accumulators.
+For grpo the 2 body temporaries are R-wide tiles that do not each replicate across all of g1, so the
+effective coeff drops to ~itemsize×g1 -> R=2048 (the optimum) with no spill. BLOCKER: `body_live_tiles`
+is a flat SCALAR count (device_ir.py:1575/1976) with no per-axis breakdown; doing this precisely is a
+**Stage-1 fact addition** (a per-axis live-tile count on the descriptor), the same category as F
+option (b). NOTE: the cheap allocator-only shortcut (stop multiplying num_live into the resident grid
+block) was modeled and REJECTED — it does NOT move grpo (g1 still enters via the in-accumulator path)
+and it REGRESSES 4 m-collapse cells (group_norm_bwd [1,16]->[1,2]; instance/layer_norm_bwd inner 2->1,
+the 1.2-1.3x step-12 regressions). Only the Stage-1 axis-resolved-liveness version is clean. Filed as
+a follow-up; needs its own recorder+bench+gates + sign-off.
+
+## CF-Step 3 — the EXACT config-neutral #1 spec (swept against the oracle, 0 diffs)
+`_lab/redesign/sweep_footprint.py` sweeps candidate footprints through the FULL allocator and diffs
+the reconstructed block_sizes vector vs current. RESULT: the two-regime additive-Σ (`fp_additive`)
+is **0 diffs across all 443 cells** (full vectors + primary_r_block + persistent identical). The
+EXACT faithful formulation (the spec to implement):
+- common multiplicative base for an axis = `feature_footprint × ∏(OTHER seated reductions in group)`.
+- **CARRIED regime fires ONLY when `feature_footprint == 1` AND a carried reduction tile holds the
+  axis** (the pure kl_div/jsd case): footprint = `itemsize × num_live × Σ_carried_buffers(∏ buffer
+  dims EXCEPT axis, classified by membership)`. This additive Σ EQUALS the old `carried_mult × R`
+  (each `[grid,R]` buffer with grid seated=1 contributes R; N buffers -> N·R), so it subsumes BOTH
+  `carried_mult` AND the `in_accumulator`-multiplied grid term (the grid dim is now a buffer dim in
+  the ∏) with no separate gate.
+- **Otherwise (streamed rms_norm/softmax/sum/cross_entropy/fused_linear_jsd/grpo AND grad-collapse
+  norm-bwd)**: footprint = `itemsize × num_live × base × ∏(in-accumulator resident grid rows)` —
+  the current streamed formula, num_live RETAINED (load-bearing: fused_linear_jsd).
+WHY the `feature == 1` condition stays: it is NOT the old smell-gate suppressing a double-count;
+it now expresses "a kernel is EITHER pure-carried-2D (buffers add) OR grad-collapse (one
+multiplicative working tile holding a materialized feature) — never both" (the two are disjoint
+kernel structures). The additive Σ is the faithful model of the pure-carried case; the grad-collapse
+case has no separate carried multiplicity to add (its `carried_mult` was already 1). Net effect on
+code: DELETE the `carried_mult` variable + its `feature_footprint == 1` gate-block + the separate
+`in_accumulator` grid-term loop FOR THE CARRIED BRANCH, replace with the Σ-over-buffers walk; the
+streamed branch keeps num_live + the in-acc grid term verbatim. CONFIRMED config-neutral.
+
+## CF-Step 4 — #1 IMPLEMENTED (ONE footprint formula, two regimes, features inline) — gates GREEN
+Rewrote `group_footprint_excluding` into ONE legible formula after human review (the first cut kept
+the old per-kind loop shape + a hoisted `feature_footprint` scalar — rejected as "still scattered"):
+
+    group_footprint = itemsize × num_live × Σ_resident_tensors ∏_(dim != axis) width(dim)
+
+- `resident_tensors(axis)` is the ONLY place the two regimes differ (returns a list of tensors, each
+  a list of `(block_id, width)` dims): CARRIED -> each loop-carried >=2-D reduction buffer is its own
+  tensor (they ADD); STREAMED -> ONE combined working tile (feature tiles + seated reductions +
+  in-accumulator grid rows). Regimes disjoint by construction (pure-carried XOR has-a-feature-tile).
+- The whole footprint is computed in this ONE walk: NO precomputed `feature_footprint` scalar;
+  materialized features are iterated inline as ordinary `(fbid, extent)` resident tiles. Removed the
+  hoisted `feature_footprint` AND the DEAD `d2.category is GRID_TILE` skip (`sized` is built from
+  SIZED_REDUCTION_CATEGORIES, which never contains GRID_TILE). Only guarded hoist left = the
+  `feature_extent` DICT (the set computation needs env/device_ir).
+- KEY fidelity point (the live recorder caught a model gap): the width travels WITH the dim, so the
+  SAME block_id can appear as TWO tiles at TWO widths — the grad-parameter case where bid1 is both a
+  materialized feature row (extent 4096) AND the reduction over that axis (seated r_block). A
+  membership-only `width(bid)` collapsed those to one (reduction wins) and WIDENED the norm-bwd inner
+  tile 2->{16,32,64} (6-cell diff); tagging each dim with its role-width restores byte-identity.
+GATES (all GREEN): recorder ZERO-DIFF (447 cells byte-identical vs /tmp/before_rewrite.json); tripwire
+fused_linear_jsd grid stays [1] on all 7 cells; validate_kernel_fact 460/460; probe_assertions 13/13;
+test_reductions + test_autotuner_heuristics 52 passed / 22 skipped / 35 subtests (NO test edits needed
+— configs unchanged); matmul_layernorm 2 passed; ruff clean. Since #1 is config-neutral (selection-
+only), there are NO changed cells to bench — perf is identical by construction. grpo unchanged
+(~1.2x, accepted; streamed regime, see CF-Step 2 Finding B/C). carried_mult + the feature==1 gate +
+the lossy in_accumulator-multiplied grid term are GONE; two clean regimes; no recognizers
+re-introduced.
