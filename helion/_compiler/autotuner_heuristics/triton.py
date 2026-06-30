@@ -567,10 +567,12 @@ def _h100_ranked_configs(env: CompileEnvironment, fact: MatmulFact) -> list[Conf
     if bm2 != bm and bn2 != bn and bm2 * bn2 >= 4096:
         ranked.append(_h100_config(spec, fact, bm2, bn2, bk, _warps(bm2, bn2), ns))
 
-    # alt 2 — neighbor num_stages (the within-noise stage variance: s3<->s4 on bare GEMM, the
-    # per-tile optimum on some fused dots).
-    ns_alt = 3 if ns != 3 else 2
-    ranked.append(_h100_config(spec, fact, bm, bn, bk, nw, ns_alt, l2))
+    # alt 2 — a SHALLOWER num_stages neighbor (perturb DOWN only). Never re-introduce a deeper
+    # pipeline: for a saturated batched dot that is exactly the config step 7 rejected (s>=3 loses
+    # ~20-28%), and the down-perturbation matches the matched-lever A/B discipline. Skipped at the
+    # floor (num_stages==2, i.e. a saturated dot — its only seed-worthy alternate is the aspect one).
+    if ns > 2:
+        ranked.append(_h100_config(spec, fact, bm, bn, bk, nw, ns - 1, l2))
     return ranked
 
 
