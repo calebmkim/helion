@@ -422,6 +422,21 @@ def _h100_matmul_tile(
     grid_m = (m + bm - 1) // bm
     grid_n = (n + bn - 1) // bn
     l2_grouping = 2 if grid_m > 1 and grid_m >= L2_TALL_RATIO * grid_n else 1
+
+    # (7) num_stages saturation cap. A deep K-pipeline (num_stages=4) only pays when there is
+    # idle memory latency for the pipeline to hide. A fused BATCHED dot — many independent small
+    # programs launched by a huge PINNED grid (mamba's batch·nchunks·nheads), each a tiny-K dot —
+    # already runs many concurrent CTAs per SM, so latency is hidden by occupancy and a deep
+    # per-program pipeline is redundant; its extra in-flight SMEM/register buffers only cut
+    # occupancy. So cap num_stages shallow there. Keyed on the PINNED grid (the batched-dot
+    # signature), NOT total tiles: a bare GEMM has pinned_grid==1 and keeps the deep pipeline even
+    # at many waves (3072³ measured: s2 G=0.58 disaster vs s4 — its long K-loop IS latency-bound).
+    # The small-tile guard keeps it to the measured small-dot case. Faithful keys (pinned-grid
+    # extent + tile size), never kernel identity. [VAL referee: mamba s4->s2 recovers ~20-28%]
+    SAT_WAVES = 4  # pinned grid >= 4 SM-waves of independent programs = occupancy-saturated
+    SMALL_TILE = 32768  # below the max wide-N tile [128,256]; catches mamba's [64,128]/[64,256]/[128,128]
+    if bm * bn < SMALL_TILE and pinned_grid >= SAT_WAVES * num_sm:
+        num_stages = min(num_stages, 2)
     return bm, bn, bk, num_warps, num_stages, l2_grouping
 
 
