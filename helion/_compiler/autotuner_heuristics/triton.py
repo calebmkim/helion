@@ -312,21 +312,19 @@ def _h100_rules_for_bucket(
 
 def _h100_matmul_tile(
     m: int, n: int, k: int, itemsize: int, num_sm: int, pinned_grid: int = 1
-) -> tuple[int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int]:
     """The H100 (sm90) matmul budget/roofline formula — the catch-all that turns
     ``(M, N, K, operand-width)`` into a strong ``(block_m, block_n, block_k, num_warps,
-    num_stages)`` with NO lookup. The model (task §3 inspiration):
+    num_stages, l2_grouping)`` with NO lookup. The model (task §3 inspiration):
 
     1. **Register budget** — the fp32 ``[bm, bn]`` accumulator dominates per-CTA registers,
        so ``bm * bn <= ACC_BUDGET`` (elems). Base aspect is wide-N (``bn = 2*bm`` →
        ``[128, 256]``, the measured H100 compute-bound winner), since N is the coalesced
-       store axis and is usually ≥ M (FFN/proj).
+       store axis and is usually ≥ M (FFN/proj). The ``min(128,·)/min(256,·)`` clamp already
+       bounds the product at ``ACC_BUDGET``, so no separate ceiling-enforcement is needed.
     2. **Shape clamp + spill-outward** — never tile past a dim (``bm <= M``, ``bn <= N``,
        pow2); when one axis is clamped small (tall-skinny / decode), spend the leftover
        register budget on the other axis so the tile stays productive instead of starved.
-    3. **Width scales block_k via SMEM** — the ``[bm,bk]``+``[bk,bn]`` operand tiles live in
-       SMEM at the OPERAND width, so a narrower operand affords a bigger K tile:
-       ``bk = {1B:128, 2B:64, 4B:32}`` — width IS the budget knob (the 8/16/32 key).
     4. **Occupancy / wave-quantization fill** — the launched grid is ``pinned_grid ·
        ⌈M/bm⌉·⌈N/bn⌉``, where ``pinned_grid`` is the product of any PINNED (block_size=1)
        grid axes — 1 for a bare GEMM, but ``batch·nchunks·nheads`` for the fused
@@ -335,8 +333,11 @@ def _h100_matmul_tile(
        wave-quantization efficiency ``grid / (⌈grid/num_sm⌉·num_sm)`` — so a shape already at
        ~one full wave (e.g. a 2048³ cube at 128≈132 tiles) keeps its big tile, while a starved
        small-M GEMM (16 tiles) is split to fill the machine.
-    5. **num_warps** ramps with the tile (≥16K elems → 8 else 4); **num_stages** pipelines the
-       K-loop, the largest that fits SMEM (the compiler default of 1 leaves the MMA un-pipelined).
+    5. **num_warps** ramps with the tile (≥16K elems → 8 else 4).
+    3'. **block_k + num_stages** — SMEM-budgeted (operand width via itemsize) and
+       pipeline-depth-capped (``bk <= K/PIPE`` to keep the K-loop ≥ PIPE deep); see step (3').
+    6. **l2_grouping** for a tall tile-grid (B-reuse); 7. **num_stages cap** for a
+       saturated fused batched dot. (Details at each step below.)
     """
     from ..._utils import prev_power_of_2
 
@@ -356,10 +357,8 @@ def _h100_matmul_tile(
         bn = min(cap_n, max(bn, ACC_BUDGET // max(1, bm)))
         if bm * bn < ACC_BUDGET:
             bm = min(cap_m, max(bm, ACC_BUDGET // max(1, bn)))
-    while bm * bn > ACC_BUDGET and bn > DOT_MIN:  # enforce the ceiling (wide axis first)
-        bn //= 2
-    while bm * bn > ACC_BUDGET and bm > DOT_MIN:
-        bm //= 2
+    # (no ceiling-enforcement loop needed: the min(128,·)/min(256,·) clamps already cap the
+    # product at ACC_BUDGET, and spill-outward only grows an axis up to ACC_BUDGET//other.)
 
     # (4) occupancy / wave-quantization fill — shrink the wide axis (then M) only while it
     # measurably improves wave efficiency. pinned_grid folds in any block_size=1 grid axes
@@ -424,18 +423,18 @@ def _h100_matmul_tile(
     l2_grouping = 2 if grid_m > 1 and grid_m >= L2_TALL_RATIO * grid_n else 1
 
     # (7) num_stages saturation cap. A deep K-pipeline (num_stages=4) only pays when there is
-    # idle memory latency for the pipeline to hide. A fused BATCHED dot — many independent small
-    # programs launched by a huge PINNED grid (mamba's batch·nchunks·nheads), each a tiny-K dot —
-    # already runs many concurrent CTAs per SM, so latency is hidden by occupancy and a deep
-    # per-program pipeline is redundant; its extra in-flight SMEM/register buffers only cut
-    # occupancy. So cap num_stages shallow there. Keyed on the PINNED grid (the batched-dot
-    # signature), NOT total tiles: a bare GEMM has pinned_grid==1 and keeps the deep pipeline even
-    # at many waves (3072³ measured: s2 G=0.58 disaster vs s4 — its long K-loop IS latency-bound).
-    # The small-tile guard keeps it to the measured small-dot case. Faithful keys (pinned-grid
-    # extent + tile size), never kernel identity. [VAL referee: mamba s4->s2 recovers ~20-28%]
+    # idle memory latency for the pipeline to hide. A fused BATCHED dot — many independent
+    # programs launched by a huge PINNED grid (mamba's batch·nchunks·nheads) — already runs many
+    # concurrent CTAs per SM, so latency is hidden by occupancy and a deep per-program pipeline
+    # is redundant; its extra in-flight SMEM/register buffers only cut occupancy. So cap
+    # num_stages shallow there. Keyed ONLY on the PINNED grid (the batched-dot signature): a bare
+    # GEMM has pinned_grid==1 and keeps the deep pipeline even at many waves (3072³ measured: s2
+    # G=0.58 disaster vs s4 — its long K-loop IS latency-bound). Holds across the dot tile size
+    # (measured s2 best/near-best for [64,128]/[64,256]/[128,128]/[128,256] fused tiles; a bare
+    # GEMM can never reach this branch). Faithful key (pinned-grid extent), never kernel identity.
+    # [VAL referee: mamba s4->s2 recovers ~20-28%]
     SAT_WAVES = 4  # pinned grid >= 4 SM-waves of independent programs = occupancy-saturated
-    SMALL_TILE = 32768  # below the max wide-N tile [128,256]; catches mamba's [64,128]/[64,256]/[128,128]
-    if bm * bn < SMALL_TILE and pinned_grid >= SAT_WAVES * num_sm:
+    if pinned_grid >= SAT_WAVES * num_sm:
         num_stages = min(num_stages, 2)
     return bm, bn, bk, num_warps, num_stages, l2_grouping
 
