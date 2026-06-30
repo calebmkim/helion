@@ -729,6 +729,38 @@ class TestTritonH100MatmulHeuristic(TestCase):
             assert bf16 is not None and fp16 is not None
             self.assertEqual(dict(bf16), dict(fp16))
 
+    def test_fires_on_batched_dot_and_pins_batch_to_one(self) -> None:
+        # A genuine BATCHED dot (bmm's baddbmm: 3-D operands + a tunable batch axis) fires, and
+        # the seed pins every batch/outer axis to 1 (one CTA per batch — a no-reuse parallel axis)
+        # while sizing only the dot's M/N/K by the budget. fp32 inputs keep this torch-version
+        # independent (16-bit baddbmm needs torch>=2.8); the levers tested here are dtype-agnostic.
+        from examples.bmm import bmm
+
+        a = torch.randn(16, 512, 512, device=DEVICE, dtype=torch.float32)
+        b = torch.randn(16, 512, 512, device=DEVICE, dtype=torch.float32)
+        with patch("helion._hardware.get_hardware_info", return_value=HOPPER_HARDWARE):
+            k = helion.kernel(bmm.fn, static_shapes=True)
+            bound = k.bind(k.normalize_args(a, b))
+            spec = bound.env.config_spec
+            fact = spec.matmul_facts[0]
+            self.assertGreaterEqual(fact.lhs_ndim, 3)  # a 3-D (batched) dot
+            self.assertGreater(len(spec.block_sizes), 3)  # batch axis is tunable
+            self.assertIn(TritonH100MatmulHeuristic.name, spec.autotuner_heuristics)
+            seed = TritonH100MatmulHeuristic.get_seed_config(
+                bound.env, bound.host_function.device_ir
+            )
+            assert seed is not None
+            block_sizes = seed.config["block_sizes"]
+            mnk = {fact.m_block_id, fact.n_block_id, fact.k_block_id}
+            batch_axes = [
+                i
+                for i in range(len(spec.block_sizes))
+                if spec.block_sizes[i].block_id not in mnk
+            ]
+            self.assertTrue(batch_axes)  # there is a batch/outer axis
+            for i in batch_axes:
+                self.assertEqual(block_sizes[i], 1)  # pinned to 1
+
 
 class TestTritonSplitJoinRotateHeuristic(TestCase):
     """Rope split/join "rotate" heuristic: seeds all-ones ``block_sizes`` and

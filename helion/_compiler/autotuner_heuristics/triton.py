@@ -119,6 +119,45 @@ def _single_2d_static_matmul_fact(config_spec: ConfigSpec) -> MatmulFact | None:
     return fact
 
 
+def _batched_static_matmul_fact(config_spec: ConfigSpec) -> MatmulFact | None:
+    """The H100 eligibility precondition — broader than the 2-D-only
+    ``_single_2d_static_matmul_fact``: it admits an arbitrary, possibly **BATCHED** matmul. The
+    requirements:
+      - exactly one ``MatmulFact`` with **static** M/N/K (the dot's own dims) and three distinct
+        M/N/K block-ids that are real tunable axes;
+      - every **other** tunable block axis is a BATCH / OUTER grid axis (present in
+        ``grid_block_ids``) — a no-data-reuse parallel axis the seed pins to 1
+        (``_h100_build_block_sizes`` floors every non-M/N/K axis), which is exactly what keeps the
+        register-budget tile valid for a batched dot (the fp32 accumulator is
+        ``[batch_blocks…, bm, bn]``; the budget sizes ``bm·bn`` assuming each batch block is 1).
+    An extra tunable axis that is NEITHER M/N/K nor a grid axis (some inner loop we do not model)
+    ⇒ decline, so the seed never mis-pins an axis it does not understand. The dot's ndim is NOT
+    constrained (a 2-D ``matmul`` and a 3-D ``baddbmm`` are both fine), only the block-axis ROLES.
+
+    Fires on: plain ``matmul`` / ``fp8_gemm``; ``broadcast_matmul`` (batch folded into M);
+    ``mamba2_chunk_state`` (batch pre-pinned to 1 by the author — its batch axes aren't tunable);
+    and ``bmm`` / any static batched dot that leaves its batch axis tunable. Declines a dynamic
+    (``static_shapes=False``) or jagged kernel (no static M/N/K) — e.g. ``grouped_gemm``.
+    """
+    facts = config_spec.matmul_facts
+    if len(facts) != 1:
+        return None
+    fact = facts[0]
+    if fact.static_m is None or fact.static_n is None or fact.static_k is None:
+        return None
+    mnk = (fact.m_block_id, fact.n_block_id, fact.k_block_id)
+    if None in mnk or len(set(mnk)) != 3:
+        return None
+    valid = set(config_spec.block_sizes.valid_block_ids())
+    if not set(mnk) <= valid:
+        return None
+    # Every tunable axis must be the dot's M/N/K or a batch/outer grid axis (pinnable to 1).
+    allowed = set(mnk) | set(config_spec.grid_block_ids)
+    if any(bid not in allowed for bid in valid):
+        return None
+    return fact
+
+
 def _shape_bucket_from_fact(fact: MatmulFact) -> dict[str, object]:
     assert fact.static_m is not None
     assert fact.static_n is not None
@@ -573,19 +612,22 @@ def _h100_ranked_configs(env: CompileEnvironment, fact: MatmulFact) -> list[Conf
 
 
 class TritonH100MatmulHeuristic(AutotunerHeuristic):
-    """H100 (sm90) seed for any clean 2-D static ``MatmulFact`` — the dense-GEMM seed
+    """H100 (sm90) seed for any static (possibly BATCHED) ``MatmulFact`` — the dense-GEMM seed
     H100 was missing (only the narrow skinny-aspect rule + the sm100 B200 table existed, so
     almost every real GEMM fell back to the catastrophic ``block_sizes≈[16,16,16]`` default).
 
-    Fires on EVERY ``_single_2d_static_matmul_fact`` (no aspect-ratio gate — re-imposing it
-    is the bug): ``matmul``, ``fp8_gemm``, and ``mamba2_chunk_state``'s fused inner dot all
-    qualify. The seed is a **budget/roofline FORMULA** (``_h100_matmul_tile``) keyed on
-    ``(M, N, K, operand-width)`` — the catch-all that guarantees no shape hits the default —
-    with optional ``matmul_h100.json`` overrides for any region the formula measurably gets
-    wrong (formula-first; an override must earn its place on a whole REGIME, never a single
-    curriculum shape). ``promote_seed_to_default=False`` for now: the seed is planted into the
-    autotuner and used for no-autotune Product A, but the compiler default is left untouched
-    (promoting the catch-all is a later, separate change)."""
+    Fires on EVERY ``_batched_static_matmul_fact`` (no aspect-ratio gate — re-imposing it is the
+    bug): ``matmul``, ``fp8_gemm``, ``broadcast_matmul``, ``mamba2_chunk_state``'s fused inner dot,
+    AND ``bmm`` / any static batched dot. The seed is a **budget/roofline FORMULA**
+    (``_h100_matmul_tile``) that sizes the dot's M/N/K under a register/SMEM budget keyed on
+    ``(M, N, K, operand-width)`` and **pins every batch/outer axis to 1** (a no-data-reuse parallel
+    axis — one CTA per batch maximizes the grid, and it keeps the ``[bm,bn]`` register budget valid;
+    the resulting pinned grid then drives the saturation levers, so a batched dot and mamba are the
+    SAME case). The catch-all guarantees no such matmul hits the default, with optional
+    ``matmul_h100.json`` overrides for any region the formula measurably gets wrong (formula-first;
+    an override earns its place on a whole REGIME, never a single curriculum shape).
+    ``promote_seed_to_default=False`` for now: the seed is planted into the autotuner and used for
+    no-autotune Product A, but the compiler default is left untouched."""
 
     name = "triton_h100_matmul"
     backend = "triton"
@@ -596,12 +638,12 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
         if not matches_hardware(env, cls.HARDWARE_TARGETS):
             return False
-        return _single_2d_static_matmul_fact(env.config_spec) is not None
+        return _batched_static_matmul_fact(env.config_spec) is not None
 
     @classmethod
     def _ranked(cls, env: CompileEnvironment) -> list[Config]:
         spec = env.config_spec
-        fact = _single_2d_static_matmul_fact(spec)
+        fact = _batched_static_matmul_fact(spec)
         if fact is None:
             return []
         # Override table first (most-specific regime rule wins); else the formula catch-all
