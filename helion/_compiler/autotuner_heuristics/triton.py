@@ -564,6 +564,12 @@ class _TileAllocation(NamedTuple):
     - ``warp_override``: a num_warps value forced by the grad-parameter M-collapse path (its
       resident ``[inner, feature]`` tile makes the rdim-extent warp ramp unfaithful), else None
       (the subclass keeps its own extent/row-bytes ramp).
+    - ``rolled_loop_sizes``: ``{block_id -> (r_block, persistent)}`` for every ROLLED reduction
+      axis OTHER than the primary (a multi-graph kernel that rolls >1 reduction into separate
+      ``reduction_loops`` subgraphs — each a SEQUENTIAL pass sized against its own extent). A
+      rolled axis has no ``block_sizes`` slot, so it is sized here (not in ``red_values``) and the
+      standard track maps it onto the ``reduction_loops`` knob. Empty for the corpus (single
+      rolled reduction) and for the user-tiled track (no ``reduction_loops`` knob).
     """
 
     block_sizes: list[int]
@@ -572,6 +578,7 @@ class _TileAllocation(NamedTuple):
     persistent: bool
     m_block: int
     warp_override: int | None
+    rolled_loop_sizes: dict[int, tuple[int, bool]]
 
 
 class _TritonReductionSeedBase(AutotunerHeuristic):
@@ -1428,6 +1435,22 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             )
         )
 
+        # --- size the OTHER rolled reduction axes (standard multi-graph kernels) ----------------
+        # A ROLLED axis rides a reduction_loops subgraph, NOT a block_sizes slot, so it is sized
+        # here (not in red_values). The primary rolled spec reuses (r_block, persistent); any
+        # OTHER rolled spec is a SEQUENTIAL pass (a separate graph_id / co-residency group) sized
+        # against its OWN extent via the same per-reduction budget primitive (PROMPT §2.3 #3).
+        # Empty for the corpus (a single rolled reduction) and for the user-tiled track.
+        rolled_loop_sizes: dict[int, tuple[int, bool]] = {}
+        if standard and len(spec.reduction_loops) > 1:
+            for rl_spec in spec.reduction_loops:
+                bid = rl_spec.block_ids[0]
+                if bid == pd.block_id:
+                    continue
+                rolled_loop_sizes[bid] = cls._reduction_rblock(
+                    env, pd, m_block, rnumel=env.block_sizes[bid].size_hint()
+                )
+
         # --- the grid M takes the remainder + the loops are sized last (PROMPT §2.3 steps 2-3) ---
         block_sizes = cls._build_block_sizes(
             env,
@@ -1476,6 +1499,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             persistent=persistent,
             m_block=m_block,
             warp_override=warp_override,
+            rolled_loop_sizes=rolled_loop_sizes,
         )
 
     @classmethod
@@ -1943,11 +1967,7 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # the rolled ``reduction_loops`` knob + the num_warps ramp + eviction below.
         alloc = cls.size_reduction_tiles(env, spec, device_ir, pd)
         block_sizes = alloc.block_sizes
-        r_block, persistent, m_block = (
-            alloc.primary_r_block,
-            alloc.persistent,
-            alloc.m_block,
-        )
+        r_block, persistent = alloc.primary_r_block, alloc.persistent
         num_warps = cls._num_warps(
             pd,
             max(1, get_num_sm(env.device)),
@@ -1976,24 +1996,18 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             reduction_loops = [None] if persistent else [r_block]
         else:
             # MULTI rolled reduction (the relaxed gate, e.g. two SEQUENTIAL rolled reductions in
-            # separate graphs / co-residency groups). Size EACH rolled spec independently against
-            # its OWN extent (sequential -> not co-resident -> each gets the full budget), one
-            # ``reduction_loops`` entry per spec in spec order. The primary spec reuses the
-            # (r_block, persistent) from the allocation; the rest are sized from their own extent
-            # via the same per-reduction budget primitive (a rolled axis has no block_sizes slot,
-            # so it is not in alloc.red_values -- it is emitted here as a reduction_loops entry).
+            # separate graphs / co-residency groups). One ``reduction_loops`` entry per spec in
+            # spec order, mapping the allocator's sizing onto the knob: the primary spec uses
+            # (r_block, persistent), the OTHER rolled specs use ``alloc.rolled_loop_sizes`` (each
+            # sized against its OWN extent by the allocator -- a rolled axis has no block_sizes
+            # slot, so the allocator surfaces it here rather than in red_values).
             reduction_loops = []
             for rl_spec in spec.reduction_loops:
                 bid = rl_spec.block_ids[0]
                 if bid == pd.block_id:
                     reduction_loops.append(None if persistent else r_block)
                 else:
-                    rb, pers = cls._reduction_rblock(
-                        env,
-                        pd,
-                        m_block,
-                        rnumel=env.block_sizes[bid].size_hint(),
-                    )
+                    rb, pers = alloc.rolled_loop_sizes[bid]
                     reduction_loops.append(None if pers else rb)
         seed: dict[str, Any] = {
             "block_sizes": block_sizes,

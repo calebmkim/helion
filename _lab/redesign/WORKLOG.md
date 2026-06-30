@@ -370,3 +370,26 @@ config recorder diff = only the 2 known movers (mreduction/{layer,rms}_norm_bwd/
 validate_kernel_fact 460/460, probes 13/13, test_reductions+test_autotuner_heuristics 52 passed /
 22 skipped, test_examples -k matmul_layernorm green, ruff clean.
 Final SHA: 04dd14a31b83905ef7cf427bafa619945ee68833.
+
+---
+
+## #4 greedy-allocator unification + #2/#3 membership footprint (2026-06-30)
+Full step trail in `GREEDY_ALLOCATOR_LOG.md` (brief: `GREEDY_ALLOCATOR_TASK_BRIEF.md`). Unified the
+scattered reduction tile-sizing (`_m_block_product` -> `_reduction_rblock` (chunk in isolation) ->
+`_build_block_sizes` (grid M reading r_block back, then loops) -> grad-collapse post-write override,
+threaded inline in each `get_seed_config`) into ONE per-co-residency-group greedy-budget allocator
+`size_reduction_tiles(env, spec, device_ir, pd) -> _TileAllocation` (PROMPT §2.3/§6.2.1). Both
+reduction tracks now call ONLY the allocator and map its `_TileAllocation` onto knobs; no
+get_seed_config calls any sizing helper directly (every one is reached through the allocator). The
+`Cap`/`size_axis` primitive is kept; `_reduction_rblock`/`_build_block_sizes` survive as the
+allocator's internal per-reduction / cap-set primitives. Fixed findings #2/#3 in the same pass:
+`_carried_leading_dims`->`_carried_grid_dims` (membership: any grid axis ANYWHERE in a carried
+reduction accumulator, not dim_block_ids[0]), and `_carried_m_block_cap` now keys on MEMBERSHIP
+(m_axis `in dim_block_ids` not `==[0]`; rdim via `_reduction_block_ids` not position [-1]; footprint
+`M * Σ_buffers(∏ other dims) * itemsize`). Zero-diff verified per-axis pre-edit
+(`carried_membership_trace.py`: 0 final size_axis differences); grpo's spurious carried_m cap
+removed (pure faithfulness gain). All gates green: config recorder = only the 2 known movers,
+validate_kernel_fact 460/460, probes 13/13, test_reductions+test_autotuner_heuristics 52p/22s,
+test_examples -k matmul_layernorm 2p/2s, ruff clean. NON-GOALS respected (matmul-epilogue untouched,
+ReductionFact kept, rollable/pinned kept, Stage-1 unchanged).
+Commits: 562e9f15 (P1 allocator) -> de847f99 (P2 #2/#3 membership) -> <P3 rolled-loop> (final SHA).

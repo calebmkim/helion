@@ -66,7 +66,7 @@ GATE (after ruff format): config recorder = ONLY the 2 known movers; validate_ke
 probe_assertions 13/13; test_reductions+test_autotuner_heuristics 52p/22s; matmul_layernorm 2p/2s;
 ruff format + ruff check helion/ clean. Byte-identical reproduction confirmed.
 
-## Step 2 — P2: #2/#3 membership-based group_footprint — COMMIT <pending>
+## Step 2 — P2: #2/#3 membership-based group_footprint — COMMIT de847f99
 
 Replaced the position-based carried-tile caps with membership-based ones (CARRIED_AND_GREEDY #2/#3):
 - NEW `_reduction_block_ids(spec)` = the rdim set off the kernel fact (the MEMBERSHIP key).
@@ -97,4 +97,40 @@ faithfulness gain with no config impact.
 
 GATE: config recorder = ONLY the 2 known movers; validate_kernel_fact 460/460; probe_assertions
 13/13; test_reductions+test_autotuner_heuristics 52p/22s; matmul_layernorm 2p/2s; ruff clean.
+
+## Step 3 — P3: pull the last rolled-reduction sizing into the allocator — COMMIT <pending>
+
+After P1/P2 the only sizing call left in a `get_seed_config` was the standard track's MULTI-rolled
+`reduction_loops` emission, which called `_reduction_rblock` per non-primary rolled spec. Moved
+that sizing into `size_reduction_tiles` (new `rolled_loop_sizes: {block_id -> (r_block, persistent)}`
+field on `_TileAllocation`, computed for the OTHER rolled specs against their own extent), so the
+subclass only MAPS the sizing onto the `reduction_loops` knob. Now NEITHER get_seed_config calls
+any sizing helper (`_reduction_rblock`/`_build_block_sizes`/`_m_block_product`/`_secondary_red_values`)
+directly — every one is reached only through `size_reduction_tiles`. Dropped the now-unused
+`m_block` local in the standard track.
+
+This branch is corpus-DARK (every corpus kernel has <=1 rolled reduction -> rolled_loop_sizes
+empty), so it stays zero-diff; it tightens the unification for the genuine multi-graph case the
+relaxed `>=1` gate admits.
+
+GATE: config recorder = ONLY the 2 known movers; validate_kernel_fact 460/460; probe_assertions
+13/13; test_reductions+test_autotuner_heuristics 52p/22s (from worktree dir); matmul_layernorm
+2p/2s; ruff format + ruff check helion/ clean.
+
+## DEFINITION OF DONE — MET
+
+- ONE allocator (`size_reduction_tiles`) sizes all of a co-residency group's axes from one budget;
+  `_reduction_rblock` + `_build_block_sizes` (+ `_m_block_product`, `_secondary_red_values`, the
+  M-axis cap loop, the carried caps, the grad/m-collapse overrides) are SUBSUMED into it as
+  internal per-reduction / per-cap primitives, NOT separate threaded passes in get_seed_config.
+  Both tracks call only `size_reduction_tiles` and map its `_TileAllocation` onto knobs.
+- #2/#3's position-based assumptions are GONE: `_carried_grid_dims` (membership: any grid axis
+  anywhere in a carried reduction accum) replaces `_carried_leading_dims` (dim_block_ids[0]); the
+  carried footprint is `M * Σ_buffers(∏ other dims) * itemsize` classified by MEMBERSHIP (rdim via
+  `_reduction_block_ids`, not position [-1]; m_axis via `in dim_block_ids`, not == [0]).
+- All gates green; config = ONLY the 2 known movers (zero NEW movers). No GPU measurement needed
+  (zero-diff throughout). NON-GOALS respected: TritonMatmulReductionEpilogueHeuristic untouched,
+  ReductionFact not deleted, rollable/pinned fields kept, Stage-1 device_ir unchanged.
+
+COMMITS: 562e9f15 (P1 allocator) -> de847f99 (P2 membership #2/#3) -> <P3 rolled-loop> .
 
