@@ -361,6 +361,21 @@ def _h100_matmul_tile(
     # (no ceiling-enforcement loop needed: the min(128,·)/min(256,·) clamps already cap the
     # product at ACC_BUDGET, and spill-outward only grows an axis up to ACC_BUDGET//other.)
 
+    # A fused BATCHED dot is launched by a huge PINNED grid (mamba's batch·nchunks·nheads) — the
+    # batched-dot signature. Such a launch is occupancy-bound, not arithmetic-intensity-bound, so
+    # it wants the dot tile + pipeline sized for MAX concurrent CTAs, not max register reuse.
+    SAT_WAVES = 4  # pinned grid >= 4 SM-waves of independent programs = occupancy-saturated
+    saturated_batched = pinned_grid >= SAT_WAVES * num_sm
+
+    # (2.5) saturated batched-dot occupancy tile cap. Cap the per-CTA tile to the measured
+    # occupancy sweet spot (bm<=64, bn<=128): more concurrent small CTAs hide latency better than
+    # a few big register-budget tiles. Beats the register-budget [128,256] on the large fused
+    # dots (hd=128/ds=256: +12-13%) and is neutral on the small ones (already <= it). A bare GEMM
+    # has pinned_grid==1 and is never capped (it IS arithmetic-intensity-bound).
+    if saturated_batched:
+        bm = min(bm, 64)
+        bn = min(bn, 128)
+
     # (4) occupancy / wave-quantization fill — shrink the wide axis (then M) only while it
     # measurably improves wave efficiency. pinned_grid folds in any block_size=1 grid axes
     # (mamba's batch·nchunks·nheads), so a grid-saturated fused dot is never shrunk.
@@ -434,8 +449,7 @@ def _h100_matmul_tile(
     # (measured s2 best/near-best for [64,128]/[64,256]/[128,128]/[128,256] fused tiles; a bare
     # GEMM can never reach this branch). Faithful key (pinned-grid extent), never kernel identity.
     # [VAL referee: mamba s4->s2 recovers ~20-28%]
-    SAT_WAVES = 4  # pinned grid >= 4 SM-waves of independent programs = occupancy-saturated
-    if pinned_grid >= SAT_WAVES * num_sm:
+    if saturated_batched:
         num_stages = min(num_stages, 2)
     return bm, bn, bk, num_warps, num_stages, l2_grouping
 
