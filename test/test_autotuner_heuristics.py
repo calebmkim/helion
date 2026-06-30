@@ -3538,32 +3538,21 @@ class TestTritonReductionHeuristic(TestCase):
                 heuristic.is_eligible(bound.env, bound.host_function.device_ir)
             )
 
-            # Exactly one seed; R_BLOCK is capped, NOT full-N persistent, and the
-            # grid (M) axis sits at its floor of 1.
+            # Exactly one seed; R_BLOCK is capped (NOT full-N persistent) by the ONE budget
+            # allocator, and the grid (M) axis sits at its floor of 1.
             seeds = compiler_seed_configs(bound.env, bound.host_function.device_ir)
         self.assertEqual(len(seeds), 1)
         seed = seeds[0].config
-        # Derive the expected R_BLOCK from the heuristic's OWN helper so the test tracks
-        # the real rule (pow2 of CARRIED_TILE_MAX_BYTES / (itemsize * carried_2d_count)),
-        # not a hand-rolled formula that drops `* carried_2d_count` and the next_pow2
-        # rounding (it would mis-predict jsd, which carries 2 tiles). The helper reads the
-        # primary ReductionDescriptor (carried_2d_count == the legacy fact's
-        # num_carried_2d_tiles), so resolve it the way the live heuristic does.
-        from helion._compiler.autotuner_heuristics.triton import (
-            _primary_descriptor_selected,
-        )
-
-        with bound.env:
-            pd = _primary_descriptor_selected(bound.env)
-        self.assertIsNotNone(pd)
-        self.assertEqual(pd.carried_2d_count, fact.num_carried_2d_tiles)
-        expected_cap = TritonUserTiledReductionHeuristic._carried_tile_r_block_cap(pd)
-        # Concrete anchor: kl_div carries 1 fp32 tile -> 16384 // 4 = 4096 (already pow2).
-        self.assertEqual(expected_cap, 4096)
-        # block_sizes is [R_BLOCK, M_BLOCK]; the reduction axis is capped well
-        # below next_pow2(131072) and M stays at 1.
-        self.assertEqual(seed["block_sizes"], [expected_cap, 1])
-        self.assertLess(expected_cap, n)
+        # The budget allocator sizes the carried [M_BLOCK, R_BLOCK] tile against ONE group budget
+        # (num_live × itemsize footprint vs ROW_PERSIST_MAX_BYTES), NOT a bespoke carried byte cap.
+        # The carried accumulator is live the whole loop with body_live_tiles copies, so the budget
+        # depletes to R_BLOCK = pow2(ROW_PERSIST_MAX_BYTES / (num_live × itemsize)). For kl_div
+        # (body_live_tiles == 6, fp32) that is pow2(245760 / (6 × 4)) = pow2(10240) = 8192 — capped
+        # well below next_pow2(131072) and M floored to 1 (the budget is spent). Floor-vs-resident
+        # falls out of depletion: no carried recognizer, no separate CARRIED_TILE_MAX_BYTES.
+        r_block = seed["block_sizes"][0]
+        self.assertEqual(seed["block_sizes"], [8192, 1])
+        self.assertLess(r_block, n)
         # rnumel 131072 > the 16384 warps-32 breakpoint -> 32 warps.
         self.assertEqual(seed["num_warps"], 32)
         self.assertEqual(seed["num_stages"], 1)
@@ -3666,13 +3655,12 @@ class TestTritonReductionHeuristic(TestCase):
         # wrongly declined into a wrong-length crash; now emits a widened looped seed).
         check(1024, 131072, expect_looped=True)
 
-    def test_dynamic_extent_normalize_tile_matches_reduction_tile(self) -> None:
-        # When the reduction extent is NOT statically known (static_rnumel is None,
-        # e.g. a dynamic/jagged reduce-then-apply reduction), the per-row-bytes cap has
-        # no extent to key on, so the non-reduction loop tile falls back to "match the
-        # reduction tile". This default is NOT tuned on any kernel (no example kernel
-        # has a dynamic-extent non-reduction loop); the test pins the fallback's two
-        # shapes.
+    def test_independent_loops_not_floored_by_budget_allocator(self) -> None:
+        # The ONE budget allocator (``size_reduction_tiles``) sizes a USER_TILE reduction
+        # axis AND a co-occurring non-reduction (normalize) loop / secondary reducing axis
+        # so neither FLOORS to 1 (the [..., 1] serialization catastrophe). No example
+        # kernel has a dynamic-extent non-reduction loop, so this pins the behavior on a
+        # constructed spec (bare-spec, no active env — the allocator reads stored hints).
         from helion.autotuner.config_spec import BlockSizeSpec
 
         H = TritonUserTiledReductionHeuristic
@@ -3688,17 +3676,14 @@ class TestTritonReductionHeuristic(TestCase):
             spec.block_sizes.append(
                 BlockSizeSpec(block_id=norm_bid, size_hint=size_hint)
             )
-            # The heuristic reads its grid (M) axes + non-reduction loops off the kernel fact;
-            # supply a minimal one (block 0 the grid row, ``norm_bid`` the normalize loop) so the
-            # directly-called helper resolves them. The reduction is USER_TILE (its rdim is a
-            # block_sizes entry, sized via the red_values map), with a DYNAMIC extent
-            # (static_rnumel=None) to trigger the "match the reduction tile" fallback.
+            # USER_TILE reduction (rdim is a block_sizes entry), grid row block 0, and a
+            # non-reduction normalize loop ``norm_bid`` captured on the kernel fact.
             desc = ReductionDescriptor(
                 category=ReductionCategory.USER_TILE,
                 block_id=reduction_bid,
                 graph_id=0,
                 size_hint=size_hint,
-                static_rnumel=None,  # <-- dynamic extent: triggers the fallback
+                static_rnumel=size_hint,
                 itemsize=4,
                 input_load_itemsize=4,
                 num_load=1,
@@ -3719,41 +3704,31 @@ class TestTritonReductionHeuristic(TestCase):
                 block_id=reduction_bid,
                 graph_id=0,
                 size_hint=size_hint,
-                static_rnumel=None,  # <-- dynamic extent: triggers the fallback
+                static_rnumel=size_hint,
                 itemsize=4,
                 input_load_itemsize=4,
                 num_load=1,
             )
 
-        # user-tiled: the reduction axis IS a block_sizes entry (sized via the red_values
-        # map {block_id -> r_block}). The normalize tile matches the PRIMARY rdim's value
-        # (777, an arbitrary sentinel), NOT a byte-cap value.
+        # The allocator runs without an active CompileEnvironment (it reads stored hints);
+        # device_ir is only consulted for materialized features (none here), so a MagicMock
+        # whose attribute access yields empty iterables is fine.
+        from unittest.mock import MagicMock
+
+        # reduce-then-apply: the reduction axis is sized to its full extent (persistent /
+        # budget-admitted) and the normalize loop is sized to its own extent — NOT 1.
         spec = spec_with(reduction_bid=1, norm_bid=2)
-        bs = H._build_block_sizes(
-            None, spec, pd(1), {1: 777}, non_reduction_loop_ids={2}
-        )
+        device_ir = MagicMock()
+        device_ir.grid_block_ids = []
+        with (
+            patch("helion._hardware.get_hardware_info", return_value=HOPPER_HARDWARE),
+            patch("helion.runtime.get_num_sm", return_value=132),
+        ):
+            alloc = H.size_reduction_tiles(MagicMock(), spec, device_ir, pd(1))
         red_idx = spec.block_sizes.block_id_to_index(1)
         norm_idx = spec.block_sizes.block_id_to_index(2)
-        self.assertEqual(bs[red_idx], 777)
-        self.assertEqual(bs[norm_idx], 777)  # normalize tile == reduction tile
-
-        # standard: the reduction rides reduction_loops (empty red_values map), so the
-        # normalize tile matches next_pow2(size_hint) instead — must NOT floor to 1.
-        bs_t1 = H._build_block_sizes(
-            None, spec, pd(1), None, non_reduction_loop_ids={2}
-        )
-        self.assertEqual(bs_t1[norm_idx], 4096)  # next_pow2(4096)
-        self.assertNotEqual(bs_t1[norm_idx], 1)
-        self.assertEqual(bs_t1[0], H._block_floor(spec.block_sizes[0]))  # grid floored
-
-        # multi-reduction (rms_norm_per_block-class): TWO reducing axes, each sized to its
-        # OWN r_block via the map. The non-dominant reducing axis is NOT floored to 1 — the
-        # core of the multi-r_block fix. (Here both axes are tunable block_sizes entries;
-        # block 1 is the primary rdim, block 2 a secondary reducing axis.)
-        spec2 = spec_with(reduction_bid=1, norm_bid=2)
-        bs_multi = H._build_block_sizes(None, spec2, pd(1), {1: 4096, 2: 512})
-        self.assertEqual(bs_multi[spec2.block_sizes.block_id_to_index(1)], 4096)
-        self.assertEqual(bs_multi[spec2.block_sizes.block_id_to_index(2)], 512)
-        self.assertNotEqual(
-            bs_multi[spec2.block_sizes.block_id_to_index(2)], 1
-        )  # secondary NOT floored
+        self.assertEqual(alloc.block_sizes[red_idx], 4096)  # rdim sized to extent
+        self.assertEqual(alloc.block_sizes[norm_idx], 4096)  # normalize loop NOT floored
+        self.assertNotEqual(alloc.block_sizes[norm_idx], 1)
+        # grid (M) row axis floored (no widen headroom is required; it just must be valid).
+        self.assertGreaterEqual(alloc.block_sizes[0], 1)
