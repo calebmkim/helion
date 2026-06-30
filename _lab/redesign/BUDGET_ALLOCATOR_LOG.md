@@ -379,3 +379,55 @@ alternative (16384) is an 8.8x spill. Accepted the ~1.19x grpo residual.
 
 FINAL: 100 changed cells vs pre-edit; gates green (460/460, 13/13, 41 unit, matmul). Proceeding to the
 definitive bench + report.
+
+## Step 15 — FINAL REPORT (HEAD 3d20f1f4)
+
+### Recognizer removal — CONFIRMED (attribute introspection, not just grep)
+DELETED from the reduction seed base + subclasses (hasattr == False): _is_per_feature_accumulator,
+_grad_collapse_group, the inner_tile_ids override, _carried_tile_r_block_cap, _carried_m_block_cap,
+_carried_grid_dims, _is_carried_reduction_acc, _resident_tile_cap, _pinned_inner_resident_elems,
+_build_block_sizes, _reduction_rblock, _secondary_red_values, _m_block_cap, _m_block_product,
+_m_axis_occupancy_cap, _full_width_output, _m_collapse_grid_block, _m_collapse_inner_byte_cap,
+_m_collapse_resident_elems. The `if standard/else` SIZING split is GONE (emission routing only);
+`red_values={} if standard` is GONE. Deleted constants: CARRIED_TILE_MAX_BYTES, M_COLLAPSE_TILE_BYTES,
+M_COLLAPSE_MAX_CTA, PERSISTENT_REDUCTION_MAX, FULL_WIDTH_PERSIST_MAX_ELEMS. triton.py shrank ~850
+lines. The only doc references left are explanatory ("this SUBSUMES the old ...").
+
+### Landed budget constants (the ONE budget + faithful scales)
+- ROW_PERSIST_MAX_BYTES = 245760  (single resident tile ceiling — the one budget)
+- LIVE_PERSIST_MAX_BYTES = 3*245760  (num_live-tile live-set ceiling; removes persistence from a heavy body)
+- LOOPED_CHUNK = 16384  (looped chunk for a non-persistent row)
+- MIN_WAVES = 8  (occupancy floor for the grid widen)
+- WIDEN_MAX_ROWS = 8  (NEW: diminishing-returns rows/program ceiling on the resident-row grid widen)
+- NARROW_W1_MAX_BYTES = 2048, NARROW_W1_OCC_BYTE_LIMIT = 262144  (num_warps narrow-w1 lever, unchanged)
+- CORESIDENT_MIN_WARPS = 4  (coresident warp halving floor; 8 for a grad-param m-collapse)
+Faithful scales (continuous, uniform, §3): num_live = max(body_live_tiles); carried_mult = # carried
+reduction buffers (gated on feature_footprint==1); feature_footprint = ∏ materialized feature extents.
+
+### Config movement: 100 of 447 cells changed (vs pre-edit 34ae072e). Field-change counts:
+kl_div 34 bs (carried 2x), sum 15 bs, welford 16 bs, grpo 7 bs, dyt 3 bs, fused_add_rmsnorm 3 bs,
+gated_rmsnorm 3 bs, bias_grad 2 bs, softmax 2 bs, scaled_masked_softmax 2 bs, cross_entropy 1 bs,
+jsd 1 bs, layer_norm 1 bs; layer_norm_bwd 1 warps, rms_norm_bwd 1 warps + 2 evict, instance/group_norm
+2 warps + 2 evict each. (NB: many norm-bwd cells are byte-identical; only warps/eviction moved.)
+
+### PERF (44 representative cells of the 100, single-process median-of-9, before-cfg vs after-cfg):
+geomean after/before = 0.894 (net ~12% FASTER). WIN(<0.90)=6, NEUTRAL=35, REGRESS(>1.10)=3.
+- TOP WINS: jsd (262144,4096) 0.036 (28x! the [2048,16]->[128,16] inner-loop fix), welford (262144,7168)
+  0.45, welford (8192,14336) 0.75, welford (4096,16384) 0.78, cross_entropy (262144,4096) 0.82,
+  scaled_masked_softmax (131072,512) 0.86.
+- REGRESSIONS (all grpo, the 2-separate-resident-tensor additive-footprint kernel the multiplicative ∏
+  approximates): grpo (8,4096,128256) 1.20, (4,2048,128256) 1.12, (4,1024,256000) 1.10. Accepted (7
+  transfer cells; the alternative footprint gave an 8.8x spill).
+- seed-vs-DEFAULT spot checks: kl_div 0.62, grpo 0.58 (seed beats compiler default). welford
+  (262144,7168) seed/default=1.95 — the welford SEED loses to default (PRE-EXISTING: the old seed lost
+  too; this rewrite made welford 2.2x FASTER than the old seed but it's still a poor start vs default —
+  a separate welford-seed issue, not introduced here; the autotuner refines from it).
+
+### Correctness gates (all GREEN throughout): validate_kernel_fact 460/460; probe_assertions 13/13
+(taxonomy routing intact — floor-vs-resident + collapse are budget outcomes); matmul-epilogue 2p/2s;
+test_reductions + test_autotuner_heuristics 41p/22s/13 subtests (2 tests updated to the new behavior:
+test_kl_div_wide pins the budget-derived [8192,1]; the _build_block_sizes test replaced by a
+size_reduction_tiles test). ruff clean.
+
+### Commits: 5362ea04 (allocator+delete) -> 851455ca (hill-climb footprint+warps) -> 51f2b3d3
+(reduce-then-apply + FULL_GRID gates) -> aae034cd (grpo revert) -> 3d20f1f4 (docstring).
