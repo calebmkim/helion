@@ -13,6 +13,7 @@ from ...autotuner.config_fragment import EnumFragment
 from ...runtime.config import Config
 from .common import REDUCTION_TARGET_NAMES
 from .common import clamp_block_size_targets
+from .common import dedupe_configs
 from .common import matches_hardware
 from .common import op_name_parts
 from .registry import AutotunerHeuristic
@@ -457,41 +458,96 @@ def _h100_build_block_sizes(
     return out
 
 
-def _h100_budget_config(env: CompileEnvironment, fact: MatmulFact) -> Config:
-    """The catch-all budget seed for a clean 2-D static matmul fact (always fires)."""
-    from ...runtime import get_num_sm
-
-    assert fact.static_m is not None
-    assert fact.static_n is not None
-    assert fact.static_k is not None
-    itemsize = max(1, fact.lhs_dtype.itemsize)
-    num_sm = max(1, get_num_sm(env.device))
-    # pinned_grid = product of any PINNED (block_size=1) grid axes other than the dot's
-    # M/N tiles — 1 for a bare GEMM, batch·nchunks·nheads for mamba's fused dot. These
-    # already saturate the SMs, so the occupancy fill must count them (else it wrongly
-    # shrinks an already-grid-saturated dot's tile).
+def _h100_pinned_grid(env: CompileEnvironment, fact: MatmulFact) -> int:
+    """Product of any PINNED (block_size=1) grid axes other than the dot's M/N tiles — 1 for a
+    bare GEMM, ``batch·nchunks·nheads`` for mamba's fused dot. These already saturate the SMs, so
+    the occupancy fill counts them (else it shrinks an already-grid-saturated dot's tile) and the
+    num_stages cap keys on them (the batched-dot signature)."""
     pinned_grid = 1
-    spec = env.config_spec
-    for bid in spec.grid_block_ids:
+    for bid in env.config_spec.grid_block_ids:
         if bid in (fact.m_block_id, fact.n_block_id):
             continue
         size = env.block_sizes[bid].size
         if isinstance(size, (int, torch.SymInt)):
             pinned_grid *= max(1, env.size_hint(size))
-    bm, bn, bk, num_warps, num_stages, l2_grouping = _h100_matmul_tile(
-        fact.static_m, fact.static_n, fact.static_k, itemsize, num_sm, pinned_grid
-    )
-    block_sizes = _h100_build_block_sizes(env.config_spec, fact, bm, bn, bk)
+    return pinned_grid
+
+
+def _h100_config(
+    spec: ConfigSpec,
+    fact: MatmulFact,
+    bm: int,
+    bn: int,
+    bk: int,
+    num_warps: int,
+    num_stages: int,
+    l2_grouping: int = 1,
+) -> Config:
+    """Assemble a Config from a tile tuple (emit l2_groupings only when grouping > 1)."""
     cfg: dict[str, Any] = {
-        "block_sizes": block_sizes,
+        "block_sizes": _h100_build_block_sizes(spec, fact, bm, bn, bk),
         "num_warps": num_warps,
         "num_stages": num_stages,
     }
-    # Only emit l2_groupings when the grid is tall enough to benefit (else leave the default;
-    # a non-default grouping on a wide/square grid regresses — see _h100_matmul_tile step 6).
     if l2_grouping > 1:
         cfg["l2_groupings"] = [l2_grouping]
     return Config(**cfg)
+
+
+def _h100_budget_tile(
+    env: CompileEnvironment, fact: MatmulFact
+) -> tuple[int, int, int, int, int, int]:
+    """The primary tile tuple (bm,bn,bk,num_warps,num_stages,l2_grouping) from the formula."""
+    from ...runtime import get_num_sm
+
+    assert fact.static_m is not None
+    assert fact.static_n is not None
+    assert fact.static_k is not None
+    return _h100_matmul_tile(
+        fact.static_m,
+        fact.static_n,
+        fact.static_k,
+        max(1, fact.lhs_dtype.itemsize),
+        max(1, get_num_sm(env.device)),
+        _h100_pinned_grid(env, fact),
+    )
+
+
+def _h100_budget_config(env: CompileEnvironment, fact: MatmulFact) -> Config:
+    """The catch-all budget seed (Product A / rank-0) for a clean 2-D static matmul fact."""
+    bm, bn, bk, nw, ns, l2 = _h100_budget_tile(env, fact)
+    return _h100_config(env.config_spec, fact, bm, bn, bk, nw, ns, l2)
+
+
+def _h100_ranked_configs(env: CompileEnvironment, fact: MatmulFact) -> list[Config]:
+    """The ranked seed list: the budget primary (rank-0, Product A) + a few DIVERSE strong
+    alternates that seed Product-B search convergence (a seed is never forced, so a sub-optimal
+    alternate only costs autotuning time). The alternates perturb the two axes that carry the
+    most measured per-shape variance — the tile ASPECT (e.g. [128,256] vs a transposed [256,128])
+    and num_stages (s3 vs s4) — giving the search diverse strong starting points without the
+    risky l2 lever. Deduped against the primary by the loader."""
+    from ..._utils import prev_power_of_2
+
+    bm, bn, bk, nw, ns, l2 = _h100_budget_tile(env, fact)
+    spec = env.config_spec
+    ranked: list[Config] = [_h100_config(spec, fact, bm, bn, bk, nw, ns, l2)]
+
+    def _warps(_bm: int, _bn: int) -> int:
+        return 8 if _bm * _bn >= 16384 else 4
+
+    # alt 1 — transposed aspect (move budget from N to M): covers shapes where a less wide tile
+    # wins. Only when there is room and it changes the tile.
+    assert fact.static_m is not None and fact.static_n is not None
+    cap_m = max(16, prev_power_of_2(max(1, fact.static_m)))
+    bm2, bn2 = min(cap_m, bm * 2), max(16, bn // 2)
+    if bm2 != bm and bn2 != bn and bm2 * bn2 >= 4096:
+        ranked.append(_h100_config(spec, fact, bm2, bn2, bk, _warps(bm2, bn2), ns))
+
+    # alt 2 — neighbor num_stages (the within-noise stage variance: s3<->s4 on bare GEMM, the
+    # per-tile optimum on some fused dots).
+    ns_alt = 3 if ns != 3 else 2
+    ranked.append(_h100_config(spec, fact, bm, bn, bk, nw, ns_alt, l2))
+    return ranked
 
 
 class TritonH100MatmulHeuristic(AutotunerHeuristic):
@@ -526,7 +582,8 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         fact = _single_2d_static_matmul_fact(spec)
         if fact is None:
             return []
-        # Override table first (most-specific regime rule wins); else the formula catch-all.
+        # Override table first (most-specific regime rule wins); else the formula catch-all
+        # (primary + ranked Product-B alternates).
         bucket = _h100_shape_bucket_from_fact(fact)
         ranked: list[Config] = []
         for rule in _h100_rules_for_bucket(bucket):
@@ -535,8 +592,8 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
             if ranked:
                 break
         if not ranked:
-            ranked.append(_h100_budget_config(env, fact))
-        return ranked
+            ranked = _h100_ranked_configs(env, fact)
+        return dedupe_configs(ranked)
 
     @classmethod
     def get_seed_config(
