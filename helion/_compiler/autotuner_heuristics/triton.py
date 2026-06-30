@@ -1305,21 +1305,15 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
     """user-tiled inner-reduction seed: fires when the user hand-writes the ``hl.tile`` loop
     over the reduction axis (so the rdim is an ordinary ``block_sizes`` entry, e.g.
     ``hl.tile(n, block_size=R_BLOCK)``), which the upstream gate rejects entirely.
-    R_BLOCK starts at the shared ``_reduction_rblock`` (M_BLOCK-aware footprint cap), then
-    INDEPENDENT band predicates layer on via ``min`` (a kernel gets every cap it matches;
-    today's kernels each match exactly one):
 
-    - **plain user-tiled** (softmax_two_pass): no extra cap -- persistent full-pow2 R_BLOCK,
-      standard-style reread-eviction for wide looped rows.
-    - **carried 2-D tiles** (kl_div, jsd): carry ``[M_BLOCK, R_BLOCK]`` accumulator tiles
-      across the loop, so R_BLOCK is capped by ``CARRIED_TILE_MAX_BYTES / (itemsize *
-      num_carried_2d_tiles)`` -- folded into the shared ``_reduction_rblock`` decision.
-    - **reduce-then-apply** (welford, ``non_reduction_loop_block_ids`` non-empty): no combine
-      floor. Its normalize/apply tile starts at the reduction tile and gets the SAME
-      M_BLOCK-aware footprint cap; see ``_build_block_sizes``.
-
-    TODO(reductions): as more structured families land, promote each band into its own
-    fact-keyed ``AutotunerHeuristic`` subclass rather than growing this method.
+    Every axis (the reduction r_block(s), the grid rows, the apply loops) is sized by the shared
+    :meth:`size_reduction_tiles` ONE budget allocator — there are NO per-band branches. The kernel
+    families this track covers (plain user-tiled softmax, carried-2-D kl_div/jsd, reduce-then-apply
+    welford, grad-parameter bias_grad/dyt) differ only in their Stage-1 facts (carried accumulators,
+    non-reduction loops, materialized features), which the budget consumes uniformly; the
+    floor-vs-resident and chunk-vs-persistent decisions are budget OUTCOMES. This track maps the
+    allocation onto its knobs (every reduction axis is a ``block_sizes`` entry; no
+    ``reduction_loops``) + num_warps + reread eviction below.
     """
 
     name = "triton_reduction_user_tile"
