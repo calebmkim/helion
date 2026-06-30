@@ -439,10 +439,11 @@ def _h100_matmul_tile(
     # of M-tiles sharing the same N-columns, keeping the (small, reused) B operand L2-resident
     # across the group. This is a big win for a TALL tile-grid (many M-tiles reusing one B:
     # tall-skinny G 0.69->0.97) but measurably HURTS a wide/square grid (vocab G 0.999->0.71,
-    # wide 0.98->0.72) — so it is gated on a PROVEN reversal boundary: the M-tile count must
-    # dominate the N-tile count (grid_m >= L2_TALL_RATIO * grid_n). Off for mamba (its M/N grid
-    # is 1x1 — the batch axes carry the grid, not tiled M/N).
-    L2_TALL_RATIO = 8
+    # wide 0.98->0.72) — gated on a PROVEN reversal boundary. The measured l2=2 crossover vs the
+    # tile-grid aspect grid_m/grid_n: ratio 2 (square) -0.7%, 3.2 +3.4%, 4 +5%, 6 +13.5%, 8 +27%,
+    # 64 (tall-skinny) 0.69->0.97 — so the win turns on at ~3x. Gate at grid_m >= 3*grid_n. Off for
+    # mamba (its M/N grid is 1x1 — the batch axes carry the grid, not tiled M/N).
+    L2_TALL_RATIO = 3
     grid_m = (m + bm - 1) // bm
     grid_n = (n + bn - 1) // bn
     l2_grouping = 2 if grid_m > 1 and grid_m >= L2_TALL_RATIO * grid_n else 1
