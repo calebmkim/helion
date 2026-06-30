@@ -541,6 +541,38 @@ def size_axis(floor: int, caps: list[Cap]) -> tuple[int, str]:
     return max(1, best), binding
 
 
+class _TileAllocation(NamedTuple):
+    """The result of :meth:`_TritonReductionSeedBase.size_reduction_tiles` — the ONE
+    per-co-residency-group greedy-budget allocation (PROMPT §2.3/§6.2.1), the single source of
+    every tile size the seed emits. Replaces the old `_m_block_product` -> `_reduction_rblock`
+    -> `_build_block_sizes` -> grad-collapse-override threading (where r_block was sized in
+    isolation, then m_block in a separate pass reading r_block back, then loops in a third):
+    now ONE allocator drives every axis of a group from one budget.
+
+    - ``block_sizes``: the FULL ``Config.block_sizes`` vector (every tunable axis sized:
+      reductions to their chunk, grid M to the budget remainder, apply/independent loops to
+      their own pass) — already includes the grad-parameter M-collapse override when it fires.
+    - ``red_values``: ``{block_id -> r_block}`` for every TUNABLE sized reduction (the primary +
+      sequential secondaries), each chunked against its own group's budget. The primary's own
+      ``r_block``/``persistent`` (used by the standard track's ``reduction_loops`` emission and by
+      both tracks' eviction decision) is ``red_values[pd.block_id]`` / ``persistent``.
+    - ``persistent``: the primary reduction's persistence verdict (BYTE cap admits the full
+      extent AND the row is re-read), an OUTCOME of the budget, not a stored label.
+    - ``m_block``: the floored grid-M scalar the reduction byte budget was formed against (the
+      per-program row count BEFORE the parallel-sibling widen; the widen lives in ``block_sizes``).
+    - ``warp_override``: a num_warps value forced by the grad-parameter M-collapse path (its
+      resident ``[inner, feature]`` tile makes the rdim-extent warp ramp unfaithful), else None
+      (the subclass keeps its own extent/row-bytes ramp).
+    """
+
+    block_sizes: list[int]
+    red_values: dict[int, int]
+    primary_r_block: int
+    persistent: bool
+    m_block: int
+    warp_override: int | None
+
+
 class _TritonReductionSeedBase(AutotunerHeuristic):
     """Shared base for the two Triton inner-reduction seed heuristics. Both share the
     workload facts (``ReductionFact``), the M_BLOCK-aware reduction-block lever
@@ -1229,6 +1261,172 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return out
 
     @classmethod
+    def size_reduction_tiles(
+        cls,
+        env: CompileEnvironment,
+        spec: ConfigSpec,
+        device_ir: DeviceIR,
+        pd: ReductionDescriptor,
+    ) -> _TileAllocation:
+        """THE allocator (PROMPT §2.3 "ONE function assigns ALL block sizes" / §6.2.1): size
+        every axis of every co-residency group from ONE per-group budget, in priority order,
+        holding earlier groups' assignments fixed. This SUBSUMES the old scattered passes
+        (``_reduction_rblock`` sizing the reduction chunk in isolation, then
+        ``_build_block_sizes`` separately sizing the grid M axes by reading r_block back, then
+        non-reduction loops in a third pass, then a grad-collapse override post-write) into one
+        coherent allocation — no value threaded between functions, no rediscovery between passes.
+
+        How the §2.3 model maps onto the corpus structure:
+
+        1. **Per-group budget + greedy reduction bids.** Each reduction's chunk is sized by
+           :meth:`_reduction_rblock` (the per-reduction budget+chunk primitive: form the byte
+           budget for THIS group, raise the floor to the full extent iff persistence holds, else
+           chunk to the byte/carried/extent caps). The PRIMARY reduction bids against its group's
+           budget (``m_block`` rows resident, plus any co-resident PINNED tile via
+           ``pinned_resident_elems``); SEQUENTIAL secondaries (a different ``graph_id`` ->
+           :meth:`_secondary_red_values`) each get their OWN budget against their own extent —
+           never sharing a denominator (the faithful Issue-8 fix). The standard track's rolled
+           primary rides ``reduction_loops`` not a ``block_sizes`` slot, so it is excluded from
+           ``red_values``; the user-tiled primary is ``red_values[pd.block_id]``.
+        2. **The grid M takes the budget remainder.** :meth:`_build_block_sizes` sizes every grid
+           (M) axis = ``max(floor, min(applicable caps))`` over the resident-tile / carried /
+           occupancy / extent / m_block_register caps — the parallel sibling WIDENS into whatever
+           the reductions left (per_token_group's 2x), or FLOORS when a wide resident reduction
+           fills the budget (rms_norm). The reductions' resident widths are HELD FIXED here (the
+           "earlier bids are inputs to later sizing" rule, §2.3 step 3).
+        3. **Non-reduction / independent loops last** (welford normalize, rms_norm_per_block's
+           groups_per_row): a SEPARATE pass co-resident with nothing in the group, sized against
+           its own headroom inside :meth:`_build_block_sizes`.
+        4. **The grad-parameter M-collapse** (norm-backward: a FULL_SLICE feature reduction
+           co-resident with a non-full-extent inner re-tile — read off ``category`` +
+           ``coresidency_groups`` via :meth:`_grad_collapse_group`, NO recognizer) re-tiles the
+           grid M for occupancy and byte-caps the inner re-tile to the feature footprint, and the
+           rdim-extent warp ramp is replaced by the plain ramp (the resident tile is
+           ``[inner, feature]``-wide). This is a budget OUTCOME for that group's shape, folded
+           into the one allocation rather than a post-write override.
+
+        ``standard`` (a FULL_EXTENT primary) rides persistence on ``reduction_loops``; the
+        user-tiled track (USER_TILE primary) carries the reduction on a ``block_sizes`` slot and
+        owns the ``is_m_collapse`` override of the primary r_block. The discriminator is the
+        primary's category (:func:`_is_standard_reduction`), a Stage-1 ACCESS property.
+        """
+        standard = _is_standard_reduction(pd)
+        non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
+        # The floored grid-M scalar the reduction byte budget is formed against (PROMPT §2.3: the
+        # group's resident set is M_BLOCK rows of the reduction tile). The parallel-sibling WIDEN
+        # happens later in _build_block_sizes; the budget sees the floored rows.
+        m_block = cls._m_block_product(spec, pd)
+
+        # --- bid the PRIMARY reduction against its group's budget -------------------------------
+        if standard:
+            # A co-resident PINNED tile (a FULL_GRID specialized axis) sits resident alongside the
+            # persistent row -> count it in the persistence gate (a big pinned tile DENIES
+            # persistence). footprint_factor=body_live_tiles routes a heavy body to the looped path.
+            pinned_co = cls._pinned_inner_resident_elems(spec, pd, pd.block_id)
+            r_block, persistent = cls._reduction_rblock(
+                env,
+                pd,
+                m_block,
+                footprint_factor=pd.body_live_tiles,
+                pinned_resident_elems=pinned_co,
+            )
+        else:
+            # user-tiled: rdim IS a block_sizes entry; the shared lever sizes R_BLOCK from
+            # residency (single-tile footprint + the folded-in carried-2-D cap). persistent is
+            # unused on this track (read off the chunk only for the result struct).
+            r_block, persistent = cls._reduction_rblock(env, pd, m_block)
+
+        warp_override: int | None = None
+
+        # --- the grad-parameter M-collapse (user-tiled side): override the PRIMARY r_block -------
+        # bias_grad/dyt: a loop-carried accumulator over ALL the materialized feature axes. The
+        # collapse shape is the same point in the taxonomy x co-residency as the standard-track
+        # grad collapse below, but the user-tiled rdim IS the collapse axis, so the override lands
+        # on the primary r_block (not a separate grid re-tile). DERIVED from the kernel fact's
+        # axes at the budgeting site (PROMPT §2.3 #5), not a stored field.
+        m_collapse_block: int | None = None
+        if not standard and cls._is_per_feature_accumulator(env, spec, device_ir):
+            # (a) grid CTA -> OCCUPANCY, capped at M_COLLAPSE_MAX_CTA (the grid block also bears
+            #     the sum(0) finalize slab over ~num_sm partials).
+            m_collapse_block = cls._m_collapse_grid_block(
+                env, pd, cap=cls.M_COLLAPSE_MAX_CTA
+            )
+            # (b) inner reduction tile: PURE collapse (bias_grad, body_live_tiles<=1) reduces the
+            #     whole CTA wave in one slab; collapse WITH per-row work (dyt) byte-caps the
+            #     resident [inner, feature] footprint tight. count_body_live=False is measured-correct.
+            if pd.body_live_tiles <= 1:
+                r_block = m_collapse_block
+            else:
+                feature_elems = cls._materialized_feature_elems(env, spec, device_ir)
+                inner_cap = cls._m_collapse_inner_byte_cap(
+                    feature_elems, pd, count_body_live=False
+                )
+                r_block = max(1, min(m_collapse_block, inner_cap))
+
+        # --- assemble the per-axis reduction map (primary + sequential secondaries) -------------
+        # SEQUENTIAL secondaries (different graph_id -> not co-resident) each get their own budget
+        # against their own extent (PROMPT §2.3 #3). The standard rolled primary rides
+        # reduction_loops (not a block_sizes slot), so it is excluded from red_values; the
+        # user-tiled primary is included. Single-reduction kernels add no secondary -> the map is
+        # {} (standard) / {pd: r_block} (user-tiled), byte-identical to before.
+        red_values: dict[int, int] = {} if standard else {pd.block_id: r_block}
+        red_values.update(
+            cls._secondary_red_values(
+                env, spec, pd, m_block, exclude_block_id=pd.block_id
+            )
+        )
+
+        # --- the grid M takes the remainder + the loops are sized last (PROMPT §2.3 steps 2-3) ---
+        block_sizes = cls._build_block_sizes(
+            env,
+            spec,
+            pd,
+            red_values or None,
+            non_reduction_loop_ids=non_reduction_loop_ids,
+        )
+
+        # --- the grad-parameter M-collapse (standard side): re-tile the grid M + inner re-tile ---
+        # rms/ln/instance/group bwd: a FULL_SLICE feature reduction co-resident with a
+        # non-full-extent inner re-tile. _build_block_sizes floors the grid M to 1 (leaving a
+        # grid-wide finalize); occupancy-size it (-> ~num_sm partials) and byte-cap the inner
+        # re-tile to the feature footprint. Keyed on the TAXONOMY (category + coresidency_groups),
+        # NOT a recognizer. The 9 standard + 8 transfer kernels have no such group -> no-op.
+        if standard:
+            inner_tile_ids = cls._grad_collapse_group(spec, device_ir)
+            if inner_tile_ids:
+                m_cta = cls._m_collapse_grid_block(env, pd)
+                for mbid in cls._grid_axis_block_ids(spec):
+                    # A grid-PINNED M axis (block_size=1) has no tunable slot -> skip it.
+                    if mbid in spec.block_sizes.valid_block_ids():
+                        block_sizes[spec.block_sizes.block_id_to_index(mbid)] = m_cta
+                feature_elems = cls._materialized_feature_elems(env, spec, device_ir)
+                inner = cls._m_collapse_inner_byte_cap(
+                    feature_elems, pd, count_body_live=False
+                )
+                for bid in inner_tile_ids:
+                    block_sizes[spec.block_sizes.block_id_to_index(bid)] = inner
+                # Drop the narrow-w1 warps lever: it keys on rdim extent alone, but the resident
+                # tile here is [inner, feature]-wide, so the plain extent ramp is faithful.
+                warp_override = cls._num_warps(pd)
+        elif m_collapse_block is not None:
+            # user-tiled m-collapse: raise the grid CTA tile(s) from the floor to the occupancy
+            # block (the reduction tile was already set to m_collapse_block via r_block above).
+            for mbid in cls._grid_axis_block_ids(spec):
+                if mbid in spec.block_sizes.valid_block_ids():
+                    block_sizes[spec.block_sizes.block_id_to_index(mbid)] = (
+                        m_collapse_block
+                    )
+
+        return _TileAllocation(
+            block_sizes=block_sizes,
+            red_values=red_values,
+            primary_r_block=r_block,
+            persistent=persistent,
+            m_block=m_block,
+            warp_override=warp_override,
+        )
+
+    @classmethod
     def _eviction_policies(
         cls,
         env: CompileEnvironment,
@@ -1686,22 +1884,17 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         pd = _primary_descriptor_selected(env)
         if pd is None:
             return None
-        # standard rides persistent-vs-looped on reduction_loops (sized by the shared _reduction_rblock).
-        # footprint_factor=body_live_tiles routes a heavy body that would overflow the register file
-        # persistent (e.g. fused_linear_jsd) to the looped path instead.
-        m_block = cls._m_block_product(spec, pd)
-        # A co-resident PINNED tile (a FULL_GRID specialized axis, e.g. a group-amax) sits
-        # resident alongside the persistent row; pass its element product so the persistence gate
-        # counts it (PROMPT §2.3 -- a big pinned tile DENIES persistence; the
-        # c2_fullgrid_plus_big_persistent_slice ~4.8x regression). 1 for the corpus (no co-resident
-        # pinned tile alongside a rolled/materialized row) -> byte-identical.
-        pinned_co = cls._pinned_inner_resident_elems(spec, pd, pd.block_id)
-        r_block, persistent = cls._reduction_rblock(
-            env,
-            pd,
-            m_block,
-            footprint_factor=pd.body_live_tiles,
-            pinned_resident_elems=pinned_co,
+        # ONE allocator sizes every axis from the per-co-residency-group budget (PROMPT §2.3/
+        # §6.2.1): the reduction chunk(s), the grid M (the remainder), the apply/independent
+        # loops, and the grad-parameter M-collapse, all in one coherent pass — no r_block sized in
+        # isolation then m_block in a separate pass. The standard track then maps the sizing onto
+        # the rolled ``reduction_loops`` knob + the num_warps ramp + eviction below.
+        alloc = cls.size_reduction_tiles(env, spec, device_ir, pd)
+        block_sizes = alloc.block_sizes
+        r_block, persistent, m_block = (
+            alloc.primary_r_block,
+            alloc.persistent,
+            alloc.m_block,
         )
         num_warps = cls._num_warps(
             pd,
@@ -1713,17 +1906,15 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # (corpus-safe: such corpus kernels take the grad-collapse path below, which sets warps).
         if cls._coresident_with_other_sized(spec, pd.block_id):
             num_warps = min(num_warps, cls.CORESIDENT_MAX_WARPS)
+        # The grad-parameter M-collapse (folded into the allocator) drops the narrow-w1 warps
+        # lever: the resident tile is [inner, feature]-wide, so the plain extent ramp is faithful.
+        if alloc.warp_override is not None:
+            num_warps = alloc.warp_override
 
-        # A standard reduction may be followed by a normalize loop (e.g. `s = x.sum(); out =
-        # x/s`); its extra block_sizes tile(s) are sized by _build_block_sizes (matched to
-        # the reduction tile). Only a seed (a worse tile costs autotuning time, never
-        # correctness), so emit and let the autotuner refine.
-        non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
-
-        # red_block_id=None: rdim is not a block_sizes entry, so every entry is a grid axis (floored)
-        # or a normalize-loop tile. MATERIALIZED rdim (rms/ln/instance bwd, the roller declined to roll
-        # it): emit an EMPTY reduction_loops -- already full-width persistent, and a length-1 list would
-        # fail normalize against the 0-length spec.
+        # standard rides persistent-vs-looped on the rolled ``reduction_loops`` knob (the primary
+        # rdim is NOT a block_sizes entry). MATERIALIZED rdim (rms/ln/instance bwd, the roller
+        # declined to roll it): emit an EMPTY reduction_loops -- already full-width persistent, and
+        # a length-1 list would fail normalize against the 0-length spec.
         is_materialized = pd.block_id not in spec.reduction_loops.valid_block_ids()
         reduction_loops: list[int | None]
         if is_materialized:
@@ -1736,7 +1927,9 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             # separate graphs / co-residency groups). Size EACH rolled spec independently against
             # its OWN extent (sequential -> not co-resident -> each gets the full budget), one
             # ``reduction_loops`` entry per spec in spec order. The primary spec reuses the
-            # (r_block, persistent) computed above; the rest are sized from their own extent.
+            # (r_block, persistent) from the allocation; the rest are sized from their own extent
+            # via the same per-reduction budget primitive (a rolled axis has no block_sizes slot,
+            # so it is not in alloc.red_values -- it is emitted here as a reduction_loops entry).
             reduction_loops = []
             for rl_spec in spec.reduction_loops:
                 bid = rl_spec.block_ids[0]
@@ -1750,60 +1943,6 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
                         rnumel=env.block_sizes[bid].size_hint(),
                     )
                     reduction_loops.append(None if pers else rb)
-        # The PRIMARY rdim rides reduction_loops, NOT a block_sizes entry, so it is never in
-        # red_values. But a kernel may ROLL its primary yet hand-write a SECONDARY reduction over a
-        # tunable axis (a block_sizes entry, a sized Stage-1 descriptor). Size each such secondary
-        # as a reduction (its own r_block via _reduction_rblock) instead of letting it fall to the
-        # catch-all generic widen -- the standard-track analogue of the user-tiled multi-reduction
-        # sizer. Single-reduction kernels have no secondary sized descriptor -> red_values stays
-        # empty -> every block_sizes axis floors, byte-identical to before. (The primary is never
-        # in this set, so no skip needed.) Per-axis r_block for the tunable SECONDARY reductions,
-        # driven by the Stage-1 kernel fact (the rolled primary rides reduction_loops, so it is
-        # excluded). Single-reduction kernels get {} -> byte-identical.
-        red_values = cls._secondary_red_values(
-            env, spec, pd, m_block, exclude_block_id=pd.block_id
-        )
-        block_sizes = cls._build_block_sizes(
-            env,
-            spec,
-            pd,
-            red_values or None,
-            non_reduction_loop_ids=non_reduction_loop_ids,
-        )
-        # Dual-axis grad-parameter M-collapse (rms/ln/instance/group bwd): the grid M block is re-tiled
-        # by an inner loop and feeds a per-feature grad accumulator finalized across CTAs.
-        # _build_block_sizes floors it to 1 (leaving a grid-wide finalize); size it for occupancy so the
-        # finalize shrinks to ~num_sm partials.
-        #
-        # Keyed on the TAXONOMY (PROMPT §6 Q4), NOT the ``per_feature_accumulator`` recognizer:
-        # ``_grad_collapse_group`` returns the inner re-tile ids of a co-residency group holding a
-        # full-extent feature reduction co-resident with a non-full-extent inner re-tile -- "a
-        # FULL_SLICE reduction co-resident with a partial GRID_TILE/USER_TILE reduction," read off
-        # category + coresidency_groups. This replaces BOTH the ``pfa`` gate (Defect #1/#6 the
-        # recognizer) AND the subtractive ``inner_tile_ids`` filter (Defect #2 "an axis defined by
-        # what it is NOT"). The 9 standard + 8 transfer kernels have no such group -> None -> their
-        # seeds stay byte-identical.
-        inner_tile_ids = cls._grad_collapse_group(spec, device_ir)
-        if inner_tile_ids:
-            # Occupancy-size the grid M block (the dominant lever), byte-cap the inner
-            # re-tile to the feature footprint, and drop the narrow-w1 warps lever: it keys
-            # on rdim extent alone, but the resident tile here is [inner, feature]-wide, so
-            # the plain extent ramp (>=4 warps) is faithful. Only instance_norm is affected.
-            m_cta = cls._m_collapse_grid_block(env, pd)
-            for mbid in cls._grid_axis_block_ids(spec):
-                # A grid-PINNED M axis (block_size=1) has no tunable Config slot and cannot be
-                # raised to an occupancy block -- skip it. Only unpinned grid tiles re-tile.
-                if mbid in spec.block_sizes.valid_block_ids():
-                    block_sizes[spec.block_sizes.block_id_to_index(mbid)] = m_cta
-            # feature footprint computed HERE (budgeting site), not read off a stored fact field.
-            # count_body_live=False is the measured-correct choice (see _m_collapse_resident_elems).
-            feature_elems = cls._materialized_feature_elems(env, spec, device_ir)
-            inner = cls._m_collapse_inner_byte_cap(
-                feature_elems, pd, count_body_live=False
-            )
-            for bid in inner_tile_ids:
-                block_sizes[spec.block_sizes.block_id_to_index(bid)] = inner
-            num_warps = cls._num_warps(pd)  # num_sm/grid_rows default 0 -> no narrow-w1
         seed: dict[str, Any] = {
             "block_sizes": block_sizes,
             "reduction_loops": reduction_loops,
@@ -1874,93 +2013,20 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         pd = _primary_descriptor_selected(env)
         if pd is None:
             return None
-        non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
-        m_block = cls._m_block_product(spec, pd)
-
-        # user-tiled: rdim IS a block_sizes entry (no reduction_loops knob); persistent == R_BLOCK >=
-        # next_pow2(N), other axes floored (u0*u1 <= 2**20). The shared lever sizes R_BLOCK from
-        # residency (single-tile footprint + the folded-in carried-2-D cap for kl_div/jsd) and returns
-        # it directly; _persistent is unused on this track.
-        r_block, _persistent = cls._reduction_rblock(env, pd, m_block)
-        # M-COLLAPSE (grad-parameter reduction, e.g. bias_grad/dyt): collapse the grid/row axis into a
-        # per-feature accumulator, sizing the grid CTA for occupancy instead of T2's floored grid.
-        m_collapse_block: int | None = None
-        # Faithful signature: a loop-carried accumulator over ALL the materialized feature axis
-        # (bias_grad/dyt); per-row / 2-D accumulators are excluded. DERIVED from the kernel fact's
-        # axes at the budgeting site, not read off the stored ReductionFact.per_feature_accumulator
-        # (PROMPT §2.3 #5 -- the accumulator-shape signal is a use-site derivation; verified equal
-        # to the stored field across 443 cells).
-        is_m_collapse = cls._is_per_feature_accumulator(env, spec, device_ir)
-        if is_m_collapse:
-            # (a) grid CTA -> OCCUPANCY (_m_collapse_grid_block), capped at M_COLLAPSE_MAX_CTA since the
-            #     grid block also bears the reduction slab (sum(0) finalize over ~num_sm partials). An
-            #     unbacked/AOT grid (grid_rows == 0) falls through to block 1 -- a worse seed, not a bug.
-            m_collapse_block = cls._m_collapse_grid_block(
-                env, pd, cap=cls.M_COLLAPSE_MAX_CTA
-            )
-            # (b) inner reduction tile: depends on whether the collapse has PER-ROW WORK,
-            #     which ``body_live_tiles`` measures (peak simultaneously-live full-width tiles).
-            if pd.body_live_tiles <= 1:
-                # PURE collapse (bias_grad: read + sum, ONE resident tile): a big inner tile is
-                # cheap and cuts loop overhead, so reduce the whole CTA wave in one slab (bounded
-                # by the grid block + 256 cap).
-                r_block = m_collapse_block
-            else:
-                # Collapse WITH per-row work (dyt: full-width grad_x store + tanh intermediates):
-                # a big inner tile spills, so byte-cap the resident [inner, feature] footprint
-                # tight (~2-8 rows) for occupancy. Feature footprint computed HERE (budgeting site);
-                # count_body_live=False is the measured-correct choice (see _m_collapse_resident_elems).
-                feature_elems = cls._materialized_feature_elems(env, spec, device_ir)
-                inner_cap = cls._m_collapse_inner_byte_cap(
-                    feature_elems, pd, count_body_live=False
-                )
-                r_block = max(1, min(m_collapse_block, inner_cap))
-
+        # ONE allocator sizes every axis from the per-co-residency-group budget (PROMPT §2.3/
+        # §6.2.1): the user-tiled reduction chunk(s) on their block_sizes slots, the grid M (the
+        # remainder), the apply loops, and the grad-parameter M-collapse (bias_grad/dyt) override,
+        # all in one coherent pass — no r_block sized in isolation then block sizes in a separate
+        # pass. The user-tiled track then maps the sizing onto num_warps + eviction below (no
+        # reduction_loops knob; the rdim rides a block_sizes entry).
+        alloc = cls.size_reduction_tiles(env, spec, device_ir, pd)
+        block_sizes = alloc.block_sizes
         num_warps = cls._num_warps(
             pd,
             max(1, get_num_sm(env.device)),
             _grid_rows(env, cls._grid_axis_block_ids(spec)),
         )
-
-        # Per-axis r_block map. The primary rdim always gets the r_block computed above (its
-        # m_collapse override included). A multi-reduction kernel (rms_norm_per_block: a tunable
-        # 5120-wide RMS sum + a pinned 128-wide group amax) ALSO sizes each SECONDARY reducing
-        # axis to its OWN extent, so the non-dominant reduction is no longer floored to 1. Only
-        # TUNABLE axes (a block_sizes slot) are inserted -- a PINNED/materialized reducing axis is
-        # already full-extent resident and has no slot (the Error-1 guard, mirrored here). The
-        # passes are sequential / not co-resident, so each axis is chunked against its own extent
-        # (see _reduction_rblock's rnumel). Single-reduction kernels have no secondary sized
-        # descriptor, so this map is exactly {pd.block_id: r_block} -- byte-identical. The primary
-        # is seeded above and is never in the secondary set.
-        red_values: dict[int, int] = {pd.block_id: r_block}
-        # The tunable SECONDARY reductions (driven by the Stage-1 kernel fact), each chunked
-        # against its own extent. The primary is seeded above (with its m_collapse override), so
-        # exclude it. Single-reduction kernels add nothing -> byte-identical.
-        red_values.update(
-            cls._secondary_red_values(
-                env,
-                spec,
-                pd,
-                m_block,
-                exclude_block_id=pd.block_id,
-            )
-        )
-
-        block_sizes = cls._build_block_sizes(
-            env,
-            spec,
-            pd,
-            red_values,
-            non_reduction_loop_ids=non_reduction_loop_ids,
-        )
-        if m_collapse_block is not None:
-            # Raise the grid CTA tile(s) from the floor to the occupancy block (the reduction
-            # tile was already set to m_collapse_block via r_block above). A grid-PINNED M axis
-            # (block_size=1) has no tunable Config slot and cannot be raised -- skip it.
-            for mbid in cls._grid_axis_block_ids(spec):
-                if mbid in spec.block_sizes.valid_block_ids():
-                    idx = spec.block_sizes.block_id_to_index(mbid)
-                    block_sizes[idx] = m_collapse_block
+        non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
         seed: dict[str, Any] = {
             "block_sizes": block_sizes,
             "num_warps": num_warps,
