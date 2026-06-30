@@ -416,15 +416,24 @@ def _h100_matmul_tile(
     #       the 8/16/32 budget knob, faithful (a byte budget, never a dtype literal).
     # Drop num_stages only if even min_bk overflows SMEM (an unusually large tile).
     BK_CAP = 256
-    PIPE = 4  # target K-loop pipeline depth
+    PIPE = 4  # baseline K-loop pipeline depth (bk is sized to fit at least this many stages)
+    MAX_STAGES = 6  # then DEEPEN the pipeline up to here if SMEM allows — a small tile leaves SMEM
+    # spare, and a deep K-loop (many iterations) hides its latency with more stages (measured:
+    # small-M [64,64,128] s4->s6 +13%, deep-K K>>M·N +26%); a big tile is SMEM-capped back to ~4.
     min_bk = 32 if itemsize == 1 else 16  # tl.dot K min (fp8 needs 32)
-    num_stages = 4
     bk = min(BK_CAP, _p2le(k), max(min_bk, _p2le(max(1, k // PIPE))))
     bk = max(min_bk, bk)
-    while bk > min_bk and (bm * bk + bk * bn) * itemsize * num_stages > SMEM_BUDGET:
+    while bk > min_bk and (bm * bk + bk * bn) * itemsize * PIPE > SMEM_BUDGET:
         bk //= 2
-    while num_stages > 2 and (bm * bk + bk * bn) * itemsize * num_stages > SMEM_BUDGET:
-        num_stages -= 1
+    # num_stages = the largest depth (<= MAX_STAGES, and no deeper than the K-iteration count)
+    # whose operand tiles fit SMEM at the chosen bk.
+    per_stage = (bm * bk + bk * bn) * itemsize
+    kit = max(1, k // bk)  # K-loop iterations — no point pipelining deeper than this
+    num_stages = 2
+    for s in range(min(MAX_STAGES, max(2, kit)), 1, -1):
+        if per_stage * s <= SMEM_BUDGET:
+            num_stages = s
+            break
 
     # (6) l2_grouping — reorder the program grid so a group of consecutive PIDs covers a block
     # of M-tiles sharing the same N-columns, keeping the (small, reused) B operand L2-resident
