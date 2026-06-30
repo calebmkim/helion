@@ -365,3 +365,17 @@ missed:
   back to pre-edit [64].
 
 Gates green (460/460, 13/13, 41 unit, matmul). Changed cells vs pre-edit: 112 -> 100.
+
+## Step 14 — grpo grid-axis footprint (revert a too-aggressive change); final state
+
+Tried restricting the resident-grid-axis footprint term to grid axes SHARING an accumulator with the
+sized axis (CARRIED #2 "shared dim"). It catastrophically loosened grpo's R (the per-token [g0,g1]
+accumulator stopped tightening R) -> R blew to LOOPED_CHUNK 16384 and SPILLED 8.8x. REVERTED: a
+RESIDENT grid axis (in ANY loop-carried accumulator) tightens the budget — an over-estimate when the
+tensors are separate, but it keeps grpo's R tight (1024). grpo's true optimum is 2048 (a 2-separate-
+resident-tensor additive footprint the multiplicative ∏ model approximates as 1024, ~1.19x); modelling
+it exactly needs additive group_footprint machinery not warranted for 7 transfer-corpus cells, and the
+alternative (16384) is an 8.8x spill. Accepted the ~1.19x grpo residual.
+
+FINAL: 100 changed cells vs pre-edit; gates green (460/460, 13/13, 41 unit, matmul). Proceeding to the
+definitive bench + report.

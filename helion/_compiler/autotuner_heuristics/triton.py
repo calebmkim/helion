@@ -968,6 +968,13 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 for gbid in grid_ids:
                     if gbid == axis:
                         continue
+                    # a RESIDENT grid axis (it appears in a loop-carried accumulator — kl_div/jsd's
+                    # ``[grid_M, R]`` reduction tile, or grpo's per-token ``[g0, g1]`` accumulator)
+                    # occupies the working set, so it tightens ``axis``'s budget. (A purely parallel
+                    # grid axis in NO accumulator does not.) An over-estimate when the two live in
+                    # SEPARATE tensors, but the resident set is real and the ∏ approximation keeps
+                    # grpo's R correctly tight — dropping it entirely let R blow to the LOOPED_CHUNK
+                    # and spill ~8x.
                     if in_accumulator(gbid):
                         prod *= max(1, seated.get(gbid, 1))
                 # ``carried_mult`` = the number of DISTINCT loop-carried reduction-tile buffers
