@@ -410,7 +410,19 @@ def _h100_matmul_tile(
         bk //= 2
     while num_stages > 2 and (bm * bk + bk * bn) * itemsize * num_stages > SMEM_BUDGET:
         num_stages -= 1
-    return bm, bn, bk, num_warps, num_stages
+
+    # (6) l2_grouping — reorder the program grid so a group of consecutive PIDs covers a block
+    # of M-tiles sharing the same N-columns, keeping the (small, reused) B operand L2-resident
+    # across the group. This is a big win for a TALL tile-grid (many M-tiles reusing one B:
+    # tall-skinny G 0.69->0.97) but measurably HURTS a wide/square grid (vocab G 0.999->0.71,
+    # wide 0.98->0.72) — so it is gated on a PROVEN reversal boundary: the M-tile count must
+    # dominate the N-tile count (grid_m >= L2_TALL_RATIO * grid_n). Off for mamba (its M/N grid
+    # is 1x1 — the batch axes carry the grid, not tiled M/N).
+    L2_TALL_RATIO = 8
+    grid_m = (m + bm - 1) // bm
+    grid_n = (n + bn - 1) // bn
+    l2_grouping = 2 if grid_m > 1 and grid_m >= L2_TALL_RATIO * grid_n else 1
+    return bm, bn, bk, num_warps, num_stages, l2_grouping
 
 
 def _h100_build_block_sizes(
@@ -452,15 +464,20 @@ def _h100_budget_config(env: CompileEnvironment, fact: MatmulFact) -> Config:
         size = env.block_sizes[bid].size
         if isinstance(size, (int, torch.SymInt)):
             pinned_grid *= max(1, env.size_hint(size))
-    bm, bn, bk, num_warps, num_stages = _h100_matmul_tile(
+    bm, bn, bk, num_warps, num_stages, l2_grouping = _h100_matmul_tile(
         fact.static_m, fact.static_n, fact.static_k, itemsize, num_sm, pinned_grid
     )
     block_sizes = _h100_build_block_sizes(env.config_spec, fact, bm, bn, bk)
-    return Config(
-        block_sizes=block_sizes,
-        num_warps=num_warps,
-        num_stages=num_stages,
-    )
+    cfg: dict[str, Any] = {
+        "block_sizes": block_sizes,
+        "num_warps": num_warps,
+        "num_stages": num_stages,
+    }
+    # Only emit l2_groupings when the grid is tall enough to benefit (else leave the default;
+    # a non-default grouping on a wide/square grid regresses — see _h100_matmul_tile step 6).
+    if l2_grouping > 1:
+        cfg["l2_groupings"] = [l2_grouping]
+    return Config(**cfg)
 
 
 class TritonH100MatmulHeuristic(AutotunerHeuristic):
