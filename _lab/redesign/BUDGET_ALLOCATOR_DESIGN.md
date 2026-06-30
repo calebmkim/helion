@@ -73,6 +73,20 @@ remains (maybe none). Welford's normalize loop; rms_norm_per_block's groups_per_
   never an unsafe spill). Use this; only reach for the exact per-distinct-tensor sum if this proves
   too coarse on a real kernel (and say why).
 
+  **`num_live_tiles_in_group` — USE THIS DEFINITION** (a scout dry-run flagged it as the one
+  underspecified input; resolved here): it is NOT a stored fact field, and you CANNOT derive a
+  per-group accumulator count cleanly because `AccumulatorFact` carries no `graph_id` (so
+  accumulators are not attributable to a co-residency group). What IS group-attributable is the
+  per-descriptor `body_live_tiles` (the walker-measured peak count of simultaneously-live
+  rdim-shaped tiles in that reduction's body). So define, for the group's descriptors `D`:
+  `num_live_tiles_in_group = max(d.body_live_tiles for d in D` that are SIZED reductions`)`
+  (max, not sum — a conservative over-estimate that bounds the heaviest body; defaults to 1).
+  This is the faithful, uniform, group-attributable scaling property. If a kernel ever needs a
+  per-group accumulator count, that is a Stage-1 change (add `graph_id` to `AccumulatorFact`) —
+  out of scope; note it if you hit it. The `∏ of assigned tile sizes` = the product of every tile
+  this group seats (each reduction's r_block + the grid M block + any grid widening); `itemsize` =
+  the primary descriptor's (fp32-promoted) itemsize.
+
 **THE FLOOR-vs-RESIDENT INSIGHT (the whole reason budgeting is the only correct approach):**
 A grid-axis reduction sometimes must FLOOR (jsd — the grid parallelizes it across programs, it
 can't sit resident) and sometimes must be held as a RESIDENT r_block (a vLLM kernel's specialized
@@ -104,6 +118,17 @@ it. The `if standard/else` collapses to this emission routing and nothing else. 
 **num_warps** stays a scalar lever OUTSIDE the budget loop, keyed on the primary's resident ROW
 BYTES (`size_hint * input_load_itemsize`, PROMPT §6.2.1) — the existing `_num_warps` + selection via
 `_primary_descriptor_selected` (max row-bytes). Do not fold it into the budget.
+
+**RESOLVED DETAILS (scout dry-run):**
+- **Priority order (used BOTH within a group and to order groups):** full-extent (FULL_SLICE +
+  FULL_GRID) → user-tile (USER_TILE) → grid-tile (GRID_TILE), with extent (size_hint) as the
+  in-tier tiebreaker (bigger first). Order the GROUPS by their heaviest member under this same key
+  (the group with the most/heaviest full-extent reductions sizes the shared grid-M tile first).
+- **When a seated tile is a ≥3-D / multi-buffer carried accumulator, its footprint contribution is
+  ∏ of its tiled dims within a buffer, Σ across separate buffers** (the #2/#3 finding — see
+  CARRIED_AND_GREEDY_FINDINGS.md). Classify each dim by MEMBERSHIP (is it an rdim? a grid axis?),
+  never by position. The `num_live_tiles × ∏ tile_sizes` over-estimate already captures this at the
+  group level; if you compute per-tensor footprint instead, use product-within / sum-across.
 
 **DELETE these recognizers entirely (do not port):** `_is_per_feature_accumulator` + the
 grad-collapse `inner_tile_ids` override + `_grad_collapse_group` (the norm-bwd M-collapse must FALL
