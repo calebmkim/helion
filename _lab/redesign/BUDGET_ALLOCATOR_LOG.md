@@ -249,3 +249,101 @@ to-be-benched); validate_kernel_fact 460/460; probe_assertions 13/13 (taxonomy r
 floor-vs-resident + collapse fall out of the budget); matmul_layernorm 2p/2s; test_reductions +
 test_autotuner_heuristics 41p (updated test_kl_div_wide + replaced the _build_block_sizes test with a
 size_reduction_tiles test — new behavior, not contorted). ruff clean.
+
+## Step 8 — PERF BENCH (46 representative cells, single-process median-of-9, before-cfg vs after-cfg)
+
+geomean after/before = 1.0225; WIN=2 (welford 262144x7168 0.45!, cross_entropy 262144x4096 0.82),
+NEUTRAL=32, REGRESS=12. The 12 regressions classify into 4 root causes:
+
+CLASS A — num_warps (block_sizes UNCHANGED): the m-collapse warp_override removal. layer_norm_bwd
+  (4096,8192) 1.52 + (8192,4096) 1.17, rms_norm_bwd (4096,8192) 1.11 — bs identical, ONLY num_warps
+  changed (16->4 / 8->4). OLD m-collapse set warp_override=_num_warps(pd) (plain ramp, 16/8); NEW
+  applies CORESIDENT_MAX_WARPS=4 (these ARE co-resident multi-reduction). The cap was tuned on p2/p8
+  (small-rdim primary); it's WRONG for a large-rdim (8192) grad-param primary. FIX: make the
+  coresident warp cap faithful to the PRIMARY ROW BYTES, not a flat co-resident gate.
+CLASS B — grid-M widen past autotuner_min (softmax/scaled_masked_softmax, all huge-M): softmax
+  (262144,128) 1.38 [16]->[128], (262144,257) 1.27, (131072,128) 1.16; scaled_masked_softmax 1.20/1.13.
+  Dropping the self-referential resident_tile cap let grid-M widen too far — widening independent rows
+  past the autotuner_min floor HURTS here. FIX: the grid-M widen for a RESIDENT row needs a tighter
+  ceiling (the old self-referential cap encoded "don't widen a narrow-row huge-M kernel past its
+  floor"). Re-derive a faithful resident-row widen ceiling.
+CLASS C — num_live grid-M halving (welford 16384x5120 1.19 [4,..]->[2,..]): applying num_live to the
+  grid-M byte cap halved the rows. (welford 262144x7168 is a 0.45 WIN from the SAME mechanism via the
+  normalize-loop shrink — so num_live is net-good but over-tight on this mid shape.)
+CLASS D — carried-2D 2x / grpo: jsd (8192,32768) 1.10 [2048,1]->[4096,1]; grpo (8,4096,128256) 1.20,
+  (8,2048,64000) 1.10 [..,2048]->[..,1024]. jsd's carried r_block doubling over-spills on the mid
+  shape; grpo's chunk HALVED (num_live tightened it). FIX: tune the carried/num_live budget scale.
+
+All outputs match (correctness preserved). NEXT: hill-climb the BUDGET constants + the warp ramp to
+recover these without re-introducing recognizers (§3-gated).
+
+## Step 9 — CLASS A fix: coresident warp cap = HALVE the ramp (not flat min 4)
+
+A/B measured num_warps 4/8/16 on the m-collapse cells AND p2/p8:
+- grad-param (layer/rms_norm_bwd): w8 optimal/co-optimal everywhere; w4 regresses up to 1.53x, w16
+  regresses (8192,4096) 1.16x. So full-ramp (16) is NOT best either — w8 is.
+- p8 (FULL_GRID primary): w4 STRONGLY best — w8=2.0x, w16=4.3x slower. p2: w4 best (w8=1.09x).
+FIX: coresident cap = `max(CORESIDENT_MIN_WARPS=4, ramp//2)` — a PROPORTIONAL halving keyed on the
+primary's row-bytes ramp, not a flat clamp. Gives: p2/p8 ramp8->4 (their measured win), grad-param
+(4096,8192) ramp16->8 (optimal), residual (8192,4096) ramp8->4 (wants 8, ~1.15x — one cell, dwarfed
+by avoiding p8's 2x catastrophe at floor 8). RE-BENCH: layer/rms_norm_bwd (4096,8192) recovered
+1.52x/1.11x -> 1.00; (2048,4096) 1.00; (8192,4096) residual ~1.15x (rms ~1.00). Net Class A: recovered.
+This is a faithful num_warps lever (proportional to primary row-bytes, uniform), not a recognizer.
+
+## Step 10 — CLASS B root cause: grid-M widen is taxonomy-gated, NOT a free byte/occupancy widen
+
+A/B grid-M:
+- softmax (262144,128) fp32: g8=94us BEST, g16=96(1.02), g64=107(1.14), g128=132(1.41). Wants ~floor.
+- softmax (131072,128): g8 best, g64/g128 regress 1.19-1.40x.
+- per_token_group (8192,4096,128): g1=3.84x, g2=1.99x, g4=1.08x, g8=1.00 BEST. Wants AGGRESSIVE widen.
+- per_token_group (128,4096,128): g8 best.
+Both have grid_rows/occ ≈ 248 (massively over-occupied), so OCCUPANCY does not explain the split.
+The PHYSICAL difference: per_token_group's primary reduction is FULL_GRID (the rdim is grid-resident
+/ pinned; the widened axis bid1=groups_per_row is a SIBLING that batches tiny per-group reductions ->
+widening AMORTIZES per-program overhead). softmax's primary is USER_TILE — the grid axis CARRIES the
+independent reduction rows, so widening just batches independent work and LOSES parallelism.
+
+FAITHFUL RULE (taxonomy, not recognizer): a grid-M axis WIDENS into the budget/occupancy remainder
+ONLY when the group's primary reduction is FULL_GRID (grid-resident -> the grid sibling amortizes);
+for a FULL_SLICE / USER_TILE primary (the grid carries the reduction rows) the grid-M stays at its
+FLOOR (occupancy is already saturated; widening independent rows hurts). This is the per_token_group
+"2x widen" special-case falling out of the taxonomy, AND it kills the softmax over-widen. rms_norm
+(FULL_SLICE) grid-M was already byte/occ-bound small, so it is unaffected (still floors). The OLD
+self-referential resident_tile cap (÷m_block) was encoding exactly this "don't widen a floored row"
+behavior by accident; the taxonomy expresses it cleanly.
+
+## Step 11 — CLASS B fix: WIDEN_MAX_ROWS=8 ceiling on the resident-row grid-M widen
+
+A/B confirmed the resident-row grid-M optimum is ~8 rows/program and degrades past it (softmax
+g64/g128 regress 1.14-1.41x; per_token_group also peaks g8, g128=1.12x; rms_norm grid-M is FLAT
+g1..g8, occ-bound). The byte/occupancy caps alone permit a huge widen on a small-row huge-M kernel
+(occ_widen~128 at 262144 rows). FIX: a faithful diminishing-returns ROWS ceiling WIDEN_MAX_ROWS=8 on
+the resident-row widen branch (NOT the grad-param collapse branch, which intentionally batches many
+rows; NOT a raised autotuner_min floor, which still wins via max(floor,...)). Results: softmax
+(262144,*) and scaled_masked_softmax (262144,*) and rms_norm/layer_norm (262144,256) all REVERT to
+their pre-edit configs (regressions GONE); the (131072,*) cells settle at [8] (neutral-to-0.86x win).
+Total changed cells 131 -> 129. per_token_group unchanged in the recorder ([2], cache-propagated;
+genuine optimum 8 is a left-on-table WIN, not a regression).
+
+## Step 12 — CLASS C/D fixes (welford grid-M, jsd/kl_div carried, m-collapse inner) + warp floor
+
+Hill-climbed the budget footprint (NOT recognizers — faithful resident-tensor accounting):
+1. GRID-M widen uses num_live ONLY when the axis co-holds a >=2-D loop-carried REDUCTION tile
+   (membership: >=2D accumulator containing an rdim — _is_carried_reduction_tile). kl_div/jsd grid
+   (carries [grid,R]) keeps num_live -> stays floored 1; welford/softmax grid ([grid] or [grid,None]
+   scalar, NO rdim) uses num_live=1 -> widens to its byte/occ/WIDEN_MAX optimum. Fixed welford
+   (16384,5120) [4..]->[2..] regression (back to [4]).
+2. CARRIED-buffer multiplicity (carried_mult = # distinct >=2-D carried-reduction buffers holding
+   the axis, §2.3 "Σ across resident tensors") tightens the budget for PURE carried-2-D kernels
+   (gated on feature_footprint==1, since a kernel is carried-2-D XOR grad-collapse): jsd (2 buffers)
+   R 4096->2048 (fixed 1.10-1.17x regression); kl_div (1 buffer) unchanged 8192 (neutral 1.03x).
+3. M-COLLAPSE inner tile: with feature_footprint>1, carried_mult is OFF (the feature footprint in
+   `prod` + num_live already bound it), so layer/rms_norm_bwd inner stays 2 (A/B: inner=2 optimal,
+   1->1.2x, 4->1.3x, 8->11x). Fixed the inner 2->1 regression.
+4. CORESIDENT warp floor is feature-aware: 8 for a grad-param m-collapse (heavy [inner,feature]
+   reduction wants >=8 warps — A/B layer_norm_bwd 8192x4096 w4=1.17x vs w8), 4 otherwise (p2/p8
+   pure carried/grid want 4 — w8=2x on p8). Recovered layer/rms_norm_bwd (8192,4096) & (4096,8192)
+   warps. instance_norm_bwd -> w8 (A/B optimal); group_norm_bwd (128,...) -> w8 (marginal 1.08x, tiny
+   kernel, near noise — accepted).
+
+Total changed cells vs pre-edit: 131 -> 112 (the recovered cells reverted to their pre-edit configs).

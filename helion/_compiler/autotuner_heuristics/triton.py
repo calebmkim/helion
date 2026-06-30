@@ -611,6 +611,13 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # Occupancy floor for the grid-M widen: keep the post-tile grid >= num_sm * MIN_WAVES so
     # collapsing a fan-out sibling never under-occupies (mirrors the pointwise seed's MIN_WAVES).
     MIN_WAVES = 8
+    # Diminishing-returns ceiling on the grid-M WIDEN (rows/program): a memory-bound reduction does
+    # not amortize past a handful of batched rows, and widening only trades away grid parallelism
+    # (measured g8 optimum; g64/g128 regress softmax ~1.4x and per_token_group ~1.1x). Bounds the
+    # widen that the byte/occupancy caps alone would permit on a small-row huge-M kernel. Does NOT
+    # bound the grad-param COLLAPSE branch (which intentionally batches many rows to cut the
+    # cross-grid finalize) nor a raised autotuner_min floor (max(floor, ...) still wins).
+    WIDEN_MAX_ROWS = 8
 
     # num_warps levers (kept OUTSIDE the budget — a scalar keyed on the primary's resident ROW
     # BYTES, §6.2.1). NARROW-row single-warp: a narrow reduction row wants ONE warp (the cross-warp
@@ -618,9 +625,10 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # ``input_load_itemsize`` (the HBM-load element width — faithful, dtype-agnostic).
     NARROW_W1_MAX_BYTES = 2048
     NARROW_W1_OCC_BYTE_LIMIT = 262144
-    # Warp ceiling for a primary reduction CO-RESIDENT with another sized reduction (two resident
-    # tiles -> heavy CTA -> the extent-keyed ramp over-provisions; measured w8->w4 wins on p2/p8).
-    CORESIDENT_MAX_WARPS = 4
+    # A primary reduction CO-RESIDENT with another sized reduction (two resident tiles -> heavy
+    # CTA) HALVES the row-bytes warp ramp, floored here: measured w8->w4 wins on p2/p8 (small-rdim
+    # primary), and w16->w8 recovers the large-rdim grad-param kernels a flat min(4) regressed ~1.5x.
+    CORESIDENT_MIN_WARPS = 4
 
     # =============================== Stage-1 fact accessors ================================= #
     @classmethod
@@ -870,6 +878,14 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         def in_accumulator(bid: int) -> bool:
             return any(bid in a.dim_block_ids for a in accumulators)
 
+        def _is_carried_reduction_tile(a: object) -> bool:
+            """A loop-carried accumulator is a genuine resident REDUCTION tile iff it is >=2-D AND
+            holds at least one reduction axis (an rdim). A per-row scalar (``[grid_M, None]`` —
+            welford's mean/M2) or a pure grid-product (no rdim) is NOT one, so it does not multiply
+            the carried footprint (membership, not rank — CARRIED_AND_GREEDY #3a)."""
+            dims = a.dim_block_ids
+            return len(dims) >= 2 and any(d in reduction_ids for d in dims)
+
         # The MATERIALIZED feature/output footprint resident in every group's working tile
         # (a grad-param ``grad_weight[N]`` / a 3-D norm's ``C*S``). A continuous group-footprint
         # input (PROMPT §2.3): a bigger resident feature tensor tightens the budget and shrinks the
@@ -931,10 +947,16 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 _num_live: int = num_live,
                 _sized: list = sized,  # bind THIS group's reductions, not the last loop value
             ) -> int:
-                """``itemsize × _num_live × ∏(resident tiles in the group EXCEPT ``axis``)`` — the
-                budget denominator for sizing ``axis``. Resident tiles = the seated reduction
-                r_blocks (a grid-tile reduction is not resident -> excluded), the materialized
-                feature footprint, and the resident (in-accumulator) grid rows."""
+                """``itemsize × _num_live × carried_mult × ∏(resident tiles EXCEPT ``axis``)`` — the
+                budget denominator for sizing ``axis`` (the §2.3 group_footprint). Resident tiles =
+                the seated reduction r_blocks (a grid-tile reduction is not resident -> excluded),
+                the materialized feature footprint, and the resident (in-accumulator) grid rows.
+                ``carried_mult`` = the number of DISTINCT loop-carried accumulator buffers that hold
+                ``axis`` (the §2.3 "Σ across separate resident tensors" / CARRIED_AND_GREEDY #3): a
+                kernel carrying N separate ``[..., axis, ...]`` accumulators holds N resident copies
+                of the axis tile, so its budget is N× tighter (jsd carries 2 -> R 2048 not 4096;
+                kl_div carries 1 -> unchanged 8192). 1 (no extra) for a non-carried axis (rms_norm /
+                softmax: the rdim is in no >=2-D accumulator)."""
                 prod = feature_footprint
                 for d2 in _sized:
                     if (
@@ -948,7 +970,26 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                         continue
                     if in_accumulator(gbid):
                         prod *= max(1, seated.get(gbid, 1))
-                return max(1, itemsize * _num_live * prod)
+                # ``carried_mult`` = the number of DISTINCT loop-carried reduction-tile buffers
+                # holding ``axis`` (the §2.3 "Σ across separate resident tensors" / CARRIED #3). It
+                # is gated on ``feature_footprint == 1`` — i.e. a PURE carried-2-D kernel (kl_div,
+                # jsd) with no materialized feature tensor. When a materialized feature tensor IS
+                # present (the grad-parameter m-collapse: ``[inner, feature]`` buffers), the feature
+                # footprint already bounds the tile via ``prod`` and ``num_live`` already counts the
+                # sibling buffers, so multiplying by the buffer count too would double-count and
+                # over-floor the inner tile (measured: layer/rms_norm_bwd inner 2->1, ~1.2x). The
+                # two accountings are mutually exclusive: a kernel is carried-2-D OR grad-collapse.
+                carried_mult = 1
+                if feature_footprint == 1:
+                    carried_mult = max(
+                        1,
+                        sum(
+                            1
+                            for a in accumulators
+                            if _is_carried_reduction_tile(a) and axis in a.dim_block_ids
+                        ),
+                    )
+                return max(1, itemsize * _num_live * carried_mult * prod)
 
             # ---- seat the reductions (full-extent -> user-tile -> grid-tile) ----
             order = sorted(
@@ -1030,12 +1071,26 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     blk = max(floor, min(collapse, ext))
                 else:
                     # resident parallel rows: widen into the byte remainder, capped by occupancy
-                    # (keep post-widen grid >= num_sm·MIN_WAVES) + extent; floors when budget full.
+                    # (keep post-widen grid >= num_sm·MIN_WAVES), a diminishing-returns ROWS ceiling,
+                    # and extent; floors when budget full. ``num_live`` enters the widen footprint
+                    # ONLY when this grid axis CO-HOLDS a >=2-D loop-carried reduction tile (it is in
+                    # a multi-dim accumulator — kl_div/jsd's ``[grid_M, R]``): then widening by k
+                    # holds k·num_live copies of the heavy carried tile, so num_live must tighten it
+                    # (else the grid wrongly unfloors 1->4 and the carried tile spills). For a plain
+                    # parallel-row axis (welford/softmax: a ``[grid]`` scalar accumulator, no carried
+                    # R) the live-tile peak is WITHIN one row's processing, not a per-batched-row
+                    # multiplier, so num_live=1 (folding it in double-tightened welford 4->2, ~1.2x);
+                    # the WIDEN_MAX_ROWS ceiling bounds the over-batch concern there.
+                    co_holds_carried = any(
+                        _is_carried_reduction_tile(a) and mbid in a.dim_block_ids
+                        for a in accumulators
+                    )
+                    widen_live = num_live if co_holds_carried else 1
                     byte_widen = _pp2(
                         max(
                             1,
                             cls.ROW_PERSIST_MAX_BYTES
-                            // group_footprint_excluding(mbid),
+                            // group_footprint_excluding(mbid, widen_live),
                         )
                     )
                     if grid_rows > 0:
@@ -1044,7 +1099,14 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                         occ_widen = (
                             1  # dynamic grid -> no compile-time occupancy -> no widen
                         )
-                    blk = max(floor, min(byte_widen, occ_widen, ext))
+                    # ROWS ceiling: batching more than WIDEN_MAX_ROWS reduction rows per program
+                    # only trades away grid parallelism (a memory-bound reduction does not amortize
+                    # past it — measured g8 optimum, g64/g128 regress softmax ~1.4x AND per_token_
+                    # group ~1.1x). The byte/occupancy caps alone permit a huge widen on a small-row
+                    # huge-M kernel (occ_widen ~128 at 262144 rows); this bounds it. A floor ABOVE
+                    # the ceiling (a large autotuner_min) still wins via max(floor, ...), so a
+                    # genuinely huge-M shape keeps its required floor.
+                    blk = max(floor, min(byte_widen, occ_widen, cls.WIDEN_MAX_ROWS, ext))
                 seated[mbid] = blk
                 sizes[mbid] = blk
 
@@ -1158,9 +1220,19 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             _grid_rows(env, cls._grid_axis_block_ids(spec)),
         )
         # CO-RESIDENT multi-reduction cap (PROMPT §6.2.1): when the primary shares a budget with
-        # another sized reduction, the program is already heavy -> cap the extent-keyed warp ramp.
+        # another sized reduction, the program is already heavy (two resident tiles) -> HALVE the
+        # row-bytes warp ramp, floored. A proportional cut keyed on the primary's ramp, NOT a flat
+        # clamp: a small-rdim co-resident primary (p2/p8: ramp 8 -> 4, the measured win) and a
+        # LARGE-rdim primary (norm-bwd: ramp 16 -> 8) both get the right cut (a flat min(4)
+        # over-capped the large-rdim case ~1.5x). The floor is RAISED to 8 for a grad-parameter
+        # M-collapse (a materialized feature tensor present): its heavy [inner, feature] reduction
+        # has more cross-warp work to parallelize, so it wants >=8 warps (layer_norm_bwd 8192x4096
+        # ramp8: w4 is 1.17x slower than w8), whereas a pure carried/grid co-resident (p2/p8, no
+        # feature) wants 4. The two are disjoint kernel structures, keyed on the feature footprint.
         if cls._coresident_with_other_sized(spec, pd.block_id):
-            num_warps = min(num_warps, cls.CORESIDENT_MAX_WARPS)
+            has_feature = bool(cls._materialized_feature_axes(env, spec, device_ir))
+            floor = 8 if has_feature else cls.CORESIDENT_MIN_WARPS
+            num_warps = max(floor, num_warps // 2)
 
         # standard rides persistent-vs-looped on the rolled ``reduction_loops`` knob (the primary
         # rdim is NOT a block_sizes entry). MATERIALIZED rdim (rms/ln/instance bwd, the roller
