@@ -538,3 +538,28 @@ only), there are NO changed cells to bench — perf is identical by construction
 (~1.2x, accepted; streamed regime, see CF-Step 2 Finding B/C). carried_mult + the feature==1 gate +
 the lossy in_accumulator-multiplied grid term are GONE; two clean regimes; no recognizers
 re-introduced.
+
+## CF-Step 5 — #2 (F) + #3 (G) + #4 (D+E) — gates GREEN, recorder ZERO-DIFF
+- **#2 (F, streamed body-weight proxy)**: KEPT num_live + the widen ternary; named it
+  ``drop_body_weight_for_reduce_then_apply`` and documented it as an HONEST PROXY — ``body_live_tiles``
+  is shape-blind (counts scalar ``[M]`` carries too), so ``is_reduce_then_apply`` (has-a-non-reduction-
+  loop) is a coincidental corpus proxy for "live-tile count inflated by an apply pass," not the true
+  cause. The principled fix (a RDIM-WIDE-live-tile Stage-1 fact) is flagged as a follow-up; NOT done.
+  No behavior change.
+- **#3 (G, FULL_GRID seats at full extent)**: a FULL_GRID reduction (cdiv==1) is full-extent-resident
+  BY DEFINITION, so it now seats at ``ext`` directly in the reduction-seating loop, never chunked
+  through the byte budget. STRUCTURAL CORRECTION to the brief's framing: a FULL_GRID axis is always a
+  ``sized`` reduction, so ``grid_axis_block_ids`` (= grid_ids − sized_bids) EXCLUDES it — it never
+  reaches the grid-M widen loop the brief named. The genuine latent footgun was in the SEATING loop
+  (a wide unpinned FULL_GRID axis failing the persistence byte test would wrongly chunk). No-op on the
+  corpus (per_token_group's FULL_GRID axis is grid-PINNED and sh=128 already seated full via
+  persistence) — recorder ZERO-DIFF confirms. ~6 lines, uses the Stage-1 category.
+- **#4 (D+E, comment-only)**: D — named JOB A (record primary scalar levers) vs JOB B (emission
+  routing) as two orthogonal (non-exclusive) ``if``s; explained ``!= pd.block_id`` excludes the rolled
+  primary from double-routing; noted the elif is CORPUS-DARK (no kernel has >1 reduction_loops). E —
+  documented the GRID_TILE ``seated=1`` as PROVISIONAL (an axis also in grid_axis_block_ids is
+  occupancy-lifted on its 2nd visit in the grid-M loop; ``=1`` is final only for a non-grid-axis
+  GRID_TILE, which the corpus lacks). No logic change.
+GATES (all GREEN): recorder ZERO-DIFF (447 cells); validate_kernel_fact 460/460; probe_assertions
+13/13; test_reductions + test_autotuner_heuristics + test_examples 149 passed / 28 skipped / 35
+subtests; ruff clean. (G is the only behavioral change and is corpus-neutral.)

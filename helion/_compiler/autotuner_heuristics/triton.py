@@ -1030,8 +1030,30 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 raw_ext = d.size_hint  # the true reduction extent (NOT pow2-padded)
                 ext = extent_of(d.block_id)  # pow2-padded — the seated tile width
                 if d.category is ReductionCategory.GRID_TILE:
-                    # the grid parallelizes this reduction across programs -> ~1 per program.
+                    # the grid parallelizes this reduction across programs -> ~1 per program. This
+                    # ``=1`` is a PROVISIONAL seat: an axis that is ALSO a grid axis (jsd's bid1 —
+                    # ``cat=grid_tile`` AND in ``grid_axis_block_ids``, co-holding the carried 2-D
+                    # tile) is VISITED AGAIN by the grid-M widen loop below and occupancy-lifted via
+                    # ``max(floor, min(byte, occ, ...))`` — exactly like a non-reduction grid axis,
+                    # so the ``=1`` is overwritten. The ``=1`` is FINAL only for a GRID_TILE whose
+                    # block_id is NOT in ``grid_axis_block_ids`` (a pure grid-parallelized reduction
+                    # with no tunable grid sibling) — which the corpus does not contain.
                     seated[d.block_id] = 1
+                    continue
+                if d.category is ReductionCategory.FULL_GRID:
+                    # FULL_GRID (cdiv == 1): the whole axis is ONE program's tile -> full-extent
+                    # resident BY DEFINITION (per_token_group's specialized ``group_size``). Seat at
+                    # the full extent directly, never chunk it through the byte budget — a wide
+                    # FULL_GRID axis that fails the persistence byte test must still hold its full
+                    # extent (it cannot be split across programs). Uses the Stage-1 category; on the
+                    # corpus this axis is grid-PINNED (no tunable slot) so it is a no-op there, but it
+                    # removes a latent footgun for an UNPINNED full_grid axis.
+                    seated[d.block_id] = ext
+                    if d.block_id == pd.block_id:
+                        primary_r_block = ext
+                        persistent = True
+                    if d.block_id in valid:
+                        red_values[d.block_id] = ext
                     continue
                 # single-tile + live-set budget denominators (num_live=1 vs num_live), per ELEMENT.
                 coeff_single = group_footprint_excluding(d.block_id, 1)
@@ -1057,6 +1079,14 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     byte_budget = _pp2(max(1, cls.ROW_PERSIST_MAX_BYTES // coeff_live))
                     r = max(1, min(cls.LOOPED_CHUNK, byte_budget, ext))
                 seated[d.block_id] = r
+                # TWO ORTHOGONAL jobs below (NOT a mutually-exclusive if/elif chain):
+                # JOB A (record the PRIMARY's scalar levers): if this is the primary descriptor,
+                #   stash ``primary_r_block`` + ``persistent`` for the num_warps ramp and the
+                #   standard track's reduction_loops emission. A user-tiled primary hits JOB A AND
+                #   JOB B (it both records a lever and routes its size to red_values) — they are not
+                #   exclusive, so this is a separate ``if``, not an ``elif``.
+                # JOB B (route WHERE the size lands): a block_sizes slot (user-tiled, ``in valid``)
+                #   or the reduction_loops knob (a rolled non-primary).
                 if d.block_id == pd.block_id:
                     primary_r_block = r
                     # PERSISTENT is a budget OUTCOME: the chunk reached the full extent (either via
@@ -1071,7 +1101,13 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     and d.block_id in spec.reduction_loops.valid_block_ids()
                 ):
                     # a ROLLED non-primary reduction (separate reduction_loops subgraph): surface
-                    # its size for the standard track's reduction_loops emission.
+                    # its size for the standard track's reduction_loops emission. ``!= pd.block_id``
+                    # excludes the ROLLED PRIMARY: it is ``not in valid`` (rolled, no block_sizes
+                    # slot) so it would otherwise fall into this elif and be double-routed — its size
+                    # is emitted via ``primary_r_block`` (JOB A) instead. (``not in valid`` is
+                    # already implied by reaching the elif, so ``!= pd`` is the needed+sufficient
+                    # extra guard.) CORPUS-DARK: no corpus kernel has ``len(reduction_loops) > 1``,
+                    # so this elif only fires under the relaxed multi-rolled gate.
                     rolled_loop_sizes[d.block_id] = (
                         r,
                         r >= ext and d.category in FULL_EXTENT_CATEGORIES,
@@ -1102,13 +1138,26 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     # heavy body genuinely holds num_live resident tiles per row, so widening by k
                     # holds k·num_live (fused_linear_jsd blt=7: widening to 4 spills ~2x; dynamic_quant
                     # / gated_rmsnorm / cross_entropy likewise want the num_live-tightened narrow
-                    # widen). It is DROPPED (=1) only for a REDUCE-THEN-APPLY kernel (a non-reduction
-                    # normalize loop present — welford): its wide resident tile lives in that SEPARATE
-                    # apply pass, not during the reduction, so num_live over-counts the reduction-phase
-                    # residency and wrongly halved welford's grid 4->2 (~1.2x). The WIDEN_MAX_ROWS
-                    # ceiling bounds the over-batch concern for the welford case.
+                    # widen).
+                    #
+                    # NAMED HEURISTIC ``drop_body_weight_for_reduce_then_apply`` (honest about being
+                    # a PROXY, not a first-principles term): ``body_live_tiles`` is shape-BLIND — it
+                    # counts ALL live tiles, not only the WIDE ``[M, R]``-shaped ones. welford's
+                    # blt=3 is one wide ``[M, R]`` row + two SCALAR ``[M]`` carries, so multiplying
+                    # the WIDE footprint by 3 over-counts ~3x and wrongly halved its grid 4->2
+                    # (~1.2x). The TRUE fix is a "count of RDIM-WIDE live tiles" Stage-1 fact (then
+                    # welford->1, fused_linear_jsd->7 fall out with no gate); absent that, we drop the
+                    # body-weight multiplier (``=1``) when a non-reduction normalize loop is present
+                    # (``is_reduce_then_apply`` — welford), whose wide tile lives in that SEPARATE
+                    # apply pass. ``has a non-reduction loop`` is a COINCIDENTAL proxy for "this
+                    # kernel's live-tile count is inflated by a scalar/apply pass" — it holds on the
+                    # corpus, not by mechanism. The WIDEN_MAX_ROWS ceiling bounds the over-batch
+                    # concern for the welford case. (Stage-1 wide-live-tile fact = flagged follow-up.)
                     is_reduce_then_apply = bool(non_reduction_loop_ids)
-                    widen_live = 1 if is_reduce_then_apply else num_live
+                    drop_body_weight_for_reduce_then_apply = is_reduce_then_apply
+                    widen_live = (
+                        1 if drop_body_weight_for_reduce_then_apply else num_live
+                    )
                     byte_widen = _pp2(
                         max(
                             1,
