@@ -392,4 +392,4 @@ removed (pure faithfulness gain). All gates green: config recorder = only the 2 
 validate_kernel_fact 460/460, probes 13/13, test_reductions+test_autotuner_heuristics 52p/22s,
 test_examples -k matmul_layernorm 2p/2s, ruff clean. NON-GOALS respected (matmul-epilogue untouched,
 ReductionFact kept, rollable/pinned kept, Stage-1 unchanged).
-Commits: 562e9f15 (P1 allocator) -> de847f99 (P2 #2/#3 membership) -> <P3 rolled-loop> (final SHA).
+Commits: 562e9f15 (P1 allocator) -> de847f99 (P2 #2/#3 membership) -> c7f8ae4f (final SHA).

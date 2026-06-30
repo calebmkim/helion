@@ -98,7 +98,7 @@ faithfulness gain with no config impact.
 GATE: config recorder = ONLY the 2 known movers; validate_kernel_fact 460/460; probe_assertions
 13/13; test_reductions+test_autotuner_heuristics 52p/22s; matmul_layernorm 2p/2s; ruff clean.
 
-## Step 3 — P3: pull the last rolled-reduction sizing into the allocator — COMMIT <pending>
+## Step 3 — P3: pull the last rolled-reduction sizing into the allocator — COMMIT c7f8ae4f
 
 After P1/P2 the only sizing call left in a `get_seed_config` was the standard track's MULTI-rolled
 `reduction_loops` emission, which called `_reduction_rblock` per non-primary rolled spec. Moved
@@ -132,5 +132,5 @@ GATE: config recorder = ONLY the 2 known movers; validate_kernel_fact 460/460; p
   (zero-diff throughout). NON-GOALS respected: TritonMatmulReductionEpilogueHeuristic untouched,
   ReductionFact not deleted, rollable/pinned fields kept, Stage-1 device_ir unchanged.
 
-COMMITS: 562e9f15 (P1 allocator) -> de847f99 (P2 membership #2/#3) -> <P3 rolled-loop> .
+COMMITS: 562e9f15 (P1 allocator) -> de847f99 (P2 membership #2/#3) -> c7f8ae4f (P3 rolled-loop).
 
