@@ -139,6 +139,21 @@ def dump(corpus, kernel, shape, dtype, fn, args):
         rec["element_cap"] = env.backend.max_tensor_numel
         seeds = list(spec.compiler_seed_configs)
         rec["seed"] = dict(seeds[0]) if seeds else None
+        # FAITHFUL live-tile shapes per for-loop graph (the new Stage-1 fact): each entry is a
+        # tile's dim_block_ids at the graph's peak-live step. graph_id -> [ [bid|None, ...], ... ].
+        from helion._compiler.device_ir import _graph_peak_live_tiles
+        from helion._compiler.device_ir import ForLoopGraphInfo
+
+        dev = bound.host_function.device_ir
+        live_by_graph: dict[str, list] = {}
+        with dev, bound.host_function:
+            for gi in dev.graphs:
+                if not isinstance(gi, ForLoopGraphInfo):
+                    continue
+                tiles = _graph_peak_live_tiles(gi.graph, env)
+                if tiles:
+                    live_by_graph[str(gi.graph_id)] = [list(t) for t in tiles]
+        rec["live_tiles_by_graph"] = live_by_graph
     OUT.append(rec)
     del bound
     torch.cuda.empty_cache()

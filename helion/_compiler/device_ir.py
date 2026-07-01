@@ -3420,6 +3420,50 @@ def _graph_peak_live_by_axis(
     return peak
 
 
+def _graph_peak_live_tiles(
+    graph: torch.fx.Graph, env: CompileEnvironment
+) -> list[tuple[int | None, ...]]:
+    """The per-tile SHAPES of the simultaneously-live tensors at the graph's peak-live step —
+    the faithful successor to ``_graph_peak_live_by_axis`` (which collapses to a per-axis COUNT).
+
+    Each live tile is recorded as its ``dim_block_ids`` tuple (one entry per shape dim: the block
+    id it spans, or ``None`` for a non-block/constant dim) — the SAME representation as
+    ``AccumulatorFact.dim_block_ids``, so a footprint can sum ``∏(dims)`` per ACTUAL tile shape
+    instead of assuming every live tile is full-rank over all axes (the over-approximation that
+    inflated the grad-parameter footprint).
+
+    Which step is "peak"? Register/SRAM pressure is maximized at the step whose live set has the
+    most bytes, but tile bytes depend on the (not-yet-chosen) block sizes. So we return the live
+    set at the step with the most simultaneously-live tiles (the count peak) — a shape-faithful
+    snapshot. A CONSERVATIVE choice consistent with ``_graph_peak_live_by_axis`` (same sweep, same
+    last-use liveness; it just keeps shapes instead of counting). Ties break to the FIRST peak.
+    """
+    nodes = list(graph.nodes)
+    last_use: dict[torch.fx.Node, int] = {}
+    for i, node in enumerate(nodes):
+        for inp in node.all_input_nodes:
+            last_use[inp] = i
+    shape_of: dict[torch.fx.Node, tuple[int | None, ...]] = {}
+    for node in nodes:
+        val = node.meta.get("val")
+        if isinstance(val, torch.Tensor) and val.shape:
+            dims = tuple(env.resolve_block_id(s) for s in val.shape)
+            # only tiles that span at least one block axis are register-resident reduction tiles
+            if any(d is not None for d in dims):
+                shape_of[node] = dims
+    best_count = -1
+    best_tiles: list[tuple[int | None, ...]] = []
+    live: set[torch.fx.Node] = set()
+    for i, node in enumerate(nodes):
+        if node in shape_of:
+            live.add(node)
+        if len(live) > best_count:
+            best_count = len(live)
+            best_tiles = [shape_of[v] for v in live]
+        live = {v for v in live if last_use.get(v, -1) > i}
+    return best_tiles
+
+
 def _collect_memory_op_facts(
     device_ir: DeviceIR,
 ) -> tuple[list[MemoryOpFact], dict[int, int]]:
