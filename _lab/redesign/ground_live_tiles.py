@@ -163,6 +163,58 @@ def _peak_candidates(graph, env) -> dict:
     }
 
 
+def _peak_tile_shapes(graph, env):
+    """The lexicographic-peak live set, but each dim recorded as (block_id, size_hint) so a
+    None-block dim's WIDTH is visible (size-1 broadcast vs specialized full-width feature)."""
+    from helion._compiler import device_ir as DIR
+
+    peak = DIR._graph_peak_live_tiles(graph, env)
+    # re-derive shapes by matching dim_block_ids; walk nodes for the size_hint of each dim.
+    nodes = list(graph.nodes)
+    last_use = {}
+    for i, node in enumerate(nodes):
+        for inp in node.all_input_nodes:
+            last_use[inp] = i
+    node_shape = {}
+    for node in nodes:
+        val = node.meta.get("val")
+        if isinstance(val, torch.Tensor) and val.shape:
+            dims = tuple(env.resolve_block_id(s) for s in val.shape)
+            if any(d is not None for d in dims):
+                sizes = []
+                for s in val.shape:
+                    try:
+                        sizes.append(int(env.size_hint(s)))
+                    except Exception:  # noqa: BLE001
+                        sizes.append(-1)
+                node_shape[node] = list(zip(dims, sizes))
+    # find the peak step again (mirror _graph_peak_live_tiles) and emit paired shapes.
+    def rank(dt):
+        return sum(1 for d in dt if d is not None)
+
+    mr = max((rank(tuple(d for d, _ in s)) for s in node_shape.values()), default=0)
+
+    def prof(cur):
+        by = {}
+        for s in cur:
+            r = rank(tuple(d for d, _ in s))
+            if r:
+                by[r] = by.get(r, 0) + 1
+        return tuple(by.get(k, 0) for k in range(mr, 0, -1))
+
+    best_key, best = (), []
+    live = set()
+    for i, node in enumerate(nodes):
+        if node in node_shape:
+            live.add(node)
+        cur = [node_shape[v] for v in live]
+        k = prof(cur)
+        if k > best_key:
+            best_key, best = k, cur
+        live = {v for v in live if last_use.get(v, -1) > i}
+    return [[[d, sz] for d, sz in s] for s in best]
+
+
 def introspect(fn, args) -> dict:
     bound = fn.bind(args)
     env = bound.env
@@ -227,6 +279,10 @@ def _introspect_body(env, dev) -> dict:
         by_axis = {
             str(k): v for k, v in DIR._graph_peak_live_by_axis(gi.graph, env).items()
         }
+        # For the peak tiles: the (block_id, raw_size_hint) per dim — so a None dim's WIDTH is
+        # visible (a size-1 broadcast vs a specialized full-width feature that resolve_block_id
+        # returns None for). Recomputes the peak set with shapes to pair them.
+        peak_shapes = _peak_tile_shapes(gi.graph, env)
         # Competing "peak step" definitions (fidelity exploration): D1 = max tile COUNT
         # (the scaffolded default), D2 = max Σ(tile ranks) [register-pressure proxy at unit
         # block], D3 = UNION over every step of the distinct tile shapes ever co-live at the
@@ -248,6 +304,7 @@ def _introspect_body(env, dev) -> dict:
                 "loop_edges": loop_edges,
                 "live_tiles": live_tiles,
                 "live_by_axis": by_axis,
+                "peak_shapes": peak_shapes,
                 "peaks": peaks,
             }
         )

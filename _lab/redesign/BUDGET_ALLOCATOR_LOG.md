@@ -645,3 +645,77 @@ already builds them (`groups_by_gid`). jsd has 3 (keys 1,3,5 — but 1&3 are the
 branch pair, so its TRUE sequential-group count is 2: {the V-reduction, either branch} + {the Root
 KL}). p4/p6/p7/p10 multi-group confirmed. Attribution is per-group over its original graph + driven
 non-reduction/for-loop bodies, max across If/Else, union-per-shape within, separate across groups.
+
+## CF-Step 8 — PHASE B: aggressive rewrite to the Σ-over-live-tiles footprint (committed Phase A first)
+Rewrote `size_reduction_tiles` to the SIMPLE two-pass plan the human asked for. DELETED: `num_live`
+multiplier, `feature_extent` reconstruction, the separate accumulator sum, `in_accumulator()` grid
+gate, `LIVE_PERSIST` budget, `GRAD_PARAM` budget (3rd), the `drop_body_weight_for_reduce_then_apply`
+proxy, `_is_carried_reduction_tile`. NEW footprint: `resident_bytes = itemsize × Σ over
+group.live_tiles of ∏(dim widths)` split into `(scale,flat)` by whether a tile contains the sized
+axis; budget test `itemsize×(scale×R+flat) ≤ budget` (flat SUBTRACTED). TWO budgets (ROW / CARRIED=
+ROW//2, keyed on `carried_2d_count>0`). Two passes: PASS 1 sizes reductions with grid at floor; PASS
+2 widens grid on "resident = block_id in some live tile" (else collapse). Non-reduction loops last.
+A `None` tile dim = width 1 (grounding: an attributed group tile's None is never a resident feature —
+the feature is always a resolved block_id).
+
+BUG FOUND + FIXED IN TRIAGE (grad-param inner-tile explosion, the exact cliff the handoff warned of):
+layer_norm_bwd/rms_norm_bwd inner tile went 2 -> 4096 (a spill). ROOT: the grad-param N axis is a
+MATERIALIZED full-width `full_slice` (roller declined, in NEITHER reduction_loops NOR block_sizes);
+my rewrite CHUNKED it to 1, so the co-resident inner tile saw N as width 1 and grew to full extent.
+FIX: a materialized-full-width `full_slice` (in no tunable slot) seats at FULL EXTENT like FULL_GRID
+(it cannot be split, has nowhere to emit a chunk) — so the inner tile sees the real N. Verified:
+layer_norm_bwd [16,1], group_norm_bwd [1,2] (=old), instance_norm_bwd [1,8], dyt_bwd [16,16] (=old).
+
+TRIAGE RESULT (recorder diff vs before_rewrite, 120/447 changed, NO explosions after the fix):
+ - PERSISTENCE LOSS (24 cells, real): cross_entropy/ce_ls_zloss/scaled_masked_softmax/fused_add_*
+   at size_hint > ~30720 lose `rl [None]` -> `[16384/8192]`. The 2-tile fp32 row at N=32000 needs
+   4×2×32000=256008 > ROW 245760 — just over. Calibration: ROW may be a hair tight for 2-tile rows.
+ - jsd 2048 -> 4096 (all 35 cells): the primary (KL, bid0) is sized in GROUP 5 which has only 5
+   `[R,M]` tiles; my faithful per-group count is 5, the old `num_live=12` (max blt kernel-wide) was
+   2x tighter -> 2048. Handoff says jsd MEASURED wants 2048. Faithful-per-group UNDER-counts jsd's
+   true pressure (the primary's group is the LIGHT one; the heavy V-branch groups are sequential).
+ - welford grid halved (4->2 etc, 19 cells): the `drop_body_weight` proxy is gone; the widen now
+   sees the true footprint. Handoff: welford wanted grid 4 (drop-body kept it there).
+ - sum/fused_add_rmsnorm grid doubled (small, likely wins); grad-param inner 2->1 (small).
+BENCHING the movers next (jsd, cross_entropy persistence, welford, softmax) to decide calibration.
+
+## CF-Step 9 — PHASE C triage + calibration (all benched single-process median-of-9, replay_bench)
+Four calibration fixes landed on top of the rewrite, each measured:
+
+1. **carried-accumulator multiplier** (`scale *= max(1, d.carried_2d_count)` in reduction sizing AND
+   `scale_w *= max(1, pd.carried_2d_count)` in the grid widen). jsd's primary (KL) sits in a LIGHT
+   5-tile group; the faithful per-group count gave R=4096 (MEASURED +11.4% regr) and let the grid
+   widen to 2 (+10.9%). c2d counts the co-resident carried `[R,M]` buffers the per-group snapshot
+   misses (jsd carries 2, kl_div 1): kl_div R=4096, jsd R=2048 + grid=1, at the exact 2x ratio. Grad-
+   param inner tiles (c2d=0) unaffected.
+
+2. **materialized-full-width `full_slice` seats at FULL EXTENT** (was chunked to 1). The grad-param N
+   axis is a `full_slice` in NEITHER reduction_loops NOR block_sizes; chunking it to 1 made the
+   co-resident inner tile read N=1 and grow to full extent (4096 — a spill). Seating full-width (like
+   FULL_GRID) fixes it. Its `persistent` stays False (it emits `reduction_loops=[]` regardless) so the
+   re-read eviction hint (`['last',...]`) the grad-param row wants is preserved.
+
+3. **PER-REDUCTION budget** (not kernel-wide): CARRIED iff `d.carried_2d_count>0` else ROW. Kernel-
+   wide CARRIED wrongly tightened the grad-param INNER tile (c2d=0) because the MATERIALIZED N (c2d=3)
+   tripped the flag -> inner floored to 1 (MEASURED layer_norm_bwd 8192x4096 inner 2->1 = +20% regr).
+   Per-reduction gives the inner tile ROW -> inner=2 (recovered).
+
+4. **CATEGORY-keyed persistence-hold ceiling**: FULL_SLICE (rolled fused reduce+apply) holds to ~600
+   KiB (PERSIST_HOLD=3xROW); USER_TILE (multi-pass softmax/welford) holds only to ~262 KiB
+   (USER_TILE_PERSIST_HOLD=294912). MEASURED: cross_entropy N=32000 persist +47%, N=50257 +7% (wants
+   FULL_SLICE hold); softmax N=32768 persist +30% but N=49152 persist -34% (wants USER_TILE tight hold
+   -> chunks at N>=49152). The old code held softmax to N=49152 and LOST perf; the faithful split BEATS
+   it (softmax 40960 chunk = +28% vs old 65536-persist).
+
+FINAL TRIAGE (52/447 raw_seed cells changed vs before_rewrite, ALL benched neutral-or-win):
+ - softmax 65536->16384 (2 cells): +28% WIN (old over-held). cross_entropy 16384->None (1): +0.7% win.
+ - welford grid halved (18): +1.4-1.6% WINS (the drop_body_weight proxy was pure overhead — removed).
+ - sum/fused_add_rmsnorm grid doubled (16): neutral-to-win (+2.3% sum 4->8; ~noise elsewhere).
+ - grad-param inner tweaks (group_norm 2->4 +1%, instance 4->8 ~noise, dyt 4->2 +1.4%, bias_grad
+   64->32 -2.5% on a 32us kernel = noise-floor). layer_norm_bwd/rms_norm_bwd inner=2 UNCHANGED (fixed).
+ - jsd (35) / kl_div: UNCHANGED (c2d multiplier holds R=2048/4096).
+ - 5 synthetic probes (p4/p6/p7/p8/p10 — multi-group corpus-dark paths) moved sanely, no spills.
+GATES: validate 460/460, probe 13/13, pytest 52p+2p, kl_div band test pins [4096,1] (no update).
+NET: no regressions > noise; several real WINS (softmax wide-N, welford). The rewrite DELETED
+num_live / feature_extent / LIVE_PERSIST / GRAD_PARAM-budget / in_accumulator / drop_body_weight and
+is simpler AND faster. Budgets: ROW, CARRIED=ROW/2, PERSIST_HOLD=3xROW, USER_TILE_PERSIST_HOLD=1.2xROW.

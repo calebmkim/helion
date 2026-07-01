@@ -3,7 +3,6 @@ from __future__ import annotations
 import functools
 import json
 import logging
-import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
@@ -592,37 +591,37 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     backend = "triton"
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
-    # ----- THE ONE BUDGET (a register/byte capacity; everything else is a per-axis desire) -----
-    # Per-program persistent byte ceiling: the group's resident working set (every co-resident
-    # reduction tile + the materialized feature/output tiles + the resident grid rows, in
-    # ``body_live_tiles`` live copies) must fit this, else a tile floors. ~240 KiB, just over H100
-    # SMEM. This SUBSUMES the old scattered footprint caps (``_resident_tile_cap``,
-    # ``_carried_*``, ``M_COLLAPSE_TILE_BYTES`` inner cap, ``_pinned_inner_resident_elems``): there
-    # is now ONE budget + a group-total footprint, not a pile of overlapping byte caps.
+    # ----- THE BUDGET (a register/byte capacity; everything else is a per-axis desire) -----
+    # Per-program persistent byte ceiling: the group's resident working set — the SUM over its
+    # actual live tiles of ``itemsize × ∏(tile dims)`` (``CoResidencyGroup.live_tiles``) — must fit
+    # this, else a tile floors. ~240 KiB, just over H100 SMEM. This SUBSUMES the old scattered
+    # footprint caps (``_resident_tile_cap``, ``_carried_*``, ``M_COLLAPSE_TILE_BYTES`` inner cap,
+    # ``_pinned_inner_resident_elems``): ONE budget + a group-total Σ-over-live-tiles footprint.
     ROW_PERSIST_MAX_BYTES = 245760
-    # The tighter byte ceiling for a CARRIED reduction (a >=2-D loop-carried reduction tile, no
-    # materialized feature): kl_div/jsd hold their ``[grid_M, R]`` reduction tile resident across the
-    # WHOLE loop (not streamed-and-released like a persistent row), so the same resident bytes are a
-    # heavier steady-state pressure -> a tighter budget. HALF of ROW_PERSIST. This is the SOLE place
-    # the carried-vs-streamed distinction lives in the FOOTPRINT (one uniform formula, two budget
-    # constants — NOT two formulas / a buffer-count multiplier): kl_div R 4096 (measured +2% vs the
-    # old 8192) and jsd R 2048 fall out of the SAME ``itemsize × num_live × ∏(working tile)`` at the
-    # 2x ratio their ``body_live_tiles`` (6 vs 12) already encodes — no double-count.
+    # The tighter byte ceiling for a CARRIED reduction (an accumulator whose last dim is the rdim —
+    # kl_div/jsd's ``[grid_M, R]``, the grad-parameter norm-bwd's ``[inner, N]``): that tile is held
+    # resident across the WHOLE inner loop (not streamed-and-released like a persistent row), a
+    # heavier steady-state pressure, so the chunk sharing SRAM with it wants a smaller extent. HALF
+    # of ROW_PERSIST. This is the SOLE place the carried-vs-streamed distinction lives (one uniform
+    # Σ-over-live-tiles footprint, two budget constants): kl_div R 4096 and layer_norm_bwd inner 2
+    # fall out of the SAME footprint at this budget — no ``num_live`` / buffer-count multiplier.
     CARRIED_PERSIST_MAX_BYTES = 245760 // 2
-    # The LOOSEST byte ceiling, for a GRAD-PARAMETER reduction (a materialized feature accumulator
-    # like ``grad_weight[N]`` is resident): the accumulator is amortized across all the rows the
-    # program reduces, so the kernel genuinely operates above the single-row ROW ceiling — the read
-    # tile co-resident with the accumulator wants a small-but->=2 inner tile. 1.5 × ROW; lands the
-    # norm-bwd / bias_grad inner tile at its measured optimum (a tighter budget floors it to 1,
-    # ~1.1-1.2x slower; this recovers inner 2 and picks up bias_grad ~1-2%).
-    GRAD_PARAM_PERSIST_MAX_BYTES = 245760 * 3 // 2
-    # The MULTI-TILE live-set ceiling: a PERSISTENT (full-extent resident) reduction additionally
-    # requires the ``num_live``-tile resident set to fit this (a heavy body — fused_linear_jsd —
-    # holds several live tiles and would spill if held persistent). 3× the single-tile budget, so
-    # it is a no-op for light bodies (``num_live`` ≤ ~3) and only ever REMOVES persistence from a
-    # heavy body. This is the home of ``body_live_tiles`` (a continuous, uniform budget SCALE,
-    # §3) — applied to BOTH tracks identically (no per-track ``footprint_factor``).
-    LIVE_PERSIST_MAX_BYTES = 3 * 245760
+    # The PERSISTENCE-HOLD ceiling — the (looser) byte watermark a RE-READ row may hold its FULL
+    # extent under (vs the CHUNK budget, which sizes a streamed/looped tile). Only ``row_reread AND
+    # carried_2d_count==0`` reductions reach the hold, so it never loosens a carried tile (kl_div/jsd
+    # stay chunked). TWO ceilings, keyed on the reduction CATEGORY (the fused-vs-multipass structure
+    # the persistence economics turn on — measured):
+    #  - FULL_SLICE (a ROLLED fused reduce+apply — cross_entropy/rms/layer_norm/cross_entropy_ls/
+    #    fused_add_*): one HBM pass with the row held resident and reused, so a high resident watermark
+    #    is a pure win far out — persist to ~600 KiB (cross_entropy N=50257 measured +7%, N=32000
+    #    +47%). 3× ROW.
+    #  - USER_TILE (a MULTI-PASS held tile — softmax's max/sum/normalize, welford): the resident tile
+    #    is re-swept several times; beyond ~32 K elements streaming beats holding it (softmax N=32768
+    #    persist +30% vs chunk, but N=49152 persist is -34% — the old code held it to N=49152 and LOST
+    #    perf). Tighter ceiling so a user-tiled row chunks at N >= ~49152. ~1.2× ROW (admits softmax
+    #    N=32768 = 262156 B, rejects N=49152 = 393228 B).
+    PERSIST_HOLD_MAX_BYTES = 3 * 245760
+    USER_TILE_PERSIST_HOLD_MAX_BYTES = 294912
     # Looped-fallback reduction chunk (pow2) for a row that does not fit the persistent budget.
     LOOPED_CHUNK = 16384
     # Occupancy floor for the grid-M widen: keep the post-tile grid >= num_sm * MIN_WAVES so
@@ -804,7 +803,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             return policy
         return None
 
-    # ================================ THE ONE BUDGET ALLOCATOR ============================== #
+    # ================================ THE BUDGET ALLOCATOR ============================== #
     @classmethod
     def size_reduction_tiles(
         cls,
@@ -813,40 +812,31 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         device_ir: DeviceIR,
         pd: ReductionDescriptor,
     ) -> _TileAllocation:
-        """THE allocator (PROMPT §2.3): ONE per-co-residency-group BUDGET assigns every tile size.
+        """THE allocator: a per-co-residency-group BUDGET over the group's ACTUAL resident live
+        tiles (``CoResidencyGroup.live_tiles``) assigns every tile size, in TWO passes.
 
-        For each co-residency group (iterated in priority order — the group with the
-        most/heaviest full-extent reductions first, since it sizes the SHARED grid-M tile that
-        later groups see held fixed):
+        The footprint is faithful: ``resident_bytes = itemsize × Σ over the group's live tiles of
+        ∏(tile dim widths)``. Sizing an axis A splits that sum into ``(scale, flat)`` — tiles
+        CONTAINING A scale with ``block(A)``, tiles WITHOUT A are constant — and the budget test is
+        ``itemsize × (scale × block(A) + flat) <= budget`` (the constant term SUBTRACTED, never
+        divided). No ``num_live`` multiplier, no separate accumulator sum, no feature-extent
+        reconstruction: the live tiles ARE the resident set (accumulators captured inline at real
+        shape, scalar carries as rank-1 constant tiles).
 
-          1. Form ONE budget for the group: the register/byte capacity
-             ``ROW_PERSIST_MAX_BYTES``, SCALED by faithful group properties (``num_live`` =
-             ``max(body_live_tiles)`` over the group's sized reductions — a heavier body gets a
-             tighter budget; a continuous, uniform §3 budget SCALE, applied to every group).
+        For each co-residency group:
 
-          2. Seat axes in priority order, each taking FIRST CRACK then FLOORED by the budget
-             REMAINING after everything already seated (the group footprint =
-             ``num_live × itemsize × ∏(seated reduction tiles) × ∏(materialized features) ×
-             ∏(resident grid rows)`` — a slight over-estimate, safe, §2.3):
-               - full-extent reductions (FULL_SLICE + FULL_GRID): a re-read full-slice raises its
-                 floor to the full extent (persistence) iff the single resident tile fits
-                 ``ROW_PERSIST`` AND the ``num_live``-tile live set fits ``LIVE_PERSIST``; else it
-                 chunks to ``min(LOOPED_CHUNK, byte budget, extent)``;
-               - then user-tile reductions (same persistence/chunk rule);
-               - then grid-tile reductions (the grid parallelizes them across programs, so the
-                 per-program extent is ~1 -> they claim ~nothing of the budget);
-               - then the grid-M rows take the REMAINDER. A grid axis that is RESIDENT (it appears
-                 in a loop-carried accumulator -> its row tile co-occupies the working set) WIDENS
-                 into the byte remainder (capped by occupancy + extent) and FLOORS to its
-                 ``_block_floor`` when the budget is spent. A grid axis that is REDUCED AWAY (an
-                 accumulator exists but this axis is in NONE of them -> it is a sequential
-                 cross-grid reduction loop whose partial is finalized by a later ``.sum(0)``, NOT
-                 resident) raises its floor to ``grid_rows / num_sm`` (collapse the finalize to ~1
-                 SM wave — the SAME "reuse raises the floor" mechanism as full-slice persistence).
-                 *Floor-vs-resident AND collapse-vs-widen are pure per-axis MEMBERSHIP outcomes —
-                 no ``cdiv`` branch, no ``per_feature_accumulator`` recognizer.*
+          PASS 1 — seat the reductions with the grid axes pinned at their FLOOR (full-extent ->
+            user-tile -> grid-tile). A re-read full-slice raises its floor to the full extent
+            (PERSISTENCE) iff its resident tile fits the budget; else it chunks to
+            ``min(LOOPED_CHUNK, byte budget, extent)``. A carried reduction (kl_div/norm-bwd) sizes
+            against the tighter ``CARRIED_PERSIST`` budget.
 
-          3. Hold this group's assignments FIXED as inputs to later groups.
+          PASS 2 — the grid-M rows take the REMAINDER. A grid axis that is RESIDENT (appears in some
+            live tile -> its row co-occupies the working set) WIDENS into the byte remainder (capped
+            by occupancy + WIDEN_MAX_ROWS + extent) and FLOORS when the budget is spent. A grid axis
+            in NO live tile is REDUCED AWAY (a sequential cross-grid ``.sum(0)`` finalize, holds no
+            bytes) -> its floor raises to ``grid_rows / num_sm`` (collapse the finalize to ~1 SM
+            wave). Both are pure per-axis MEMBERSHIP outcomes — no ``cdiv`` branch, no recognizer.
 
         Then the non-reduction loops LAST (welford's normalize, rms_norm_per_block's groups_per_row)
         — a separate pass co-resident with nothing in the group, sized against its own headroom.
@@ -867,8 +857,6 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         grid_ids = set(cls._grid_axis_block_ids(spec))
         non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
         reduction_ids = cls._reduction_block_ids(spec)
-        accumulators = spec.accumulator_facts
-        accums_exist = len(accumulators) > 0
         kf = spec.reduction_kernel_fact
         assert kf is not None
 
@@ -892,53 +880,28 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 return _np2(_desc_extent[bid])
             return _np2(env.block_sizes[bid].size_hint())
 
-        def in_accumulator(bid: int) -> bool:
-            return any(bid in a.dim_block_ids for a in accumulators)
-
-        def _is_carried_reduction_tile(a: object) -> bool:
-            """A loop-carried accumulator is a genuine resident REDUCTION tile iff it is >=2-D AND
-            holds at least one reduction axis (an rdim). A per-row scalar (``[grid_M, None]`` —
-            welford's mean/M2) or a pure grid-product (no rdim) is NOT one, so it does not multiply
-            the carried footprint (membership, not rank — CARRIED_AND_GREEDY #3a)."""
-            dims = a.dim_block_ids
-            return len(dims) >= 2 and any(d in reduction_ids for d in dims)
-
-        # The MATERIALIZED feature/output axes (a grad-param ``grad_weight[N]`` / a 3-D norm's
-        # ``C*S``) and their full extents — read off ``env.block_sizes`` exactly like the
-        # ``_spec_extent``/``_desc_extent`` dicts above (data, not a precomputed footprint). The
-        # footprint walk treats each as just another resident tile. ONE guarded read because
-        # ``_materialized_feature_axes`` needs env/device_ir; a bare-spec unit test has none.
-        from ..compile_environment import NoCurrentEnvironment
-
-        try:
-            feature_extent = {
-                fbid: max(1, env.block_sizes[fbid].size_hint())
-                for fbid in cls._materialized_feature_axes(env, spec, device_ir)
-            }
-        except (NoCurrentEnvironment, AttributeError, TypeError):
-            feature_extent = {}
-
-        # The persistence/chunk BUDGET this kernel sizes against — the ONLY place the regime enters
-        # (the footprint FORMULA is identical everywhere; only this number changes). THREE budgets,
-        # keyed on two faithful structural flags (NOT a kernel recognizer):
-        #  - GRAD-PARAM (a materialized feature accumulator present — ``grad_weight[N]``): the LOOSEST
-        #    budget. A big [N] accumulator is amortized across many rows, so the program genuinely
-        #    runs at a higher byte ceiling; the read tile shares SRAM with it and wants inner >= 2
-        #    (a tighter budget over-floors it to 1 — measured ~1.1-1.2x on norm-bwd).
-        #  - CARRIED-2-D (a >=2-D loop-carried reduction tile, NO feature — kl_div/jsd's [grid_M, R]):
-        #    the TIGHTEST budget. That tile is held resident the whole loop (transient, not amortized),
-        #    so it wants a small chunk (kl_div R 4096, measured +2% vs the old 8192).
-        #  - STREAMED (neither): the ROW budget.
-        # The three are disjoint physical situations (amortized accumulator / transient carried tile /
-        # streamed row); the flags ``feature_extent`` and ``_is_carried_reduction_tile`` already exist.
-        if feature_extent:
-            persist_budget = cls.GRAD_PARAM_PERSIST_MAX_BYTES
-        elif any(_is_carried_reduction_tile(a) for a in accumulators):
-            persist_budget = cls.CARRIED_PERSIST_MAX_BYTES
-        else:
-            persist_budget = cls.ROW_PERSIST_MAX_BYTES
+        # The persistence/chunk BUDGET a reduction sizes against — the ONLY place the regime enters
+        # (the footprint FORMULA is identical everywhere; only this number changes). TWO budgets,
+        # keyed PER-REDUCTION on ONE faithful flag (does THIS reduction carry a >=2-D tile?):
+        #  - CARRIED (``carried_2d_count > 0`` — the reduction's own ``[grid_M, R]`` accumulator is
+        #    held resident across the WHOLE inner loop, kl_div/jsd): the TIGHTER budget. That tile is
+        #    a heavier steady-state pressure than a streamed row -> smaller chunk (kl_div R 4096).
+        #  - STREAMED (``carried_2d_count == 0``): the ROW budget. CRUCIAL that this is PER-REDUCTION,
+        #    not kernel-wide: a grad-parameter norm-bwd carries its N accumulator on the MATERIALIZED
+        #    N axis (c2d=3), but the co-resident INNER tile it sizes is itself NON-carried (c2d=0) and
+        #    wants the looser ROW budget (inner 2, measured — a kernel-wide CARRIED flag floored it to
+        #    1 and cost ~20% on layer_norm_bwd 8192x4096). A per-row SCALAR carry (welford mean/M2
+        #    ``[grid_M]``) has c2d=0, so it stays STREAMED.
+        def persist_budget_for(d: object) -> int:
+            return (
+                cls.CARRIED_PERSIST_MAX_BYTES
+                if d.carried_2d_count > 0
+                else cls.ROW_PERSIST_MAX_BYTES
+            )
 
         # The static grid-row count (program count before any widen), the occupancy numerator.
+        from ..compile_environment import NoCurrentEnvironment
+
         grid_rows = 1
         try:
             for gbid in grid_ids:
@@ -952,10 +915,12 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             grid_rows = 0
 
         # ``seated`` holds every tile assigned so far (held fixed for later sizing); ``sizes`` is
-        # the subset that lands in tunable ``block_sizes`` slots.
+        # the subset that lands in tunable ``block_sizes`` slots. PASS 1 seats every grid axis at
+        # its FLOOR; the reductions are sized against that floored grid, then PASS 2 widens the grid
+        # into whatever budget the seated reductions left (the two-pass structure — reductions
+        # first with the grid pinned low, then the grid).
         seated: dict[int, int] = {}
         for gbid in sorted(grid_ids):
-            # provisional grid value = the floor (raised later for a resident widen / a collapse).
             seated[gbid] = cls._m_axis_block_size(spec, gbid)
         sizes: dict[int, int] = {}
         red_values: dict[int, int] = {}
@@ -963,87 +928,65 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         primary_r_block = 1
         persistent = False
 
-        # Group priority key: most/heaviest full-extent reductions first; extent tiebreak.
-        def group_key(g: object) -> tuple:
-            descs = [kf.reductions[i] for i in g.descriptor_indices]
-            sized = [d for d in descs if d.category in SIZED_REDUCTION_CATEGORIES]
-            n_full = sum(1 for d in sized if d.category in FULL_EXTENT_CATEGORIES)
-            max_ext = max([d.size_hint for d in sized], default=0)
-            return (-n_full, -max_ext)
+        # The union of block_ids that appear (as a resolved dim) in SOME group's resident live-tile
+        # set — the faithful "is this axis register-resident?" test (PROMPT §4). A grid axis in a
+        # live tile widens into the byte budget (softmax/sum/kl_div — its row co-occupies the working
+        # set); a grid axis in NO live tile is a sequential cross-grid reduction loop finalized by a
+        # later ``.sum(0)`` (bias_grad/norm-bwd's outer M) — it holds no bytes, so the byte budget
+        # cannot size it (it collapses to ~1 SM wave instead). This REPLACES the old
+        # ``in_accumulator(g)`` gate, which got ``sum`` wrong (sum's m IS a resident read-tile dim
+        # but is in no accumulator); "in a live tile" reads it right.
+        resident_block_ids: set[int] = set()
+        for cg in kf.coresidency_groups:
+            for tile in cg.live_tiles:
+                resident_block_ids.update(d for d in tile if d is not None)
 
-        for g in sorted(kf.coresidency_groups, key=group_key):
+        def footprint_terms(
+            tiles: tuple[tuple[int | None, ...], ...],
+            axis: int,
+        ) -> tuple[int, int]:
+            """The faithful group footprint as ``(scale, flat)``: resident BYTES while sizing
+            ``axis`` = ``itemsize × (scale × block(axis) + flat)`` — an R-SCALING term plus a
+            CONSTANT term, kept SEPARATE (they ADD; folding the constant into a per-element
+            coefficient and multiplying by the extent over-counts it, which wrongly denies
+            persistence). We simply SUM ``∏(dim widths)`` over the group's ACTUAL resident live
+            tiles (``CoResidencyGroup.live_tiles`` — each an actual ``dim_block_ids`` tuple). A tile
+            CONTAINING ``axis`` scales with it (its ``∏(other dims)`` adds to ``scale``); a tile
+            WITHOUT ``axis`` is constant (its ``∏(dims)`` adds to ``flat``). A ``None`` dim is a
+            size-1 broadcast (grounding CF-Step 7: in an attributed group tile a ``None`` is never a
+            resident full-width feature — the feature is always a RESOLVED block_id whose width
+            ``extent_of`` gives). No ``num_live`` multiplier, no separate accumulator sum, no
+            feature reconstruction: the tiles ALREADY are the resident set (accumulators captured
+            inline at real shape, scalar carries as their own rank-1 constant tiles)."""
+            scale = 0
+            flat = 0
+            for tile in tiles:
+                contains_axis = axis in tile
+                prod = 1
+                for d in tile:
+                    if d is None or d == axis:
+                        continue
+                    prod *= _tile_dim_width(d)
+                if contains_axis:
+                    scale += prod
+                else:
+                    flat += prod
+            return max(1, scale), flat
+
+        def _tile_dim_width(bid: int) -> int:
+            """One resident dim's tile width by MEMBERSHIP: a seated reduction/grid tile (else its
+            full extent). A grid axis's width is its seated rows (floor in pass 1, widened in pass 2)."""
+            return max(1, seated.get(bid, extent_of(bid)))
+
+        for g in kf.coresidency_groups:
             descs = [kf.reductions[i] for i in g.descriptor_indices]
             sized = [d for d in descs if d.category in SIZED_REDUCTION_CATEGORIES]
             if not sized:
                 continue
-            num_live = max([d.body_live_tiles for d in sized] + [1])
+            tiles = g.live_tiles
 
-            def tile_width(bid: int) -> int:
-                """One resident dim's tile width, dispatched by MEMBERSHIP (never by position): a
-                materialized feature axis is resident at its FULL extent (``hl.specialize``d — never
-                chunked, even when it is ALSO a sized reduction), so the feature extent wins; else a
-                seated reduction r_block (else its extent), or a grid axis's seated row block."""
-                if bid in feature_extent:
-                    return feature_extent[bid]
-                if bid in grid_ids:
-                    return max(1, seated.get(bid, 1))
-                return max(1, seated.get(bid, extent_of(bid)))
-
-            def footprint_terms(
-                axis: int,
-                _num_live: int = num_live,
-                _sized: list = sized,  # bind THIS group's reductions, not the last loop value
-            ) -> tuple[int, int]:
-                """The faithful §2.3 group_footprint as ``(scale, flat)``: the resident BYTES while
-                sizing ``axis`` are ``itemsize × (scale × block(axis) + flat)`` — an R-SCALING term
-                plus a CONSTANT term, kept SEPARATE (they ADD; folding the constant into a per-element
-                coefficient and multiplying by the extent over-counts it by ``block(axis)``×, which
-                wrongly denied softmax persistence).
-
-                Resident tiles, each ``∏`` of its own dims, ``Σ`` across tiles (bytes add; two tensors
-                side by side do not multiply):
-                  - the READ/COMPUTE tile — ``_num_live`` live copies spanning ``axis`` and the other
-                    resident working dims (the UNION of the group's sized reductions, the resident
-                    in-accumulator grid rows, and the materialized feature axes; a materialized axis
-                    is at full extent). Since it contains ``axis`` it is an R-SCALING tile: it
-                    contributes ``_num_live × ∏(those dims' widths EXCEPT axis)`` to ``scale``.
-                  - each ACCUMULATOR buffer (``accumulator_facts``) — a resident tile of ``∏`` of its
-                    dims. If it CONTAINS ``axis`` it scales with R (adds to ``scale``); otherwise it
-                    is CONSTANT (adds ``∏`` of its dims to ``flat``). Scalar ``[grid]`` carries
-                    (softmax's running max/sum) are tiny constants — this is why they must be FLAT,
-                    not multiplied through the extent.
-                  - a materialized feature not represented by any accumulator (instance_norm's spatial
-                    axis) is its own constant tile.
-
-                ``_num_live`` is ``body_live_tiles`` — the peak count of live tiles whose shape SPANS
-                ``axis`` (axis-resolved in Stage-1; scalar carries are not counted), so it is exactly
-                the read-tile copy count, with no separate buffer multiplier."""
-                read_dims = {d2.block_id for d2 in _sized}
-                read_dims |= {g for g in grid_ids if in_accumulator(g)}
-                read_dims |= set(feature_extent)
-                scale = _num_live
-                for bid in read_dims:
-                    if bid != axis:
-                        scale *= tile_width(bid)
-                flat = 0
-                acc_dims_seen: set[int] = set()
-                for a in accumulators:
-                    dims = [d for d in a.dim_block_ids if d is not None]
-                    acc_dims_seen.update(dims)
-                    prod = 1
-                    for d in dims:
-                        if d != axis:
-                            prod *= tile_width(d)
-                    if axis in dims:
-                        scale += prod  # this accumulator scales with R
-                    else:
-                        flat += prod  # constant in R
-                for fbid, fext in feature_extent.items():
-                    if fbid != axis and fbid not in acc_dims_seen:
-                        flat += fext  # a materialized feature with no accumulator: its own tile
-                return max(1, scale), flat
-
-            # ---- seat the reductions (full-extent -> user-tile -> grid-tile) ----
+            # ---- PASS 1: seat the reductions (full-extent -> user-tile -> grid-tile) against the
+            # group's live-tile footprint with the grid axes at their floor. ----
             order = sorted(
                 sized,
                 key=lambda d: (
@@ -1057,79 +1000,84 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 raw_ext = d.size_hint  # the true reduction extent (NOT pow2-padded)
                 ext = extent_of(d.block_id)  # pow2-padded — the seated tile width
                 if d.category is ReductionCategory.GRID_TILE:
-                    # the grid parallelizes this reduction across programs -> ~1 per program. This
-                    # ``=1`` is a PROVISIONAL seat: an axis that is ALSO a grid axis (jsd's bid1 —
-                    # ``cat=grid_tile`` AND in ``grid_axis_block_ids``, co-holding the carried 2-D
-                    # tile) is VISITED AGAIN by the grid-M widen loop below and occupancy-lifted via
-                    # ``max(floor, min(byte, occ, ...))`` — exactly like a non-reduction grid axis,
-                    # so the ``=1`` is overwritten. The ``=1`` is FINAL only for a GRID_TILE whose
-                    # block_id is NOT in ``grid_axis_block_ids`` (a pure grid-parallelized reduction
-                    # with no tunable grid sibling) — which the corpus does not contain.
+                    # the grid parallelizes this reduction across programs -> ~1 per program. A
+                    # PROVISIONAL seat overwritten by the pass-2 grid widen if this axis is also a
+                    # tunable grid sibling (jsd's bid1); FINAL for a pure grid-parallelized reduction.
                     seated[d.block_id] = 1
                     continue
-                if d.category is ReductionCategory.FULL_GRID:
-                    # FULL_GRID (cdiv == 1): the whole axis is ONE program's tile -> full-extent
-                    # resident BY DEFINITION (per_token_group's specialized ``group_size``). Seat at
-                    # the full extent directly, never chunk it through the byte budget — a wide
-                    # FULL_GRID axis that fails the persistence byte test must still hold its full
-                    # extent (it cannot be split across programs). Uses the Stage-1 category; on the
-                    # corpus this axis is grid-PINNED (no tunable slot) so it is a no-op there, but it
-                    # removes a latent footgun for an UNPINNED full_grid axis.
+                materialized_full_width = (
+                    d.category is ReductionCategory.FULL_SLICE
+                    and d.block_id not in valid
+                    and d.block_id not in spec.reduction_loops.valid_block_ids()
+                )
+                if d.category is ReductionCategory.FULL_GRID or materialized_full_width:
+                    # FULL_GRID (cdiv == 1) or a MATERIALIZED full-width FULL_SLICE (the roller
+                    # declined to roll it AND it has no tunable block_sizes slot — the grad-parameter
+                    # ``grad_weight[N]`` accumulator axis that norm-bwd holds resident at full width,
+                    # or per_token_group's specialized ``group_size``): the whole axis is ONE
+                    # program's tile, full-extent resident BY DEFINITION. Seat at the full extent,
+                    # never chunk it through the byte budget — it cannot be split across programs AND
+                    # it has nowhere to emit a chunk. CRUCIAL: seating it full-width (not chunked to
+                    # 1) is what lets the co-resident inner tile SEE the real N (else the inner tile
+                    # reads N as 1 and grows to the full extent — a spill).
                     seated[d.block_id] = ext
                     if d.block_id == pd.block_id:
                         primary_r_block = ext
-                        persistent = True
+                        # ``persistent`` (the standard track's ``reduction_loops=[None]`` verdict) is
+                        # set only for a genuine FULL_GRID resident reduction. A MATERIALIZED
+                        # full-width axis is emitted via ``reduction_loops=[]`` (``is_materialized``)
+                        # regardless, and leaving ``persistent`` False preserves the re-read
+                        # eviction hint (``pd.row_reread and not persistent``) the grad-param row wants.
+                        persistent = d.category is ReductionCategory.FULL_GRID
                     if d.block_id in valid:
                         red_values[d.block_id] = ext
                     continue
-                # Resident BYTES(R) = itemsize × (scale × R + flat) — the R-scaling and constant
-                # terms of the faithful footprint (num_live=1 for the single-tile test, num_live for
-                # the live-set test).
-                scale_single, flat_single = footprint_terms(d.block_id, 1)
-                scale_live, flat_live = footprint_terms(d.block_id)
-                # PERSISTENCE: hold the full extent iff the row is re-read AND no carried 2-D tile
-                # AND the single resident tile fits the persist budget AND the num_live live-set fits
-                # LIVE_PERSIST AND the extent clears the per-program element compile limit. The byte
-                # tests use the RAW extent (the true resident element count, not the pow2-padded
-                # tile) so a 30522-wide row is judged on 30522 elems, not 32768 (matches the
-                # established persistence gate; np2 is only the seated TILE width).
+                # Resident BYTES(R) = itemsize × (scale × R + flat) over the group's live tiles.
+                scale, flat = footprint_terms(tiles, d.block_id)
+                # A reduction with MULTIPLE loop-carried ``[R, M]`` accumulators (``carried_2d_count``
+                # — jsd carries 2 V-reduction accumulators, kl_div 1) holds ALL of them resident
+                # across the whole inner loop, but the primary's GROUP snapshot only sees ONE working
+                # set (the others belong to sequential groups yet persist). Scale the R-term by the
+                # carried multiplicity so the co-resident carried buffers are counted: kl_div (c2d=1)
+                # R 4096, jsd (c2d=2) R 2048 fall out at the exact 2x ratio. A grad-param inner tile
+                # (``user_tile``, c2d=0) and every non-carried reduction are UNAFFECTED (factor 1).
+                scale *= max(1, d.carried_2d_count)
+                # PERSISTENCE: hold the full extent iff the row is re-read (a persistent pass fuses
+                # reduce+apply to one HBM load) AND there is no carried 2-D tile (a carried tile is
+                # held resident the whole loop — it chunks, never persists) AND the single resident
+                # tile fits the persist budget AND the extent clears the per-program element limit.
+                # The byte test uses the RAW extent (true resident element count, not pow2-padded).
+                # The hold ceiling is CATEGORY-keyed: a rolled fused FULL_SLICE holds far out, a
+                # multi-pass USER_TILE (softmax/welford) holds only to ~32 K then streams.
                 element_cap = env.backend.max_tensor_numel
+                hold_ceiling = (
+                    cls.USER_TILE_PERSIST_HOLD_MAX_BYTES
+                    if d.category is ReductionCategory.USER_TILE
+                    else cls.PERSIST_HOLD_MAX_BYTES
+                )
                 ext_held = (
                     d.row_reread
                     and d.carried_2d_count == 0
                     and (element_cap is None or raw_ext <= element_cap)
-                    and itemsize * (scale_single * raw_ext + flat_single)
-                    <= persist_budget
-                    and itemsize * (scale_live * raw_ext + flat_live)
-                    <= cls.LIVE_PERSIST_MAX_BYTES
+                    and itemsize * (scale * raw_ext + flat) <= hold_ceiling
                 )
                 if ext_held:
                     r = ext
                 else:
                     # stream/chunk: the largest pow2 R whose resident bytes fit the persist budget,
                     # solving ``itemsize × (scale × R + flat) <= budget`` for R (the CONSTANT term is
-                    # subtracted, NOT divided — it does not scale with R). Capped by LOOPED and extent.
-                    # A CARRIED reduction (kl_div/jsd) is sized HERE against the tighter carried
-                    # budget — kl_div R 4096, jsd R 2048 fall out of the SAME footprint at the 2x
-                    # ratio ``body_live_tiles`` (6 vs 12) already encodes (no buffer-count multiplier).
-                    avail = persist_budget // itemsize - flat_live
-                    byte_budget = _pp2(max(1, avail // scale_live))
+                    # SUBTRACTED, not divided). Capped by LOOPED_CHUNK and the extent. A CARRIED
+                    # reduction (kl_div/jsd) sizes here against the tighter carried budget; a
+                    # non-carried inner tile (grad-param) against ROW.
+                    avail = persist_budget_for(d) // itemsize - flat
+                    byte_budget = _pp2(max(1, avail // scale))
                     r = max(1, min(cls.LOOPED_CHUNK, byte_budget, ext))
                 seated[d.block_id] = r
-                # TWO ORTHOGONAL jobs below (NOT a mutually-exclusive if/elif chain):
-                # JOB A (record the PRIMARY's scalar levers): if this is the primary descriptor,
-                #   stash ``primary_r_block`` + ``persistent`` for the num_warps ramp and the
-                #   standard track's reduction_loops emission. A user-tiled primary hits JOB A AND
-                #   JOB B (it both records a lever and routes its size to red_values) — they are not
-                #   exclusive, so this is a separate ``if``, not an ``elif``.
-                # JOB B (route WHERE the size lands): a block_sizes slot (user-tiled, ``in valid``)
-                #   or the reduction_loops knob (a rolled non-primary).
+                # JOB A (record the PRIMARY's scalar levers for the num_warps ramp + standard-track
+                # reduction_loops emission) and JOB B (route the size to a block_sizes slot or the
+                # rolled reduction_loops knob) — separate ``if``s (a user-tiled primary hits both).
                 if d.block_id == pd.block_id:
                     primary_r_block = r
-                    # PERSISTENT is a budget OUTCOME: the chunk reached the full extent (either via
-                    # the re-read persistence floor OR because the looped chunk simply fits the
-                    # whole row — a narrow ``sum`` row). The standard track maps this to
-                    # ``reduction_loops=[None]``.
                     persistent = r >= ext and d.category in FULL_EXTENT_CATEGORIES
                 if d.block_id in valid:
                     red_values[d.block_id] = r
@@ -1137,20 +1085,14 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     d.block_id != pd.block_id
                     and d.block_id in spec.reduction_loops.valid_block_ids()
                 ):
-                    # a ROLLED non-primary reduction (separate reduction_loops subgraph): surface
-                    # its size for the standard track's reduction_loops emission. ``!= pd.block_id``
-                    # excludes the ROLLED PRIMARY: it is ``not in valid`` (rolled, no block_sizes
-                    # slot) so it would otherwise fall into this elif and be double-routed — its size
-                    # is emitted via ``primary_r_block`` (JOB A) instead. (``not in valid`` is
-                    # already implied by reaching the elif, so ``!= pd`` is the needed+sufficient
-                    # extra guard.) CORPUS-DARK: no corpus kernel has ``len(reduction_loops) > 1``,
-                    # so this elif only fires under the relaxed multi-rolled gate.
+                    # a ROLLED non-primary reduction (separate reduction_loops subgraph): surface its
+                    # size for the standard track. CORPUS-DARK (no corpus kernel rolls >1 reduction).
                     rolled_loop_sizes[d.block_id] = (
                         r,
                         r >= ext and d.category in FULL_EXTENT_CATEGORIES,
                     )
 
-            # ---- the grid-M rows take the remainder (widen / floor / collapse) ----
+            # ---- PASS 2: the grid-M rows take the remainder (widen / floor / collapse). ----
             for mbid in sorted(grid_ids):
                 if mbid not in valid:
                     continue  # a grid-PINNED axis (FixedBlockSizeSource) -> fixed, not sized.
@@ -1161,44 +1103,24 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                         spec.block_sizes[spec.block_sizes.block_id_to_index(mbid)],
                     )
                 )
-                reduced_away = accums_exist and not in_accumulator(mbid)
-                if reduced_away:
-                    # a sequential cross-grid reduction loop (grad-param .sum(0)): NOT resident;
-                    # raise the floor to ~1 SM wave to collapse the cross-grid finalize.
+                if mbid not in resident_block_ids:
+                    # a sequential cross-grid reduction loop (grad-param .sum(0)): in NO live tile ->
+                    # NOT resident, holds no bytes. The byte budget cannot size it; raise the floor
+                    # to ~1 SM wave to collapse the cross-grid finalize.
                     collapse = _np2(max(1, grid_rows // num_sm)) if grid_rows > 0 else 1
                     blk = max(floor, min(collapse, ext))
                 else:
-                    # resident parallel rows: widen into the byte remainder, capped by occupancy
-                    # (keep post-widen grid >= num_sm·MIN_WAVES), a diminishing-returns ROWS ceiling,
-                    # and extent; floors when budget full. ``num_live`` (the body's live-tile peak)
-                    # TIGHTENS the widen footprint for a single-phase ROW reduction — its body holds
-                    # num_live resident rdim-wide tiles, so widening by k holds k·num_live
-                    # (fused_linear_jsd blt=7: widening to 4 spills ~2x; dynamic_quant / gated_rmsnorm
-                    # / cross_entropy likewise want the num_live-tightened narrow widen).
-                    #
-                    # NAMED HEURISTIC ``drop_body_weight_for_reduce_then_apply`` — honest about being
-                    # a PROXY. ``body_live_tiles`` IS axis-resolved (peak tiles whose shape spans the
-                    # rdim — scalar ``[M]`` carries are NOT counted), so welford's blt=3 is 3 genuine
-                    # rdim-wide tiles. But those 3 are live during the COMBINE phase, whereas the
-                    # grid widen sizes the residency of the SEPARATE non-reduction APPLY phase (the
-                    # normalize loop), where only ~1 wide tile is live. So for a reduce-then-apply
-                    # kernel we drop the combine-phase body weight (``=1``) when sizing the widen —
-                    # else num_live=3 over-counts the apply-phase residency and halved welford's grid
-                    # 4->2 (~1.2x). ``has a non-reduction loop`` (``is_reduce_then_apply``) is a
-                    # COINCIDENTAL proxy for "the widened phase is not the heavy reduction phase" — it
-                    # holds on the corpus, not by first principles. The principled fix is a per-PHASE
-                    # live-tile count (which phase the widened axis belongs to); flagged Stage-1
-                    # follow-up. The WIDEN_MAX_ROWS ceiling bounds the over-batch for the welford case.
-                    is_reduce_then_apply = bool(non_reduction_loop_ids)
-                    drop_body_weight_for_reduce_then_apply = is_reduce_then_apply
-                    widen_live = (
-                        1 if drop_body_weight_for_reduce_then_apply else num_live
-                    )
-                    # widen this grid axis into the byte remainder: the largest pow2 block whose
-                    # resident bytes fit (same faithful ``scale × block + flat`` model as the
-                    # reduction chunk — the constant term is subtracted, not divided).
-                    scale_w, flat_w = footprint_terms(mbid, widen_live)
-                    avail_w = persist_budget // itemsize - flat_w
+                    # resident parallel rows: widen into the byte remainder (same faithful
+                    # ``scale × block + flat`` footprint over the live tiles — a wider grid row
+                    # scales every tile CONTAINING the grid axis), capped by occupancy (keep the
+                    # post-widen grid >= num_sm·MIN_WAVES), a diminishing-returns ROWS ceiling, and
+                    # the extent; floors when the budget is full. The carried-accumulator multiplier
+                    # applies here TOO: widening the grid axis that the ``carried_2d_count`` ``[R, M]``
+                    # accumulators span holds c2d× the resident carried state (jsd's grid must NOT
+                    # widen — grid 2 is ~1.1x; the multiplier spends the byte remainder so it floors).
+                    scale_w, flat_w = footprint_terms(tiles, mbid)
+                    scale_w *= max(1, pd.carried_2d_count)
+                    avail_w = persist_budget_for(pd) // itemsize - flat_w
                     byte_widen = _pp2(max(1, avail_w // scale_w))
                     if grid_rows > 0:
                         occ_widen = _pp2(max(1, grid_rows // occ_floor))
@@ -1206,17 +1128,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                         occ_widen = (
                             1  # dynamic grid -> no compile-time occupancy -> no widen
                         )
-                    # ROWS ceiling: batching more than WIDEN_MAX_ROWS reduction ROWS per program
-                    # only trades away grid parallelism for a RESIDENT-ROW reduction (the grid axis
-                    # carries independent reduction rows — softmax/rms_norm: a memory-bound row does
-                    # not amortize past ~8 rows; g64/g128 regress softmax ~1.4x). It does NOT apply
-                    # when the primary is FULL_GRID: there the grid axis is a SIBLING that batches
-                    # tiny grid-resident per-group reductions (per_token_group's groups_per_row),
-                    # which amortizes per-program overhead and genuinely wants the wide occupancy-
-                    # bound widen (8192x7168 wants g64; g8 is 1.15x slower). The byte/occupancy caps
-                    # alone over-widen a small-row huge-M resident kernel (occ_widen ~128 at 262144
-                    # rows), so the ceiling bounds that case; a raised autotuner_min floor still wins
-                    # via max(floor, ...).
+                    # ROWS ceiling: batching more than WIDEN_MAX_ROWS reduction ROWS/program only
+                    # trades away grid parallelism for a resident-row reduction (softmax/rms_norm:
+                    # memory-bound, does not amortize past ~8 rows). Does NOT apply when the primary
+                    # is FULL_GRID (the grid axis batches tiny grid-resident per-group reductions —
+                    # per_token_group's groups_per_row — which wants the wide occupancy-bound widen).
                     rows_ceiling = (
                         ext
                         if pd.category is ReductionCategory.FULL_GRID
@@ -1228,15 +1144,9 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
 
         # ---- the non-reduction / independent loops LAST (own budget vs the headroom) ----
         # welford's normalize loop / rms_norm_per_block's groups_per_row. Co-resident with nothing
-        # in a group's tile (a separate sequential pass), so each gets a FRESH budget against its
-        # own extent: ``min(extent, ROW_PERSIST / (itemsize × ∏ resident feature tiles))``.
-        loop_budget = _pp2(
-            max(
-                1,
-                cls.ROW_PERSIST_MAX_BYTES
-                // max(1, itemsize * math.prod(feature_extent.values())),
-            )
-        )
+        # in a group's reduction tile (a separate sequential pass), so each gets a FRESH budget
+        # against its own extent capped by the streamed ROW budget.
+        loop_budget = _pp2(max(1, cls.ROW_PERSIST_MAX_BYTES // itemsize))
         for i in range(len(spec.block_sizes)):
             bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])
             bid = bs_spec.block_id
