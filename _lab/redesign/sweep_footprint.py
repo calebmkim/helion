@@ -284,6 +284,36 @@ def fp_resident_set(ctx, axis, nl, *, dedup):
     return max(1, ctx["itemsize"] * nl * footprint)
 
 
+def fp_streamed_only(ctx, axis, nl):
+    """NO carried regime, NO feature gate: ONE faithful formula everywhere —
+        itemsize × num_live × ∏(one working tile's dims except axis).
+    working tile = feature tiles (extent) + every seated reduction + in-acc grid rows.
+    num_live (body_live_tiles) ALREADY counts the carried buffers among the live tiles, so there
+    is no separate additive-Σ-over-buffers term (that double-counts them). The carried/streamed
+    distinction then survives ONLY where it is physical: the persistence gate (carried_2d_count==0),
+    which this footprint does not touch."""
+    seated, ext_of, in_acc = ctx["seated"], ctx["ext_of"], ctx["in_acc"]
+    grid_ids = ctx["grid_ids"]
+    feat_ext = ctx["feature_extent"]
+
+    def red_width(bid):
+        if bid in grid_ids:
+            return max(1, seated.get(bid, 1))
+        return max(1, seated.get(bid, ext_of(bid)))
+
+    prod = 1
+    for f, fext in feat_ext.items():
+        if f != axis:
+            prod *= fext
+    for d in ctx["sized"]:
+        if d["block_id"] != axis:
+            prod *= red_width(d["block_id"])
+    for g in grid_ids:
+        if g != axis and in_acc(g):
+            prod *= red_width(g)
+    return max(1, ctx["itemsize"] * nl * prod)
+
+
 def fp_unified_tagged(ctx, axis, nl):
     """ONE footprint formula: itemsize × nl × Σ_resident_tensors ∏_(dim≠axis) width(dim). The two
     regimes ARE the resident-tensor set (CARRIED: each loop-carried buffer is its own tensor, they

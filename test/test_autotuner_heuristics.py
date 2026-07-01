@@ -3544,14 +3544,19 @@ class TestTritonReductionHeuristic(TestCase):
         self.assertEqual(len(seeds), 1)
         seed = seeds[0].config
         # The budget allocator sizes the carried [M_BLOCK, R_BLOCK] tile against ONE group budget
-        # (num_live × itemsize footprint vs ROW_PERSIST_MAX_BYTES), NOT a bespoke carried byte cap.
+        # (num_live × itemsize footprint vs the CARRIED budget), NOT a bespoke carried byte cap.
         # The carried accumulator is live the whole loop with body_live_tiles copies, so the budget
-        # depletes to R_BLOCK = pow2(ROW_PERSIST_MAX_BYTES / (num_live × itemsize)). For kl_div
-        # (body_live_tiles == 6, fp32) that is pow2(245760 / (6 × 4)) = pow2(10240) = 8192 — capped
-        # well below next_pow2(131072) and M floored to 1 (the budget is spent). Floor-vs-resident
-        # falls out of depletion: no carried recognizer, no separate CARRIED_TILE_MAX_BYTES.
+        # depletes to R_BLOCK = pow2(CARRIED_PERSIST_MAX_BYTES / (num_live × itemsize)). A carried
+        # reduction holds its [M, R] tile resident across the whole loop (not streamed-then-released),
+        # so it sizes against the TIGHTER CARRIED_PERSIST_MAX_BYTES (= ROW_PERSIST // 2 = 122880), a
+        # single budget CONSTANT — the footprint FORMULA is the same uniform num_live × ∏(working
+        # tile) as every other kernel (no buffer-count multiplier: body_live_tiles already counts the
+        # carried buffers). For kl_div (body_live_tiles == 6, fp32) that is pow2(122880 / (6 × 4)) =
+        # pow2(5120) = 4096 — capped well below next_pow2(131072) and M floored to 1 (budget spent).
+        # 4096 is the MEASURED optimum (~+2% vs the old 8192). Floor-vs-resident falls out of
+        # depletion: no carried recognizer, no separate CARRIED_TILE_MAX_BYTES.
         r_block = seed["block_sizes"][0]
-        self.assertEqual(seed["block_sizes"], [8192, 1])
+        self.assertEqual(seed["block_sizes"], [4096, 1])
         self.assertLess(r_block, n)
         # rnumel 131072 > the 16384 warps-32 breakpoint -> 32 warps.
         self.assertEqual(seed["num_warps"], 32)

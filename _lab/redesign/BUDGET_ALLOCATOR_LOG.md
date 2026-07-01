@@ -563,3 +563,44 @@ re-introduced.
 GATES (all GREEN): recorder ZERO-DIFF (447 cells); validate_kernel_fact 460/460; probe_assertions
 13/13; test_reductions + test_autotuner_heuristics + test_examples 149 passed / 28 skipped / 35
 subtests; ruff clean. (G is the only behavioral change and is corpus-neutral.)
+
+## CF-Step 6 — FAITHFUL Σ-over-tiles footprint (add, don't multiply) — measured NET WIN
+Human review drove a deeper fix: the committed footprint multiplied a materialized feature N INTO the
+read tile (num_live × R × N × N) where physics is ADDITIVE — the read tile [R, N] and the
+grad_weight[N] accumulator are SEPARATE tensors whose bytes ADD, not multiply. Verified against the
+Stage-1 liveness (device_ir `_graph_peak_live_by_axis`): `body_live_tiles` is ALREADY axis-resolved
+(peak tiles whose shape SPANS the rdim; scalar carries not counted), so a separate buffer-count
+multiplier double-counts what num_live holds. And a scalar [grid] carry (softmax max/sum) is a
+per-ROW constant, NOT a per-R-element term — folding it into a coefficient × extent over-counts it R×
+(this is what made a naive additive rewrite wrongly deny softmax persistence).
+
+REWRITE: `group_footprint_excluding` (one multiplicative number) -> `footprint_terms(axis) ->
+(scale, flat)`: resident BYTES = itemsize × (scale × R + flat). Each resident tile = ∏ of its own
+dims; Σ across tiles. A tile CONTAINING the sized axis scales with R (adds to `scale`); one that does
+NOT is CONSTANT (adds to `flat`). Read/compute tile = num_live copies spanning the axis + the other
+resident working dims (union of sized reductions, in-acc grid, materialized features at full extent);
+each accumulator_fact is its own tile; a feature with no accumulator is its own constant tile.
+Persistence: itemsize×(scale×raw+flat) <= budget. Chunk: R <= (budget/isz - flat)/scale (flat
+SUBTRACTED, not divided — the softmax-persistence bug fix).
+
+THREE budgets keyed on two EXISTING structural flags (still no recognizer): GRAD_PARAM_PERSIST (feature
+present, LOOSEST = 3*ROW/2 = 368640 — a [N] accumulator amortized across rows runs above the row
+ceiling), CARRIED_PERSIST (>=2-D carried reduction tile, no feature, TIGHTEST = ROW//2), ROW_PERSIST
+(streamed). Opposite physical situations (amortized accumulator / transient carried tile / streamed
+row); `feature_extent` + `_is_carried_reduction_tile` already exist.
+
+MOVEMENT (LIVE recorder vs committed CF-Step-5): 36 cells, all block_sizes, ALL MEASURED WINS/NEUTRAL
+(single-process median-of-9): kl_div 34 (8192->4096, ratios 0.957-0.994), bias_grad_bwd 2 (8->16 /
+4->8, 0.979). layer/rms/dyt/instance/group_norm_bwd UNCHANGED (the loose GRAD_PARAM budget holds their
+inner tile at its current value — a tighter budget floored it to 1, measured ~1.1-1.2x). softmax/
+welford/grpo/fused_linear_jsd UNCHANGED (the scale/flat split stopped the scalar-carry over-count a
+naive additive model introduced). NET: geomean ~0.98, worst ~0.99, best 0.957; NO regressions.
+GATES GREEN: validate 460/460, probe 13/13, unit 52p, matmul 2p, ruff; test_kl_div_wide still pins
+[4096,1] (carried budget unchanged).
+
+NOTED FOR LATER (deeper flaw, measured, NOT fixed): the grad-param inner-tile TRUE optimum is a
+loop-overhead amortization sweet spot (inner=4 at N=4096 measured ~+10%; 1-2 at N=8192) the budget
+model structurally cannot express ("fits" != "best amortization"; the cliff is violent — inner=16 is
+10-15x). A chunk-amortization lever (analogous to WIDEN_MAX_ROWS) is a flagged follow-up. Offline
+model (spike_faithful.py) had 2-cell fidelity gaps vs the live recorder (bias_grad phantom feature,
+4D group_norm feature extents) — reconciled against the LIVE recorder as the authority.
