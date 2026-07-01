@@ -604,3 +604,44 @@ model structurally cannot express ("fits" != "best amortization"; the cliff is v
 10-15x). A chunk-amortization lever (analogous to WIDEN_MAX_ROWS) is a flagged follow-up. Offline
 model (spike_faithful.py) had 2-cell fidelity gaps vs the live recorder (bias_grad phantom feature,
 4D group_norm feature extents) — reconciled against the LIVE recorder as the authority.
+
+## CF-Step 7 — PHASE A grounding (ir ANSWER KEY via `_lab/redesign/ground_live_tiles.py`)
+Ran the new grounding probe over sum/long_sum/rms_norm/layer_norm/welford/cross_entropy/softmax/
+kl_div/jsd (curriculum), grpo (transfer), per_token_group_fp8_quant (vllm), layer_norm_bwd/
+bias_grad_bwd (mreduction), + all 13 probes. It dumps per graph_id: graph TYPE, CF-tree edges
+(`_if`->(if,else); loop->child), reduction lowerings, `original_graph_id` (rolled->source), and the
+per-tile `_graph_peak_live_tiles` output PLUS 3 competing peak-step definitions (D1 count / D2 rank /
+D3 union). Group keys + `branch_paths_by_bid` printed as the co-residency oracle.
+
+FINDING 1 — **D1 (max tile COUNT, the scaffolded default) is WRONG for a footprint.** welford g0
+D1 = `[[0]]×8` (8 scalar `[M]` carries, ZERO rdim-spanning tiles) even though axis-1 (rdim) peaks at
+3 simultaneously-live tiles. The rdim tiles and the scalar carries peak at DIFFERENT steps; D1 snaps
+the single step with the most tiles and misses the rdim entirely -> a footprint would see no
+R-scaling term and over-widen into a spill. FIX: use a per-shape peak UNION (`D3_union`: for each
+distinct tile shape, the max simultaneous count of THAT shape, unioned as a multiset). Conservative
+superset, never under-counts any axis's peak co-residency, matches `_graph_peak_live_by_axis` per-axis
+counts. => `_graph_peak_live_tiles` must be REWRITTEN to the D3 definition before it feeds a footprint.
+
+FINDING 2 — **rolled `ReductionLoopGraphInfo` copies are redundant** (subset of the original graph).
+sum/rms_norm/layer_norm/cross_entropy: the ORIGINAL (Root/ForLoop) graph `_original_graph_reductions`
+keys on ALREADY holds the full pre-roll body tiles; the roller's per-config copies are strict subsets.
+So the group's live tiles come from the ORIGINAL graphs only — the SAME exclusion the group keys use.
+
+FINDING 3 — **a group's tiles can live in a loop body it DRIVES, not its home graph.** kl_div home =
+g1 (Root, `loop->[0]`), which has 3 `[R,M]` tiles, but the driven loop body g0 (ForLoop, NO reduction
+lowering) has 6. welford/bias_grad_bwd/layer_norm_bwd likewise: the heavy tiles are in the ForLoop
+body, the Root is thin. => attribution must DESCEND from each group's original graph through its
+`loop->child` edges (skipping ReductionLoopGraphInfo) and take the max/union over the owned bodies.
+
+FINDING 4 — **If/Else siblings must be combined as MAX and NOT pulled into a sequential parent.**
+jsd: g5(Root,bid0)->loop g4; g4 `_if`->{g3(If,bid1) | g2(Else)}; g2 `_if`->{g1(If,bid1) | g0(Else,
+12 tiles!)}. `branch_paths_by_bid` proves bid1's two occurrences (g1,g3) are mutually exclusive. The
+Root group (bid0, key 5) must NOT absorb the if/else subtree (esp. g0's 12 `[R,M]`). grpo/
+per_token_group: an EMPTY ElseGraphInfo sibling (`live_tiles=[]`) + a populated If/Root — max is the
+populated side. Only jsd/grpo/per_token_group have If/Else (confirmed).
+
+FINDING 5 — group keys are the ORIGINAL-graph classes exactly as `build_reduction_kernel_fact`
+already builds them (`groups_by_gid`). jsd has 3 (keys 1,3,5 — but 1&3 are the mutually-exclusive
+branch pair, so its TRUE sequential-group count is 2: {the V-reduction, either branch} + {the Root
+KL}). p4/p6/p7/p10 multi-group confirmed. Attribution is per-group over its original graph + driven
+non-reduction/for-loop bodies, max across If/Else, union-per-shape within, separate across groups.

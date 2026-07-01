@@ -267,13 +267,22 @@ class ReductionDescriptor(NamedTuple):
 class CoResidencyGroup(NamedTuple):
     """A ``graph_id`` equivalence class of reductions (PROMPT §2.2): their working tiles are live
     at the same time, so ONE budget must fit them all. ``descriptor_indices`` indexes into
-    ``ReductionKernelFact.reductions``. The group's resident feature footprint is NOT stored --
-    a budget input is a Stage-2 derivation computed at the comparison site (PROMPT §2.3 #5), not
-    a label frozen here (storing it kernel-wide was both dead and wrong for a multi-group kernel).
+    ``ReductionKernelFact.reductions``.
+
+    ``live_tiles`` is the group's FAITHFUL resident tile set — one ``dim_block_ids`` tuple per
+    register-resident tile (same shape as ``AccumulatorFact.dim_block_ids``: the block id each dim
+    spans, ``None`` for a static/broadcast dim). It is the LEXICOGRAPHIC-PEAK live set (by rank
+    profile) of the group's home graph, max'd-by-profile across the for-loop bodies the group
+    drives and its If/Else branch siblings (device_ir ``_group_live_tiles``). The Stage-2 footprint
+    sums ``∏(dim widths)`` per ACTUAL tile shape rather than assuming every live tile spans every
+    read dim (the reconstruction that inflated the grad-parameter footprint) — and it captures each
+    loop-carried accumulator INLINE at its real shape, so the footprint needs no separate
+    accumulator sum. Empty when the fact is built without a live env (a bare-spec unit test).
     """
 
     graph_id: int
     descriptor_indices: tuple[int, ...]
+    live_tiles: tuple[tuple[int | None, ...], ...] = ()
 
 
 class ReductionKernelFact(NamedTuple):

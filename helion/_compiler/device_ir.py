@@ -1479,6 +1479,131 @@ class DeviceIR:
             )
         return ReductionCategory.FULL_SLICE
 
+    def _group_live_tiles(
+        self, group_gids: list[int], env: CompileEnvironment
+    ) -> dict[int, list[tuple[int | None, ...]]]:
+        """Attribute the FAITHFUL resident tile set to each co-residency group (PROMPT §2.2 / the
+        CF-Step-7 grounding). Returns ``{group_gid: [dim_block_ids, ...]}`` — the lexicographic-peak
+        live set (``_graph_peak_live_tiles``) of the group's HOME graph, max'd-BY-PROFILE with the
+        for-loop bodies the group DRIVES (not summed — see below).
+
+        The three attribution rules, each grounded in real IR (``_lab/redesign/ground_live_tiles.py``):
+
+        1. **DESCEND driven for-loop bodies to the ANCESTOR group** (Finding 3). kl_div/welford/
+           bias_grad_bwd: the heavy tiles live in a ``ForLoopGraphInfo`` body the group's Root/home
+           DRIVES (via a ``loop->child`` edge), not in the home graph itself (which is thin). A loop
+           body is owned by the group whose reduction loops over its axis — matched by the loop's
+           ``block_ids`` intersecting the group's reduction axes. jsd's ``g4`` (``block_ids=[0]`` =
+           the KL group's axis) is thus owned by the KL group; its mutually-exclusive V-reduction
+           BRANCH subtree (reached only via ``_if``) is NOT descended into (rule 3).
+
+        2. **SKIP ``ReductionLoopGraphInfo`` copies** (Finding 2). The roller's per-config duplicates
+           carry a strict SUBSET of the original graph's pre-roll body (rms_norm/layer_norm/
+           cross_entropy), so the original (Root/ForLoop) graph the group is keyed on already holds
+           the peak — the SAME exclusion ``_original_graph_reductions`` applies for the group keys.
+
+        3. **DO NOT cross ``_if`` edges** (Finding 4, the "ancestor only" decision). If/Else branch
+           subtrees are their OWN groups (jsd's g1/g3 are keyed 1/3) or mutually exclusive with a
+           sibling; a parent group never absorbs a branch's tiles (jsd's Root must not pull g0's 12
+           ``[R,M]`` tiles). Branches combine via rule 4's max, not by summing into an ancestor.
+
+        4. **COMBINE a group's owned graphs by MAX-BY-PROFILE, never sum.** Co-resident reductions
+           SHARE one original graph by construction (that is how ``_original_graph_reductions`` forms
+           a group), so their simultaneous residency is already inside that one graph's peak snapshot
+           (p1's ``[0,1,2]`` outer-product tile). A group's other owned graphs are only ever nested
+           (home + driven body -> max picks the heavier: kl_div's 6-tile body beats its 3-tile home)
+           or If/Else siblings (-> max picks the populated branch; grpo/per_token_group's EMPTY Else
+           loses to the If). No two owned graphs are simultaneously-additively resident, so max is
+           both faithful and conservative.
+        """
+        from .inductor_lowering import ReductionLowering
+
+        n = len(self.graphs)
+
+        def reds_in(gid: int) -> set[int]:
+            out: set[int] = set()
+            for node in self.graphs[gid].graph.nodes:
+                low = node.meta.get("lowering")
+                if isinstance(low, ReductionLowering) and isinstance(
+                    getattr(low, "block_index", None), int
+                ):
+                    out.add(low.block_index)
+            return out
+
+        # A group is keyed on its home (original) graph_id; its reduction axes come from that graph.
+        group_axes = {gid: reds_in(gid) for gid in group_gids}
+
+        # Peak live-tile snapshot per graph (skip rolled copies — rule 2).
+        peak_of: dict[int, list[tuple[int | None, ...]]] = {}
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            peak_of[gi.graph_id] = _graph_peak_live_tiles(gi.graph, env)
+
+        # For-loop child edges (loop->body), keyed by the loop's block_ids (rule 1). Collected from
+        # the SAME node scan the CF walker uses; ``_if`` edges are deliberately NOT followed (rule 3).
+        # child_loops[gid] = [(body_gid, frozenset(block_ids)), ...]
+        child_loops: dict[int, list[tuple[int, frozenset[int]]]] = {}
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            edges: list[tuple[int, frozenset[int]]] = []
+            for node in gi.graph.nodes:
+                if node.op != "call_function":
+                    continue
+                if (
+                    _tracing_ops.is_for_loop_target(node.target)
+                    and node.args
+                    and isinstance(node.args[0], int)
+                ):
+                    body_gid = node.args[0]
+                    if 0 <= body_gid < n and not isinstance(
+                        self.graphs[body_gid], ReductionLoopGraphInfo
+                    ):
+                        blk = frozenset(
+                            getattr(self.graphs[body_gid], "block_ids", []) or []
+                        )
+                        edges.append((body_gid, blk))
+            if edges:
+                child_loops[gi.graph_id] = edges
+
+        def max_by_profile(
+            a: list[tuple[int | None, ...]], b: list[tuple[int | None, ...]]
+        ) -> list[tuple[int | None, ...]]:
+            mr = max(
+                (_tile_rank(t) for t in a + b),
+                default=0,
+            )
+            ka = _tile_set_rank_profile(a, mr)
+            kb = _tile_set_rank_profile(b, mr)
+            return a if ka >= kb else b
+
+        group_key_set = set(group_gids)
+        result: dict[int, list[tuple[int | None, ...]]] = {}
+        for gid in group_gids:
+            axes = group_axes[gid]
+            tiles = list(peak_of.get(gid, []))
+            # descend, transitively, the for-loop bodies this group drives (rule 1): a body whose
+            # loop axis is one of the group's reduction axes. Combine each by max-by-profile. STOP
+            # at any body that is itself another group's home (its own sequential group) and never
+            # cross ``_if`` (branch subtrees are handled by their own group keys — rule 3). A BFS so
+            # a Root -> loop -> loop chain is fully covered, not just one level (corpus is one level;
+            # this is the faithful general form). ``not axes`` cannot happen for a real group key
+            # (its home graph holds >=1 reduction lowering) -- a defensive descend-anyway guard.
+            seen_bodies: set[int] = {gid}
+            frontier = [gid]
+            while frontier:
+                cur = frontier.pop()
+                for body_gid, blk in child_loops.get(cur, []):
+                    if body_gid in seen_bodies or body_gid in group_key_set:
+                        continue
+                    if not axes or (blk & axes):
+                        seen_bodies.add(body_gid)
+                        tiles = max_by_profile(tiles, peak_of.get(body_gid, []))
+                        frontier.append(body_gid)
+            result[gid] = tiles
+        return result
+
     def build_reduction_kernel_fact(
         self,
         memory_op_facts: list[MemoryOpFact],
@@ -1586,8 +1711,20 @@ class DeviceIR:
         groups_by_gid: dict[int, list[int]] = {}
         for idx, d in enumerate(descriptors):
             groups_by_gid.setdefault(d.graph_id, []).append(idx)
+        # The faithful per-group resident tile set (CF-Step 7): each group's lexicographic-peak
+        # live tiles, attributed home + driven-loop-bodies, max'd across If/Else. Consumed by the
+        # Stage-2 footprint (which sums ∏(dims) per ACTUAL tile). Guarded: a bare-spec unit test may
+        # build the fact without a resolvable env -> empty tiles, and the allocator falls back.
+        try:
+            group_live = self._group_live_tiles(sorted(groups_by_gid), env)
+        except (KeyError, AttributeError, TypeError):
+            group_live = {}
         coresidency_groups = tuple(
-            CoResidencyGroup(graph_id=gid, descriptor_indices=tuple(idxs))
+            CoResidencyGroup(
+                graph_id=gid,
+                descriptor_indices=tuple(idxs),
+                live_tiles=tuple(group_live.get(gid, [])),
+            )
             for gid, idxs in sorted(groups_by_gid.items())
         )
 
@@ -3376,6 +3513,28 @@ def _subscript_block_id(env: CompileEnvironment, sub: object) -> int | None:
     return None
 
 
+def _tile_rank(dims: tuple[int | None, ...]) -> int:
+    """The number of BLOCK dims a tile spans (``None`` static/broadcast dims do not count) — the
+    block-size-free proxy for tile bytes used by the lexicographic peak selector."""
+    return sum(1 for d in dims if d is not None)
+
+
+def _tile_set_rank_profile(
+    tiles: list[tuple[int | None, ...]], max_rank: int
+) -> tuple[int, ...]:
+    """A tile set's RANK PROFILE as a lexicographic key over ABSOLUTE ranks, HIGHEST rank first:
+    index 0 is the count of rank-``max_rank`` tiles, ..., last is the count of rank-1 tiles. More
+    top-rank tiles wins; equal-top-rank falls through to the next rank down. Fixed length so the
+    same rank aligns when comparing two tile sets (a per-set-length key would compare one set's
+    rank-2 count against another's rank-1 count and mis-rank a scalar swarm as the winner)."""
+    by_rank: dict[int, int] = {}
+    for t in tiles:
+        r = _tile_rank(t)
+        if r:
+            by_rank[r] = by_rank.get(r, 0) + 1
+    return tuple(by_rank.get(k, 0) for k in range(max_rank, 0, -1))
+
+
 def _graph_peak_live_by_axis(
     graph: torch.fx.Graph, env: CompileEnvironment
 ) -> dict[int, int]:
@@ -3432,11 +3591,26 @@ def _graph_peak_live_tiles(
     instead of assuming every live tile is full-rank over all axes (the over-approximation that
     inflated the grad-parameter footprint).
 
-    Which step is "peak"? Register/SRAM pressure is maximized at the step whose live set has the
-    most bytes, but tile bytes depend on the (not-yet-chosen) block sizes. So we return the live
-    set at the step with the most simultaneously-live tiles (the count peak) — a shape-faithful
-    snapshot. A CONSERVATIVE choice consistent with ``_graph_peak_live_by_axis`` (same sweep, same
-    last-use liveness; it just keeps shapes instead of counting). Ties break to the FIRST peak.
+    Which step is "peak"? Register/SRAM pressure is maximized at the step holding the most BYTES,
+    but tile bytes depend on the (not-yet-chosen) block sizes. RANK is the block-size-free proxy for
+    "big": a rank-2 ``[m, r]`` tile is ``m_block × r_block`` elements, a rank-1 ``[m]`` is
+    ``m_block``, so ONE higher-rank tile outweighs any number of lower-rank tiles. We therefore pick
+    the step whose live set is LEXICOGRAPHICALLY GREATEST by RANK PROFILE — the tuple
+    ``(#rank-D tiles, #rank-(D-1) tiles, ..., #rank-1 tiles)`` compared most-dims-first. So a step
+    with one ``[m, r]`` beats a step with eight scalar ``[m]`` carries (the failure of the old
+    max-COUNT rule: welford's rdim read tiles and its scalar carries peak at DIFFERENT steps, and
+    max-count snapped the scalar swarm, hiding the rdim tile and under-sizing R into a spill).
+    Maximizing the top-rank count FIRST captures the maximum number of the heavy R-scaling tiles
+    (the term that prevents spills); lower-rank ties break conservatively (more next-heaviest), then
+    to the FIRST such step.
+
+    Returns the ACTUAL co-resident live set at that ONE real step (never a per-shape union across
+    steps, which would stitch together shapes that never physically coexist). A CONSERVATIVE choice
+    consistent with ``_graph_peak_live_by_axis`` (same sweep, same last-use liveness). The
+    "1 higher-rank beats any number of lower-rank" tie-rule is not byte-exact in a pathological
+    extreme (hundreds of rank-n tiles vs one rank-(n+1)); the corpus tops out at ~12 co-live tiles,
+    a higher-rank tile CONTAINS a lower-rank as a factor, and the miss errs toward a slightly larger
+    R (bounded by the persistence/chunk math) — a STATED heuristic, not a random choice.
     """
     nodes = list(graph.nodes)
     last_use: dict[torch.fx.Node, int] = {}
@@ -3451,15 +3625,23 @@ def _graph_peak_live_tiles(
             # only tiles that span at least one block axis are register-resident reduction tiles
             if any(d is not None for d in dims):
                 shape_of[node] = dims
-    best_count = -1
+
+    # Graph-wide max rank -> a FIXED-length, absolute-rank-indexed profile so the lexicographic
+    # comparison aligns the same rank across steps (a per-step-length key would compare a step's
+    # rank-2 count against another's rank-1 count and mis-rank the scalar swarm as the winner).
+    max_rank = max((_tile_rank(d) for d in shape_of.values()), default=0)
+
+    best_key: tuple[int, ...] = ()
     best_tiles: list[tuple[int | None, ...]] = []
     live: set[torch.fx.Node] = set()
     for i, node in enumerate(nodes):
         if node in shape_of:
             live.add(node)
-        if len(live) > best_count:
-            best_count = len(live)
-            best_tiles = [shape_of[v] for v in live]
+        cur = [shape_of[v] for v in live]
+        key = _tile_set_rank_profile(cur, max_rank)
+        if key > best_key:
+            best_key = key
+            best_tiles = cur
         live = {v for v in live if last_use.get(v, -1) > i}
     return best_tiles
 
