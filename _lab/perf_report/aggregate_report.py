@@ -125,6 +125,18 @@ def main():
     for dt in dtypes_seen:
         headline[dt] = agg(dt)
 
+    # ---- per-corpus headline (the actionable cut) ----
+    def agg_corpus(corpus_filter):
+        gtc, gdef = [], []
+        for (corpus, kernel, dtype), rws in real_cells.items():
+            if corpus != corpus_filter:
+                continue
+            gtc += [r["G_tc"] for r in rws if cell_ok_for_ratio(r, "G_tc")]
+            gdef += [r["G_def"] for r in rws if cell_ok_for_ratio(r, "G_def")]
+        return geomean(gtc), geomean(gdef), len(gtc), len(gdef)
+
+    per_corpus = {c: agg_corpus(c) for c in REAL if any(k[0] == c for k in real_cells)}
+
     # ---- disasters (realistic shape below floor, per-shape) ----
     disasters = []
     for (corpus, kernel, dtype), rws in real_cells.items():
@@ -146,7 +158,8 @@ def main():
 
     # ================= WRITE =================
     out = {"per_cell": {f"{c}/{k}/{d}": v for (c, k, d), v in per_cell.items()},
-           "headline": headline, "disasters": disasters, "n_xna": len(xna),
+           "headline": headline, "per_corpus": per_corpus,
+           "disasters": disasters, "n_xna": len(xna),
            "xna": xna, "diagnostics": diag}
     json.dump(out, open(os.path.join(results_dir, "summary.json"), "w"), indent=2, default=str)
 
@@ -166,6 +179,14 @@ def main():
     for scope in ["overall"] + dtypes_seen:
         gt, gd, ntc, ndef = headline[scope]
         L.append(f"| {scope} | {fmt(gt)} | {fmt(gd)} | {ntc} | {ndef} |")
+
+    L.append("\n### Per-corpus\n")
+    L.append("| corpus | geo G_tc | geo G_def | n(G_tc) | n(G_def) |")
+    L.append("|---|---|---|---|---|")
+    for c in REAL:
+        if c in per_corpus:
+            gt, gd, ntc, ndef = per_corpus[c]
+            L.append(f"| {c} | {fmt(gt)} | {fmt(gd)} | {ntc} | {ndef} |")
 
     # disasters
     L.append(f"\n## Per-shape disasters (realistic shape with G_tc < {FLOOR})\n")
