@@ -734,7 +734,19 @@ class TestTritonStandardReductionHeuristic(TestCase):
         )
         spec.reduction_kernel_fact = ReductionKernelFact(
             reductions=(desc,),
-            coresidency_groups=(CoResidencyGroup(graph_id=0, descriptor_indices=(0,)),),
+            coresidency_groups=(
+                CoResidencyGroup(
+                    graph_id=0,
+                    descriptor_indices=(0,),
+                    # The resident live tiles of a one-row reduction (softmax/rms_norm-like): the
+                    # ``[grid_M, rdim]`` read/compute tile + a ``[grid_M]`` scalar carry. The grid
+                    # axis (block_id 0) APPEARS in a live tile -> it is register-RESIDENT, so
+                    # ``_has_reduced_away_grid`` is False (it is NOT a grad-parameter ``.sum(0)``
+                    # collapse). Without this the grid axis is in no tile and the residency test
+                    # wrongly flags a collapse, tripping the num_warps>=8 grad-param floor.
+                    live_tiles=((0, 1), (0,)),
+                ),
+            ),
             grid_axis_block_ids=(0,),
         )
         # Keep the legacy ReductionFact too: the eligibility gate's kf-None branch +
@@ -3733,7 +3745,9 @@ class TestTritonReductionHeuristic(TestCase):
         red_idx = spec.block_sizes.block_id_to_index(1)
         norm_idx = spec.block_sizes.block_id_to_index(2)
         self.assertEqual(alloc.block_sizes[red_idx], 4096)  # rdim sized to extent
-        self.assertEqual(alloc.block_sizes[norm_idx], 4096)  # normalize loop NOT floored
+        self.assertEqual(
+            alloc.block_sizes[norm_idx], 4096
+        )  # normalize loop NOT floored
         self.assertNotEqual(alloc.block_sizes[norm_idx], 1)
         # grid (M) row axis floored (no widen headroom is required; it just must be valid).
         self.assertGreaterEqual(alloc.block_sizes[0], 1)

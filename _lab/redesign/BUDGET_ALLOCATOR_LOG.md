@@ -719,3 +719,68 @@ GATES: validate 460/460, probe 13/13, pytest 52p+2p, kl_div band test pins [4096
 NET: no regressions > noise; several real WINS (softmax wide-N, welford). The rewrite DELETED
 num_live / feature_extent / LIVE_PERSIST / GRAD_PARAM-budget / in_accumulator / drop_body_weight and
 is simpler AND faster. Budgets: ROW, CARRIED=ROW/2, PERSIST_HOLD=3xROW, USER_TILE_PERSIST_HOLD=1.2xROW.
+
+## CF-Step 10 — S1/S2/S4 faithful-signal cleanups + audit follow-ups (committed; full detail in SUGGESTED_CHANGES.md)
+An audit session left uncommitted refactors (persistent=(r>=ext) unification, num_warps M-collapse
+floor rewrite, dead-code removal: _coresident_with_other_sized/_materialized_feature_axes/CORESIDENT_
+MIN_WARPS, shared _resident_block_ids helper); this step layered the SUGGESTED_CHANGES.md items S1/S2/S4
+on top and committed the lot. Each proxy replaced by the faithful physical signal; all benched single-
+process median-of-9 (replay_bench + new microbench_offcorpus.py for off-corpus shapes) + ncu-locked.
+
+FIRST: the handed-over baseline was NOT green — test_seed_is_persistent_one_row failed (num_warps 8!=4).
+The audit's _has_reduced_away_grid residency change had no matching fixture update (the mock
+CoResidencyGroup had empty live_tiles -> grid axis read as reduced-away -> the >=8 grad-param warp
+floor fired). Fixed the FIXTURE (live_tiles=((0,1),(0,)) — a real resident-grid one-row reduction), not
+the code. 52 pass after.
+
+S2 — persist-hold ceiling keyed on APPLY-REREAD, not CATEGORY. New _apply_reread(spec,pd): a load of a
+primary-reduction tensor that feeds a store and NO reduction (a separate normalize pass re-reading the
+row from L2). Replaces `d.category is USER_TILE`. Config-neutral on corpus; the rms_norm/layer_norm
+forward BIG->SMALL reclassification VERIFIED off-corpus (microbench): rms_norm N=49152 chunk BEATS
+persist +32% (SMALL right), N=32768 persist beats chunk +8% (SMALL persists there). Faithful split
+BEATS the old category rule (which held them persistent and lost 32%).
+
+S1 — re-read eviction gate keyed on _has_reduced_away_grid, not `not persistent`. The audit doc's
+TILE-BYTES hypothesis is REFUTED (measured hint effect NON-MONOTONIC in bytes: grad-param 128KiB helps
++2-3%, cross_entropy 122KiB hurts +2.2%, 196KiB helps ~1%, 256KiB hurts +6.9%). _apply_reread also
+fails to separate them (both False — grad-param's reread x feeds BOTH a reduction and a store). The
+faithful discriminator is _has_reduced_away_grid: the grad-param M-COLLAPSE loop reloads x per-row from
+L2 (pin helps), cross_entropy is one fused persistent row (pin oversubscribes). Gate =
+`pd.row_reread and _has_reduced_away_grid(spec)`. MEASURED: recovers layer_norm_bwd +3.3%,
+rms_norm_bwd +1.9%; keeps cross_entropy unpinned (V=65536 +7.8% vs the old pin, fused_linear_jsd +6.4%);
+one middle cell (cross_entropy V=50257) gives up ~1.5% — favorable trade. Closes the loop the DONE
+persistent=(r>=ext) change opened.
+
+S4 — both `scale *= carried_2d_count` fudges DELETED, replaced by faithful mechanisms:
+ 2a REDUCTION site -> _max_group_footprint: size a SHARED reduction axis against the MAX-scale group
+    spanning it (jsd bid0 spans {gid1:9,gid3:9,gid5:5} -> max 9 -> R 2048; kl_div one group scale 6 ->
+    4096). The axis is tiled one width everywhere, so it must fit the heaviest group that uses it.
+ 2b WIDEN site -> carried_kernel guard: any carried_2d_count>0 -> resident grid stays at FLOOR (no
+    widen). ncu-LOCKED (the doc's flaky-reg-probe concern): jsd _helion_jsd_forward R=2048,
+    grid=1 -> regs 32, reg-limit 2 CTAs/SM, warps_active 98.7%; grid=2 -> regs 42, reg-limit 1 CTA/SM,
+    warps_active 49.9%. The +11% grid=2 regr IS this register-occupancy cliff (n_spills=0 both) — the
+    leftover-byte widen + program-count occ_widen can't see it. jsd/kl_div are the only carried kernels.
+
+DEAD CODE removed with S4: the two carried multipliers; the num_warps coresident block collapsed to
+`if _has_reduced_away_grid: num_warps=max(8,num_warps)`; helpers _coresident_with_other_sized,
+_materialized_feature_axes, _is_materialized_axis, const CORESIDENT_MIN_WARPS; and _lab/redesign/
+carried_membership_trace.py (git rm — referenced removed symbols).
+
+SWING TABLE (48/447 raw_seed cells changed vs the audit baseline): 43 eviction-only (S1), 1
+reduction_loops (S2 scaled_masked_softmax wide-N chunk), 4 block_sizes (S4 on degenerate jsd/kl_div
+M=1/N=1024 shapes). Real-corpus movers all neutral-or-win. Off-corpus S4 movers (per user: don't
+sweat): jsd(1,32000) R->4096 +4% (M=1 branch-collapse -> lighter footprint correctly allows 4096);
+kl_div(8192,1024) grid 4->1 -8%, jsd(262144,4096) grid 128->256 +7.6% — the 2b guard is slightly blunt
+on tiny-N (the doc's flagged OPEN DESIGN POINT: true fix is a register-occupancy cap the seed can't
+compute; blunt guard is corpus-safe, real jsd/kl_div shapes unchanged).
+
+GATES: recorder 447/0, validate 460/460, probe 13/13 + synthetic probes byte-identical, pytest
+52p+matmul_layernorm 2p, ruff clean. S3 (non-reduction loop_budget cap) SKIPPED — low-priority nice-to-
+have, would only delay a clear net-win batch. New lab tools: microbench_offcorpus.py (off-corpus A/B),
+probe_apply_reread.py (detector classifier), oneshot_launch.py (ncu wrapper).
+
+SEPARATELY VERIFIED (user question, not a code change): full-extent `:` axes ARE counted faithfully in
+the Σ-over-live-tiles footprint — Helion auto-allocates a block_id for any non-tiled full-extent axis in
+an hl.tile loop (NOT contingent on hl.specialize; holds under static_shapes True AND False; RoPE's
+head_dim/heads resolve to block_ids 2/3/4 with no explicit specialize). `None` in a group's live_tiles
+is ALWAYS a size-1 broadcast, never a full-width feature. See memory project_reduction_footprint_fullextent.

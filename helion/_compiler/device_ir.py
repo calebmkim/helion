@@ -2170,33 +2170,6 @@ class DeviceIR:
             return False
         return bool(env.known_equal(block, info.size))
 
-    def _is_materialized_axis(
-        self,
-        block_id: int,
-        grid_ids: set[int],
-        bs_ids: list[int],
-        rl_ids: list[int],
-    ) -> bool:
-        """A *materialized* axis: full-width because the roller declined it -- not the
-        grid, not a ``block_sizes`` tile, not a rolled ``reduction_loops`` axis. Callers pass
-        DIFFERENT candidate sets to this shared predicate:
-
-        - REDUCED-OVER axes (``register_unrolled_reductions``): the axis a
-          ``ReductionLowering`` is lowered over (``red_block_id``).
-        - MATERIALIZED FEATURE axes (``_assemble_reduction_fact``'s per_feature_accumulator set,
-          and the Stage-2 ``_materialized_feature_elems`` budget derivation): full-width
-          feature/output dims flagged ``bs.reduction`` at REGISTRATION, including a grad-param
-          output never reduced *over*.
-
-        bias_grad's ``[N]`` is a materialized feature axis but not reduced-over -- the gap that
-        makes these two sets.
-        """
-        return (
-            block_id not in grid_ids
-            and block_id not in bs_ids
-            and block_id not in rl_ids
-        )
-
     def _non_reduction_loop_candidates(
         self, red_block_id: int, grid_ids: set[int]
     ) -> tuple[int, ...]:
