@@ -848,11 +848,14 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
         reduction_ids = {d.block_id for d in kf.reductions}
 
-        # Extent (pow2-padded) per block_id, read from STORED hints so the allocator runs without
-        # an active CompileEnvironment (the unit tests call get_seed_config outside the env ctx):
-        # a reduction's extent is its descriptor ``size_hint``; a tunable axis's is its
-        # ``BlockSizeSpec.size_hint``; a non-tunable axis (a pinned grid / materialized feature) is
-        # read off ``env.block_sizes`` (guarded — only the live compile path has such axes).
+        # Extent (pow2-padded) per block_id, read from STORED hints. The reason these maps exist at
+        # all is TESTING: the reduction unit tests call ``get_seed_config`` on a bare spec OUTSIDE an
+        # active CompileEnvironment, where ``env.block_sizes[bid]`` is unavailable — so extents must
+        # come from data already persisted on the spec/fact. A reduction's extent is its descriptor
+        # ``size_hint``; a tunable axis's is its ``BlockSizeSpec.size_hint``. The third fallback
+        # (``env.block_sizes`` — a non-tunable pinned grid / materialized feature) is LIVE-PATH ONLY:
+        # in the no-env test path every axis is in ``_spec_extent`` or ``_desc_extent`` by
+        # construction, so that branch never executes (and would raise NoCurrentEnvironment if it did).
         _desc_extent = {d.block_id: d.size_hint for d in kf.reductions}
         _spec_extent = {
             cast("BlockSizeSpec", spec.block_sizes[i]).block_id: cast(
@@ -887,25 +890,17 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 else cls.ROW_PERSIST_MAX_BYTES
             )
 
-        # The PERSISTENCE-HOLD ceiling. IDEALLY keyed on "will persist's avoided HBM re-read be
-        # served from the small L2 working set (=> tighter SMALL ceiling, chunk sooner) or the larger
-        # register file (=> looser BIG ceiling)". That physical quantity is NOT faithfully recoverable
-        # at seed time (see ``_has_store_only_row_reread`` — softmax and cross_entropy have the same
-        # byte footprint but ~2x-different cutoffs, and neither load-count nor output-width nor a byte
-        # budget separates them). So we use ``_has_store_only_row_reread`` as an ADMITTED PROXY that
-        # classifies the CURRICULUM correctly (store-only re-read pass -> SMALL; single fused reduce
-        # -> BIG) but is known-unfaithful off-corpus. Keyed on the PRIMARY; gates the hold, which only
-        # fires for the primary's full-slice/user-tile reduction.
-        hold_ceiling = (
-            cls.USER_TILE_PERSIST_HOLD_MAX_BYTES
-            if cls._has_store_only_row_reread(spec, pd)
-            else cls.PERSIST_HOLD_MAX_BYTES
-        )
-
         # The static grid-row count (program count before any widen), the occupancy numerator.
         from ..compile_environment import NoCurrentEnvironment
 
         grid_rows = 1
+        # The try/except is NECESSARY (not defensive noise): this block dereferences the live
+        # ``env`` (``env.block_sizes[gbid].size``, ``env.size_hint``), which the no-env unit-test
+        # path (see ``extent_of`` above) cannot provide -> ``NoCurrentEnvironment``; a dynamic/None
+        # grid size raises ``AttributeError``/``TypeError``. All three collapse to the SAME defined
+        # fallback ``grid_rows = 0`` = "no compile-time occupancy", which the pass-2 occupancy widen
+        # already handles (it simply does not fire). Scoped tightly to the env-touching loop so it
+        # cannot mask an unrelated bug.
         try:
             for gbid in grid_ids:
                 size = env.block_sizes[gbid].size
@@ -972,17 +967,41 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 for d in tile:
                     if d is None or d == axis:
                         continue
-                    prod *= _tile_dim_width(d)
+                    prod *= conservatively_large_tile_width(d)
                 if contains_axis:
                     scale += prod
                 else:
                     flat += prod
             return max(1, scale), flat
 
-        def _tile_dim_width(bid: int) -> int:
-            """One resident dim's tile width by MEMBERSHIP: a seated reduction/grid tile (else its
-            full extent). A grid axis's width is its seated rows (floor in pass 1, widened in pass 2)."""
+        def conservatively_large_tile_width(bid: int) -> int:
+            """One resident dim's width for the footprint bound: its SEATED width if already chosen,
+            else its full extent. The full-extent fallback is safe BY SEATING ORDER, not a blind
+            assumption — grid axes are seated first (the pass-1 preamble above), and a not-yet-seated
+            *reduction* dim is later in the sizing ``order`` below, so over-approximating it at full
+            extent only makes the footprint LARGER, keeping the axis currently being sized
+            conservative (it can only end up smaller/safer, never over-sized into a spill). NB: the
+            footprint is therefore ORDER-DEPENDENT (a later-sized reduction sees an earlier one at its
+            seated width, but not vice-versa) — the ``order`` sort below is load-bearing for
+            correctness, not cosmetic."""
             return max(1, seated.get(bid, extent_of(bid)))
+
+        # The PERSISTENCE-HOLD ceiling (used once, at ``expand_to_persist`` in the loop below; kept
+        # here as it is loop-INVARIANT — keyed on the PRIMARY ``pd``, not the per-reduction ``d``).
+        # IDEALLY keyed on "will persist's avoided HBM re-read be served from the small L2 working set
+        # (=> tighter SMALL ceiling, chunk sooner) or the larger register file (=> looser BIG
+        # ceiling)". That physical quantity is NOT faithfully recoverable at seed time (see
+        # ``_has_store_only_row_reread`` — softmax and cross_entropy have the same byte footprint but
+        # ~2x-different cutoffs, and neither load-count nor output-width nor a byte budget separates
+        # them). So we use ``_has_store_only_row_reread`` as an ADMITTED PROXY that classifies the
+        # CURRICULUM correctly (store-only re-read pass -> SMALL; single fused reduce -> BIG) but is
+        # known-unfaithful off-corpus. Keyed on the PRIMARY; gates the hold, which only fires for the
+        # primary's full-slice/user-tile reduction.
+        hold_ceiling = (
+            cls.USER_TILE_PERSIST_HOLD_MAX_BYTES
+            if cls._has_store_only_row_reread(spec, pd)
+            else cls.PERSIST_HOLD_MAX_BYTES
+        )
 
         for g in kf.coresidency_groups:
             descs = [kf.reductions[i] for i in g.descriptor_indices]

@@ -1176,8 +1176,6 @@ class DeviceIR:
         """
         from .inductor_lowering import ReductionLowering
 
-        n = len(self.graphs)
-
         def reds_in(gid: int) -> set[int]:
             out: set[int] = set()
             for node in self.graphs[gid].graph.nodes:
@@ -1198,32 +1196,9 @@ class DeviceIR:
                 continue
             peak_of[gi.graph_id] = _graph_peak_live_tiles(gi.graph, env)
 
-        # For-loop child edges (loop->body), keyed by the loop's block_ids (rule 1). Collected from
-        # the SAME node scan the CF walker uses; ``_if`` edges are deliberately NOT followed (rule 3).
-        # child_loops[gid] = [(body_gid, frozenset(block_ids)), ...]
-        child_loops: dict[int, list[tuple[int, frozenset[int]]]] = {}
-        for gi in self.graphs:
-            if isinstance(gi, ReductionLoopGraphInfo):
-                continue
-            edges: list[tuple[int, frozenset[int]]] = []
-            for node in gi.graph.nodes:
-                if node.op != "call_function":
-                    continue
-                if (
-                    _tracing_ops.is_for_loop_target(node.target)
-                    and node.args
-                    and isinstance(node.args[0], int)
-                ):
-                    body_gid = node.args[0]
-                    if 0 <= body_gid < n and not isinstance(
-                        self.graphs[body_gid], ReductionLoopGraphInfo
-                    ):
-                        blk = frozenset(
-                            getattr(self.graphs[body_gid], "block_ids", []) or []
-                        )
-                        edges.append((body_gid, blk))
-            if edges:
-                child_loops[gi.graph_id] = edges
+        # For-loop child edges (loop->body), keyed by the loop's block_ids (rule 1). ``_if`` edges are
+        # deliberately NOT followed (rule 3) — see the helper.
+        child_loops = self._forloop_child_edges()
 
         def max_by_profile(
             a: list[tuple[int | None, ...]], b: list[tuple[int | None, ...]]
@@ -1261,6 +1236,41 @@ class DeviceIR:
                         frontier.append(body_gid)
             result[gid] = tiles
         return result
+
+    def _forloop_child_edges(self) -> dict[int, list[tuple[int, frozenset[int]]]]:
+        """The for-loop child-edge map for ``_group_live_tiles`` rule 1: for each non-rolled graph,
+        the ``(body_graph_id, frozenset(body_block_ids))`` of every for-loop it drives. Keyed by the
+        parent graph_id; ``child_loops[gid] = [(body_gid, block_ids), ...]``.
+
+        A pure node scan over ``self.graphs`` (the SAME scan the CF walker uses): follows only
+        ``is_for_loop_target`` call_functions whose first arg is the body graph id. ``_if`` edges are
+        deliberately NOT collected (rule 3 — branch subtrees are their own groups). Rolled
+        (``ReductionLoopGraphInfo``) parents and bodies are skipped (rule 2)."""
+        n = len(self.graphs)
+        child_loops: dict[int, list[tuple[int, frozenset[int]]]] = {}
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            edges: list[tuple[int, frozenset[int]]] = []
+            for node in gi.graph.nodes:
+                if node.op != "call_function":
+                    continue
+                if (
+                    _tracing_ops.is_for_loop_target(node.target)
+                    and node.args
+                    and isinstance(node.args[0], int)
+                ):
+                    body_gid = node.args[0]
+                    if 0 <= body_gid < n and not isinstance(
+                        self.graphs[body_gid], ReductionLoopGraphInfo
+                    ):
+                        blk = frozenset(
+                            getattr(self.graphs[body_gid], "block_ids", []) or []
+                        )
+                        edges.append((body_gid, blk))
+            if edges:
+                child_loops[gi.graph_id] = edges
+        return child_loops
 
     def build_reduction_kernel_fact(
         self,
@@ -1327,8 +1337,17 @@ class DeviceIR:
             groups_by_gid.setdefault(d.graph_id, []).append(idx)
         # The faithful per-group resident tile set (CF-Step 7): each group's lexicographic-peak
         # live tiles, attributed home + driven-loop-bodies, max'd across If/Else. Consumed by the
-        # Stage-2 footprint (which sums ∏(dims) per ACTUAL tile). Guarded: a bare-spec unit test may
-        # build the fact without a resolvable env -> empty tiles, and the allocator falls back.
+        # Stage-2 footprint (which sums ∏(dims) per ACTUAL tile).
+        #
+        # The try/except is NECESSARY: ``_group_live_tiles`` walks the graphs through ``env`` (block
+        # id resolution in ``_graph_peak_live_tiles``), which a bare-spec unit test builds the fact
+        # WITHOUT -> the walk raises before producing tiles. The fallback degrades to empty tiles
+        # (the Stage-2 allocator then falls back to its extent-based footprint), so a missing env
+        # yields a valid-but-coarser fact rather than a crash. Trade-off to be aware of: the broad
+        # catch also swallows a genuine graph-structure bug INSIDE the walk as a silent empty-tiles
+        # perf regression (not a crash) — acceptable because the walk is best-effort attribution, but
+        # if this ever needs tightening, catch ``NoCurrentEnvironment`` specifically (the real no-env
+        # trigger) rather than the broad trio.
         try:
             group_live = self._group_live_tiles(sorted(groups_by_gid), env)
         except (KeyError, AttributeError, TypeError):
