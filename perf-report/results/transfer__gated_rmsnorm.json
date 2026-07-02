@@ -1,0 +1,2428 @@
+{
+ "rows": [
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    768
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     4
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 35.424,
+     "spread": 0.0018,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 31.904,
+     "spread": 0.001,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 32.384,
+     "spread": 0.0059,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9142,
+   "G_def": 0.9006,
+   "us": {
+    "seed": 35.424,
+    "default": 31.904,
+    "tc": 32.384
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    768
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     4
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 21.888,
+     "spread": 0.0044,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 20.32,
+     "spread": 0.0031,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 20.96,
+     "spread": 0.0122,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9576,
+   "G_def": 0.9284,
+   "us": {
+    "seed": 21.888,
+    "default": 20.32,
+    "tc": 20.96
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    1024
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     4
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 40.544,
+     "spread": 0.0055,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 40.256,
+     "spread": 0.0056,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 40.992,
+     "spread": 0.0023,
+     "status": "ok"
+    }
+   },
+   "G_tc": 1.011,
+   "G_def": 0.9929,
+   "us": {
+    "seed": 40.544,
+    "default": 40.256,
+    "tc": 40.992
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    1024
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     4
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 26.016,
+     "spread": 0.0086,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 24.064,
+     "spread": 0.008,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 25.92,
+     "spread": 0.0025,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9963,
+   "G_def": 0.925,
+   "us": {
+    "seed": 26.016,
+    "default": 24.064,
+    "tc": 25.92
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    2048
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     4
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 73.312,
+     "spread": 0.0009,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 73.536,
+     "spread": 0.0009,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 71.68,
+     "spread": 0.0031,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9777,
+   "G_def": 1.0031,
+   "us": {
+    "seed": 73.312,
+    "default": 73.536,
+    "tc": 71.68
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    2048
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     4
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 41.696,
+     "spread": 0.0023,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 40.192,
+     "spread": 0.004,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 42.496,
+     "spread": 0.0015,
+     "status": "ok"
+    }
+   },
+   "G_tc": 1.0192,
+   "G_def": 0.9639,
+   "us": {
+    "seed": 41.696,
+    "default": 40.192,
+    "tc": 42.496
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    4096
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     2
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 137.376,
+     "spread": 0.0016,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 138.624,
+     "spread": 0.0016,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 135.936,
+     "spread": 0.0007,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9895,
+   "G_def": 1.0091,
+   "us": {
+    "seed": 137.376,
+    "default": 138.624,
+    "tc": 135.936
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    4096
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     2
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 76.864,
+     "spread": 0.0008,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 75.2,
+     "spread": 0.003,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 75.808,
+     "spread": 0.0008,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9863,
+   "G_def": 0.9784,
+   "us": {
+    "seed": 76.864,
+    "default": 75.2,
+    "tc": 75.808
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    4096,
+    5120
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 89.632,
+     "spread": 0.0007,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 104.0,
+     "spread": 0.0009,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 88.448,
+     "spread": 0.0022,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9868,
+   "G_def": 1.1603,
+   "us": {
+    "seed": 89.632,
+    "default": 104.0,
+    "tc": 88.448
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    4096,
+    5120
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 54.24,
+     "spread": 0.0029,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 56.16,
+     "spread": 0.002,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 56.288,
+     "spread": 0.0023,
+     "status": "ok"
+    }
+   },
+   "G_tc": 1.0378,
+   "G_def": 1.0354,
+   "us": {
+    "seed": 54.24,
+    "default": 56.16,
+    "tc": 56.288
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    4096,
+    7168
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 122.32,
+     "spread": 0.0016,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 151.552,
+     "spread": 0.0008,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 121.184,
+     "spread": 0.0003,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9907,
+   "G_def": 1.239,
+   "us": {
+    "seed": 122.32,
+    "default": 151.552,
+    "tc": 121.184
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    4096,
+    7168
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 66.624,
+     "spread": 0.001,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 77.28,
+     "spread": 0.0029,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 66.272,
+     "spread": 0.0012,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9947,
+   "G_def": 1.1599,
+   "us": {
+    "seed": 66.624,
+    "default": 77.28,
+    "tc": 66.272
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    4096,
+    8192
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 137.792,
+     "spread": 0.0016,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 169.76,
+     "spread": 0.0004,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 138.176,
+     "spread": 0.0019,
+     "status": "ok"
+    }
+   },
+   "G_tc": 1.0028,
+   "G_def": 1.232,
+   "us": {
+    "seed": 137.792,
+    "default": 169.76,
+    "tc": 138.176
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    4096,
+    8192
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 73.936,
+     "spread": 0.0004,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 86.112,
+     "spread": 0.0007,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 72.928,
+     "spread": 0.0022,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9864,
+   "G_def": 1.1647,
+   "us": {
+    "seed": 73.936,
+    "default": 86.112,
+    "tc": 72.928
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    2048,
+    12288
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 105.536,
+     "spread": 0.0006,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 138.912,
+     "spread": 0.0009,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 105.472,
+     "spread": 0.0006,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9994,
+   "G_def": 1.3163,
+   "us": {
+    "seed": 105.536,
+    "default": 138.912,
+    "tc": 105.472
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    2048,
+    12288
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 59.68,
+     "spread": 0.0043,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 71.264,
+     "spread": 0.0013,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 59.552,
+     "spread": 0.0011,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9979,
+   "G_def": 1.1941,
+   "us": {
+    "seed": 59.68,
+    "default": 71.264,
+    "tc": 59.552
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    2048,
+    16384
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 139.264,
+     "spread": 0.0007,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 181.984,
+     "spread": 0.0004,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 147.04,
+     "spread": 0.0011,
+     "status": "ok"
+    }
+   },
+   "G_tc": 1.0558,
+   "G_def": 1.3068,
+   "us": {
+    "seed": 139.264,
+    "default": 181.984,
+    "tc": 147.04
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    2048,
+    16384
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 16,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     4096
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 87.264,
+     "spread": 0.0015,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 95.456,
+     "spread": 0.0007,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 74.336,
+     "spread": 0.0009,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.8519,
+   "G_def": 1.0939,
+   "us": {
+    "seed": 87.264,
+    "default": 95.456,
+    "tc": 74.336
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    16384,
+    4096
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     2
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 266.624,
+     "spread": 0.0004,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 267.488,
+     "spread": 0.0008,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 265.376,
+     "spread": 0.0011,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9953,
+   "G_def": 1.0032,
+   "us": {
+    "seed": 266.624,
+    "default": 267.488,
+    "tc": 265.376
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    16384,
+    4096
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     2
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 141.952,
+     "spread": 0.0014,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 139.584,
+     "spread": 0.0009,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 142.176,
+     "spread": 0.001,
+     "status": "ok"
+    }
+   },
+   "G_tc": 1.0016,
+   "G_def": 0.9833,
+   "us": {
+    "seed": 141.952,
+    "default": 139.584,
+    "tc": 142.176
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    3072
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     2
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 105.376,
+     "spread": 0.0006,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 105.376,
+     "spread": 0.0003,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 104.32,
+     "spread": 0.0006,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.99,
+   "G_def": 1.0,
+   "us": {
+    "seed": 105.376,
+    "default": 105.376,
+    "tc": 104.32
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    8192,
+    3072
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     2
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 59.712,
+     "spread": 0.0021,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 57.632,
+     "spread": 0.0056,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 63.872,
+     "spread": 0.0018,
+     "status": "ok"
+    }
+   },
+   "G_tc": 1.0697,
+   "G_def": 0.9652,
+   "us": {
+    "seed": 59.712,
+    "default": 57.632,
+    "tc": 63.872
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    32768,
+    2048
+   ],
+   "dtype": "fp32",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     4
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 267.2,
+     "spread": 0.0004,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 267.008,
+     "spread": 0.0005,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 265.52,
+     "spread": 0.001,
+     "status": "ok"
+    }
+   },
+   "G_tc": 0.9937,
+   "G_def": 0.9993,
+   "us": {
+    "seed": 267.2,
+    "default": 267.008,
+    "tc": 265.52
+   }
+  },
+  {
+   "corpus": "transfer",
+   "kernel": "gated_rmsnorm",
+   "shape": [
+    32768,
+    2048
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_reduction_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     4
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1
+    ],
+    "reduction_loops": [
+     null
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 142.304,
+     "spread": 0.0016,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 138.336,
+     "spread": 0.0005,
+     "status": "ok"
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "ok",
+     "us": 144.864,
+     "spread": 0.0009,
+     "status": "ok"
+    }
+   },
+   "G_tc": 1.018,
+   "G_def": 0.9721,
+   "us": {
+    "seed": 142.304,
+    "default": 138.336,
+    "tc": 144.864
+   }
+  }
+ ]
+}

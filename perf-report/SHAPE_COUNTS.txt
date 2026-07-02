@@ -1,0 +1,42 @@
+CURRICULUM (9 kernels; recorder uses fp32; splits train/val/test/robustness):
+  cross_entropy   36  train=14 val=7 test=7 robustness=8
+  jsd             35  train=13 val=7 test=7 robustness=8
+  kl_div          35  train=13 val=7 test=7 robustness=8
+  layer_norm      40  train=16 val=8 test=8 robustness=8
+  long_sum        33  train=12 val=6 test=7 robustness=8
+  rms_norm        40  train=16 val=8 test=8 robustness=8
+  softmax         39  train=15 val=8 test=8 robustness=8
+  sum             36  train=14 val=7 test=7 robustness=8
+  welford         37  train=15 val=7 test=7 robustness=8
+  CURRICULUM TOTAL shapes = 331
+
+TRANSFER / robustness (8 kernels; recorder uses bf16; flat, no split):
+  fused_add_rmsnorm        12
+  fused_add_layernorm      12
+  gated_rmsnorm            12
+  scaled_masked_softmax    11
+  cross_entropy_ls_zloss   11
+  dynamic_quant            8
+  fused_linear_jsd         7
+  grpo                     7
+  TRANSFER TOTAL shapes = 80
+
+VLLM (5 kernels; bf16-in/fp8-out — fp32 N/A):
+  silu_mul_fp8                         4
+  dynamic_per_token_scaled_fp8_quant   4
+  rms_norm_dynamic_per_token_quant     4
+  per_token_group_fp8_quant            4
+  rms_norm_per_block_quant             4
+  VLLM TOTAL shapes = 20
+
+M-REDUCTION (6 kernels; recorder: rms/layer_norm_bwd=fp16, rest=fp32):
+  bias_grad_bwd      3
+  dyt_bwd            3
+  group_norm_bwd     2
+  instance_norm_bwd  2
+  rms_norm_bwd       3
+  layer_norm_bwd     3
+  MRED TOTAL shapes = 16
+
+SYNTHETIC PROBES (13 kernels; 1 fixed shape each; categorization stress-tests, NOT perf workloads)
+ADVERSARIAL_SYNTH (7 kernels; 1 make_args each, designed to be SWEPT over N for persist/chunk)

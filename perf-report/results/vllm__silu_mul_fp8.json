@@ -1,0 +1,644 @@
+{
+ "rows": [
+  {
+   "corpus": "vllm",
+   "kernel": "silu_mul_fp8",
+   "shape": [
+    32,
+    14336
+   ],
+   "dtype": "native",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     256
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "flatten_loops": [
+     false
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "vllm_shipped_config": {
+    "block_sizes": [
+     1,
+     512
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "flatten_loops": [
+     true
+    ],
+    "l2_groupings": [
+     64
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "first",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 3,
+    "indexing": [
+     "pointer",
+     "tensor_descriptor",
+     "pointer",
+     "pointer"
+    ],
+    "pid_type": "flat"
+   },
+   "vllm_chosen_key": {
+    "intermediate": 14336,
+    "numtokens": 32
+   },
+   "vllm_exact_dims": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 72.128,
+     "spread": 0.0186
+    },
+    "default": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 75.52,
+     "spread": 0.0153
+    },
+    "vllm_shipped": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 73.12,
+     "spread": 0.042
+    },
+    "tc": {
+     "status": "ok",
+     "us": 42.016,
+     "spread": 0.0526,
+     "acc": true,
+     "acc_detail": "tc==ref by construction"
+    }
+   },
+   "G_tc": 0.5825,
+   "G_def": 1.047,
+   "G_vllm": 1.0138,
+   "us": {
+    "seed": 72.128,
+    "default": 75.52,
+    "tc": 42.016,
+    "vllm_shipped": 73.12
+   },
+   "perf_only_tc": 0.5825,
+   "perf_only_def": 1.047,
+   "perf_only_vllm": 1.0138
+  },
+  {
+   "corpus": "vllm",
+   "kernel": "silu_mul_fp8",
+   "shape": [
+    128,
+    14336
+   ],
+   "dtype": "native",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     256
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "flatten_loops": [
+     false
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "vllm_shipped_config": {
+    "block_sizes": [
+     4,
+     4096
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "flatten_loops": [
+     true
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 8,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "pid_type": "flat"
+   },
+   "vllm_chosen_key": {
+    "intermediate": 14336,
+    "numtokens": 128
+   },
+   "vllm_exact_dims": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 73.648,
+     "spread": 0.023
+    },
+    "default": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 74.624,
+     "spread": 0.0253
+    },
+    "vllm_shipped": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 71.872,
+     "spread": 0.0332
+    },
+    "tc": {
+     "status": "ok",
+     "us": 42.352,
+     "spread": 0.0249,
+     "acc": true,
+     "acc_detail": "tc==ref by construction"
+    }
+   },
+   "G_tc": 0.5751,
+   "G_def": 1.0133,
+   "G_vllm": 0.9759,
+   "us": {
+    "seed": 73.648,
+    "default": 74.624,
+    "tc": 42.352,
+    "vllm_shipped": 71.872
+   },
+   "perf_only_tc": 0.5751,
+   "perf_only_def": 1.0133,
+   "perf_only_vllm": 0.9759
+  },
+  {
+   "corpus": "vllm",
+   "kernel": "silu_mul_fp8",
+   "shape": [
+    2048,
+    8192
+   ],
+   "dtype": "native",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     1024
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "flatten_loops": [
+     false
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "vllm_shipped_config": {
+    "block_sizes": [
+     1,
+     2048
+    ],
+    "loop_orders": [
+     [
+      1,
+      0
+     ]
+    ],
+    "flatten_loops": [
+     false
+    ],
+    "l2_groupings": [
+     64
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "last"
+    ],
+    "num_warps": 4,
+    "num_stages": 4,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "pid_type": "flat"
+   },
+   "vllm_chosen_key": {
+    "intermediate": 8192,
+    "numtokens": 512
+   },
+   "vllm_exact_dims": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 85.024,
+     "spread": 0.0147
+    },
+    "default": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 90.112,
+     "spread": 0.0156
+    },
+    "vllm_shipped": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 87.616,
+     "spread": 0.0157
+    },
+    "tc": {
+     "status": "ok",
+     "us": 85.536,
+     "spread": 0.0183,
+     "acc": true,
+     "acc_detail": "tc==ref by construction"
+    }
+   },
+   "G_tc": 1.006,
+   "G_def": 1.0598,
+   "G_vllm": 1.0305,
+   "us": {
+    "seed": 85.024,
+    "default": 90.112,
+    "tc": 85.536,
+    "vllm_shipped": 87.616
+   },
+   "perf_only_tc": 1.006,
+   "perf_only_def": 1.0598,
+   "perf_only_vllm": 1.0305
+  },
+  {
+   "corpus": "vllm",
+   "kernel": "silu_mul_fp8",
+   "shape": [
+    8192,
+    4096
+   ],
+   "dtype": "native",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     1024
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "flatten_loops": [
+     false
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "vllm_shipped_config": {
+    "block_sizes": [
+     8,
+     128
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "flatten_loops": [
+     true
+    ],
+    "l2_groupings": [
+     2
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "last",
+     "last",
+     "last"
+    ],
+    "num_warps": 16,
+    "num_stages": 2,
+    "indexing": [
+     "tensor_descriptor",
+     "tensor_descriptor",
+     "pointer",
+     "pointer"
+    ],
+    "pid_type": "flat"
+   },
+   "vllm_chosen_key": {
+    "intermediate": 4096,
+    "numtokens": 512
+   },
+   "vllm_exact_dims": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 158.96,
+     "spread": 0.0089
+    },
+    "default": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 173.568,
+     "spread": 0.0083
+    },
+    "vllm_shipped": {
+     "config_present": true,
+     "status": "ok",
+     "acc": true,
+     "acc_detail": "out:exact=100.0%/rel=0",
+     "us": 176.352,
+     "spread": 0.0085
+    },
+    "tc": {
+     "status": "ok",
+     "us": 157.28,
+     "spread": 0.0086,
+     "acc": true,
+     "acc_detail": "tc==ref by construction"
+    }
+   },
+   "G_tc": 0.9894,
+   "G_def": 1.0919,
+   "G_vllm": 1.1094,
+   "us": {
+    "seed": 158.96,
+    "default": 173.568,
+    "tc": 157.28,
+    "vllm_shipped": 176.352
+   },
+   "perf_only_tc": 0.9894,
+   "perf_only_def": 1.0919,
+   "perf_only_vllm": 1.1094
+  }
+ ]
+}

@@ -1,0 +1,90 @@
+{
+ "rows": [
+  {
+   "corpus": "adversarial_synth",
+   "kernel": "synth_livecount_scalar_out",
+   "dtype": "native",
+   "shape": [
+    2048,
+    32768
+   ],
+   "fired_heuristics": [
+    "triton_reduction_user_tile"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     8192
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "pid_type": "flat"
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "range_unroll_factors": [
+     0,
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0,
+     0
+    ],
+    "range_multi_buffers": [
+     null,
+     null
+    ],
+    "range_flattens": [
+     null,
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "us": 213.728,
+     "spread": 0.0016,
+     "status": "ok"
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=1.188e+00",
+     "us": 1557.088,
+     "spread": 0.001,
+     "status": "ok"
+    },
+    "tc": {
+     "status": "n/a-no-tc"
+    }
+   },
+   "G_tc": null,
+   "G_def": 7.2854,
+   "us": {
+    "seed": 213.728,
+    "default": 1557.088,
+    "tc": null
+   }
+  }
+ ]
+}
