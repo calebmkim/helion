@@ -36,7 +36,8 @@ import importlib
 import json
 import math
 import os
-import statistics
+import signal
+import subprocess
 import sys
 import traceback
 
@@ -107,6 +108,57 @@ def _geomean(xs: list[float]) -> float | None:
     if not xs:
         return None
     return math.exp(sum(math.log(v) for v in xs) / len(xs))
+
+
+# --------------------------------------------------------------------------- #
+#  Compile watchdog: some 3-D/4-D backward kernels drive ptxas into a
+#  pathological multi-minute register-allocation on their largest shape. Bound
+#  each arm's compile+first-call with a wall-clock alarm; on timeout, reap the
+#  orphaned ptxas/compile-worker children and mark the cell compile-fail-timeout.
+# --------------------------------------------------------------------------- #
+COMPILE_TIMEOUT_S = int(os.environ.get("PERF_COMPILE_TIMEOUT_S", "150"))
+
+
+class _CompileTimeout(Exception):
+    pass
+
+
+def _alarm_handler(signum, frame):  # noqa: ARG001
+    raise _CompileTimeout()
+
+
+def _reap_compile_children():
+    """Kill any ptxas / inductor compile-worker children of THIS process (a timed-out
+    compile leaves them pegged). Best-effort; never raises."""
+    try:
+        me = os.getpid()
+        out = subprocess.run(["ps", "-eo", "pid,ppid,cmd"], capture_output=True,
+                             text=True, timeout=10).stdout
+    except Exception:  # noqa: BLE001
+        return
+    for line in out.splitlines():
+        p = line.split(None, 2)
+        if len(p) < 3 or not p[0].isdigit():
+            continue
+        pid, cmd = int(p[0]), p[2]
+        if pid == me:
+            continue
+        if ("ptxas" in cmd or "compile_worker" in cmd) and str(me) in line:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def with_compile_timeout(fn, seconds=COMPILE_TIMEOUT_S):
+    """Run fn() under a SIGALRM budget. Returns fn()'s result or raises _CompileTimeout."""
+    old = signal.signal(signal.SIGALRM, _alarm_handler)
+    signal.alarm(seconds)
+    try:
+        return fn()
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
 
 
 # --------------------------------------------------------------------------- #
@@ -493,7 +545,7 @@ def run_real_cell(corpus, kernel, shape, dtype):
             arms[name] = a
             continue
         try:
-            out = k(*_clone_args(args)) if inplace else k(*args)
+            out = with_compile_timeout(lambda kk=k: kk(*_clone_args(args)) if inplace else kk(*args))
             ok, detail = acc(out, ref)
             a["acc"] = ok
             a["acc_detail"] = detail
@@ -502,6 +554,10 @@ def run_real_cell(corpus, kernel, shape, dtype):
                 a["status"] = "ok"
             else:
                 a["status"] = "acc-fail"
+        except _CompileTimeout:
+            _reap_compile_children()
+            a["status"] = "compile-fail:timeout"
+            a["error"] = f"compile > {COMPILE_TIMEOUT_S}s (pathological ptxas)"
         except Exception as e:  # noqa: BLE001
             a["status"] = f"compile-fail:{type(e).__name__}"
             a["error"] = f"{type(e).__name__}: {str(e)[:200]}"
@@ -515,7 +571,7 @@ def run_real_cell(corpus, kernel, shape, dtype):
         try:
             torch._dynamo.reset()
             tc = torch.compile(tc_ref)
-            out_tc = tc()
+            out_tc = with_compile_timeout(tc)
             ok, detail = acc(out_tc, ref)
             a["acc"] = ok
             a["acc_detail"] = detail
@@ -524,6 +580,10 @@ def run_real_cell(corpus, kernel, shape, dtype):
                 a["status"] = "ok"
             else:
                 a["status"] = "acc-fail"
+        except _CompileTimeout:
+            _reap_compile_children()
+            a["status"] = "compile-fail:timeout"
+            a["error"] = f"compile > {COMPILE_TIMEOUT_S}s"
         except Exception as e:  # noqa: BLE001
             a["status"] = f"compile-fail:{type(e).__name__}"
             a["error"] = f"{type(e).__name__}: {str(e)[:200]}"
@@ -562,14 +622,17 @@ def run_vllm_cell(kernel, shape):
         ak, ar = _clone_args(args), _clone_args(args)
         try:
             if returns:
-                ok_k = k(*ak)
+                ok_k = with_compile_timeout(lambda: k(*ak))
                 out_r = ref_fn(*ar)
                 ok, detail = B.cmp_outputs(ak, ar, out_idx, returns, ok_k, out_r)
             else:
-                k(*ak)
+                with_compile_timeout(lambda: k(*ak))
                 ref_fn(*ar)
                 ok, detail = B.cmp_outputs(ak, ar, out_idx, returns)
             return k, ("ok" if ok else "acc-fail"), (ok, detail)
+        except _CompileTimeout:
+            _reap_compile_children()
+            return None, "compile-fail:timeout", (False, f"compile > {COMPILE_TIMEOUT_S}s")
         except Exception as e:  # noqa: BLE001
             return None, f"compile-fail:{type(e).__name__}", (False, f"{type(e).__name__}: {str(e)[:200]}")
 
@@ -590,11 +653,15 @@ def run_vllm_cell(kernel, shape):
         torch._dynamo.reset()
         ar = _clone_args(args)
         tc = torch.compile(ref_fn)
-        tc(*_clone_args(ar))  # warm
+        with_compile_timeout(lambda: tc(*_clone_args(ar)))  # warm
         a["status"] = "ok"
         a.update(timed((lambda: tc(*_clone_args(ar)))))
         a["acc"] = True
         a["acc_detail"] = "tc==ref by construction"
+    except _CompileTimeout:
+        _reap_compile_children()
+        a["status"] = "compile-fail:timeout"
+        a["error"] = f"compile > {COMPILE_TIMEOUT_S}s"
     except Exception as e:  # noqa: BLE001
         a["status"] = f"compile-fail:{type(e).__name__}"
         a["error"] = f"{type(e).__name__}: {str(e)[:200]}"
@@ -630,7 +697,7 @@ def run_synth_cell(corpus, kernel):
             arms[name] = a
             continue
         try:
-            out = k(*args)
+            out = with_compile_timeout(lambda kk=k: kk(*args))
             if ref_out is None and name == "seed":
                 ref_out = out
             # accuracy: seed vs default agree (self-consistency)
@@ -640,6 +707,10 @@ def run_synth_cell(corpus, kernel):
                 a["acc_detail"] = detail
             a.update(timed((lambda kk=k: kk(*args))))
             a["status"] = "ok"
+        except _CompileTimeout:
+            _reap_compile_children()
+            a["status"] = "compile-fail:timeout"
+            a["error"] = f"compile > {COMPILE_TIMEOUT_S}s"
         except Exception as e:  # noqa: BLE001
             a["status"] = f"compile-fail:{type(e).__name__}"
             a["error"] = f"{type(e).__name__}: {str(e)[:200]}"
