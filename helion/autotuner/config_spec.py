@@ -86,87 +86,6 @@ class MatmulFact(NamedTuple):
     rhs_dtype: torch.dtype
 
 
-class ReductionFact(NamedTuple):
-    """Workload facts for one inner reduction dim, recorded at compile time (like
-    ``MatmulFact``) so the seed heuristic branches on workload properties, not kernel
-    identity. Exactly one per seeded kernel; built in device_ir's
-    ``register_rollable_reductions`` (rolled rdim) or ``register_unrolled_reductions``
-    (unrolled rdim -- feeds either the standard or user-tiled seed by axis shape).
-
-    - ``primary_reduction_block_id`` / ``size_hint``: the reduction axis the SCALAR levers and
-      track discriminator key on, and its extent (rnumel). For a multi-reduction kernel this is
-      the dominant (max-extent) reducing axis -- a HEURISTIC tie-break,
-      not a workload property, hence ``primary``/``max`` rather than a bare ``block_id``.
-    - ``m_block_ids``: the non-reduction (kept) tile block_ids.
-    - ``static_rnumel``: the extent if statically known, else None.
-    - ``itemsize``: bytes/element of the reduced tensor; byte caps key on
-      ``size_hint * itemsize``.
-    - ``num_load``: device loads over this rdim (the ``== 1`` stream-eviction gate).
-    - ``num_carried_2d_tiles``: 2-D [M_BLOCK, R_BLOCK] tiles carried across the inner
-      loop (the Band-B signal). Derived from ``AccumulatorFact``.
-    - ``non_reduction_loop_block_ids``: non-grid loop tiles over the extent that are NOT
-      the rdim (an apply/normalize pass); ``len(...) >= 1`` is the reduce-then-apply
-      (Band-C) signal.
-    - ``row_reread``: True iff the reduction-input row is live across the loop boundary
-      (risks spilling). Gates the persist byte cap + re-read eviction. From ``MemoryOpFact``.
-    - ``reread_eviction_index``: ``load_eviction_policies`` slot of the re-read load
-      (``None`` unless ``row_reread``), read from that load's ``MemoryOpFact.eviction_index``.
-    - ``full_width_output``: True iff a store writes the result back over the reduction
-      axis ([M, N], e.g. layer_norm), False for a per-row scalar ([M], e.g. sum) —
-      full-width is store/occupancy-bound, scalar-output reduction-tree-bound (opposite
-      num_warps).
-    - ``input_load_itemsize``: element size of the HBM input row load — the dtype-faithful
-      per-byte signal, distinct from ``itemsize`` (fp32-promoted = 4 at both dtypes). 0
-      when no single reduction-fed row load exists.
-    - ``body_live_tiles``: peak count of simultaneously-live rdim-shaped values in the
-      reduction body — the liveness signal bounding the persistent resident footprint. A
-      heavy body spills the register file when held persistent, so the standard track passes
-      it as ``footprint_factor`` to route such reductions to the looped path. A conservative
-      over-count (errs toward looping, never an unsafe spill); defaults to 1.
-      The grad-parameter M-collapse signal (the former ``per_feature_accumulator`` field) and the
-      resident feature-axis PRODUCT the M-collapse byte cap divides by are NOT stored on the fact --
-      the Stage-2 allocator derives both at the budgeting site
-      (``_TritonReductionSeedBase._is_per_feature_accumulator`` / ``._materialized_feature_elems``),
-      per PROMPT §2.3 #5 (budget inputs are computed at use, not frozen as fact fields).
-    - ``secondary_reduction_block_ids``: the NON-primary TILED reducing axes -- the
-      ``ReductionRole.TILED`` members EXCLUDING ``primary_reduction_block_id``, in size-descending
-      order. The primary is NEVER here (it is carried solely by ``primary_reduction_block_id`` and
-      sized by the scalar levers); this field carries ONLY the extra reductions a multi-reduction
-      kernel sizes per-axis on top of the primary. NOT every reduction: a partial grid reduction
-      (``ReductionRole.FLOORED_ROW`` -- jsd's ``amax(dim=0)`` over the grid row axis) and a jagged
-      one (``ReductionRole.DECLINED`` -- ``size=None``) are real reductions but are NOT tiled, so
-      they are absent. A kernel that reduces over two distinct axes in separate passes
-      (``rms_norm_per_block``: ``pow(2).sum(-1)`` over hidden + per-group ``amax(-1)``) records the
-      non-dominant axis here so the PER-AXIS sizer (``_build_block_sizes``) widens it too.
-      ``primary_reduction_block_id`` stays the PRIMARY (max-extent) tiled rdim the SCALAR levers
-      (``num_warps``, ``m_block_cap``) and ``_is_standard_reduction`` key on. Empty default ``()``
-      means "no secondary reductions" -- the single-reduction kernels (all 9 base + 8 transfer + 6
-      m-reduction), so every existing path is byte-identical. The meaning is cardinality-independent:
-      ``()`` always means exactly "primary only", regardless of whether the kernel has 1 reduction.
-      The M-reductions' M-collapse is a loop-carried ``+=`` accumulator (NOT a ``ReductionLowering``),
-      so it never enters this set — the Stage-2 allocator detects it via the use-site
-      ``_is_per_feature_accumulator`` derivation (accumulator-shape over the materialized features).
-
-    ``grid_rows`` is NOT stored — a pure function of ``m_block_ids`` + env, computed on
-    demand by its one consumer (the narrow-row ``num_warps`` lever).
-    """
-
-    primary_reduction_block_id: int
-    size_hint: int
-    m_block_ids: tuple[int, ...]
-    static_rnumel: int | None
-    itemsize: int
-    num_load: int
-    num_carried_2d_tiles: int = 0
-    non_reduction_loop_block_ids: tuple[int, ...] = ()
-    row_reread: bool = False
-    reread_eviction_index: int | None = None
-    full_width_output: bool = True
-    input_load_itemsize: int = 0
-    body_live_tiles: int = 1
-    secondary_reduction_block_ids: tuple[int, ...] = ()
-
-
 class ReductionCategory(enum.Enum):
     """The Stage-1 reduction taxonomy (PROMPT §2.1) — a POSITIVE category per reduction,
     replacing the cascade of subtractive filters. Orthogonal fields (``rollable``, ``pinned``,
@@ -230,12 +149,8 @@ class ReductionDescriptor(NamedTuple):
     Category fields (taxonomy + orthogonal, PROMPT §2.1):
     - ``category``: the :class:`ReductionCategory`.
     - ``block_id`` / ``graph_id``: the reduction axis + its original-graph co-residency key.
-    - ``size_hint`` / ``static_rnumel`` / ``itemsize`` / ``input_load_itemsize``: extent (element
-      count), the static extent or None, the fp32-promoted accumulator itemsize, and the HBM-load
-      element width feeding it.
-    - ``rollable``: FULL_SLICE only — sole rdim in its graph (PROMPT §3); drives ``reduction_loops``
-      emission, NOT sizing.
-    - ``pinned``: GRID_TILE/FULL_GRID — a ``FixedBlockSizeSource`` (no tunable slot).
+    - ``size_hint`` / ``itemsize`` / ``input_load_itemsize``: extent (element count), the
+      fp32-promoted accumulator itemsize, and the HBM-load element width feeding it.
     - ``carried_2d_count``: the NUMBER of >=2-D ``[M_BLOCK, R_BLOCK]`` loop-carried accumulators
       whose last dim is this rdim (kl_div=1, jsd=2, group_norm_bwd=5); the full tiles stay resident
       the whole loop. The COUNT (not a bool) -- the carried byte cap divides the budget by it, so
@@ -243,25 +158,19 @@ class ReductionDescriptor(NamedTuple):
       ``ReductionFact.num_carried_2d_tiles``). 0 = no carried 2-D accumulator on this axis.
 
     Per-reduction memory-op-derived fields (re-homed from ``ReductionFact``, same computation):
-    - ``row_reread`` / ``reread_eviction_index`` / ``num_load`` / ``body_live_tiles`` /
-      ``full_width_output``.
+    - ``row_reread`` / ``reread_eviction_index`` / ``num_load``.
     """
 
     category: ReductionCategory
     block_id: int
     graph_id: int
     size_hint: int
-    static_rnumel: int | None
     itemsize: int
     input_load_itemsize: int = 0
-    rollable: bool | None = None
-    pinned: bool | None = None
     carried_2d_count: int = 0
     row_reread: bool = False
     reread_eviction_index: int | None = None
     num_load: int = 0
-    body_live_tiles: int = 1
-    full_width_output: bool = True
 
 
 class CoResidencyGroup(NamedTuple):
@@ -291,9 +200,9 @@ class ReductionKernelFact(NamedTuple):
     the non-reduction user-tiled loops (sized as a separate pass), and the parallel grid axes
     (the "rows" with no reduction over them).
 
-    Built alongside the legacy ``ReductionFact`` list during P1 (behavior-preserving); the
-    allocator consumes it in P2. ``reductions`` may be empty (a kernel with only GRID_TILE /
-    DECLINED reductions, or none) — the seed then declines, as today.
+    Built by ``build_reduction_kernel_fact``; the reduction seed + allocator consume it directly.
+    ``reductions`` may be empty (a kernel with only GRID_TILE / DECLINED reductions, or none) —
+    the seed then declines, as today.
     """
 
     reductions: tuple[ReductionDescriptor, ...]
@@ -304,15 +213,14 @@ class ReductionKernelFact(NamedTuple):
 
 class MatmulWithReductionEpilogueFact(NamedTuple):
     """A fused matmul + reduction-over-output-axis epilogue, recorded when a ``MatmulFact`` and
-    a register-resident epilogue ``ReductionFact`` co-occur in one kernel (e.g.
+    a register-resident epilogue reduction co-occur in one kernel (e.g.
     ``matmul_rms_norm``: ``acc = x @ y`` then a reduction over N on the carried ``[M_BLOCK,
-    N]`` accumulator, then write-back). A COMPOSED fact: it holds the two existing facts plus
-    the few derived fields the seed keys on. ``TritonMatmulReductionEpilogueHeuristic``
-    branches on it.
+    N]`` accumulator, then write-back). A COMPOSED fact: it holds the matmul fact plus the few
+    derived fields the seed keys on. ``TritonMatmulReductionEpilogueHeuristic`` branches on it.
 
-    - ``matmul`` / ``reduction``: the composed sub-facts (the matmul + the epilogue reduction).
-    - ``n_extent``: the specialized output width N (= ``reduction.size_hint``); N is
-      ``hl.specialize``'d (never tiled), so both the ``[M_BLOCK, N]`` accumulator and the
+    - ``matmul``: the composed matmul sub-fact.
+    - ``n_extent``: the specialized output width N (= the epilogue reduction's ``size_hint``); N
+      is ``hl.specialize``'d (never tiled), so both the ``[M_BLOCK, N]`` accumulator and the
       ``[K_BLOCK, N]`` operand tile scale with N — the resident-footprint signal the
       footprint-aware tile chooser keys on.
     - ``m_block_id`` / ``k_block_id``: the grid M tile and the K tile the seed sizes
@@ -320,7 +228,6 @@ class MatmulWithReductionEpilogueFact(NamedTuple):
     """
 
     matmul: MatmulFact
-    reduction: ReductionFact
     n_extent: int
     m_block_id: int | None
     k_block_id: int | None
@@ -678,8 +585,7 @@ class ConfigSpec:
         self.compiler_seed_configs: list[helion.Config] = []
         self.autotuner_heuristics: list[str] = []
         self.matmul_facts: list[MatmulFact] = []
-        self.reduction_facts: list[ReductionFact] = []
-        # The Stage-1 categorizing product (PROMPT §2.6); built alongside reduction_facts in P1.
+        # The Stage-1 categorizing product (PROMPT §2.6): the reduction seed + allocator's fact.
         self.reduction_kernel_fact: ReductionKernelFact | None = None
         self.matmul_reduction_epilogue_facts: list[MatmulWithReductionEpilogueFact] = []
         self.accumulator_facts: list[AccumulatorFact] = []

@@ -115,7 +115,6 @@ from helion.autotuner.config_spec import CoResidencyGroup
 from helion.autotuner.config_spec import MatmulFact
 from helion.autotuner.config_spec import ReductionCategory
 from helion.autotuner.config_spec import ReductionDescriptor
-from helion.autotuner.config_spec import ReductionFact
 from helion.autotuner.config_spec import ReductionKernelFact
 from helion.autotuner.config_spec import ReductionLoopSpec
 from helion.autotuner.pattern_search import InitialPopulationStrategy
@@ -719,14 +718,12 @@ class TestTritonStandardReductionHeuristic(TestCase):
         # The deepened heuristic reads the primary ReductionDescriptor (the workload facts it
         # keys the warp ramp / eviction / persist decision on) off the ReductionKernelFact; the
         # reduction axis is block_id=1 (the rolled reduction loop above, so a FULL_SLICE), the
-        # row/grid axis is block_id=0. The descriptor mirrors the legacy ReductionFact field for
-        # field (same kwargs) so the two views stay in lockstep.
+        # row/grid axis is block_id=0.
         desc = ReductionDescriptor(
             category=ReductionCategory.FULL_SLICE,
             block_id=1,
             graph_id=0,
             size_hint=reduction_size_hint,
-            static_rnumel=reduction_size_hint,
             itemsize=itemsize,
             input_load_itemsize=itemsize,
             row_reread=row_reread,
@@ -748,20 +745,6 @@ class TestTritonStandardReductionHeuristic(TestCase):
                 ),
             ),
             grid_axis_block_ids=(0,),
-        )
-        # Keep the legacy ReductionFact too: the eligibility gate's kf-None branch +
-        # ``test_not_eligible_without_single_reduction_tile`` (the matmul-disqualify case) read
-        # ``len(reduction_facts)``.
-        spec.reduction_facts.append(
-            ReductionFact(
-                primary_reduction_block_id=1,
-                size_hint=reduction_size_hint,
-                m_block_ids=(0,),
-                static_rnumel=reduction_size_hint,
-                itemsize=itemsize,
-                num_load=num_load,
-                row_reread=row_reread,
-            )
         )
         return spec
 
@@ -3489,13 +3472,14 @@ class TestTritonReductionHeuristic(TestCase):
         with patch("helion._hardware.get_hardware_info", return_value=HOPPER_HARDWARE):
             bound = kernel.bind(args)
 
-            # The reduction heuristic registered a single workload fact and fired.
-            self.assertEqual(len(bound.config_spec.reduction_facts), 1)
-            fact = bound.config_spec.reduction_facts[0]
-            self.assertEqual(fact.size_hint, n)
+            # The reduction heuristic registered a single reduction descriptor and fired.
+            kf = bound.config_spec.reduction_kernel_fact
+            self.assertIsNotNone(kf)
+            self.assertEqual(len(kf.reductions), 1)
+            self.assertEqual(kf.reductions[0].size_hint, n)
             # rms_norm has no separate apply/normalize loop (its apply is over the full
             # row in the reduction scope), so no reduce-then-apply tile is captured.
-            self.assertEqual(fact.non_reduction_loop_block_ids, ())
+            self.assertEqual(kf.non_reduction_loop_block_ids, ())
             self.assertIn(
                 TritonStandardReductionHeuristic.name,
                 bound.config_spec.autotuner_heuristics,
@@ -3536,12 +3520,14 @@ class TestTritonReductionHeuristic(TestCase):
         with patch("helion._hardware.get_hardware_info", return_value=HOPPER_HARDWARE):
             bound = kernel.bind(args)
 
-            # Single workload fact carrying a 2D [M, R] tile -> Band B.
-            self.assertEqual(len(bound.config_spec.reduction_facts), 1)
-            fact = bound.config_spec.reduction_facts[0]
+            # Single reduction descriptor carrying a 2D [M, R] tile -> Band B.
+            kf = bound.config_spec.reduction_kernel_fact
+            self.assertIsNotNone(kf)
+            self.assertEqual(len(kf.reductions), 1)
+            fact = kf.reductions[0]
             self.assertEqual(fact.size_hint, n)
-            self.assertGreaterEqual(fact.num_carried_2d_tiles, 1)
-            self.assertEqual(fact.non_reduction_loop_block_ids, ())
+            self.assertGreaterEqual(fact.carried_2d_count, 1)
+            self.assertEqual(kf.non_reduction_loop_block_ids, ())
             self.assertIn(
                 TritonUserTiledReductionHeuristic.name,
                 bound.config_spec.autotuner_heuristics,
@@ -3611,17 +3597,17 @@ class TestTritonReductionHeuristic(TestCase):
                 bound = t1_then_normalize.bind(
                     (torch.randn([m, n], device=DEVICE, dtype=torch.float32),)
                 )
-                # One workload fact: reduction axis + grid-only row axis + the normalize
-                # loop captured as a non-reduction loop tile (NOT a row axis).
-                self.assertEqual(len(bound.config_spec.reduction_facts), 1)
-                fact = bound.config_spec.reduction_facts[0]
+                # One reduction descriptor: reduction axis + grid-only row axis + the
+                # normalize loop captured as a non-reduction loop tile (NOT a row axis).
+                kf = bound.config_spec.reduction_kernel_fact
+                self.assertIsNotNone(kf)
+                self.assertEqual(len(kf.reductions), 1)
+                fact = kf.reductions[0]
                 self.assertEqual(fact.size_hint, n)
-                self.assertEqual(fact.m_block_ids, (0,))
-                self.assertEqual(len(fact.non_reduction_loop_block_ids), 1)
-                self.assertNotIn(
-                    fact.primary_reduction_block_id, fact.non_reduction_loop_block_ids
-                )
-                self.assertEqual(fact.num_carried_2d_tiles, 0)
+                self.assertEqual(kf.grid_axis_block_ids, (0,))
+                self.assertEqual(len(kf.non_reduction_loop_block_ids), 1)
+                self.assertNotIn(fact.block_id, kf.non_reduction_loop_block_ids)
+                self.assertEqual(fact.carried_2d_count, 0)
                 self.assertIn(
                     TritonStandardReductionHeuristic.name,
                     bound.config_spec.autotuner_heuristics,
@@ -3637,7 +3623,7 @@ class TestTritonReductionHeuristic(TestCase):
                 len(seed["block_sizes"]), len(bound.config_spec.block_sizes)
             )
             norm_idx = bound.config_spec.block_sizes.block_id_to_index(
-                fact.non_reduction_loop_block_ids[0]
+                kf.non_reduction_loop_block_ids[0]
             )
             self.assertGreater(seed["block_sizes"][norm_idx], 1)
             # Persistent (narrow row) -> reduction_loops=[None]; looped (wide row past
@@ -3700,7 +3686,6 @@ class TestTritonReductionHeuristic(TestCase):
                 block_id=reduction_bid,
                 graph_id=0,
                 size_hint=size_hint,
-                static_rnumel=size_hint,
                 itemsize=4,
                 input_load_itemsize=4,
                 num_load=1,
@@ -3721,7 +3706,6 @@ class TestTritonReductionHeuristic(TestCase):
                 block_id=reduction_bid,
                 graph_id=0,
                 size_hint=size_hint,
-                static_rnumel=size_hint,
                 itemsize=4,
                 input_load_itemsize=4,
                 num_load=1,

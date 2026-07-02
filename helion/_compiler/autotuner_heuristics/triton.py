@@ -504,11 +504,13 @@ class _TileAllocation(NamedTuple):
     Floor-vs-resident and collapse-vs-widen are budget OUTCOMES (no recognizer, no cdiv branch).
 
     - ``block_sizes``: the FULL ``Config.block_sizes`` vector — every tunable axis sized.
-    - ``red_values``: ``{block_id -> r_block}`` for every TUNABLE sized reduction (the user-tiled
-      reduction axes that ride a ``block_sizes`` slot). The standard track's rolled primary rides
-      ``reduction_loops`` instead, so it is surfaced via ``primary_r_block``/``persistent`` rather
-      than here. EMISSION routing is the ONLY standard-vs-user difference — every reduction
-      (rolled included) gets a size from the SAME budget; rolled ones happen to land on the
+    - ``block_sizes_red_values``: ``{block_id -> r_block}`` for every TUNABLE sized reduction that
+      RIDES A ``block_sizes`` SLOT (the user-tiled track's reductions, INCLUDING its primary). The
+      standard track's rolled primary rides ``reduction_loops`` instead, so it is surfaced via
+      ``primary_r_block``/``persistent`` rather than here — hence the name is about the EMISSION
+      TARGET (block_sizes slot), not "secondary": for a user-tiled kernel the primary IS in this
+      map. EMISSION routing is the ONLY standard-vs-user difference — every reduction (rolled
+      included) gets a size from the SAME budget; rolled ones happen to land on the
       ``reduction_loops`` knob instead of a ``block_sizes`` slot.
     - ``primary_r_block`` / ``persistent``: the primary reduction's chunk + persistence verdict
       (BYTE budget admits the full extent AND the row is re-read), an OUTCOME of the budget.
@@ -519,7 +521,7 @@ class _TileAllocation(NamedTuple):
     """
 
     block_sizes: list[int]
-    red_values: dict[int, int]
+    block_sizes_red_values: dict[int, int]
     primary_r_block: int
     persistent: bool
     rolled_loop_sizes: dict[int, tuple[int, bool]]
@@ -595,17 +597,6 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
 
     # =============================== Stage-1 fact accessors ================================= #
     @classmethod
-    def _grid_axis_block_ids(cls, spec: ConfigSpec) -> tuple[int, ...]:
-        """The parallel grid (M) axes -- grid block_ids with NO reduction SIZED over them. Read
-        off the Stage-1 ``ReductionKernelFact.grid_axis_block_ids`` (PROMPT §2.1). The kernel fact
-        is never absent on a reachable call (every caller runs only after
-        ``_primary_descriptor_selected`` returned non-None, which requires a kernel fact present).
-        """
-        kf = spec.reduction_kernel_fact
-        assert kf is not None
-        return kf.grid_axis_block_ids
-
-    @classmethod
     def _non_reduction_loop_ids(cls, spec: ConfigSpec) -> tuple[int, ...]:
         """The non-reduction user-tiled loops (welford's normalize pass) -- sized as a separate
         apply pass, NOT reduction-sized. Read off ``ReductionKernelFact.non_reduction_loop_block_ids``.
@@ -613,14 +604,6 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         kf = spec.reduction_kernel_fact
         assert kf is not None
         return kf.non_reduction_loop_block_ids
-
-    @classmethod
-    def _reduction_block_ids(cls, spec: ConfigSpec) -> set[int]:
-        """The set of REDUCTION-axis block_ids (the Stage-1 kernel fact's reductions). The
-        MEMBERSHIP key for classifying an accumulator's dims (a dim is an rdim iff it is in this
-        set -- NOT inferred from POSITION). Empty when no kernel fact (a bare-spec unit test)."""
-        kf = spec.reduction_kernel_fact
-        return {d.block_id for d in kf.reductions} if kf is not None else set()
 
     @classmethod
     def _resident_block_ids(cls, spec: ConfigSpec) -> set[int]:
@@ -859,11 +842,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         occ_floor = num_sm * cls.MIN_WAVES
         itemsize = max(1, pd.itemsize)
         valid = set(spec.block_sizes.valid_block_ids())
-        grid_ids = set(cls._grid_axis_block_ids(spec))
-        non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
-        reduction_ids = cls._reduction_block_ids(spec)
         kf = spec.reduction_kernel_fact
         assert kf is not None
+        grid_ids = set(kf.grid_axis_block_ids)
+        non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
+        reduction_ids = {d.block_id for d in kf.reductions}
 
         # Extent (pow2-padded) per block_id, read from STORED hints so the allocator runs without
         # an active CompileEnvironment (the unit tests call get_seed_config outside the env ctx):
@@ -943,7 +926,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         for gbid in sorted(grid_ids):
             seated[gbid] = cls._m_axis_block_size(spec, gbid)
         sizes: dict[int, int] = {}
-        red_values: dict[int, int] = {}
+        block_sizes_red_values: dict[int, int] = {}
         rolled_loop_sizes: dict[int, tuple[int, bool]] = {}
         primary_r_block = 1
         persistent = False
@@ -1057,7 +1040,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                         # ``_lab/redesign/SUGGESTED_CHANGES.md``.)
                         persistent = True
                     if d.block_id in valid:
-                        red_values[d.block_id] = ext
+                        block_sizes_red_values[d.block_id] = ext
                     continue
                 # Resident BYTES(R) = itemsize × (scale × R + flat) over the live tiles. A reduction
                 # axis is tiled the SAME width everywhere it appears, so it must fit the HEAVIEST
@@ -1072,30 +1055,29 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 scale, flat = cls._max_group_footprint(
                     kf, d.block_id, footprint_terms, default_tiles=tiles
                 )
-                # PERSISTENCE: hold the full extent iff the row is re-read (a persistent pass fuses
-                # reduce+apply to one HBM load) AND there is no carried 2-D tile (a carried tile is
-                # held resident the whole loop — it chunks, never persists) AND the single resident
-                # tile fits the persist ``hold_ceiling`` (apply-reread-keyed, computed above) AND the
-                # extent clears the per-program element limit. The byte test uses the RAW extent (true
-                # resident element count, not pow2-padded).
+                # THE BUDGET IS THE DEFAULT: size a streamed/chunked R from the byte budget FIRST —
+                # the largest pow2 R whose resident bytes fit, solving ``itemsize × (scale × R +
+                # flat) <= budget`` for R (the CONSTANT term is SUBTRACTED, not divided), capped by
+                # LOOPED_CHUNK and the extent. A CARRIED reduction (kl_div/jsd) sizes against the
+                # tighter carried budget; a non-carried inner tile (grad-param) against ROW.
+                avail = persist_budget_for(d) // itemsize - flat
+                byte_budget = _pp2(max(1, avail // scale))
+                r = max(1, min(cls.LOOPED_CHUNK, byte_budget, ext))
+                # THEN EXPAND TO PERSISTENT: lift R to the full extent iff the row is re-read (a
+                # persistent pass fuses reduce+apply to one HBM load) AND there is no carried 2-D
+                # tile (a carried tile is held resident the whole loop — it chunks, never persists)
+                # AND the extent clears the per-program element limit AND the single resident tile
+                # fits the persist ``hold_ceiling`` (apply-reread-keyed, computed above). The byte
+                # test uses the RAW extent (true resident element count, not pow2-padded).
                 element_cap = env.backend.max_tensor_numel
-                ext_held = (
+                expand_to_persist = (
                     d.row_reread
                     and d.carried_2d_count == 0
                     and (element_cap is None or raw_ext <= element_cap)
                     and itemsize * (scale * raw_ext + flat) <= hold_ceiling
                 )
-                if ext_held:
+                if expand_to_persist:
                     r = ext
-                else:
-                    # stream/chunk: the largest pow2 R whose resident bytes fit the persist budget,
-                    # solving ``itemsize × (scale × R + flat) <= budget`` for R (the CONSTANT term is
-                    # SUBTRACTED, not divided). Capped by LOOPED_CHUNK and the extent. A CARRIED
-                    # reduction (kl_div/jsd) sizes here against the tighter carried budget; a
-                    # non-carried inner tile (grad-param) against ROW.
-                    avail = persist_budget_for(d) // itemsize - flat
-                    byte_budget = _pp2(max(1, avail // scale))
-                    r = max(1, min(cls.LOOPED_CHUNK, byte_budget, ext))
                 seated[d.block_id] = r
                 # THREE independent routing checks (the block_sizes and reduction_loops namespaces
                 # are DISJOINT — an axis is a ``block_sizes`` tile XOR a rolled ``reduction_loops``
@@ -1106,7 +1088,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                     persistent = r >= ext and d.category in FULL_EXTENT_CATEGORIES
                 # (B) a tunable ``block_sizes`` reduction (user-tiled) -> its block_sizes slot.
                 if d.block_id in valid:
-                    red_values[d.block_id] = r
+                    block_sizes_red_values[d.block_id] = r
                 # (C) a ROLLED NON-primary reduction -> surface its size for the standard track's
                 # reduction_loops emission. ``!= pd.block_id`` excludes the ROLLED PRIMARY (whose
                 # size is emitted via ``primary_r_block`` in (A) instead — it would otherwise be
@@ -1187,7 +1169,7 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         for i in range(len(spec.block_sizes)):
             bs_spec = cast("BlockSizeSpec", spec.block_sizes[i])
             bid = bs_spec.block_id
-            if bid in red_values or bid in grid_ids or bid in reduction_ids:
+            if bid in block_sizes_red_values or bid in grid_ids or bid in reduction_ids:
                 continue
             if bid in non_reduction_loop_ids or bid not in seated:
                 # a non-reduction apply loop OR an independent standalone tiled loop: size it to
@@ -1201,14 +1183,14 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
             bid = bs_spec.block_id
             if bid in sizes:
                 block_sizes.append(sizes[bid])
-            elif bid in red_values:
-                block_sizes.append(red_values[bid])
+            elif bid in block_sizes_red_values:
+                block_sizes.append(block_sizes_red_values[bid])
             else:
                 block_sizes.append(cls._block_floor(bs_spec))
 
         return _TileAllocation(
             block_sizes=block_sizes,
-            red_values=red_values,
+            block_sizes_red_values=block_sizes_red_values,
             primary_r_block=primary_r_block,
             persistent=persistent,
             rolled_loop_sizes=rolled_loop_sizes,
@@ -1311,7 +1293,7 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
             # spec order, mapping the allocator's sizing onto the knob: the primary spec uses
             # (r_block, persistent), the OTHER rolled specs use ``alloc.rolled_loop_sizes`` (each
             # sized against its OWN extent by the allocator -- a rolled axis has no block_sizes
-            # slot, so the allocator surfaces it here rather than in red_values).
+            # slot, so the allocator surfaces it here rather than in block_sizes_red_values).
             reduction_loops = []
             for rl_spec in spec.reduction_loops:
                 bid = rl_spec.block_ids[0]

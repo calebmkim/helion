@@ -5,7 +5,6 @@ import builtins
 import contextlib
 import copy
 import dataclasses
-import enum
 import functools
 import logging
 import math
@@ -26,7 +25,6 @@ from torch._dynamo.convert_frame import compile_lock
 from torch._inductor.decomposition import select_decomp_table
 from torch.fx._lazy_graph_module import _LazyGraphModule
 from torch.fx.experimental import proxy_tensor
-from torch.fx.experimental.symbolic_shapes import free_unbacked_symbols
 from torch.fx.traceback import preserve_node_meta
 from torch.utils import _pytree as pytree
 
@@ -40,7 +38,6 @@ from ..autotuner.config_spec import CuteVectorWidthSpec
 from ..autotuner.config_spec import MatmulWithReductionEpilogueFact
 from ..autotuner.config_spec import ReductionCategory
 from ..autotuner.config_spec import ReductionDescriptor
-from ..autotuner.config_spec import ReductionFact
 from ..autotuner.config_spec import ReductionKernelFact
 from ..autotuner.config_spec import ReductionLoopSpec
 from ..language import _tracing_ops
@@ -91,7 +88,6 @@ if TYPE_CHECKING:
 
     from ..autotuner.config_spec import AccumulatorFact
     from ..autotuner.config_spec import MemoryOpFact
-    from .compile_environment import BlockSizeInfo
     from .cute.layout import CuTeGridExecutionPlan
 
     class _TLS(Protocol):
@@ -101,21 +97,6 @@ if TYPE_CHECKING:
 tls: _TLS = cast("_TLS", threading.local())
 
 log = logging.getLogger(__name__)
-
-
-class ReductionRole(enum.Enum):
-    """How the reduction seed treats one ``ReductionLowering`` axis. All three ARE
-    reductions; the role decides whether we size it as one. See
-    :meth:`DeviceIR._classify_reduction_axis` for the discriminator.
-    """
-
-    # Sized as a reduction (static extent, fully reduced within one program).
-    TILED = "tiled"
-    # A partial grid axis: the grid parallelizes it, so one program reduces only its
-    # tile. Its extent is not a per-program reduction size -- kept as a grid ROW (floored).
-    FLOORED_ROW = "floored_row"
-    # No static extent (jagged / data-dependent) -- the extent-keyed seed is undefined.
-    DECLINED = "declined"
 
 
 def _lerp_scalar_decomp(
@@ -799,10 +780,6 @@ class DeviceIR:
         self.grid_block_ids: list[list[int]] = []
         # Owning HostFunction (captured in ``lower_to_device_ir``).
         self.host_function: HostFunction | None = None
-        # Phase-1 stash: each rollable (standard) rdim + the graph ids using it. The
-        # ReductionFact is built later in ``build_reduction_facts`` (after
-        # ``_collect_memory_op_facts``) so it can read the enriched ``memory_op_facts``.
-        self._rollable_reduction_records: list[tuple[BlockSizeInfo, set[int]]] = []
 
     def __str__(self) -> str:
         return "\n\n".join(map(str, self.graphs))
@@ -1006,8 +983,6 @@ class DeviceIR:
                         size_hint=rdim.size_hint(),
                     )
                 )
-                # Stash (rdim, used_graphs) for build_reduction_facts (see the field def).
-                self._rollable_reduction_records.append((rdim, used_graphs))
                 if env.backend_name == "cute":
                     env.config_spec.cute_vector_widths.append(
                         CuteVectorWidthSpec(
@@ -1084,321 +1059,6 @@ class DeviceIR:
                 )
             )
 
-    def _all_reduction_axes(self) -> set[int]:
-        """EVERY block_id some ``ReductionLowering`` reduces over, across all device
-        graphs. The faithful "all reductions" set -- no grid / extent / residency
-        filtering. The classifier (:meth:`_classify_reduction_axis`) decides what each
-        member becomes; this just enumerates them.
-        """
-        from .inductor_lowering import ReductionLowering
-
-        out: set[int] = set()
-        for graph_info in self.graphs:
-            for node in graph_info.graph.nodes:
-                lowering = node.meta.get("lowering")
-                if isinstance(lowering, ReductionLowering):
-                    bid = getattr(lowering, "block_index", None)
-                    if bid is not None:
-                        out.add(bid)
-        return out
-
-    def _classify_reduction_axis(
-        self, block_id: int, grid_ids: set[int]
-    ) -> ReductionRole:
-        """The single decision behind the three reduction-axis sets the seed builds.
-
-        A ``ReductionLowering`` axis is one of three roles. The distinction is NOT "is it
-        a reduction" (all three are) but "do we size it AS a reduction":
-
-        - ``TILED``: a reduction whose full extent is reduced WITHIN one program and is
-          statically sized -- so its ``size_hint`` is a faithful sizing input and it gets a
-          reduction tile (``red_values`` -> ``_reduction_rblock``). Either a non-grid inner
-          reduction, or a FULLY-RESIDENT grid axis (``cdiv == 1``: tiled at full extent, the
-          program reduces the whole thing in one intra-program op -- per_token_group's
-          specialized ``group_size``).
-        - ``FLOORED_ROW``: a reduction over a PARTIAL grid axis (``cdiv > 1``: the grid
-          PARALLELIZES it, so one program reduces only its row-tile, NOT the extent).
-          ``size_hint`` is the whole-axis count -- a LIE as a per-program reduction size --
-          so we do not tile it; it stays a grid ROW (floored, kept in ``m_block_ids``).
-          ``jsd``'s ``amax(dim=0)`` over the ``tile_bt`` grid axis.
-        - ``DECLINED``: a reduction with NO static extent (a jagged / data-dependent range,
-          ``size=None``, e.g. ``hl.jagged_tile(nnz)``). The extent-keyed seed is undefined,
-          so the kernel falls back to the default config.
-
-        Replaces the prior three cascading filters (``inner_red`` grid filter, the
-        ``all_reducing_axes`` static filter, the ``backed_reducing_axes`` unbacked filter),
-        each of which silently dropped a different slice under a name claiming completeness.
-
-        SINGLE CLASSIFIER (PROMPT §6.1 #3): delegates to :meth:`_categorize_reduction` (the
-        Stage-1 taxonomy) and maps the positive :class:`ReductionCategory` onto the legacy
-        ``ReductionRole`` the user-tiled fact builder still consumes — so there is ONE
-        categorization rule, not two parallel ones. ``ReductionRole`` is now a thin VIEW of the
-        category (DECLINED->DECLINED, GRID_TILE->FLOORED_ROW, the sized categories->TILED), kept
-        only to feed the unchanged legacy fact assembly (byte-identical).
-        """
-        category = self._categorize_reduction(block_id, grid_ids)
-        if category is ReductionCategory.DECLINED:
-            return ReductionRole.DECLINED
-        if category is ReductionCategory.GRID_TILE:
-            return ReductionRole.FLOORED_ROW
-        return ReductionRole.TILED
-
-    def register_unrolled_reductions(
-        self,
-        memory_op_facts: list[MemoryOpFact],
-        accumulator_facts: list[AccumulatorFact],
-        liveness_by_axis: dict[int, int] | None = None,
-    ) -> None:
-        """Register a ReductionFact for an inner reduction the roller did NOT roll
-        (named for the *unrolled* property, not the resulting heuristic -- it feeds BOTH
-        the standard and user-tiled seeds depending on the axis shape below).
-        Owns the two non-rolled cases, keyed on whether the reduction axis is a
-        ``block_sizes`` entry:
-
-        - **USER-TILED (-> T2):** a hand-written nested ``hl.tile`` over the
-          reduction axis -- no ``reduction=True`` block, so the axis is an ordinary
-          ``block_sizes`` entry. Routes to the user-tiled track.
-        - **MATERIALIZED FEATURE (-> standard/T1):** a ``reduction=True`` axis the
-          roller declined to roll (``should_go_in_inner_graph`` raises "mixed
-          reduction dim usage"), left full-width in NEITHER ``block_sizes`` NOR
-          ``reduction_loops``. A standard reduction that could not be rolled, so it
-          routes to the standard track (``_is_standard_reduction`` keys on "not a
-          block_sizes entry").
-
-        Caller-guarded (``if not reduction_loops``) so standard-rollable and this
-        path are mutually exclusive. Finds the axis from every
-        ``ReductionLowering.block_index`` minus the grid axes. Built in Phase 3, so
-        per-op-dataflow fields derive from ``memory_op_facts``/``accumulator_facts``.
-        """
-        env = CompileEnvironment.current()
-        spec = env.config_spec
-        grid_ids = {b for bids in self.grid_block_ids for b in bids}
-
-        # Classify EVERY ReductionLowering axis into one role (see _classify_reduction_axis).
-        # The three roles replace the prior three cascading filters (inner_red grid-drop,
-        # all_reducing_axes static-drop, backed_reducing_axes unbacked-drop), each of which
-        # silently excluded a different slice under a name claiming completeness.
-        roles = {
-            b: self._classify_reduction_axis(b, grid_ids)
-            for b in self._all_reduction_axes()
-        }
-        # tiled_reduction_axes: the reductions we actually SIZE as reductions (the primary +
-        # the secondaries recorded in `secondary_reduction_block_ids`). A FLOORED_ROW axis
-        # (a partial grid reduction, e.g. jsd's amax over the tile_bt grid axis) is a real
-        # reduction but is NOT sized as one -- its extent is a per-grid count, not a per-program
-        # reduction size -- so it stays a grid ROW (kept in m_block_ids, floored). A DECLINED
-        # axis (jagged / size=None) means the extent-keyed seed is undefined.
-        tiled_reduction_axes = [b for b, r in roles.items() if r is ReductionRole.TILED]
-        if not tiled_reduction_axes:
-            # No sizeable reduction (pure matmul, or only floored-row / jagged reductions):
-            # fall back to the default config, as before.
-            return
-        # Seed the DOMINANT reduction (largest extent -- drives the resident footprint + the
-        # SCALAR levers: num_warps, m_block_cap, the standard-vs-user-tiled track discriminator).
-        # Rank by reduction-axis EXTENT (`size_hint` = element count, NOT the autotuner tile
-        # size), but only over BACKED (statically-sized) axes. An UNBACKED reducing axis -- a
-        # data-dependent range, e.g. rms/layer_norm bwd's inner-M `.sum(0)` over
-        # `hl.tile(mb_cta.begin, mb_cta.end)` -- has `size_hint()` == the `create_unbacked_symint`
-        # placeholder (8192), which spuriously outranks a real materialized feature reduction (N)
-        # and mis-routes the kernel. An axis with no known extent cannot claim to be the dominant
-        # reduction, so exclude it from the RANKING (it stays in the tiled set, just not primary).
-        backed_reducing_axes = [
-            b
-            for b in tiled_reduction_axes
-            if not free_unbacked_symbols(env.block_sizes[b].size)
-        ]
-        if backed_reducing_axes:
-            red_block_id = max(
-                backed_reducing_axes, key=lambda b: env.block_sizes[b].size_hint()
-            )
-        else:
-            # Every tiled reducing axis is unbacked (pure-collapse bias_grad/dyt: the sole
-            # reduction is the data-dependent grad accumulation). No real extent to rank by.
-            red_block_id = tiled_reduction_axes[0]
-        # Record the SECONDARY (non-primary) tiled reducing axes. The primary is carried by
-        # red_block_id alone; this set is the EXTRA reductions a multi-reduction kernel sizes
-        # per-axis. Empty `()` means "primary only" -- a single-reduction kernel (and any kernel
-        # whose only tiled axis is the primary) so every downstream per-axis path collapses to
-        # block_id and stays byte-identical. Size-descending.
-        secondary_reduction_block_ids: tuple[int, ...] = tuple(
-            sorted(
-                (b for b in tiled_reduction_axes if b != red_block_id),
-                key=lambda b: env.block_sizes[b].size_hint(),
-                reverse=True,
-            )
-        )
-        if secondary_reduction_block_ids:
-            log.warning(
-                "inner-reduction seed: %d tiled inner reductions %s; "
-                "recording only the dominant axis %s as the primary ReductionFact",
-                len(tiled_reduction_axes),
-                {b: env.block_sizes[b].size_hint() for b in tiled_reduction_axes},
-                red_block_id,
-            )
-        bs_ids = spec.block_sizes.valid_block_ids()
-        # Widen genuine apply/normalize loops that span the reduction extent. Do NOT decline on a
-        # non-qualifying loop: a reduction can co-occur with other non-grid loops that must stay floored
-        # (a secondary reduction, or an apply loop at a different extent) -- warn instead of declining.
-        non_reduction_loop_block_ids = self._non_reduction_loop_candidates(
-            red_block_id, grid_ids
-        )
-        qualified = set(non_reduction_loop_block_ids)
-        for bid in bs_ids:
-            # Skip the grid axes, the widened apply loops, and the dominant reduction axis itself;
-            # everything else (including a secondary reduction axis, e.g. group_norm's block 2) is
-            # floored + warned.
-            if bid in grid_ids or bid in qualified or bid == red_block_id:
-                continue
-            log.warning(
-                "inner-reduction seed: block_sizes loop %s (size %s) is floored "
-                "(no widening rule for this loop shape yet)",
-                bid,
-                env.block_sizes[bid].size,
-            )
-        # red_block_id is a TILED axis, so its extent is static by construction (the classifier
-        # rejects size=None as DECLINED) -- no extent guard needed here.
-        block_info = env.block_sizes[red_block_id]
-        # The kept (non-reduction) axes are the grid block_ids — the "rows" — EXCLUDING the TILED
-        # reducing axes (a reduction we size as a reduction must not also be counted as a row in
-        # the M_BLOCK product / grid-rows). A FLOORED_ROW reduction is deliberately NOT excluded:
-        # it IS a row (jsd's grid amax). Subtract the FULL tiled set, not just the primary, so a
-        # kernel reducing over two fully-resident grid axes does not leak its secondary into the
-        # rows. No current corpus kernel has a tiled grid SECONDARY reduction, so byte-identical
-        # today; hardens against that shape.
-        m_block_ids = tuple(sorted(grid_ids - set(tiled_reduction_axes)))
-        size_hint = block_info.size_hint()
-        static_rnumel = block_info.size if isinstance(block_info.size, int) else None
-        # user-tiled digests over ALL device graphs (the manual inner loop body lives in
-        # the main device graph, not a roller subgraph), so num_load scopes to every
-        # graph_id.
-        all_graph_ids = set(range(len(self.graphs)))
-        spec.reduction_facts.append(
-            self._assemble_reduction_fact(
-                red_block_id,
-                size_hint,
-                static_rnumel,
-                m_block_ids,
-                non_reduction_loop_block_ids,
-                all_graph_ids,
-                memory_op_facts,
-                accumulator_facts,
-                liveness_by_axis or {},
-                secondary_reduction_block_ids=secondary_reduction_block_ids,
-            )
-        )
-
-    def _user_tiled_reduction_block_ids(self, exclude_block_id: int) -> list[int]:
-        """``ReductionLowering`` axes that are TUNABLE ``block_sizes`` entries (user-tiled
-        secondary reductions), excluding ``exclude_block_id`` (the rolled primary).
-
-        A kernel can roll its PRIMARY reduction (-> ``reduction_loops``, standard track) yet
-        hand-write a SECONDARY reduction over another axis via a nested ``hl.tile`` (-> an
-        ordinary ``block_sizes`` entry). That secondary axis must be sized as a reduction
-        (``red_values`` via ``_reduction_rblock``) rather than floored / generic-widened by the
-        ``_build_block_sizes`` catch-all. The standard fact builder (the
-        ``_rollable_reduction_records`` loop) cannot rely on ``register_unrolled_reductions``
-        (skipped whenever a rolled reduction exists), so it collects the secondaries here.
-
-        Statically-sized only (the seed keys on ``size_hint``); the rolled rdim itself is
-        excluded both by ``exclude_block_id`` and by the ``block_sizes`` membership test (it
-        lives in ``reduction_loops``, not ``block_sizes``).
-        """
-        from .inductor_lowering import ReductionLowering
-
-        env = CompileEnvironment.current()
-        valid = env.config_spec.block_sizes.valid_block_ids()
-        out: list[int] = []
-        seen: set[int] = set()
-        for graph_info in self.graphs:
-            for node in graph_info.graph.nodes:
-                lowering = node.meta.get("lowering")
-                if not isinstance(lowering, ReductionLowering):
-                    continue
-                bid = getattr(lowering, "block_index", None)
-                if bid is None or bid == exclude_block_id or bid in seen:
-                    continue
-                if bid in valid and isinstance(
-                    env.block_sizes[bid].size, (int, torch.SymInt)
-                ):
-                    seen.add(bid)
-                    out.append(bid)
-        return out
-
-    def build_reduction_facts(
-        self,
-        memory_op_facts: list[MemoryOpFact],
-        liveness_by_axis: dict[int, int] | None = None,
-    ) -> None:
-        """Phase 3: build the ``ReductionFact``s now that ``_collect_memory_op_facts``
-        produced the enriched ``memory_op_facts`` (and the per-axis liveness slice).
-
-        Reads ``spec.accumulator_facts``, builds each stashed standard fact, then --
-        only when no standard rollable reduction was registered -- the user-tiled fact.
-        """
-        env = CompileEnvironment.current()
-        spec = env.config_spec
-        accumulator_facts = spec.accumulator_facts
-        liveness_by_axis = liveness_by_axis or {}
-        # standard (rollable): one fact per stashed (rdim, used_graphs). num_load scopes
-        # to the rdim's ORIGINAL graphs (used_graphs), so the rolled-subgraph copies of a
-        # standard rdim load are not double-counted (device_ir.graphs is a superset of any
-        # one config's graphs).
-        for rdim, used_graphs in self._rollable_reduction_records:
-            grid_ids = {b for bids in self.grid_block_ids for b in bids}
-            # The kept (non-reduction) grid axes = grid_ids MINUS any axis that is itself a
-            # FULL-EXTENT grid reduction (FULL_GRID, cdiv==1 -- e.g. a co-resident specialized
-            # group_size that a per-program reduction reduces over). Such an axis is a RESIDENT
-            # reduction, NOT a parallel "row", so counting it in the M_BLOCK product would inflate
-            # the per-program footprint and crush a co-resident reduction's chunk (p8: the GS=128
-            # FULL_GRID group inflated m_block=128 and looped the K=2048 sum that should persist).
-            # A PARTIAL grid reduction (GRID_TILE) IS a row (kept), matching the FLOORED_ROW rule.
-            full_grid_axes = {
-                b
-                for b in self._all_reduction_axes()
-                if b in grid_ids
-                and self._categorize_reduction(b, grid_ids)
-                is ReductionCategory.FULL_GRID
-            }
-            m_block_ids = tuple(sorted(grid_ids - full_grid_axes))
-            static_rnumel = rdim.size if isinstance(rdim.size, int) else None
-            non_reduction_loop_block_ids = self._non_reduction_loop_candidates(
-                rdim.block_id, grid_ids
-            )
-            # A kernel can roll its PRIMARY reduction yet hand-write SECONDARY reductions over
-            # other axes (nested hl.tile -> block_sizes entries). Record those secondaries so the
-            # standard seed sizes each as a reduction (red_values) instead of flooring/generic-
-            # widening it (the rolled analogue of the user-tiled multi-reduction fix). The rolled
-            # rdim is the primary (carried by rdim.block_id), so it is NOT in this set. Size-
-            # descending. Stays () for a single-reduction kernel -> byte-identical to before.
-            env = CompileEnvironment.current()
-            secondary_reduction_block_ids: tuple[int, ...] = tuple(
-                sorted(
-                    self._user_tiled_reduction_block_ids(rdim.block_id),
-                    key=lambda b: env.block_sizes[b].size_hint(),
-                    reverse=True,
-                )
-            )
-            spec.reduction_facts.append(
-                self._assemble_reduction_fact(
-                    rdim.block_id,
-                    rdim.size_hint(),
-                    static_rnumel,
-                    m_block_ids,
-                    non_reduction_loop_block_ids,
-                    used_graphs,
-                    memory_op_facts,
-                    accumulator_facts,
-                    liveness_by_axis,
-                    secondary_reduction_block_ids=secondary_reduction_block_ids,
-                )
-            )
-        # user-tiled: mutually exclusive with standard — only when no reduction_loops spec
-        # was registered.
-        if not spec.reduction_loops:
-            self.register_unrolled_reductions(
-                memory_op_facts, accumulator_facts, liveness_by_axis
-            )
-
     def _original_graph_reductions(self) -> list[tuple[int, int]]:
         """Every reduction OCCURRENCE on the ORIGINAL (pre-roll) device graphs as
         ``(graph_id, block_id)`` pairs, de-duplicated within a graph (one descriptor per
@@ -1436,10 +1096,8 @@ class DeviceIR:
         self, block_id: int, grid_ids: set[int]
     ) -> ReductionCategory:
         """Classify one reduction occurrence into the §2.1 taxonomy from FAITHFUL structure:
-        ``(block_size_source kind, on the grid?, cdiv==1?)``. The single categorization rule,
-        shared by the kernel-fact builder AND ``_classify_reduction_axis`` (the legacy
-        ``ReductionRole`` view). ``rollable`` (sole-rdim-in-graph) is a SEPARATE per-graph field
-        computed by the kernel-fact builder, not part of the category.
+        ``(block_size_source kind, on the grid?, cdiv==1?)``. The single categorization rule
+        the kernel-fact builder keys every reduction descriptor on.
 
         - no static extent -> DECLINED (jagged).
         - on the grid + fully resident (cdiv==1) -> FULL_GRID; on the grid + partial -> GRID_TILE.
@@ -1612,10 +1270,8 @@ class DeviceIR:
     ) -> None:
         """Stage 1 (PROMPT §2.1/§2.2/§2.6): build the categorizing ``ReductionKernelFact`` — the
         first-class list of reduction descriptors + their ``graph_id`` co-residency groups + the
-        non-reduction loops + the parallel grid axes.
-
-        Behavior-preserving in P1: built ALONGSIDE the legacy ``reduction_facts`` (the live
-        heuristic still consumes those); Stage 2 (P2) switches the allocator to consume this.
+        non-reduction loops + the parallel grid axes. The reduction seed + the Stage-2 allocator
+        consume this fact directly.
         """
         env = CompileEnvironment.current()
         spec = env.config_spec
@@ -1623,11 +1279,6 @@ class DeviceIR:
         grid_ids = {b for bids in self.grid_block_ids for b in bids}
 
         occurrences = self._original_graph_reductions()
-        # distinct rdims per ORIGINAL graph -> rollable (sole-rdim-in-graph) + co-residency.
-        rdims_per_graph: dict[int, set[int]] = {}
-        for gid, bid in occurrences:
-            rdims_per_graph.setdefault(gid, set()).add(bid)
-
         # carried-2D tiles: COUNT of accumulators whose last dim is the rdim (per block_id,
         # kernel-wide -- an accumulator is carried across the whole inner loop, so it is not
         # graph-scoped). The COUNT (not a bool) is load-bearing: the carried byte cap divides by
@@ -1647,38 +1298,6 @@ class DeviceIR:
             size_hint = (
                 info.size_hint() if isinstance(info.size, (int, torch.SymInt)) else 0
             )
-            static_rnumel = info.size if isinstance(info.size, int) else None
-            sole_rdim = len(rdims_per_graph.get(gid, ())) == 1
-            rollable = sole_rdim if category is ReductionCategory.FULL_SLICE else None
-            # ``rollable`` is the sole-rdim-in-graph PROXY for "the compiler rolled this axis".
-            # The two are NOT definitionally identical: the roller can decline a sole rdim
-            # (matmul/stack/unrollable, see register_rollable_reductions; also p5, whose two inner
-            # reduced axes collapse to ONE rdim the roller leaves materialized), so a sole-rdim
-            # FULL_SLICE can be absent from reduction_loops. Debug-level (not warn): this DOES fire
-            # on the corpus/probes (p5, rms_norm_per_block_quant), so it is an inspection hook, not
-            # an anomaly. NOTE(audit): ``rollable`` currently has ZERO reads in the live heuristic
-            # (grep ``\.rollable``) -- the standard track rides persistent-vs-looped off the
-            # reduction_loops spec, not this field. If no consumer materializes, DELETE rollable
-            # from the descriptor rather than carry a proxy that disagrees with the compiler.
-            if (
-                rollable
-                and bid not in env.config_spec.reduction_loops.valid_block_ids()
-            ):
-                log.debug(
-                    "reduction block_id %s in graph %s has rollable=True (sole rdim in graph) "
-                    "but the compiler registered no reduction_loops roll for it -- the "
-                    "sole-rdim proxy disagrees with the actual rolling decision",
-                    bid,
-                    gid,
-                )
-            from .compile_environment import FixedBlockSizeSource
-
-            pinned = (
-                isinstance(info.block_size_source, FixedBlockSizeSource)
-                if category
-                in (ReductionCategory.GRID_TILE, ReductionCategory.FULL_GRID)
-                else None
-            )
             per = self._per_reduction_memory_fields(
                 bid, gid, memory_op_facts, liveness_by_axis
             )
@@ -1688,17 +1307,12 @@ class DeviceIR:
                     block_id=bid,
                     graph_id=gid,
                     size_hint=size_hint,
-                    static_rnumel=static_rnumel,
                     itemsize=self._reduction_input_itemsize(bid),
                     input_load_itemsize=per["input_load_itemsize"],
-                    rollable=rollable,
-                    pinned=pinned,
                     carried_2d_count=carried_2d_by_bid.get(bid, 0),
                     row_reread=per["row_reread"],
                     reread_eviction_index=per["reread_eviction_index"],
                     num_load=per["num_load"],
-                    body_live_tiles=max(1, liveness_by_axis.get(bid, 1)),
-                    full_width_output=per["full_width_output"],
                 )
             )
 
@@ -1760,9 +1374,8 @@ class DeviceIR:
         """The memory-op-derived per-reduction fields, computed exactly as
         ``_assemble_reduction_fact`` does (so a descriptor is field-equal to the legacy fact),
         but SCOPED to this reduction's original graph for ``num_load`` (a co-resident pass loads
-        in its own graph). ``row_reread`` / ``full_width_output`` / ``input_load_itemsize`` are
-        axis-keyed and graph-agnostic (a re-read is global to the axis), matching the legacy
-        computation.
+        in its own graph). ``row_reread`` / ``input_load_itemsize`` are axis-keyed and
+        graph-agnostic (a re-read is global to the axis), matching the legacy computation.
         """
         num_load = sum(
             1 for f in memory_op_facts if f.kind == "load" and f.graph_id == graph_id
@@ -1777,15 +1390,6 @@ class DeviceIR:
                 row_reread = True
                 reread_eviction_index = f.eviction_index
                 break
-        full_width_output = any(
-            f.kind == "store"
-            and f.ndim >= 2
-            and (
-                (f.subscript_block_ids and f.subscript_block_ids[-1] == red_block_id)
-                or (f.indexed_block_ids and f.indexed_block_ids[-1] == red_block_id)
-            )
-            for f in memory_op_facts
-        )
         fed_sizes = [
             f.dtype.itemsize
             for f in memory_op_facts
@@ -1814,18 +1418,17 @@ class DeviceIR:
             "num_load": num_load,
             "row_reread": row_reread,
             "reread_eviction_index": reread_eviction_index,
-            "full_width_output": full_width_output,
             "input_load_itemsize": input_load_itemsize,
         }
 
     def build_matmul_reduction_epilogue_facts(self) -> None:
         """Phase 4: compose a ``MatmulWithReductionEpilogueFact`` for a fused matmul +
-        reduction-over-output-axis epilogue. Fires iff exactly one ``MatmulFact`` AND
-        one ``ReductionFact`` (the epilogue reduction from
-        ``register_unrolled_reductions``'s materialized branch); holds the two facts
-        plus the N-extent the seed keys on. Pure-matmul kernels have no epilogue
-        ReductionFact and pure-reduction kernels no MatmulFact, so the composed fact
-        fires ONLY on the fused family.
+        reduction-over-output-axis epilogue. Fires iff exactly one ``MatmulFact`` AND exactly
+        one SIZED full-extent reduction descriptor in a singleton co-residency group (the
+        epilogue reduction over the specialized output N); holds the matmul fact plus the
+        N-extent the seed keys on. Pure-matmul kernels have no epilogue reduction and
+        pure-reduction kernels no MatmulFact, so the composed fact fires ONLY on the fused
+        family.
 
         CONSTRAINT (PROMPT §2.9 — must NOT inherit the relaxed reduction gate): the epilogue
         seed is tuned for ONE specific reduction shape (a single full-extent reduction over the
@@ -1837,40 +1440,39 @@ class DeviceIR:
         env = CompileEnvironment.current()
         spec = env.config_spec
 
-        if len(spec.matmul_facts) != 1 or len(spec.reduction_facts) != 1:
+        if len(spec.matmul_facts) != 1:
             return
-        # §2.9 guard, in the new vocabulary: the kernel's SIZED reductions must be exactly one
-        # full-extent reduction in a singleton co-residency group. (Belt-and-suspenders with the
-        # ``len(reduction_facts)==1`` above, which already excludes the relaxed multi-reduction
-        # case; this rejects a future kernel that produces one legacy fact yet has a co-resident
-        # second sized reduction in its kernel fact.)
+        # §2.9 guard (Stage-1 vocabulary): the kernel's SIZED reductions must be exactly ONE
+        # full-extent reduction in a singleton co-residency group — a single epilogue reduction
+        # over the specialized output N, no other reduction co-resident. A MULTI-reduction matmul
+        # kernel must NOT compose this fact (its epilogue N would be ambiguous). This is the sole
+        # reduction gate (the legacy ``len(reduction_facts)==1`` check it replaced was strictly
+        # looser — this also rejects a co-resident second sized reduction).
         kf = spec.reduction_kernel_fact
-        if kf is not None:
-            sized = [
-                d for d in kf.reductions if d.category in SIZED_REDUCTION_CATEGORIES
-            ]
-            if len(sized) != 1 or sized[0].category not in FULL_EXTENT_CATEGORIES:
-                return
-            group = next(
-                (
-                    g
-                    for g in kf.coresidency_groups
-                    if any(
-                        kf.reductions[i].block_id == sized[0].block_id
-                        for i in g.descriptor_indices
-                    )
-                ),
-                None,
-            )
-            if group is not None and len(group.descriptor_indices) != 1:
-                return
+        if kf is None:
+            return
+        sized = [d for d in kf.reductions if d.category in SIZED_REDUCTION_CATEGORIES]
+        if len(sized) != 1 or sized[0].category not in FULL_EXTENT_CATEGORIES:
+            return
+        group = next(
+            (
+                g
+                for g in kf.coresidency_groups
+                if any(
+                    kf.reductions[i].block_id == sized[0].block_id
+                    for i in g.descriptor_indices
+                )
+            ),
+            None,
+        )
+        if group is not None and len(group.descriptor_indices) != 1:
+            return
         matmul = spec.matmul_facts[0]
-        reduction = spec.reduction_facts[0]
+        # N-extent = the epilogue reduction's extent (the specialized, hl.specialize'd output N).
         spec.matmul_reduction_epilogue_facts.append(
             MatmulWithReductionEpilogueFact(
                 matmul=matmul,
-                reduction=reduction,
-                n_extent=reduction.size_hint,
+                n_extent=sized[0].size_hint,
                 m_block_id=matmul.m_block_id,
                 k_block_id=matmul.k_block_id,
             )
@@ -1887,9 +1489,18 @@ class DeviceIR:
         """
         env = CompileEnvironment.current()
         spec = env.config_spec
+        from ..autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
         from ..autotuner.config_spec import PointwiseElementwiseFact
 
-        if spec.reduction_facts or spec.matmul_facts or spec.accumulator_facts:
+        # Disjointness: a kernel with any SIZED reduction (the Stage-1 kernel fact's
+        # FULL_SLICE/FULL_GRID/USER_TILE descriptors — the faithful successor to a non-empty
+        # ``reduction_facts`` list), any matmul, or any loop-carried accumulator belongs to that
+        # family and gets NO pointwise fact.
+        kf = spec.reduction_kernel_fact
+        has_sized_reduction = kf is not None and any(
+            d.category in SIZED_REDUCTION_CATEGORIES for d in kf.reductions
+        )
+        if has_sized_reduction or spec.matmul_facts or spec.accumulator_facts:
             return
         if not spec.memory_op_facts or not spec.block_sizes:
             return
@@ -2016,124 +1627,6 @@ class DeviceIR:
                             itemsize = in_val.element_size()
                             break
         return itemsize
-
-    def _assemble_reduction_fact(
-        self,
-        red_block_id: int,
-        size_hint: int,
-        static_rnumel: int | None,
-        m_block_ids: tuple[int, ...],
-        non_reduction_loop_block_ids: tuple[int, ...],
-        load_graph_ids: set[int],
-        memory_op_facts: list[MemoryOpFact],
-        accumulator_facts: list[AccumulatorFact],
-        liveness_by_axis: dict[int, int] | None = None,
-        secondary_reduction_block_ids: tuple[int, ...] = (),
-    ) -> ReductionFact:
-        """Build one ``ReductionFact`` for axis ``red_block_id`` from the enriched
-        ``memory_op_facts`` + ``accumulator_facts`` + per-axis liveness slice. Shared
-        by the standard and user-tiled paths; only ``load_graph_ids`` differs
-        (standard: the rdim's original graphs; user-tiled: every graph).
-        """
-        # num_load: every load in the reduction's graphs (the stream-eviction == 1 gate).
-        # Scoped by graph_id so rolled-subgraph copies of a standard rdim load are excluded.
-        num_load = sum(
-            1
-            for f in memory_op_facts
-            if f.kind == "load" and f.graph_id in load_graph_ids
-        )
-        # num_carried_2d_tiles: carried [.., R_BLOCK] tiles whose last dim is the rdim
-        # (standard's [M_BLOCK] scalar carry -> 0).
-        num_carried_2d_tiles = sum(
-            1
-            for a in accumulator_facts
-            if len(a.dim_block_ids) >= 2 and a.dim_block_ids[-1] == red_block_id
-        )
-        # row_reread + reread_eviction_index: the FIRST load live across the reduction
-        # boundary (feeds >= 2 reductions on this axis, or one + a bypass store); the slot
-        # is read straight from MemoryOpFact (no per-config re-walk).
-        row_reread = False
-        reread_eviction_index: int | None = None
-        for f in memory_op_facts:
-            if f.kind != "load":
-                continue
-            cnt = next((c for ax, c in f.reductions_fed if ax == red_block_id), 0)
-            if cnt >= 2 or (cnt >= 1 and f.stores_fed):
-                row_reread = True
-                reread_eviction_index = f.eviction_index
-                break
-        # full_width_output: a rank>=2 store whose inner dim is the reduction-extent AXIS
-        # ({rdim} ∪ normalize loops), keyed on the store's inner SUBSCRIPT block-id
-        # (reduction-agnostic) or, for the standard ``out[tile_m, :]`` plain slice, the
-        # shape-resolved indexed_block_ids fallback. Match on axis, not size, so a
-        # non-reduction dim that merely equals the extent is not full-width.
-        extent_axes = {red_block_id, *non_reduction_loop_block_ids}
-        full_width_output = any(
-            f.kind == "store"
-            and f.ndim >= 2
-            and (
-                (f.subscript_block_ids and f.subscript_block_ids[-1] in extent_axes)
-                or (f.indexed_block_ids and f.indexed_block_ids[-1] in extent_axes)
-            )
-            for f in memory_op_facts
-        )
-        # input_load_itemsize: min element size over reduction-fed loads (the streamed
-        # row), with a Band-B fallback to rank>=2 row loads of the reduction extent.
-        fed_sizes = [
-            f.dtype.itemsize
-            for f in memory_op_facts
-            if f.kind == "load"
-            and f.dtype is not None
-            and any(ax == red_block_id for ax, _ in f.reductions_fed)
-        ]
-        if fed_sizes:
-            input_load_itemsize = min(fed_sizes)
-        else:
-            # Band-B fallback: rank>=2 row loads whose inner subscript IS the reduction
-            # AXIS (block-id). Needed because accumulator-carried reductions feed a loop
-            # `+=`, not a ReductionLowering, so the row load is invisible to reductions_fed
-            # (fed_sizes empty); this structural axis-match recovers it.
-            row_sizes = [
-                f.dtype.itemsize
-                for f in memory_op_facts
-                if f.kind == "load"
-                and f.dtype is not None
-                and (
-                    (
-                        f.subscript_block_ids
-                        and f.subscript_block_ids[-1] == red_block_id
-                    )
-                    or (f.indexed_block_ids and f.indexed_block_ids[-1] == red_block_id)
-                )
-            ]
-            input_load_itemsize = min(row_sizes) if row_sizes else 0
-
-        # body_live_tiles: peak simultaneously-live rdim-shaped tiles in the reduction body, read off
-        # the walker liveness slice for this axis (default 1).
-        body_live_tiles = max(1, (liveness_by_axis or {}).get(red_block_id, 1))
-
-        # NOTE: the grad-parameter M-collapse signal (formerly the stored
-        # ``per_feature_accumulator`` field -- a loop-carried accumulator over ALL the materialized
-        # feature axes) is no longer computed here. It is a budget-time DERIVATION the Stage-2
-        # allocator makes from the kernel fact's axes (``_is_per_feature_accumulator``), per PROMPT
-        # §2.3 #5 (decisions are outcomes, not stored labels).
-
-        return ReductionFact(
-            primary_reduction_block_id=red_block_id,
-            size_hint=size_hint,
-            m_block_ids=m_block_ids,
-            static_rnumel=static_rnumel,
-            itemsize=self._reduction_input_itemsize(red_block_id),
-            num_load=num_load,
-            num_carried_2d_tiles=num_carried_2d_tiles,
-            non_reduction_loop_block_ids=non_reduction_loop_block_ids,
-            row_reread=row_reread,
-            reread_eviction_index=reread_eviction_index,
-            full_width_output=full_width_output,
-            input_load_itemsize=input_load_itemsize,
-            body_live_tiles=body_live_tiles,
-            secondary_reduction_block_ids=secondary_reduction_block_ids,
-        )
 
     def _is_fully_resident_grid_axis(self, block_id: int) -> bool:
         """True iff a grid axis is tiled at its FULL extent (``block_size == extent`` =>
@@ -3513,8 +3006,8 @@ def _graph_peak_live_by_axis(
 ) -> dict[int, int]:
     """Peak count of simultaneously-live tensor values whose shape spans each
     block-id axis, over ONE graph -- a liveness sweep in FX topo order.
-    Consumer-AGNOSTIC per-axis provenance keyed by block_id; the derived
-    ``ReductionFact`` reads its own axis slice (``body_live_tiles``).
+    Consumer-AGNOSTIC per-axis provenance keyed by block_id; a consumer reads its
+    own axis slice.
 
     A value is live from definition through its last use in the graph. At each
     step the sweep counts live values whose ``meta['val'].shape`` includes an axis
@@ -3636,7 +3129,7 @@ def _collect_memory_op_facts(
 
     Returns ``(memory_op_facts, liveness_by_axis)`` -- the second is the per-axis
     peak simultaneously-live rdim-shaped tile count (max over graphs), computed in
-    this SAME pass so ``ReductionFact.body_live_tiles`` reads a slice.
+    this SAME pass so the kernel-fact builder can read a per-axis slice.
     """
     from ..autotuner.config_spec import MemoryOpFact
     from ..language import memory_ops
@@ -3972,9 +3465,9 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
         config_spec.epilogue_subtile_k_hint = 0
         config_spec.epilogue_subtile_autotune_choices = None
 
-        # Phase 1: roll + register the reduction_loops spec and stash the rollable
-        # (standard) rdims. ReductionFacts are built in Phase 3 (build_reduction_facts,
-        # after _collect_memory_op_facts) so they read the enriched memory_op_facts.
+        # Phase 1: roll + register the reduction_loops spec. The ReductionKernelFact is built
+        # in Phase 3 (build_reduction_kernel_fact, after _collect_memory_op_facts) so it can
+        # read the enriched memory_op_facts.
         device_ir.register_rollable_reductions()
         config_spec.raise_grid_block_minimums()
         if len(device_ir.root_ids) > 1:
@@ -4019,12 +3512,9 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
         # may read them), so build them independently of the reduction facts. Must run
         # after the rolling (it walks the rolled loop subgraphs).
         config_spec.accumulator_facts = device_ir.build_accumulator_facts()
-        # Phase 3: build the ReductionFacts (standard from the stashed rollable rdims, then user-tiled
-        # if none fired); liveness_by_axis supplies each fact's body_live_tiles slice.
-        device_ir.build_reduction_facts(memory_op_facts, liveness_by_axis)
-        # Phase 3b (PROMPT §2.1/§2.2): build the categorizing ReductionKernelFact alongside the
-        # legacy facts. Behavior-preserving in P1 (the live heuristic still consumes
-        # reduction_facts); Stage 2 switches to consume this.
+        # Phase 3 (PROMPT §2.1/§2.2): build the categorizing ReductionKernelFact — the first-class
+        # reduction-descriptor list + co-residency groups the reduction seed + allocator consume.
+        # liveness_by_axis supplies each descriptor's per-axis liveness slice.
         device_ir.build_reduction_kernel_fact(
             memory_op_facts, config_spec.accumulator_facts, liveness_by_axis
         )

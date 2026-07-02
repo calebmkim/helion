@@ -76,18 +76,17 @@ def _jsonify(v: object) -> object:
     return repr(v)
 
 
-def _classify(spec: object, fact: object) -> str:
+def _classify(spec: object, primary_bid: int) -> str:
     """T1 (rdim in reduction_loops) / T2 (rdim is a block_sizes entry) /
     materialized (rdim in neither -- the standard materialized case) / gemm / oos."""
     try:
         if getattr(spec, "matmul_facts", None):
             return "gemm"
-        bid = getattr(fact, "primary_reduction_block_id")
         rl = set(spec.reduction_loops.valid_block_ids())
         bs = set(spec.block_sizes.valid_block_ids())
-        if bid in rl:
+        if primary_bid in rl:
             return "T1_rolled"
-        if bid in bs:
+        if primary_bid in bs:
             return "T2_usertiled"
         return "materialized"
     except Exception as e:  # noqa: BLE001
@@ -112,7 +111,11 @@ def record_bound(corpus: str, kernel: str, shape: object, dtype: str, fn: object
         "dtype": dtype,
         "heuristics_fired": fired,
         "fact_counts": {
-            "reduction": len(spec.reduction_facts),
+            "reduction": (
+                len(spec.reduction_kernel_fact.reductions)
+                if spec.reduction_kernel_fact is not None
+                else 0
+            ),
             "matmul": len(spec.matmul_facts),
             "pointwise": len(spec.pointwise_facts),
             "accumulator": len(spec.accumulator_facts),
@@ -135,10 +138,21 @@ def record_bound(corpus: str, kernel: str, shape: object, dtype: str, fn: object
         except Exception as e:  # noqa: BLE001
             rec["normalized_cfg"] = None
             rec["normalize_error"] = f"{type(e).__name__}: {e}"
-    rfacts = spec.reduction_facts
-    if rfacts:
-        rec["reduction_fact"] = _jsonify(rfacts[0]._asdict())
-        rec["classification"] = _classify(spec, rfacts[0])
+    # The primary reduction descriptor (max row-bytes over the sized reductions) — the same
+    # primary the seed heuristic keys on. Classification + the recorded fact snapshot read it.
+    from helion._compiler.autotuner_heuristics.triton import (  # noqa: E402
+        _primary_descriptor_selected,
+    )
+
+    primary = None
+    try:
+        with bound.env:
+            primary = _primary_descriptor_selected(bound.env)
+    except Exception:  # noqa: BLE001
+        primary = None
+    if primary is not None:
+        rec["reduction_fact"] = _jsonify(primary._asdict())
+        rec["classification"] = _classify(spec, primary.block_id)
     else:
         rec["reduction_fact"] = None
         rec["classification"] = "no_reduction_fact"
