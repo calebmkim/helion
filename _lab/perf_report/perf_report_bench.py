@@ -611,6 +611,20 @@ def run_vllm_cell(kernel, shape):
     row["base_default_config"] = _cfg_dict(base_cfg)
     row["configs_differ"] = _cfg_dict(seed_cfg) != _cfg_dict(base_cfg)
 
+    # vLLM shipped config (nearest-shape lookup into the H100 tuned JSON), same mechanism vLLM
+    # itself uses (bench_arms.nearest_vllm_config mirrors kut.pick_config). None if no JSON.
+    vllm_cfg = vllm_chosen = vllm_exact = None
+    try:
+        entries = B.load_json_configs(sub)
+        if entries is not None:
+            want_key = key_fn(tok, hidden, group)
+            vllm_cfg, vllm_chosen, vllm_exact = B.nearest_vllm_config(entries, want_key)
+    except Exception as e:  # noqa: BLE001
+        row["vllm_lookup_error"] = f"{type(e).__name__}: {e}"
+    row["vllm_shipped_config"] = _cfg_dict(vllm_cfg)
+    row["vllm_chosen_key"] = vllm_chosen
+    row["vllm_exact_dims"] = vllm_exact
+
     def acc_of(cfg):
         k = _replay(kfn, cfg)
         if k is None:
@@ -633,8 +647,12 @@ def run_vllm_cell(kernel, shape):
             return None, f"compile-fail:{type(e).__name__}", (False, f"{type(e).__name__}: {str(e)[:200]}")
 
     arms = {}
-    for name, cfg in (("seed", seed_cfg), ("default", base_cfg)):
+    for name, cfg in (("seed", seed_cfg), ("default", base_cfg), ("vllm_shipped", vllm_cfg)):
         a = {"config_present": cfg is not None}
+        if cfg is None:
+            a["status"] = "no-config"
+            arms[name] = a
+            continue
         k, status, accpair = acc_of(cfg)
         a["status"] = status
         if accpair is not None:
@@ -776,15 +794,20 @@ def _ratios(row):
         return a.get("us") if a.get("status") == "ok" else None
 
     # ratios gate on accuracy; raw us is recorded regardless so perf is always visible.
-    s_ok, d_ok, t_ok = ok_us("seed"), ok_us("default"), ok_us("tc")
+    s_ok, d_ok, t_ok, v_ok = ok_us("seed"), ok_us("default"), ok_us("tc"), ok_us("vllm_shipped")
     row["G_tc"] = round(t_ok / s_ok, 4) if (s_ok and t_ok) else None    # >1 => seed beats tc
     row["G_def"] = round(d_ok / s_ok, 4) if (s_ok and d_ok) else None   # >1 => seed beats default
-    row["us"] = {"seed": raw_us("seed"), "default": raw_us("default"), "tc": raw_us("tc")}
+    row["G_vllm"] = round(v_ok / s_ok, 4) if (s_ok and v_ok) else None  # >1 => seed beats vllm
+    us = {"seed": raw_us("seed"), "default": raw_us("default"), "tc": raw_us("tc")}
+    if arms.get("vllm_shipped") is not None:
+        us["vllm_shipped"] = raw_us("vllm_shipped")
+    row["us"] = us
     # perf ratios IGNORING accuracy (for acc-fail cells where seed==default fails identically —
     # the perf comparison is still meaningful; clearly separate from the acc-gated G above).
-    s_r, d_r, t_r = raw_us("seed"), raw_us("default"), raw_us("tc")
+    s_r, d_r, t_r, v_r = raw_us("seed"), raw_us("default"), raw_us("tc"), raw_us("vllm_shipped")
     row["perf_only_tc"] = round(t_r / s_r, 4) if (s_r and t_r) else None
     row["perf_only_def"] = round(d_r / s_r, 4) if (s_r and d_r) else None
+    row["perf_only_vllm"] = round(v_r / s_r, 4) if (s_r and v_r) else None
 
 
 def _cleanup():

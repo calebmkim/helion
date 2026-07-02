@@ -55,13 +55,16 @@ def load_rows(results_dir):
     return rows
 
 
+_RATIO_ARM = {"G_tc": "tc", "G_def": "default", "G_vllm": "vllm_shipped"}
+
+
 def cell_ok_for_ratio(row, which):
-    """G valid iff BOTH arms of the ratio timed ok. which in {'G_tc','G_def'}."""
+    """G valid iff BOTH arms of the ratio timed ok. which in {'G_tc','G_def','G_vllm'}."""
     arms = row.get("arms", {})
     seed = arms.get("seed", {})
     if not _acc_ok(seed):
         return False
-    other = arms.get("tc" if which == "G_tc" else "default", {})
+    other = arms.get(_RATIO_ARM[which], {})
     return _acc_ok(other) and row.get(which) is not None
 
 
@@ -117,13 +120,16 @@ def main():
     for key, rws in real_cells.items():
         gtc = [r["G_tc"] for r in rws if cell_ok_for_ratio(r, "G_tc")]
         gdef = [r["G_def"] for r in rws if cell_ok_for_ratio(r, "G_def")]
+        gvllm = [r["G_vllm"] for r in rws if cell_ok_for_ratio(r, "G_vllm")]
         per_cell[key] = {
             "n_shapes": len(rws),
             "n_acc_pass": sum(1 for r in rws if _acc_ok(r.get("arms", {}).get("seed", {}))),
             "geo_G_tc": geomean(gtc),
             "geo_G_def": geomean(gdef),
+            "geo_G_vllm": geomean(gvllm) if gvllm else None,
             "n_gtc": len(gtc),
             "n_gdef": len(gdef),
+            "n_gvllm": len(gvllm),
             "min_G_tc": min(gtc) if gtc else None,
         }
 
@@ -222,12 +228,19 @@ def main():
         if not keys:
             continue
         L.append(f"\n### {corpus}\n")
-        L.append("| kernel | dtype | geo G_tc | geo G_def | shapes | acc-pass | min G_tc |")
-        L.append("|---|---|---|---|---|---|---|")
+        is_vllm = corpus == "vllm"
+        vcol = " geo G_vllm |" if is_vllm else ""
+        vsep = "---|" if is_vllm else ""
+        L.append(f"| kernel | dtype | geo G_tc | geo G_def |{vcol} shapes | acc-pass | min G_tc |")
+        L.append(f"|---|---|---|---|{vsep}---|---|---|")
         for (c, k, d) in keys:
             v = per_cell[(c, k, d)]
-            L.append(f"| {k} | {d} | {fmt(v['geo_G_tc'])} | {fmt(v['geo_G_def'])} | "
+            vc = f" {fmt(v.get('geo_G_vllm'))} |" if is_vllm else ""
+            L.append(f"| {k} | {d} | {fmt(v['geo_G_tc'])} | {fmt(v['geo_G_def'])} |{vc} "
                      f"{v['n_shapes']} | {v['n_acc_pass']} | {fmt(v['min_G_tc'])} |")
+        if is_vllm:
+            L.append("\n(`geo G_vllm` = seed vs vLLM's own shipped H100-tuned config, "
+                     "nearest-shape lookup; >1 ⇒ seed beats vLLM's tuned config.)")
 
     # section B: diagnostics
     L.append("\n## (B) Generality diagnostics (seed vs default, G_def only — NOT headline perf)\n")
