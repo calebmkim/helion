@@ -549,11 +549,10 @@ def run_real_cell(corpus, kernel, shape, dtype):
             ok, detail = acc(out, ref)
             a["acc"] = ok
             a["acc_detail"] = detail
-            if ok:
-                a.update(timed((lambda kk=k: kk(*args))))
-                a["status"] = "ok"
-            else:
-                a["status"] = "acc-fail"
+            # Always record timing (even on acc-fail) so the report has perf numbers regardless;
+            # the ratios/geomeans still gate on acc (footgun #6a) via _ratios/aggregation.
+            a.update(timed((lambda kk=k: kk(*args))))
+            a["status"] = "ok" if ok else "acc-fail"
         except _CompileTimeout:
             _reap_compile_children()
             a["status"] = "compile-fail:timeout"
@@ -575,11 +574,8 @@ def run_real_cell(corpus, kernel, shape, dtype):
             ok, detail = acc(out_tc, ref)
             a["acc"] = ok
             a["acc_detail"] = detail
-            if ok:
-                a.update(timed(tc))
-                a["status"] = "ok"
-            else:
-                a["status"] = "acc-fail"
+            a.update(timed(tc))
+            a["status"] = "ok" if ok else "acc-fail"
         except _CompileTimeout:
             _reap_compile_children()
             a["status"] = "compile-fail:timeout"
@@ -643,7 +639,9 @@ def run_vllm_cell(kernel, shape):
         a["status"] = status
         if accpair is not None:
             a["acc"], a["acc_detail"] = accpair
-        if status == "ok":
+        # Time whenever the kernel compiled+ran (ok OR acc-fail) so perf is recorded regardless;
+        # geomeans still gate on acc. k is None only on compile/timeout failure.
+        if k is not None and status in ("ok", "acc-fail"):
             a.update(timed((lambda kk=k: kk(*_clone_args(args)))))
         arms[name] = a
 
@@ -767,14 +765,26 @@ def _load_synth(subdir, kernel):
 def _ratios(row):
     arms = row["arms"]
 
-    def us(name):
+    def raw_us(name):
+        # raw timing whenever the arm ran (ok OR acc-fail) — recorded for transparency
+        a = arms.get(name, {})
+        return a.get("us") if a.get("status") in ("ok", "acc-fail") else None
+
+    def ok_us(name):
+        # only an accuracy-PASSING timing feeds a ratio (footgun #6a)
         a = arms.get(name, {})
         return a.get("us") if a.get("status") == "ok" else None
 
-    s, d, t = us("seed"), us("default"), us("tc")
-    row["G_tc"] = round(t / s, 4) if (s and t) else None    # >1 => seed beats tc
-    row["G_def"] = round(d / s, 4) if (s and d) else None   # >1 => seed beats default
-    row["us"] = {"seed": s, "default": d, "tc": t}
+    # ratios gate on accuracy; raw us is recorded regardless so perf is always visible.
+    s_ok, d_ok, t_ok = ok_us("seed"), ok_us("default"), ok_us("tc")
+    row["G_tc"] = round(t_ok / s_ok, 4) if (s_ok and t_ok) else None    # >1 => seed beats tc
+    row["G_def"] = round(d_ok / s_ok, 4) if (s_ok and d_ok) else None   # >1 => seed beats default
+    row["us"] = {"seed": raw_us("seed"), "default": raw_us("default"), "tc": raw_us("tc")}
+    # perf ratios IGNORING accuracy (for acc-fail cells where seed==default fails identically —
+    # the perf comparison is still meaningful; clearly separate from the acc-gated G above).
+    s_r, d_r, t_r = raw_us("seed"), raw_us("default"), raw_us("tc")
+    row["perf_only_tc"] = round(t_r / s_r, 4) if (s_r and t_r) else None
+    row["perf_only_def"] = round(d_r / s_r, 4) if (s_r and d_r) else None
 
 
 def _cleanup():
@@ -801,11 +811,28 @@ def _iter_kernel_cells(SH, corpus, kernel):
                 yield tuple(shape), dtype
 
 
+def _parse_only(only: str) -> set[tuple[tuple[int, ...], str]]:
+    """Parse --only-shapes 'MxN:dtype,MxNxG:dtype' into a set of ((shape),dtype)."""
+    out = set()
+    for tok in only.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        shp, _, dt = tok.partition(":")
+        shape = tuple(int(x) for x in shp.split("x"))
+        out.add((shape, dt))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", required=True)
     ap.add_argument("--kernel", required=True)
     ap.add_argument("--out-dir", required=True)
+    # Targeted rebench: only these (shape:dtype) cells; merge into the existing JSON
+    # (preserving every other row untouched). This is the "only rebench cells that move" path.
+    ap.add_argument("--only-shapes", default="",
+                    help="comma list MxN:dtype (e.g. 16384x1024:bf16); merges into existing JSON")
     args = ap.parse_args()
 
     SH = _load_shapes()
@@ -814,7 +841,8 @@ def main():
     print(f"helion={helion.__file__}", flush=True)
     print(f"corpus={args.corpus} kernel={args.kernel} -> {out_path}", flush=True)
 
-    rows = []
+    only = _parse_only(args.only_shapes) if args.only_shapes else None
+
     if args.corpus in ("synthetic_probes", "adversarial_synth"):
         try:
             row = run_synth_cell(args.corpus, args.kernel)
@@ -822,12 +850,16 @@ def main():
             row = {"corpus": args.corpus, "kernel": args.kernel,
                    "error": f"{type(e).__name__}: {str(e)[:300]}",
                    "trace": traceback.format_exc()}
-        rows.append(row)
         _log_row(row)
-        json.dump({"rows": rows}, open(out_path, "w"), indent=1)
+        if only is not None:
+            _merge_rows(out_path, [row], match_synth=True)
+        else:
+            json.dump({"rows": [row]}, open(out_path, "w"), indent=1)
     else:
+        rows = []
         for shape, dtype in _iter_kernel_cells(SH, args.corpus, args.kernel):
-            tag = f"{args.corpus}/{args.kernel}/{shape}/{dtype}"
+            if only is not None and (shape, dtype) not in only:
+                continue
             try:
                 row = run_real_cell(args.corpus, args.kernel, shape, dtype)
             except torch.cuda.OutOfMemoryError:
@@ -840,9 +872,36 @@ def main():
                        "trace": traceback.format_exc()}
             rows.append(row)
             _log_row(row)
-            json.dump({"rows": rows}, open(out_path, "w"), indent=1)  # checkpoint per cell
-    json.dump({"rows": rows}, open(out_path, "w"), indent=1)
-    print(f"\n=== DONE {args.corpus}/{args.kernel}: {len(rows)} cells -> {out_path} ===", flush=True)
+            if only is None:
+                json.dump({"rows": rows}, open(out_path, "w"), indent=1)  # checkpoint per cell
+        if only is not None:
+            _merge_rows(out_path, rows, match_synth=False)
+        else:
+            json.dump({"rows": rows}, open(out_path, "w"), indent=1)
+    print(f"\n=== DONE {args.corpus}/{args.kernel} -> {out_path} ===", flush=True)
+
+
+def _merge_rows(out_path, new_rows, match_synth):
+    """Update the existing JSON's rows in place with new_rows (matched by shape+dtype),
+    preserving every other row. Fails loudly if the file is missing (we only merge on rebench)."""
+    existing = json.load(open(out_path))["rows"]
+
+    def key(r):
+        return (tuple(r["shape"]) if r.get("shape") is not None else None, r.get("dtype"))
+
+    new_by_key = {key(r): r for r in new_rows}
+    merged = []
+    replaced = 0
+    for r in existing:
+        k = key(r)
+        if k in new_by_key:
+            merged.append(new_by_key.pop(k)); replaced += 1
+        else:
+            merged.append(r)
+    merged.extend(new_by_key.values())  # any brand-new cells
+    json.dump({"rows": merged}, open(out_path, "w"), indent=1)
+    print(f"MERGED: replaced {replaced} row(s), added {len(new_by_key)}, "
+          f"total {len(merged)} in {out_path}", flush=True)
 
 
 def _log_row(row):

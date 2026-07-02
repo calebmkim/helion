@@ -40,8 +40,11 @@ def _acc_ok(arm):
 
 def load_rows(results_dir):
     rows = []
+    # Only the per-(corpus,kernel) bench files; skip summaries, the A/B, and the external
+    # config-reproduction manifest (a different artifact, not bench rows).
+    _SKIP = {"summary.json", "narrow_w1_ab.json", "config_manifest.json"}
     for path in sorted(glob.glob(os.path.join(results_dir, "*.json"))):
-        if os.path.basename(path) in ("summary.json",):
+        if os.path.basename(path) in _SKIP:
             continue
         try:
             d = json.load(open(path))
@@ -76,6 +79,7 @@ def main():
     real_cells = {}
     diag_rows = []
     xna = []  # (corpus, kernel, shape, dtype, arm, reason)
+    accfail_perf = []  # acc-fail cells that still have a recorded seed timing
     for r in rows:
         corpus = r.get("corpus")
         if "error" in r and "arms" not in r:
@@ -94,6 +98,19 @@ def main():
             if st not in ("ok", "n/a-no-tc"):
                 xna.append((corpus, r["kernel"], r.get("shape"), r.get("dtype"), arm,
                             st + (f" ({a['acc_detail']})" if a.get("acc_detail") else "")))
+        # collect acc-fail cells that STILL have perf recorded (seed arm acc-fail but timed),
+        # with the perf-only ratios and whether seed & default fail identically.
+        seed_a = r.get("arms", {}).get("seed", {})
+        if seed_a.get("status") == "acc-fail" and seed_a.get("us") is not None:
+            u = r.get("us", {})
+            def_a = r.get("arms", {}).get("default", {})
+            accfail_perf.append({
+                "corpus": corpus, "kernel": r["kernel"], "shape": r.get("shape"),
+                "dtype": r.get("dtype"), "us": u,
+                "perf_only_tc": r.get("perf_only_tc"), "perf_only_def": r.get("perf_only_def"),
+                "default_status": def_a.get("status"),
+                "both_fail": def_a.get("status") == "acc-fail",
+            })
 
     # ---- per-(kernel,dtype) geomeans ----
     per_cell = {}
@@ -160,7 +177,7 @@ def main():
     out = {"per_cell": {f"{c}/{k}/{d}": v for (c, k, d), v in per_cell.items()},
            "headline": headline, "per_corpus": per_corpus,
            "disasters": disasters, "n_xna": len(xna),
-           "xna": xna, "diagnostics": diag}
+           "xna": xna, "diagnostics": diag, "accfail_perf": accfail_perf}
     json.dump(out, open(os.path.join(results_dir, "summary.json"), "w"), indent=2, default=str)
 
     L = []
@@ -220,6 +237,26 @@ def main():
         g = fmt(r["G_def"]) if r["G_def"] is not None else "n/a"
         st = r["status"] if not r.get("error") else f"ERR:{str(r['error'])[:40]}"
         L.append(f"| {r['corpus']} | {r['kernel']} | {r['shape']} | {g} | {st} |")
+
+    # acc-fail cells with perf still recorded (perf comparison meaningful when seed==default fail)
+    L.append(f"\n## Acc-fail cells — perf still measured ({len(accfail_perf)} cells)\n")
+    L.append("These cells fail the accuracy gate (excluded from the headline geomeans, footgun "
+             "#6a) but timing is recorded anyway. `both_fail=yes` ⇒ seed AND default fail the gate "
+             "identically, so the perf ratios below are still an apples-to-apples comparison "
+             "(the failure is a kernel-source fact — bf16 accumulator / fp8 boundary — not a "
+             "seed-specific wrong answer).\n")
+    if accfail_perf:
+        L.append("| corpus | kernel | shape | dtype | seed_us | def_us | tc_us | "
+                 "perf seed/tc | perf seed/def | both_fail |")
+        L.append("|---|---|---|---|---|---|---|---|---|---|")
+        for c in accfail_perf:
+            u = c["us"]
+            L.append(f"| {c['corpus']} | {c['kernel']} | {c['shape']} | {c['dtype']} | "
+                     f"{fmt(u.get('seed'),1)} | {fmt(u.get('default'),1)} | {fmt(u.get('tc'),1)} | "
+                     f"{fmt(c['perf_only_tc'])} | {fmt(c['perf_only_def'])} | "
+                     f"{'yes' if c['both_fail'] else 'NO — '+str(c['default_status'])} |")
+    else:
+        L.append("_(none)_")
 
     # x/n/a
     L.append(f"\n## x / n/a cells ({len(xna)} arm-level entries)\n")
