@@ -119,13 +119,19 @@ These get a **third baseline — vLLM's own shipped, per-shape hand-tuned config
 This is the headline generalization result: does a *general* heuristic keep up with *expert,
 per-shape* tuning?
 
-| kernel | # shapes | vs default | vs torch.compile | **vs vLLM tuned** |
+**All numbers here are on an H100** (both our runs and vLLM's shipped configs). The `vs vLLM tuned`
+column compares against vLLM's checked-in **`nvidia_h100.json`** for each kernel (click through to
+each below), looked up per shape exactly as vLLM does at runtime. We expect the seed's advantage to
+**transfer to B200**, likely with some minor re-tuning of the H100-specific constants — vLLM ships a
+separate `nvidia_b200.json`, so a B200 comparison is a straightforward follow-up on that hardware.
+
+| kernel | # shapes | vs default | vs torch.compile | **vs vLLM tuned (H100)** |
 |---|---|---|---|---|
-| silu_mul_fp8 | 4 | 1.05 | 0.76 | **1.03** |
-| dynamic_per_token_scaled_fp8_quant | 4 | 2.46 | 2.70 | **1.02** |
-| rms_norm_dynamic_per_token_quant | 4 | 5.27 | 2.34 | **1.04** |
-| per_token_group_fp8_quant ‡ | 4 | 0.90 | 0.91 | **0.89** |
-| rms_norm_per_block_quant | 4 | 1.34 | 2.60 | **1.00** |
+| [silu_mul_fp8](https://github.com/vllm-project/vllm/blob/main/vllm/kernels/helion/configs/silu_mul_fp8/nvidia_h100.json) | 4 | 1.05 | 0.76 | **1.03** |
+| [dynamic_per_token_scaled_fp8_quant](https://github.com/vllm-project/vllm/blob/main/vllm/kernels/helion/configs/dynamic_per_token_scaled_fp8_quant/nvidia_h100.json) | 4 | 2.46 | 2.70 | **1.02** |
+| [rms_norm_dynamic_per_token_quant](https://github.com/vllm-project/vllm/blob/main/vllm/kernels/helion/configs/rms_norm_dynamic_per_token_quant/nvidia_h100.json) | 4 | 5.27 | 2.34 | **1.04** |
+| [per_token_group_fp8_quant](https://github.com/vllm-project/vllm/blob/main/vllm/kernels/helion/configs/per_token_group_fp8_quant/nvidia_h100.json) ‡ | 4 | 0.90 | 0.91 | **0.89** |
+| [rms_norm_per_block_quant](https://github.com/vllm-project/vllm/blob/main/vllm/kernels/helion/configs/rms_norm_per_block_quant/nvidia_h100.json) | 4 | 1.34 | 2.60 | **1.00** |
 
 **The reduction seed matches vLLM's own hand-tuned per-shape configs (geomean ≈ 1.02×, i.e.
 parity-to-slightly-ahead) — while beating torch.compile by 2.3–2.7× on the reduction-heavy quant
@@ -135,34 +141,6 @@ accuracy check on 3 of 4 shapes — **identically for the seed, default, and vLL
 perf comparison is still apples-to-apples; the sub-1.0 number is driven by one shape
 (`8192×4096×128`) where the seed's config is ~1.6× slower — a real, isolated gap worth a follow-up
 (it is *not* caused by the accuracy issue).
-
----
-
-## Why the "robustness" kernels matter
-
-Tables 2 and 4 (the kernels **we wrote**) plus `fused_linear_jsd`/`grpo` are the **robustness set**:
-8 real-world fused kernels that were **deliberately kept out of the heuristic's tuning curriculum**.
-A heuristic can always look good on the shapes it was fitted to — the real question is whether it
-*generalizes* to kernels it has never seen. If the heuristic were secretly memorizing the training
-kernels, these would be where it falls apart.
-
-It doesn't. Across all **8 robustness kernels (160 shape×dtype cells)** the seed config is
-**geomean 1.36× faster than Helion's default**, ranging up to 6.9×, and it holds torch.compile
-parity on them (tables 2 & 5 above). It never catastrophically regresses (worst single cell is
-0.85× vs default). This is the evidence that the heuristic keys on genuine *workload properties*
-(reduction width, byte footprint, occupancy) rather than kernel identity — so it transfers to new
-kernels, which is the whole point of a compile-time heuristic.
-
-**Seed vs Helion default on the robustness set:**
-
-| metric | value |
-|---|---|
-| geomean (seed / default) over 160 cells | **1.36×** |
-| range | 0.85× – 6.93× |
-| cells where seed ≥ default | 112 / 160 |
-
-(The cells below 1.0 are bandwidth-bound norms already near their memory-bandwidth ceiling, where
-neither config has room to move — not regressions the heuristic introduced.)
 
 ---
 
