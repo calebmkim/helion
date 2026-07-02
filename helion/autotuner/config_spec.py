@@ -87,24 +87,14 @@ class MatmulFact(NamedTuple):
 
 
 class ReductionCategory(enum.Enum):
-    """The Stage-1 reduction taxonomy (PROMPT §2.1) — a POSITIVE category per reduction,
-    replacing the cascade of subtractive filters. Orthogonal fields (``rollable``, ``pinned``,
-    ``carried_2d_count``) live on the descriptor and are populated only when relevant.
+    """How a reduction axis maps onto the program grid — one category per reduction.
 
-    - ``FULL_SLICE`` — the whole reduction axis is reduced within one program, written
-      ``x[m, :]``; the axis is NOT on the program grid (a rolled ``reduction_loops`` axis OR a
-      materialized full-width axis in neither block_sizes nor reduction_loops). ``rollable``
-      says whether the compiler rolled it.
-    - ``FULL_GRID`` — a full-extent axis on the program grid (``cdiv == 1``, a
-      ``FixedBlockSizeSource`` whose block == extent): fully resident per program
-      (per_token_group's specialized ``group_size``).
-    - ``GRID_TILE`` — a grid axis reduced over but NOT full-extent (``cdiv > 1``): the grid
-      PARALLELIZES the reduction across programs, so the whole-axis size is not a per-program
-      extent (the legacy ``FLOORED_ROW``; jsd's grid amax).
-    - ``USER_TILE`` — an inner sequential ``hl.tile`` the user wrote over the reduction axis (a
-      ``block_sizes`` entry, not on the grid): softmax, kl_div/jsd carried-2D, welford.
-    - ``DECLINED`` — no static extent (jagged / data-dependent, ``size=None``): recorded so the
-      pass is intentional, but never sized (the extent-keyed seed is undefined).
+    - ``FULL_SLICE`` — the whole axis is reduced within one program (``x[m, :]``); not on the grid.
+    - ``FULL_GRID`` — a full-extent axis on the grid, block == extent (fully resident per program).
+    - ``GRID_TILE`` — a grid axis reduced over but NOT full-extent: the grid parallelizes the
+      reduction across programs, so the whole-axis size is not a per-program extent.
+    - ``USER_TILE`` — an inner sequential ``hl.tile`` the user wrote over the reduction axis.
+    - ``DECLINED`` — no static extent (e.g. jagged / data-dependent); recorded but never sized.
     """
 
     FULL_SLICE = "full_slice"
@@ -114,9 +104,9 @@ class ReductionCategory(enum.Enum):
     DECLINED = "declined"
 
 
-# Categories that are SIZED as a reduction (a per-program reduction extent the seed tiles).
-# GRID_TILE (grid-parallelized partial) and DECLINED (no static extent) are real reductions but
-# are not sized as one — GRID_TILE stays a grid ROW, DECLINED falls back to the default.
+# Categories the seed sizes a per-program reduction extent for. GRID_TILE (grid-parallelized
+# partial) stays a grid row and DECLINED (no static extent) falls back to the default, so neither
+# is sized as a reduction.
 SIZED_REDUCTION_CATEGORIES = frozenset(
     {
         ReductionCategory.FULL_SLICE,
@@ -124,41 +114,34 @@ SIZED_REDUCTION_CATEGORIES = frozenset(
         ReductionCategory.USER_TILE,
     }
 )
-# Categories that occupy the full reduction extent within one program (the "necessary, rigid"
-# bidders at the top of the §2.3 allocation priority order).
+# Categories that occupy the full reduction extent within one program.
 FULL_EXTENT_CATEGORIES = frozenset(
     {ReductionCategory.FULL_SLICE, ReductionCategory.FULL_GRID}
 )
 
 
 class ReductionDescriptor(NamedTuple):
-    """One reduction OCCURRENCE (PROMPT §2.6): a (``graph_id``, ``block_id``) reduction on the
-    ORIGINAL (pre-roll) device graphs. The first-class multi-reduction representation that
-    replaces the single ``primary + secondaries`` ``ReductionFact``. Stage 1 emits a list of
-    these; Stage 2 (the allocator) is a pure consumer.
+    """One reduction OCCURRENCE: a (``graph_id``, ``block_id``) reduction on the ORIGINAL
+    (pre-roll) device graphs. Stage 1 emits a list of these; the Stage-2 allocator consumes them.
 
-    A reduction axis may occur in MORE THAN ONE original graph (jsd reduces V in two separate
-    passes; a co-resident pair and a sequential pass over the same extent in p6) — each
-    occurrence is its own descriptor, so sequential passes over the same axis are NOT collapsed.
+    A reduction axis may occur in more than one original graph (e.g. a kernel that reduces the
+    same axis in two separate passes) — each occurrence is its own descriptor, so sequential
+    passes over one axis are NOT collapsed.
 
-    Co-residency (PROMPT §2.2): descriptors with the SAME ``graph_id`` are co-resident (the
-    compiler fused them into one graph -> shared resident working set). ``graph_id`` is read off
-    the ORIGINAL graphs only (rolled ``ReductionLoopGraphInfo`` subgraphs are excluded), so it is
-    invariant to the autotuner flipping a ``reduction_loops`` knob.
+    Descriptors with the same ``graph_id`` are co-resident (the compiler fused them into one graph
+    -> shared resident working set). ``graph_id`` is read off the ORIGINAL graphs only (rolled
+    ``ReductionLoopGraphInfo`` subgraphs excluded), so it is invariant to the autotuner flipping a
+    ``reduction_loops`` knob.
 
-    Category fields (taxonomy + orthogonal, PROMPT §2.1):
+    Fields:
     - ``category``: the :class:`ReductionCategory`.
     - ``block_id`` / ``graph_id``: the reduction axis + its original-graph co-residency key.
     - ``size_hint`` / ``itemsize`` / ``input_load_itemsize``: extent (element count), the
       fp32-promoted accumulator itemsize, and the HBM-load element width feeding it.
     - ``carried_2d_count``: the NUMBER of >=2-D ``[M_BLOCK, R_BLOCK]`` loop-carried accumulators
-      whose last dim is this rdim (kl_div=1, jsd=2, group_norm_bwd=5); the full tiles stay resident
-      the whole loop. The COUNT (not a bool) -- the carried byte cap divides the budget by it, so
-      the multiplicity is load-bearing (this is the faithful successor to the legacy
-      ``ReductionFact.num_carried_2d_tiles``). 0 = no carried 2-D accumulator on this axis.
-
-    Per-reduction memory-op-derived fields (re-homed from ``ReductionFact``, same computation):
-    - ``row_reread`` / ``reread_eviction_index`` / ``num_load``.
+      whose last dim is this rdim (e.g. kl_div=1, jsd=2); those tiles stay resident the whole loop.
+      A count (not a bool) because the carried byte cap divides the budget by it. 0 = none here.
+    - ``row_reread`` / ``reread_eviction_index`` / ``num_load``: per-reduction memory-op signals.
     """
 
     category: ReductionCategory
@@ -174,19 +157,16 @@ class ReductionDescriptor(NamedTuple):
 
 
 class CoResidencyGroup(NamedTuple):
-    """A ``graph_id`` equivalence class of reductions (PROMPT §2.2): their working tiles are live
-    at the same time, so ONE budget must fit them all. ``descriptor_indices`` indexes into
+    """A ``graph_id`` equivalence class of reductions whose working tiles are live at the same
+    time, so ONE budget must fit them all. ``descriptor_indices`` indexes into
     ``ReductionKernelFact.reductions``.
 
-    ``live_tiles`` is the group's FAITHFUL resident tile set — one ``dim_block_ids`` tuple per
-    register-resident tile (same shape as ``AccumulatorFact.dim_block_ids``: the block id each dim
-    spans, ``None`` for a static/broadcast dim). It is the LEXICOGRAPHIC-PEAK live set (by rank
-    profile) of the group's home graph, max'd-by-profile across the for-loop bodies the group
-    drives and its If/Else branch siblings (device_ir ``_group_live_tiles``). The Stage-2 footprint
-    sums ``∏(dim widths)`` per ACTUAL tile shape rather than assuming every live tile spans every
-    read dim (the reconstruction that inflated the grad-parameter footprint) — and it captures each
-    loop-carried accumulator INLINE at its real shape, so the footprint needs no separate
-    accumulator sum. Empty when the fact is built without a live env (a bare-spec unit test).
+    ``live_tiles`` is the group's resident tile set — one ``dim_block_ids`` tuple per
+    register-resident tile (the block id each dim spans, ``None`` for a static/broadcast dim). It
+    is the peak live set of the group's home graph, combined with the for-loop bodies the group
+    drives and its If/Else branch siblings (see device_ir ``_group_live_tiles``). Each loop-carried
+    accumulator is captured inline at its real shape, so the Stage-2 footprint can sum ``∏(dim
+    widths)`` per actual tile. Empty when the fact is built without a live env (a bare-spec test).
     """
 
     graph_id: int
@@ -195,14 +175,12 @@ class CoResidencyGroup(NamedTuple):
 
 
 class ReductionKernelFact(NamedTuple):
-    """The per-kernel Stage-1 product (PROMPT §2.6) — what Stage 2 consumes. Holds the
-    first-class list of reduction descriptors, their co-residency groups (``graph_id`` classes),
-    the non-reduction user-tiled loops (sized as a separate pass), and the parallel grid axes
-    (the "rows" with no reduction over them).
+    """The per-kernel Stage-1 product that Stage 2 consumes: the list of reduction descriptors,
+    their co-residency groups (``graph_id`` classes), the non-reduction user-tiled loops (sized as
+    a separate pass), and the parallel grid axes (rows with no reduction over them).
 
-    Built by ``build_reduction_kernel_fact``; the reduction seed + allocator consume it directly.
-    ``reductions`` may be empty (a kernel with only GRID_TILE / DECLINED reductions, or none) —
-    the seed then declines, as today.
+    Built by ``build_reduction_kernel_fact``. ``reductions`` may be empty (a kernel with only
+    GRID_TILE / DECLINED reductions, or none) — the seed then declines.
     """
 
     reductions: tuple[ReductionDescriptor, ...]
@@ -263,7 +241,7 @@ class MemoryOpFact(NamedTuple):
     # unresolvable). Shape-resolved fallback for the gates below (the plain-slice case,
     # e.g. ``out[tile_m, :]``).
     indexed_block_ids: tuple[int | None, ...] = ()
-    # inner-dim extent for a rank>=2 op (legacy reduction-width signal; gates use subscript_block_ids).
+    # inner-dim extent for a rank>=2 op (a reduction-width signal; gates use subscript_block_ids).
     inner_extent: int | None = None
     # AXIS the op's INDEX subscripts address (block-id per non-bare-int position, from the tile/offset
     # subscript so it is reduction-AGNOSTIC; ``None`` for a plain slice). The faithful axis key for
@@ -283,9 +261,9 @@ class MemoryOpFact(NamedTuple):
 class AccumulatorFact(NamedTuple):
     """One loop-carried tensor accumulator in a reduction loop, recorded at compile time.
     Reduction-AGNOSTIC (like ``MemoryOpFact``): ``dim_block_ids`` is the per-dim block-id
-    provenance (``None`` for a static dim), ``itemsize`` the element size.
-    ``ReductionFact.num_carried_2d_tiles`` counts accumulators whose last dim is the rdim
-    (a 1-D [M_BLOCK] scalar accumulator counts as 0).
+    provenance (``None`` for a static dim), ``itemsize`` the element size. Accumulators whose last
+    dim is the reduction axis feed ``ReductionDescriptor.carried_2d_count`` (a 1-D ``[M_BLOCK]``
+    scalar accumulator counts as 0).
     """
 
     dim_block_ids: tuple[int | None, ...]
@@ -585,7 +563,7 @@ class ConfigSpec:
         self.compiler_seed_configs: list[helion.Config] = []
         self.autotuner_heuristics: list[str] = []
         self.matmul_facts: list[MatmulFact] = []
-        # The Stage-1 categorizing product (PROMPT §2.6): the reduction seed + allocator's fact.
+        # The Stage-1 categorizing product the reduction seed + allocator consume.
         self.reduction_kernel_fact: ReductionKernelFact | None = None
         self.matmul_reduction_epilogue_facts: list[MatmulWithReductionEpilogueFact] = []
         self.accumulator_facts: list[AccumulatorFact] = []
@@ -1628,9 +1606,7 @@ class ConfigSpec:
                 # ``pid_info[0]=M, pid_info[1]=N`` mapping for
                 # ``cluster_m`` / virtual-PID logic, so sampling
                 # ``loop_orders=[[1, 0]]`` there would steer cluster
-                # logic onto the wrong axis. Measured evidence for
-                # the non-tcgen05 widening lives in ``cute_plan.md``
-                # §7.0 "Recent landed work".
+                # logic onto the wrong axis.
                 if (
                     self.supports_config_key("loop_orders")
                     and len(self.loop_orders) > 0

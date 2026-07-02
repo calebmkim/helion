@@ -1140,39 +1140,28 @@ class DeviceIR:
     def _group_live_tiles(
         self, group_gids: list[int], env: CompileEnvironment
     ) -> dict[int, list[tuple[int | None, ...]]]:
-        """Attribute the FAITHFUL resident tile set to each co-residency group (PROMPT §2.2 / the
-        CF-Step-7 grounding). Returns ``{group_gid: [dim_block_ids, ...]}`` — the lexicographic-peak
-        live set (``_graph_peak_live_tiles``) of the group's HOME graph, max'd-BY-PROFILE with the
-        for-loop bodies the group DRIVES (not summed — see below).
+        """Attribute the resident tile set to each co-residency group. Returns ``{group_gid:
+        [dim_block_ids, ...]}`` — the peak live set (``_graph_peak_live_tiles``) of the group's home
+        graph, combined with the for-loop bodies the group drives. Four attribution rules:
 
-        The three attribution rules, each grounded in real IR (``_lab/redesign/ground_live_tiles.py``):
+        1. **Descend driven for-loop bodies to the ancestor group.** The heavy tiles often live in a
+           for-loop body the group's home graph drives (via a ``loop->child`` edge), not in the thin
+           home graph itself. A loop body is owned by the group whose reduction loops over its axis
+           (the loop's ``block_ids`` intersect the group's reduction axes).
 
-        1. **DESCEND driven for-loop bodies to the ANCESTOR group** (Finding 3). kl_div/welford/
-           bias_grad_bwd: the heavy tiles live in a ``ForLoopGraphInfo`` body the group's Root/home
-           DRIVES (via a ``loop->child`` edge), not in the home graph itself (which is thin). A loop
-           body is owned by the group whose reduction loops over its axis — matched by the loop's
-           ``block_ids`` intersecting the group's reduction axes. jsd's ``g4`` (``block_ids=[0]`` =
-           the KL group's axis) is thus owned by the KL group; its mutually-exclusive V-reduction
-           BRANCH subtree (reached only via ``_if``) is NOT descended into (rule 3).
+        2. **Skip ``ReductionLoopGraphInfo`` copies.** The roller's per-config duplicates carry a
+           strict subset of the original graph's pre-roll body, so the original graph the group is
+           keyed on already holds the peak.
 
-        2. **SKIP ``ReductionLoopGraphInfo`` copies** (Finding 2). The roller's per-config duplicates
-           carry a strict SUBSET of the original graph's pre-roll body (rms_norm/layer_norm/
-           cross_entropy), so the original (Root/ForLoop) graph the group is keyed on already holds
-           the peak — the SAME exclusion ``_original_graph_reductions`` applies for the group keys.
+        3. **Do not cross ``_if`` edges.** If/Else branch subtrees are their own groups or mutually
+           exclusive with a sibling; a parent group never absorbs a branch's tiles. Branches combine
+           via rule 4's max, not by summing into an ancestor.
 
-        3. **DO NOT cross ``_if`` edges** (Finding 4, the "ancestor only" decision). If/Else branch
-           subtrees are their OWN groups (jsd's g1/g3 are keyed 1/3) or mutually exclusive with a
-           sibling; a parent group never absorbs a branch's tiles (jsd's Root must not pull g0's 12
-           ``[R,M]`` tiles). Branches combine via rule 4's max, not by summing into an ancestor.
-
-        4. **COMBINE a group's owned graphs by MAX-BY-PROFILE, never sum.** Co-resident reductions
-           SHARE one original graph by construction (that is how ``_original_graph_reductions`` forms
-           a group), so their simultaneous residency is already inside that one graph's peak snapshot
-           (p1's ``[0,1,2]`` outer-product tile). A group's other owned graphs are only ever nested
-           (home + driven body -> max picks the heavier: kl_div's 6-tile body beats its 3-tile home)
-           or If/Else siblings (-> max picks the populated branch; grpo/per_token_group's EMPTY Else
-           loses to the If). No two owned graphs are simultaneously-additively resident, so max is
-           both faithful and conservative.
+        4. **Combine a group's owned graphs by max-by-profile, never sum.** Co-resident reductions
+           share one original graph by construction, so their simultaneous residency is already
+           inside that graph's peak snapshot. A group's other owned graphs are only ever nested
+           (home + driven body) or If/Else siblings (max picks the populated branch), never
+           simultaneously-additively resident, so max is both faithful and conservative.
         """
         from .inductor_lowering import ReductionLowering
 
@@ -1216,13 +1205,12 @@ class DeviceIR:
         for gid in group_gids:
             axes = group_axes[gid]
             tiles = list(peak_of.get(gid, []))
-            # descend, transitively, the for-loop bodies this group drives (rule 1): a body whose
-            # loop axis is one of the group's reduction axes. Combine each by max-by-profile. STOP
+            # Descend, transitively, the for-loop bodies this group drives (rule 1): a body whose
+            # loop axis is one of the group's reduction axes. Combine each by max-by-profile. Stop
             # at any body that is itself another group's home (its own sequential group) and never
             # cross ``_if`` (branch subtrees are handled by their own group keys — rule 3). A BFS so
-            # a Root -> loop -> loop chain is fully covered, not just one level (corpus is one level;
-            # this is the faithful general form). ``not axes`` cannot happen for a real group key
-            # (its home graph holds >=1 reduction lowering) -- a defensive descend-anyway guard.
+            # a home -> loop -> loop chain is fully covered, not just one level. ``not axes`` cannot
+            # happen for a real group key (its home graph holds >=1 reduction lowering).
             seen_bodies: set[int] = {gid}
             frontier = [gid]
             while frontier:
@@ -1278,10 +1266,9 @@ class DeviceIR:
         accumulator_facts: list[AccumulatorFact],
         liveness_by_axis: dict[int, int] | None = None,
     ) -> None:
-        """Stage 1 (PROMPT §2.1/§2.2/§2.6): build the categorizing ``ReductionKernelFact`` — the
-        first-class list of reduction descriptors + their ``graph_id`` co-residency groups + the
-        non-reduction loops + the parallel grid axes. The reduction seed + the Stage-2 allocator
-        consume this fact directly.
+        """Build the categorizing ``ReductionKernelFact`` — the list of reduction descriptors +
+        their ``graph_id`` co-residency groups + the non-reduction loops + the parallel grid axes.
+        The reduction seed + the Stage-2 allocator consume this fact directly.
         """
         env = CompileEnvironment.current()
         spec = env.config_spec
@@ -1289,11 +1276,10 @@ class DeviceIR:
         grid_ids = {b for bids in self.grid_block_ids for b in bids}
 
         occurrences = self._original_graph_reductions()
-        # carried-2D tiles: COUNT of accumulators whose last dim is the rdim (per block_id,
+        # carried-2D tiles: count of accumulators whose last dim is the rdim (per block_id,
         # kernel-wide -- an accumulator is carried across the whole inner loop, so it is not
-        # graph-scoped). The COUNT (not a bool) is load-bearing: the carried byte cap divides by
-        # it (jsd=2, group_norm_bwd=5, layer_norm_bwd=3), so the descriptor must carry the
-        # multiplicity to be a faithful superset of the legacy ``num_carried_2d_tiles``.
+        # graph-scoped). A count (not a bool) is load-bearing: the carried byte cap divides the
+        # budget by it, so the descriptor must carry the multiplicity.
         carried_2d_by_bid: dict[int, int] = {}
         for a in accumulator_facts:
             if len(a.dim_block_ids) >= 2 and a.dim_block_ids[-1] is not None:
@@ -1326,18 +1312,16 @@ class DeviceIR:
                 )
             )
 
-        # Co-residency groups = ORIGINAL graph_id equivalence classes (PROMPT §2.2). The
-        # materialized-feature footprint a group byte-caps against is NOT stored here -- it is a
-        # budgeting DERIVATION the Stage-2 allocator computes at the comparison site
-        # (``_materialized_feature_elems``), per PROMPT §2.3 #5 (decisions are outcomes, not stored
-        # labels). Storing it kernel-wide was both dead (no consumer read it) and wrong for a
-        # genuine multi-group kernel (each group can materialize different feature axes).
+        # Co-residency groups = original graph_id equivalence classes. The materialized-feature
+        # footprint a group byte-caps against is not stored here — the Stage-2 allocator derives it
+        # at the comparison site (each group can materialize different feature axes, so a kernel-wide
+        # value would be wrong for a multi-group kernel).
         groups_by_gid: dict[int, list[int]] = {}
         for idx, d in enumerate(descriptors):
             groups_by_gid.setdefault(d.graph_id, []).append(idx)
-        # The faithful per-group resident tile set (CF-Step 7): each group's lexicographic-peak
-        # live tiles, attributed home + driven-loop-bodies, max'd across If/Else. Consumed by the
-        # Stage-2 footprint (which sums ∏(dims) per ACTUAL tile).
+        # The per-group resident tile set: each group's peak live tiles, attributed home +
+        # driven-loop-bodies, max'd across If/Else. Consumed by the Stage-2 footprint (which sums
+        # ∏(dims) per actual tile).
         #
         # The try/except is NECESSARY: ``_group_live_tiles`` walks the graphs through ``env`` (block
         # id resolution in ``_graph_peak_live_tiles``), which a bare-spec unit test builds the fact
@@ -1361,10 +1345,9 @@ class DeviceIR:
             for gid, idxs in sorted(groups_by_gid.items())
         )
 
-        # non-reduction loops + parallel grid axes (PROMPT §2.1 "also categorize the
-        # non-reductions"). The non-reduction loops are the union over the SIZED reductions'
-        # apply/normalize candidates; the grid axes are grid block_ids with no reduction sized
-        # over them.
+        # non-reduction loops + parallel grid axes. The non-reduction loops are the union over the
+        # sized reductions' apply/normalize candidates; the grid axes are grid block_ids with no
+        # reduction sized over them.
         sized_bids = {
             d.block_id for d in descriptors if d.category in SIZED_REDUCTION_CATEGORIES
         }
@@ -3067,35 +3050,29 @@ def _graph_peak_live_by_axis(
 def _graph_peak_live_tiles(
     graph: torch.fx.Graph, env: CompileEnvironment
 ) -> list[tuple[int | None, ...]]:
-    """The per-tile SHAPES of the simultaneously-live tensors at the graph's peak-live step —
-    the faithful successor to ``_graph_peak_live_by_axis`` (which collapses to a per-axis COUNT).
+    """The per-tile shapes of the simultaneously-live tensors at the graph's peak-live step.
 
     Each live tile is recorded as its ``dim_block_ids`` tuple (one entry per shape dim: the block
-    id it spans, or ``None`` for a non-block/constant dim) — the SAME representation as
-    ``AccumulatorFact.dim_block_ids``, so a footprint can sum ``∏(dims)`` per ACTUAL tile shape
-    instead of assuming every live tile is full-rank over all axes (the over-approximation that
-    inflated the grad-parameter footprint).
+    id it spans, or ``None`` for a non-block/constant dim), the same representation as
+    ``AccumulatorFact.dim_block_ids``, so a footprint can sum ``∏(dims)`` per actual tile shape
+    rather than assuming every live tile is full-rank over all axes.
 
-    Which step is "peak"? Register/SRAM pressure is maximized at the step holding the most BYTES,
-    but tile bytes depend on the (not-yet-chosen) block sizes. RANK is the block-size-free proxy for
-    "big": a rank-2 ``[m, r]`` tile is ``m_block × r_block`` elements, a rank-1 ``[m]`` is
-    ``m_block``, so ONE higher-rank tile outweighs any number of lower-rank tiles. We therefore pick
-    the step whose live set is LEXICOGRAPHICALLY GREATEST by RANK PROFILE — the tuple
-    ``(#rank-D tiles, #rank-(D-1) tiles, ..., #rank-1 tiles)`` compared most-dims-first. So a step
-    with one ``[m, r]`` beats a step with eight scalar ``[m]`` carries (the failure of the old
-    max-COUNT rule: welford's rdim read tiles and its scalar carries peak at DIFFERENT steps, and
-    max-count snapped the scalar swarm, hiding the rdim tile and under-sizing R into a spill).
-    Maximizing the top-rank count FIRST captures the maximum number of the heavy R-scaling tiles
-    (the term that prevents spills); lower-rank ties break conservatively (more next-heaviest), then
-    to the FIRST such step.
+    Which step is "peak"? Register/SRAM pressure is maximized at the step holding the most bytes,
+    but tile bytes depend on the not-yet-chosen block sizes. Rank is the block-size-free proxy for
+    "big": a rank-2 ``[m, r]`` tile is ``m_block × r_block`` elements vs ``m_block`` for a rank-1
+    ``[m]``, so one higher-rank tile outweighs any number of lower-rank tiles. We pick the step
+    whose live set is lexicographically greatest by rank profile — the tuple ``(#rank-D tiles,
+    #rank-(D-1) tiles, ..., #rank-1 tiles)`` compared most-dims-first — so a step with one ``[m, r]``
+    beats a step with many scalar ``[m]`` carries. Maximizing the top-rank count first captures the
+    most heavy R-scaling tiles (the term that prevents spills); lower-rank ties break to more
+    next-heaviest, then to the first such step.
 
-    Returns the ACTUAL co-resident live set at that ONE real step (never a per-shape union across
-    steps, which would stitch together shapes that never physically coexist). A CONSERVATIVE choice
-    consistent with ``_graph_peak_live_by_axis`` (same sweep, same last-use liveness). The
-    "1 higher-rank beats any number of lower-rank" tie-rule is not byte-exact in a pathological
-    extreme (hundreds of rank-n tiles vs one rank-(n+1)); the corpus tops out at ~12 co-live tiles,
-    a higher-rank tile CONTAINS a lower-rank as a factor, and the miss errs toward a slightly larger
-    R (bounded by the persistence/chunk math) — a STATED heuristic, not a random choice.
+    Returns the actual co-resident live set at that one real step (never a per-shape union across
+    steps, which would stitch together shapes that never coexist). The "1 higher-rank beats any
+    number of lower-rank" tie-rule is not byte-exact in a pathological extreme (hundreds of rank-n
+    tiles vs one rank-(n+1)), but a higher-rank tile contains a lower-rank one as a factor and the
+    miss errs toward a slightly larger R (bounded by the persistence/chunk math) — a stated
+    heuristic, not a random choice.
     """
     nodes = list(graph.nodes)
     last_use: dict[torch.fx.Node, int] = {}
