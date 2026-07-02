@@ -309,3 +309,33 @@ ncu LOCK of 2b (the flaky-reg-probe concern) — jsd `_helion_jsd_forward`, R=20
 Widening the resident grid pushes regs 32->42, halving the register-limited CTAs/SM (2->1) and
 warps_active (98.7->49.9%). The +11% grid=2 regression IS this register-occupancy cliff — measured,
 not reasoned. 2b is justified.
+
+---
+
+## _apply_reread WRONG-CAP: a VERIFIED synthetic false-negative (adversarial workflow, 2026-07-02)
+
+Adversarial workflow (4 agents) generated 11 synthetic kernels targeting _apply_reread's ceiling
+pick; verified serially on H100 via _lab/redesign/verify_synth_kernel.py.
+
+CONFIRMED WRONG CAP (/tmp/synth_reread_softmax.py — "reread entropy"): a two-physical-pass kernel
+byte-isomorphic to softmax_two_pass, EXCEPT pass-2 REDUCES the normalized probs into an entropy
+scalar instead of STORING them. Pass-2's load is therefore (R,-) not (-,S), so _apply_reread finds
+no store-only load -> returns False -> picks BIG (737280). row_reread survives via pass-1's amax+sum
+fork (cnt=2), so the persistence hold IS armed. At N=49152 fp32 the seed emits block_sizes=[1,65536]
+(PERSIST the full row). MEASURED: persist 708us vs chunk 316us -> CHUNK is 2.24x FASTER. So BIG is
+the wrong cap by 2.24x; the kernel wants SMALL (chunk), identical to the softmax refetch cliff it
+mimics. The ONLY delta from the measured-SMALL corpus kernel (softmax) is pass-2's sink kind — which
+is exactly the bit _apply_reread keys on, and is causally irrelevant to row residency.
+
+NOT a wrong cap (/tmp/synth_reread_variance.py): same 2-pass shape but pass-2 = cheap (x-mean)^2 sum.
+row_reread came out FALSE (the ones-count reduction constant-folded), AND measured true preference is
+PERSIST (+31%) anyway. So this one is correctly-ish handled / inert — confirms only the
+softmax-isomorphic heavy-pass-2 case (#2) is the real false-negative, not every reduce-then-reread.
+
+CONCLUSION: _apply_reread's `not reductions_fed` clause IS evadable by a genuine second pass that
+reduces-before-storing (the false-negative class flagged earlier, now concretely reproduced at 2.24x).
+It does NOT occur on the current corpus (all corpus two-pass kernels store in pass 2), so committed
+HEAD d6d4ac21 is safe, but the heuristic is NOT causally airtight — a normalize-then-reduce second
+pass fools it. The faithful signal would be "a 2nd physical load of the primary row exists" regardless
+of that load's sink, but that over-fires on rolled config-copies (established earlier) — no clean
+static predicate captures it; the true axis is per-config pass count, unknown at seed time.

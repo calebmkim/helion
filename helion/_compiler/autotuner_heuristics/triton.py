@@ -574,18 +574,20 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # The PERSISTENCE-HOLD ceiling — the (looser) byte watermark a RE-READ row may hold its FULL
     # extent under (vs the CHUNK budget, which sizes a streamed/looped tile). Only ``row_reread AND
     # carried_2d_count==0`` reductions reach the hold, so it never loosens a carried tile (kl_div/jsd
-    # stay chunked). TWO ceilings, keyed on APPLY-REREAD (``_apply_reread`` — whether a SEPARATE pass
-    # re-reads the row from L2, the fused-vs-multipass physics the persistence economics turn on):
-    #  - single fused pass (``apply_reread`` False — cross_entropy/cross_entropy_ls/sum): one HBM pass
-    #    with the row reused from registers/SRAM, so a high resident watermark is a pure win far out —
-    #    persist to ~600 KiB (cross_entropy N=50257 measured +7%, N=32000 +47%). 3× ROW. (The former
-    #    CATEGORY proxy put every FULL_SLICE here, wrongly including the fused-then-normalize
-    #    rms/layer_norm forward, which DO re-read x and belong in the SMALL bucket.)
-    #  - separate re-reading pass (``apply_reread`` True — softmax's max/sum/normalize, welford,
-    #    rms/layer_norm normalize): the row is re-swept from L2; beyond ~32 K elements streaming beats
-    #    holding it (softmax N=32768 persist +30% vs chunk, but N=49152 persist is -34% — the old
-    #    category rule held softmax to N=49152 and LOST perf). Tighter ceiling so it chunks at N >=
-    #    ~49152. ~1.2× ROW (admits softmax N=32768 = 262156 B, rejects N=49152 = 393228 B).
+    # stay chunked). TWO ceilings, selected by ``_has_store_only_row_reread`` — an ADMITTED PROXY (see
+    # that method) for "does persist's avoided HBM re-read live in the small L2 working set or the
+    # large register file". The true cutoff is not a single faithful byte budget (softmax flips at
+    # ~128-160 KiB, cross_entropy at ~256-384 KiB with the SAME footprint — measured), so these are
+    # two CALIBRATED buckets that fit the curriculum, not a physical constant:
+    #  - single fused reduce, no store-only re-read (``False`` — cross_entropy/cross_entropy_ls/sum):
+    #    the row's reuse is register-resident, so a high resident watermark is a win far out — persist
+    #    to ~600 KiB (cross_entropy N=50257 measured +7%, N=32000 +47%). 3× ROW.
+    #  - a store-only re-reading pass exists (``True`` — softmax/rms/layer_norm/welford): the row is
+    #    re-swept from L2; beyond ~32 K fp32 elems streaming beats holding it (softmax N=32768 persist
+    #    +30%, N=49152 persist -34%). Tighter ceiling -> chunks at N >= ~49152. ~1.2× ROW (admits
+    #    softmax N=32768 = 262156 B, rejects N=49152 = 393228 B). CAVEAT: rms_norm actually flips at
+    #    ~160 KiB (earlier than this ceiling's 288 KiB implies) — the proxy is coarse; it buckets
+    #    correctly on the corpus but the bucket VALUE is not a faithful per-kernel cutoff.
     PERSIST_HOLD_MAX_BYTES = 3 * 245760
     USER_TILE_PERSIST_HOLD_MAX_BYTES = 294912
     # Looped-fallback reduction chunk (pow2) for a row that does not fit the persistent budget.
@@ -692,21 +694,38 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         return best if best is not None else footprint_terms(default_tiles, axis)
 
     @classmethod
-    def _apply_reread(cls, spec: ConfigSpec, pd: ReductionDescriptor) -> bool:
-        """True iff a SEPARATE pass RE-READS the primary reduction's row to write output — i.e.
-        the reuse of that row is served from L2 across two PHYSICAL loads, not from registers/SRAM
-        within one fused pass. This is the single physical signal behind BOTH the persist-hold
-        ceiling (S2 — a re-read row persists only while it fits the L2 working set -> SMALL ceiling;
-        a single-fused-pass row persists to the SRAM limit -> BIG) and the re-read eviction hint (S1).
+    def _has_store_only_row_reread(cls, spec: ConfigSpec, pd: ReductionDescriptor) -> bool:
+        """True iff the primary reduction's row tensor is ALSO loaded by a STORE-ONLY pass — a load
+        of that tensor that feeds a store and NO reduction (``stores_fed and not reductions_fed``).
+        This is the literal, exact thing measured; the name says the mechanism, not an interpretation.
 
-        Detected from the walker ``MemoryOpFact`` list (already on the spec — no re-walk): there is a
-        LOAD of a tensor that ALSO feeds the primary reduction (``reductions_fed`` over ``pd``'s
-        axis), but THIS load feeds a STORE and NO reduction (``stores_fed and not reductions_fed``) —
-        a second pass reading the row to produce the normalized output. Distinguishes softmax /
-        rms_norm / layer_norm / welford (a separate normalize pass re-reads x -> True) from
-        cross_entropy / sum / kl_div / jsd (one fused pass, the row's reuse is register-resident ->
-        False). NOT the same as ``non_reduction_loop_block_ids`` (softmax's 2nd pass reduces over the
-        SAME axis so that set is empty for it). Empty facts / no kernel fact -> False."""
+        WHY IT EXISTS + THE FAITHFULNESS CAVEAT (read this before trusting it): we WANT to know
+        "does persistence's benefit (avoiding the row's HBM re-read) get served from the small L2
+        working set (=> a TIGHTER persist-hold ceiling, chunk sooner) or from the larger register
+        file (=> a LOOSER ceiling)?" — the physical quantity that sets the persist->chunk cutoff.
+        MEASURED (this session, ncu + emitted Triton), that quantity is NOT cleanly recoverable from
+        any seed-time signal we found:
+          - softmax cutoff ~128-160 KiB, cross_entropy ~256-384 KiB (fp32) — SAME byte footprint,
+            ~2x-different cutoff, so NO single byte budget is faithful.
+          - persistent cross_entropy AND persistent rms_norm both emit ONE ``tl.load(x)`` (register-
+            resident reuse), yet rms_norm flips at ~160 KiB and cross_entropy at ~256 KiB — so
+            load-count / "# physical passes" does NOT predict the cutoff either.
+          - rms_norm has a full-width [m,N] output tile (heavier resident set) and cross_entropy a
+            scalar; but the GPU-verified scalar-output 2-pass adversarial kernel ALSO flips at
+            softmax's ~160 KiB — so ``full_width_output`` is not the axis either.
+        No graph-count / load-count / output-width / byte-budget proxy separated all cases. So this
+        predicate is an ADMITTED PROXY that happens to classify the CURRICULUM correctly (softmax /
+        rms_norm / layer_norm / welford -> SMALL; cross_entropy / sum / kl_div / jsd -> BIG) — it is
+        NOT a faithful measure of the underlying cache-tier/working-set question and is known to be
+        fooled off-corpus (an adversarial 2-pass kernel whose 2nd pass REDUCES instead of STORING
+        re-reads the row identically but is classified False -> BIG -> measured 2.24x too-loose). If
+        a future kernel regresses on the persist ceiling, THIS proxy is the first suspect; the real
+        fix is a working-set-vs-cache-tier signal we could not compute at seed time. See
+        ``_lab/redesign/APPLY_REREAD_ADVERSARIAL_CANDIDATES.md`` + the CF-Step notes.
+
+        Detected from the walker ``MemoryOpFact`` list (already on the spec — no re-walk). NOT the
+        same as ``non_reduction_loop_block_ids`` (softmax's 2nd pass reduces over the SAME axis so
+        that set is empty for it). Empty facts / no kernel fact -> False."""
         facts = spec.memory_op_facts
         if not facts:
             return False
@@ -907,17 +926,18 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
                 else cls.ROW_PERSIST_MAX_BYTES
             )
 
-        # The PERSISTENCE-HOLD ceiling, keyed on APPLY-REREAD (a separate pass re-reads the row from
-        # L2 -> persist only while it fits the L2 working set -> SMALL; a single fused pass reuses the
-        # row from registers -> persist to the SRAM limit -> BIG). Faithful successor to the CATEGORY
-        # proxy (``d.category is USER_TILE``): category only coincidentally tracked multipass-ness —
-        # a single-pass user-tiled reduction (kl_div/jsd) should get BIG, a fused-then-normalize
-        # FULL_SLICE (rms/layer_norm, which re-read x) should get SMALL. Keyed on the PRIMARY (the
-        # apply-reread pass re-reads the primary's row); the ceiling gates the persistence HOLD, which
-        # only fires for the primary's full-slice/user-tile reduction.
+        # The PERSISTENCE-HOLD ceiling. IDEALLY keyed on "will persist's avoided HBM re-read be
+        # served from the small L2 working set (=> tighter SMALL ceiling, chunk sooner) or the larger
+        # register file (=> looser BIG ceiling)". That physical quantity is NOT faithfully recoverable
+        # at seed time (see ``_has_store_only_row_reread`` — softmax and cross_entropy have the same
+        # byte footprint but ~2x-different cutoffs, and neither load-count nor output-width nor a byte
+        # budget separates them). So we use ``_has_store_only_row_reread`` as an ADMITTED PROXY that
+        # classifies the CURRICULUM correctly (store-only re-read pass -> SMALL; single fused reduce
+        # -> BIG) but is known-unfaithful off-corpus. Keyed on the PRIMARY; gates the hold, which only
+        # fires for the primary's full-slice/user-tile reduction.
         hold_ceiling = (
             cls.USER_TILE_PERSIST_HOLD_MAX_BYTES
-            if cls._apply_reread(spec, pd)
+            if cls._has_store_only_row_reread(spec, pd)
             else cls.PERSIST_HOLD_MAX_BYTES
         )
 
@@ -1348,9 +1368,9 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         # collapse it should keep (exposed by the ``persistent=(r>=ext)`` cleanup) and (b) would have
         # pinned fused persistent cross_entropy. The audit doc's tile-bytes gate is REFUTED (non-
         # monotonic: grad-param 128 KiB helps, cross_entropy 122 KiB hurts — the reload STRUCTURE
-        # decides, not size); ``_apply_reread`` also fails to separate them (both False — grad-param's
-        # reread load feeds BOTH a reduction and a store). ``_has_reduced_away_grid`` is the faithful
-        # discriminator. (per_token_group hits the ``num_load==1`` stream branch first, unaffected.)
+        # decides, not size); ``_has_store_only_row_reread`` also fails to separate them (both False —
+        # grad-param's reread load feeds BOTH a reduction and a store). ``_has_reduced_away_grid`` is
+        # the discriminator here. (per_token_group hits the ``num_load==1`` stream branch first.)
         evict = None
         if pd.num_load == 1:
             evict = cls._eviction_policies(env, "stream")

@@ -784,3 +784,33 @@ the Σ-over-live-tiles footprint — Helion auto-allocates a block_id for any no
 an hl.tile loop (NOT contingent on hl.specialize; holds under static_shapes True AND False; RoPE's
 head_dim/heads resolve to block_ids 2/3/4 with no explicit specialize). `None` in a group's live_tiles
 is ALWAYS a size-1 broadcast, never a full-width feature. See memory project_reduction_footprint_fullextent.
+
+## CF-Step 11 — persist-vs-chunk cutoff: faithful-signal hunt CONCLUDED (no clean proxy; renamed _apply_reread)
+Deep investigation (workflow + ncu + emitted-Triton, this session) into what governs the persistence-
+hold ceiling (persist the full reduction row vs chunk it). CONCLUSION: persist's ONLY benefit is
+avoiding the row's HBM re-read (verified: persistent cross_entropy emits ONE tl.load / 1.70GB DRAM,
+chunked emits TWO / 2.83GB). Persist LOSES exactly when the held row no longer fits its cross-pass
+cache tier and the "saved" read misses back to DRAM (ncu: ce@98304 persist reads MORE dram than chunk).
+
+BUT no faithful SEED-TIME proxy for the cutoff exists (all REFUTED by measurement):
+ - byte footprint: softmax flips at ~128-160 KiB, cross_entropy at ~256-384 KiB with the SAME scale=2
+   footprint -> no single byte budget works.
+ - load-count / #physical passes: persistent cross_entropy AND persistent rms_norm BOTH emit ONE
+   tl.load(x) (register-resident), yet rms_norm flips at ~160 KiB and ce at ~256 KiB.
+ - full_width_output: the GPU-verified SCALAR-output 2-pass adversarial kernel (no full-width tile)
+   ALSO flips at softmax's ~160 KiB -> not the axis.
+ - graph-count (rolled-excluded or not): flips ce->SMALL (wrong) or over-corrects rms/layer_norm->BIG.
+The true governing quantity is the row's cross-pass residency TIER (register file ~256KB for a fused
+reduce like cross_entropy; L2 per-CTA working-set ~128-160KB for a separate re-reading pass like
+softmax/rms_norm) combined with the true resident working-set size — NOT recoverable from the facts we
+have at seed time.
+
+ACTION (per human): KEEP the existing proxy, RENAME it honest, DOCUMENT the unfaithfulness.
+_apply_reread -> _has_store_only_row_reread (the literal mechanism: a load of the reduction-row tensor
+that feeds a store and NO reduction). Docstring now states it is an ADMITTED PROXY that classifies the
+CURRICULUM correctly but is NOT faithful and is fooled off-corpus (the 2.24x reduce-instead-of-store
+evader). The two hold ceilings (BIG=737280, SMALL=294912) are documented as CALIBRATED CURRICULUM
+BUCKETS, not physical constants (rms_norm actually flips at ~160KiB, earlier than SMALL's 288KiB
+implies — the bucket VALUE is coarse). Pure rename + comments; logic UNCHANGED (config-neutral).
+Adversarial candidates + probes: _lab/redesign/APPLY_REREAD_ADVERSARIAL_CANDIDATES.md, adversarial_synth/,
+probe_sibling_reread.py, verify_synth_kernel.py, microbench_offcorpus.py.
