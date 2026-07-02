@@ -491,21 +491,6 @@ def _is_standard_reduction(pd: ReductionDescriptor) -> bool:
     return pd.category in FULL_EXTENT_CATEGORIES
 
 
-def _grid_rows(env: CompileEnvironment, m_block_ids: tuple[int, ...]) -> int:
-    """Product of the static M-axis (non-reduction grid) extents — the program count the
-    reduction launches, the numerator of the occupancy ``grid_rows // num_sm``. Returns 0
-    if any extent is not a statically-resolvable size (a dynamic grid has no compile-time
-    occupancy, so the occupancy-gated narrow-w1 lever declines).
-    """
-    grid_rows = 1
-    for mbid in m_block_ids:
-        size = env.block_sizes[mbid].size
-        if not isinstance(size, (int, torch.SymInt)):
-            return 0
-        grid_rows *= env.size_hint(size)
-    return grid_rows
-
-
 class _TileAllocation(NamedTuple):
     """The result of :meth:`_TritonReductionSeedBase.size_reduction_tiles` — the ONE
     per-co-residency-group BUDGET allocation (PROMPT §2.3/§6.2.1), the single source of every
@@ -603,12 +588,10 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
     # cross-grid finalize) nor a raised autotuner_min floor (max(floor, ...) still wins).
     WIDEN_MAX_ROWS = 8
 
-    # num_warps levers (kept OUTSIDE the budget — a scalar keyed on the primary's resident ROW
-    # BYTES, §6.2.1). NARROW-row single-warp: a narrow reduction row wants ONE warp (the cross-warp
-    # reduction tree is pure overhead). Gated on a row-byte cap AND an occupancy cap, both keyed on
-    # ``input_load_itemsize`` (the HBM-load element width — faithful, dtype-agnostic).
-    NARROW_W1_MAX_BYTES = 2048
-    NARROW_W1_OCC_BYTE_LIMIT = 262144
+    # num_warps ramp: keyed on the primary reduction extent (see ``_num_warps``). The former
+    # NARROW-row single-warp refinement (NARROW_W1_MAX_BYTES / NARROW_W1_OCC_BYTE_LIMIT) was removed
+    # after measurement — it mis-fired w1 on low-occupancy bf16 narrow rows (up to 4.3x slow). See
+    # ``_num_warps`` and prompts-lab/perf-report/NARROW_W1_ANALYSIS.md.
 
     # =============================== Stage-1 fact accessors ================================= #
     @classmethod
@@ -748,25 +731,20 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
 
     # =============================== scalar levers (outside the budget) ===================== #
     @classmethod
-    def _num_warps(
-        cls, pd: ReductionDescriptor, num_sm: int = 0, grid_rows: int = 0
-    ) -> int:
+    def _num_warps(cls, pd: ReductionDescriptor) -> int:
         """Scale num_warps with the reduction extent (pow2): rnumel <= 1024 -> 4, <= 4096 -> 8,
-        <= 16384 -> 16, > 16384 -> 32. NARROW-row single-warp refinement at the low end (a narrow
-        row at low/moderate occupancy wants ONE warp). Keyed on ``input_load_itemsize`` (faithful,
-        no dtype-kind branch); needs ``num_sm`` + a static grid (0 disables it)."""
+        <= 16384 -> 16, > 16384 -> 32.
+
+        NOTE: a NARROW-row single-warp refinement (row_bytes <= 2048 + an occupancy cap -> return 1)
+        was REMOVED after measurement. It fired w1 on a whole class of 768/896/1024-wide bf16 rows
+        at LOW occupancy, where w1 is exactly wrong -- most severely fused_add_layernorm
+        (16384,1024) bf16 at 4.3x slower than the ramp. A matched-lever A/B over all 19 w1-emitting
+        cells found removing it improves 12, regresses only softmax(131072,128) bf16 by ~4.5%, and
+        eliminates the disaster. The true separator for a genuine w1 win is HIGH occupancy, not the
+        old ``occ*row_bytes <= K`` product (which is small at BOTH low occupancy and narrow rows --
+        the opposite of what w1 needs), so the byte cap was not the right axis. See
+        prompts-lab/perf-report/NARROW_W1_ANALYSIS.md for the full trail."""
         rnumel = pd.size_hint
-        ils = pd.input_load_itemsize
-        row_bytes = rnumel * ils
-        have_enough_information = num_sm > 0 and ils > 0 and grid_rows > 0
-        if have_enough_information:
-            occ = grid_rows // num_sm
-            if (
-                pd.carried_2d_count == 0
-                and row_bytes <= cls.NARROW_W1_MAX_BYTES
-                and occ * row_bytes <= cls.NARROW_W1_OCC_BYTE_LIMIT
-            ):
-                return 1
         warps32_min_elems = 16384
         if rnumel > warps32_min_elems:
             return 32
@@ -1289,8 +1267,6 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         if not matches_hardware(env, cls.HARDWARE_TARGETS):
             # Off the H100-validated target: keep the upstream conservative seed.
             return cls._narrow_seed(env)
-        from ...runtime import get_num_sm
-
         spec = env.config_spec
         pd = _primary_descriptor_selected(env)
         if pd is None:
@@ -1303,11 +1279,7 @@ class TritonStandardReductionHeuristic(_TritonReductionSeedBase):
         alloc = cls.size_reduction_tiles(env, spec, device_ir, pd)
         block_sizes = alloc.block_sizes
         r_block, persistent = alloc.primary_r_block, alloc.persistent
-        num_warps = cls._num_warps(
-            pd,
-            max(1, get_num_sm(env.device)),
-            _grid_rows(env, cls._grid_axis_block_ids(spec)),
-        )
+        num_warps = cls._num_warps(pd)
         # GRAD-PARAMETER M-COLLAPSE warp FLOOR: a kernel that reduces its grid-M axis AWAY (finalized
         # by a later ``.sum(0)`` — a grid block_id in NO live tile, the faithful §4 collapse signal)
         # batches many M-rows per program and accumulates a wide ``[inner, N]`` gradient. That
@@ -1414,8 +1386,6 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         if not matches_hardware(env, cls.HARDWARE_TARGETS):
             # Off sm90: upstream never fired on user-tiled, so no prior seed to preserve. Decline.
             return None
-        from ...runtime import get_num_sm
-
         spec = env.config_spec
         pd = _primary_descriptor_selected(env)
         if pd is None:
@@ -1428,11 +1398,7 @@ class TritonUserTiledReductionHeuristic(_TritonReductionSeedBase):
         # reduction_loops knob; the rdim rides a block_sizes entry).
         alloc = cls.size_reduction_tiles(env, spec, device_ir, pd)
         block_sizes = alloc.block_sizes
-        num_warps = cls._num_warps(
-            pd,
-            max(1, get_num_sm(env.device)),
-            _grid_rows(env, cls._grid_axis_block_ids(spec)),
-        )
+        num_warps = cls._num_warps(pd)
         non_reduction_loop_ids = set(cls._non_reduction_loop_ids(spec))
         seed: dict[str, Any] = {
             "block_sizes": block_sizes,
