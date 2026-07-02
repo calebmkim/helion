@@ -142,6 +142,53 @@ perf comparison is still apples-to-apples; the sub-1.0 number is driven by one s
 (`8192×4096×128`) where the seed's config is ~1.6× slower — a real, isolated gap worth a follow-up
 (it is *not* caused by the accuracy issue).
 
+## 6. Synthetic stress-test kernels (correctness/generality coverage — not perf workloads)
+
+These are **hand-written kernels whose only job is to stress the heuristic's decision logic** on
+structural cases the real corpus doesn't cover — e.g. co-resident reductions over different axes,
+3-D reduction tiles, mixed grid-tile + user-tile layouts, and the persist-vs-chunk "re-read
+ceiling" decision. They are **not** realistic performance workloads and have no meaningful
+torch.compile reference, so the only metric is **vs default** (`> 1` = seed's config beats the
+compiler default). The point is coverage: does the heuristic *fire correctly and pick a sane
+config* on shapes it was never tuned on? Sources:
+
+- **Categorization probes** — [`kernel_sources/synthetic_probes/`](https://github.com/calebmkim/helion/tree/reduction-perf-report/perf-report/kernel_sources/synthetic_probes) (11 `p*` structural cases + 2 `oos*` out-of-scope confirmers)
+- **Adversarial persist-vs-chunk probes** — [`kernel_sources/adversarial_synth/`](https://github.com/calebmkim/helion/tree/reduction-perf-report/perf-report/kernel_sources/adversarial_synth) (each meant to be swept over the reduction width)
+
+| probe | vs default | what it stresses |
+|---|---|---|
+| p1-outer-product-coresident | 0.99 | two co-resident reductions over different axes (outer product) |
+| p2-feature-plus-rowaccum-offcorpus | 1.03 | feature reduction + row accumulator, off-corpus layout |
+| p3-full-grid-nonquant | 1.15 | full-grid reduction, non-quant |
+| p4-two-rollable-sequential | 1.02 | two sequential rollable reductions |
+| p5-3d-reduction-tile | 1.63 | 3-D reduction tile sizing |
+| p6-mixed-coresident-plus-sequential | 0.87 | mixed co-resident + sequential (the one slightly-behind case) |
+| p7-gridtile-then-usertile | 2.02 | grid-tile followed by user-tile |
+| p8-fullgrid-plus-usertile | 2.90 | full-grid + user-tile |
+| p9-nonred-loop-then-fullextent | 23.7 | non-reduction loop then full-extent reduction |
+| p10-usertile-and-gridtile | 25.5 | user-tile and grid-tile combined |
+| p11-fullextent-then-nonred-loop | 31.9 | full-extent reduction then non-reduction loop |
+| oos1-jagged-declined | — (correctly declines) | data-dependent (jagged) extent — heuristic *should* not fire; it doesn't |
+| oos2-strided-dim0 | 1.04 | strided dim-0 reduction (out-of-scope, still sane) |
+
+Adversarial persist-vs-chunk probes (stress the re-read / byte-budget ceiling):
+
+| probe | vs default |
+|---|---|
+| synth_working_set_undercount | 10.8 |
+| synth_reread_variance_NOT_wrongcap | 7.4 |
+| synth_livecount_scalar_out | 7.3 |
+| synth_l2_vs_reg_twograph_scalar | 7.1 |
+| synth_reread_softmax_VERIFIED_wrongcap | 6.0 |
+| synth_arith_intensity | n/a — frozen flag state doesn't compile on this branch (kernel-source, not the heuristic) |
+| synth_store_bandwidth | n/a — same (frozen flag state) |
+
+**Takeaway:** the heuristic fires and picks a good config across all these structural cases (big
+wins where the default badly mis-sizes, e.g. p9–p11 and the adversarial ceiling probes at 6–32×),
+correctly **declines** the one genuinely out-of-scope case (`oos1`, jagged extent), and only slightly
+trails the default on one mixed layout (`p6`, 0.87×). This is the evidence the heuristic keys on
+real workload structure rather than the specific kernels it was tuned on.
+
 ---
 
 *Method in brief:* one process per kernel, all arms timed on the same input tensors, forward-only,
