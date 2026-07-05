@@ -457,9 +457,6 @@ def _h100_matmul_tile(
     # Drop num_stages only if even min_bk overflows SMEM (an unusually large tile).
     BK_CAP = 256
     PIPE = 4  # baseline K-loop pipeline depth (bk is sized to fit at least this many stages)
-    MAX_STAGES = 6  # then DEEPEN the pipeline up to here if SMEM allows — a small tile leaves SMEM
-    # spare, and a deep K-loop (many iterations) hides its latency with more stages (measured:
-    # small-M [64,64,128] s4->s6 +13%, deep-K K>>M·N +26%); a big tile is SMEM-capped back to ~4.
     min_bk = 32 if itemsize == 1 else 16  # tl.dot K min (fp8 needs 32)
     # Largest pow2 <= min(BK_CAP, K/PIPE), floored to min_bk. The K/PIPE cap is <= K, so it also
     # guarantees bk <= K; and flooring only at the end suffices (a floor inside the min() would be
@@ -476,6 +473,10 @@ def _h100_matmul_tile(
     #     diagnosed). A bare GEMM (pinned_grid==1) keeps the full depth — its long K-loop genuinely
     #     IS latency-bound (3072³ forced to s2 = G 0.58 disaster). This is the ONLY place num_stages
     #     is decided; the two regimes differ only in this ceiling.
+    # MAX_STAGES: deepen the pipeline up to here if SMEM allows — a small tile leaves SMEM spare and
+    # a deep K-loop hides its latency with more stages (measured: small-M [64,64,128] s4->s6 +13%,
+    # deep-K K>>M·N +26%); a big tile is SMEM-capped back to ~4.
+    MAX_STAGES = 6
     max_depth = 2 if saturated_batched else MAX_STAGES
     per_stage = (bm * bk + bk * bn) * itemsize
     kit = max(1, k // bk)  # K-loop iterations — no point pipelining deeper than this
