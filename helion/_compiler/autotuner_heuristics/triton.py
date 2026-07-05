@@ -294,60 +294,12 @@ class TritonB200MatmulHeuristic(AutotunerHeuristic):
         return _seed_config_for_config_spec(env.config_spec)
 
 
-_H100_MATMUL_HEURISTICS_PATH = Path(__file__).resolve().parent / "matmul_h100.json"
-
-
 def _width_bits_from_dtype(dtype: torch.dtype) -> int:
     """Operand bit-width — the faithful matmul-seed family key (4/8/16/32). Derived
     from the dtype's itemsize (bytes), NOT a dtype-kind literal: bf16==fp16 collapse to
     one 16-bit band (same itemsize), fp8=8, fp32=32, int4=4 (deferred). The compiler's
     tl.dot tile cost scales with operand bytes, so the byte-width IS the budget knob."""
     return dtype.itemsize * 8
-
-
-@functools.cache
-def _h100_matmul_rules() -> tuple[dict[str, object], ...]:
-    """Override rules from ``matmul_h100.json`` (a region the budget formula gets wrong,
-    scoped to that region — never to a single curriculum shape). Empty/absent file ⇒ the
-    formula is the sole, catch-all seed. Cached: the file is immutable per process."""
-    if not _H100_MATMUL_HEURISTICS_PATH.exists():
-        return ()
-    with _H100_MATMUL_HEURISTICS_PATH.open(encoding="utf-8") as handle:
-        data = cast("dict[str, list[dict[str, object]]]", json.load(handle))
-    return tuple(data.get("rules", []))
-
-
-def _h100_shape_bucket_from_fact(fact: MatmulFact) -> dict[str, object]:
-    assert fact.static_m is not None
-    assert fact.static_n is not None
-    assert fact.static_k is not None
-    return {
-        "width": _width_bits_from_dtype(fact.lhs_dtype),
-        "m_value": fact.static_m,
-        "n_value": fact.static_n,
-        "k_value": fact.static_k,
-    }
-
-
-def _h100_rules_for_bucket(
-    shape_bucket: dict[str, object],
-) -> list[dict[str, object]]:
-    """Override rules whose ``shape_bucket`` matches, most-specific first (reuses the
-    B200 interval/exact matcher; ``width`` is an exact int key, ``m/n/k_bucket`` are
-    intervals)."""
-    matches = [
-        rule
-        for rule in _h100_matmul_rules()
-        if _shape_bucket_matches(
-            cast("dict[str, object]", rule["shape_bucket"]),
-            shape_bucket,
-        )
-    ]
-    matches.sort(
-        key=lambda rule: len(cast("dict[str, object]", rule["shape_bucket"])),
-        reverse=True,
-    )
-    return matches
 
 
 def _h100_matmul_tile(
@@ -626,9 +578,7 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     ``(M, N, K, operand-width)`` and **pins every batch/outer axis to 1** (a no-data-reuse parallel
     axis — one CTA per batch maximizes the grid, and it keeps the ``[bm,bn]`` register budget valid;
     the resulting pinned grid then drives the saturation levers, so a batched dot and mamba are the
-    SAME case). The catch-all guarantees no such matmul hits the default, with optional
-    ``matmul_h100.json`` overrides for any region the formula measurably gets wrong (formula-first;
-    an override earns its place on a whole REGIME, never a single curriculum shape).
+    SAME case). The catch-all formula guarantees no such matmul hits the default.
     ``promote_seed_to_default=False`` for now: the seed is planted into the autotuner and used for
     no-autotune Product A, but the compiler default is left untouched."""
 
@@ -645,22 +595,11 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
 
     @classmethod
     def _ranked(cls, env: CompileEnvironment) -> list[Config]:
-        spec = env.config_spec
-        fact = _batched_static_matmul_fact(spec)
+        fact = _batched_static_matmul_fact(env.config_spec)
         if fact is None:
             return []
-        # Override table first (most-specific regime rule wins); else the formula catch-all
-        # (primary + ranked Product-B alternates).
-        bucket = _h100_shape_bucket_from_fact(fact)
-        ranked: list[Config] = []
-        for rule in _h100_rules_for_bucket(bucket):
-            for template in cast("list[dict[str, object]]", rule["templates"]):
-                ranked.append(_materialize_config(template, config_spec=spec))
-            if ranked:
-                break
-        if not ranked:
-            ranked = _h100_ranked_configs(env, fact)
-        return dedupe_configs(ranked)
+        # The budget formula is the sole seed: the primary (Product A) + ranked Product-B alternates.
+        return dedupe_configs(_h100_ranked_configs(env, fact))
 
     @classmethod
     def get_seed_config(
