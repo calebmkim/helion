@@ -461,8 +461,10 @@ def _h100_matmul_tile(
     # spare, and a deep K-loop (many iterations) hides its latency with more stages (measured:
     # small-M [64,64,128] s4->s6 +13%, deep-K K>>M·N +26%); a big tile is SMEM-capped back to ~4.
     min_bk = 32 if itemsize == 1 else 16  # tl.dot K min (fp8 needs 32)
-    bk = min(BK_CAP, _p2le(k), max(min_bk, _p2le(max(1, k // PIPE))))
-    bk = max(min_bk, bk)
+    # Largest pow2 <= min(BK_CAP, K/PIPE), floored to min_bk. The K/PIPE cap is <= K, so it also
+    # guarantees bk <= K; and flooring only at the end suffices (a floor inside the min() would be
+    # undone by the min and redone here).
+    bk = max(min_bk, min(BK_CAP, _p2le(max(1, k // PIPE))))
     while bk > min_bk and (bm * bk + bk * bn) * itemsize * PIPE > SMEM_BUDGET:
         bk //= 2
     # num_stages = the deepest pipeline that fits SMEM at this bk, bounded by:
