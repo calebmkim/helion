@@ -21,7 +21,6 @@ from helion._compiler.autotuner_heuristics.triton import (
     TritonUserTiledReductionHeuristic,
 )
 from helion._compiler.autotuner_heuristics.triton import _h100_matmul_tile
-from helion._compiler.autotuner_heuristics.triton import _width_bits_from_dtype
 from helion._compiler.backend import CuteBackend
 from helion._compiler.backend import TritonBackend
 from helion._compiler.cute.strategies import TCGEN05_LAYOUT_OVERRIDES_D_STORE_BOX_N_KEY
@@ -638,13 +637,6 @@ class TestTritonH100MatmulHeuristic(TestCase):
         env.device = DEVICE
         env.settings = Settings()
         return env
-
-    def test_width_bits_from_dtype(self) -> None:
-        # The faithful 4/8/16/32 family key — bf16 and fp16 collapse to one 16-bit band.
-        self.assertEqual(_width_bits_from_dtype(torch.bfloat16), 16)
-        self.assertEqual(_width_bits_from_dtype(torch.float16), 16)
-        self.assertEqual(_width_bits_from_dtype(torch.float32), 32)
-        self.assertEqual(_width_bits_from_dtype(torch.float8_e4m3fn), 8)
 
     def test_budget_formula_is_deterministic_per_regime(self) -> None:
         # Pure formula (fixed num_sm=132, H100), exercising every lever. Returns the tile

@@ -294,14 +294,6 @@ class TritonB200MatmulHeuristic(AutotunerHeuristic):
         return _seed_config_for_config_spec(env.config_spec)
 
 
-def _width_bits_from_dtype(dtype: torch.dtype) -> int:
-    """Operand bit-width — the faithful matmul-seed family key (4/8/16/32). Derived
-    from the dtype's itemsize (bytes), NOT a dtype-kind literal: bf16==fp16 collapse to
-    one 16-bit band (same itemsize), fp8=8, fp32=32, int4=4 (deferred). The compiler's
-    tl.dot tile cost scales with operand bytes, so the byte-width IS the budget knob."""
-    return dtype.itemsize * 8
-
-
 def _h100_matmul_tile(
     m: int, n: int, k: int, itemsize: int, num_sm: int, pinned_grid: int = 1
 ) -> tuple[int, int, int, int, int, int]:
@@ -508,31 +500,6 @@ def _h100_config(
     return Config(**cfg)
 
 
-def _h100_budget_tile(
-    env: CompileEnvironment, fact: MatmulFact
-) -> tuple[int, int, int, int, int, int]:
-    """The primary tile tuple (bm,bn,bk,num_warps,num_stages,l2_grouping) from the formula."""
-    from ...runtime import get_num_sm
-
-    assert fact.static_m is not None
-    assert fact.static_n is not None
-    assert fact.static_k is not None
-    return _h100_matmul_tile(
-        fact.static_m,
-        fact.static_n,
-        fact.static_k,
-        max(1, fact.lhs_dtype.itemsize),
-        max(1, get_num_sm(env.device)),
-        _h100_pinned_grid(env, fact),
-    )
-
-
-def _h100_budget_config(env: CompileEnvironment, fact: MatmulFact) -> Config:
-    """The catch-all budget seed (Product A / rank-0) for a clean 2-D static matmul fact."""
-    bm, bn, bk, nw, ns, l2 = _h100_budget_tile(env, fact)
-    return _h100_config(env.config_spec, fact, bm, bn, bk, nw, ns, l2)
-
-
 def _h100_ranked_configs(env: CompileEnvironment, fact: MatmulFact) -> list[Config]:
     """The ranked seed list: the budget primary (rank-0, Product A) + a few DIVERSE strong
     alternates that seed Product-B search convergence (a seed is never forced, so a sub-optimal
@@ -541,9 +508,22 @@ def _h100_ranked_configs(env: CompileEnvironment, fact: MatmulFact) -> list[Conf
     and num_stages (s3 vs s4) — giving the search diverse strong starting points without the
     risky l2 lever. Deduped against the primary by the loader."""
     from ..._utils import prev_power_of_2
+    from ...runtime import get_num_sm
 
-    bm, bn, bk, nw, ns, l2 = _h100_budget_tile(env, fact)
+    assert fact.static_m is not None
+    assert fact.static_n is not None
+    assert fact.static_k is not None
     spec = env.config_spec
+    # The budget formula sizes the dot tile under a register/SMEM budget, keyed on
+    # (M, N, K, operand-width via itemsize) and the pinned batch grid.
+    bm, bn, bk, nw, ns, l2 = _h100_matmul_tile(
+        fact.static_m,
+        fact.static_n,
+        fact.static_k,
+        max(1, fact.lhs_dtype.itemsize),
+        max(1, get_num_sm(env.device)),
+        _h100_pinned_grid(env, fact),
+    )
     ranked: list[Config] = [_h100_config(spec, fact, bm, bn, bk, nw, ns, l2)]
 
     def _warps(_bm: int, _bn: int) -> int:
