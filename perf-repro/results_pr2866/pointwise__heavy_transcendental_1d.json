@@ -1,0 +1,131 @@
+{
+ "rows": [
+  {
+   "corpus": "pointwise",
+   "kernel": "heavy_transcendental_1d",
+   "shape": [
+    16777216
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     2048
+    ],
+    "num_warps": 16
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 276.16,
+     "spread": 0.0006,
+     "round_medians": [
+      276.096,
+      276.144,
+      276.256,
+      276.16,
+      276.224,
+      276.16,
+      276.16,
+      276.24,
+      276.224
+     ],
+     "reps_per_round": 36,
+     "coldgraph_us": 275.968
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 1097.888,
+     "spread": 0.0004,
+     "round_medians": [
+      1097.504,
+      1097.616,
+      1097.92,
+      1097.888,
+      1097.92,
+      1097.888,
+      1097.888,
+      1097.888,
+      1097.904
+     ],
+     "reps_per_round": 36,
+     "coldgraph_us": 1097.376
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 276.88,
+     "spread": 0.0005,
+     "round_medians": [
+      276.752,
+      276.8,
+      276.864,
+      276.896,
+      276.88,
+      276.896,
+      276.864,
+      276.88,
+      276.88
+     ],
+     "reps_per_round": 36,
+     "coldgraph_us": 276.896
+    }
+   },
+   "G_tc": 1.0026,
+   "G_def": 3.9756,
+   "G_vllm": null,
+   "us": {
+    "seed": 276.16,
+    "default": 1097.888,
+    "tc": 276.88
+   },
+   "coldgraph_us": {
+    "seed": 275.968,
+    "default": 1097.376,
+    "tc": 276.896
+   },
+   "perf_only_tc": 1.0026,
+   "perf_only_def": 3.9756,
+   "perf_only_vllm": null
+  }
+ ]
+}

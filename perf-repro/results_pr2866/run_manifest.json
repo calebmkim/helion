@@ -1,0 +1,125 @@
+{
+ "mode": "full",
+ "total_secs": 1773.3,
+ "pairs": [
+  {
+   "corpus": "pointwise",
+   "kernel": "swiglu",
+   "status": "ok",
+   "secs": 51.3,
+   "cells": 23
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "geglu",
+   "status": "ok",
+   "secs": 43.6,
+   "cells": 17
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "relu_squared",
+   "status": "ok",
+   "secs": 29.7,
+   "cells": 12
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "residual_add",
+   "status": "ok",
+   "secs": 36.5,
+   "cells": 16
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "status": "ok",
+   "secs": 44.0,
+   "cells": 15
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "rope_fwd",
+   "status": "ok",
+   "secs": 255.8,
+   "cells": 2
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "transposed_out_add",
+   "status": "ok",
+   "secs": 10.8,
+   "cells": 1
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "heavy_transcendental_1d",
+   "status": "ok",
+   "secs": 12.3,
+   "cells": 1
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "swiglu",
+   "status": "ok",
+   "secs": 20.6,
+   "cells": 7
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "geglu",
+   "status": "ok",
+   "secs": 17.8,
+   "cells": 5
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "relu_squared",
+   "status": "ok",
+   "secs": 15.3,
+   "cells": 4
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "residual_add",
+   "status": "ok",
+   "secs": 17.1,
+   "cells": 5
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "bias_gelu",
+   "status": "ok",
+   "secs": 20.3,
+   "cells": 5
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "dyt",
+   "status": "ok",
+   "secs": 49.5,
+   "cells": 18
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "rope_fwd",
+   "status": "ok",
+   "secs": 1098.3,
+   "cells": 6
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "transposed_out_add",
+   "status": "ok",
+   "secs": 18.7,
+   "cells": 6
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "heavy_transcendental_1d",
+   "status": "ok",
+   "secs": 31.8,
+   "cells": 5
+  }
+ ]
+}

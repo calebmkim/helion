@@ -1,0 +1,7 @@
+# Helion compile caches (per-process, 100s of MB — never commit)
+results/.cache_*/
+**/__pycache__/
+**/.ruff_cache/
+deps/_bench_results/
+# superseded pre-correction result backups
+results/_cloneall_backup/

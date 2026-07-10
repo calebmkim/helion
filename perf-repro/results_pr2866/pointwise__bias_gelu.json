@@ -1,0 +1,2104 @@
+{
+ "rows": [
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    32768,
+    3072
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 171.36,
+     "spread": 0.0009,
+     "round_medians": [
+      171.264,
+      171.392,
+      171.424,
+      171.36,
+      171.328,
+      171.392,
+      171.296,
+      171.264,
+      171.424
+     ],
+     "reps_per_round": 131,
+     "coldgraph_us": 171.424
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 194.304,
+     "spread": 0.0008,
+     "round_medians": [
+      194.272,
+      194.304,
+      194.4,
+      194.304,
+      194.368,
+      194.432,
+      194.336,
+      194.272,
+      194.304
+     ],
+     "reps_per_round": 131,
+     "coldgraph_us": 194.624
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 147.2,
+     "spread": 0.0007,
+     "round_medians": [
+      147.136,
+      147.2,
+      147.2,
+      147.2,
+      147.168,
+      147.2,
+      147.136,
+      147.136,
+      147.232
+     ],
+     "reps_per_round": 131,
+     "coldgraph_us": 147.488
+    }
+   },
+   "G_tc": 0.859,
+   "G_def": 1.1339,
+   "G_vllm": null,
+   "us": {
+    "seed": 171.36,
+    "default": 194.304,
+    "tc": 147.2
+   },
+   "coldgraph_us": {
+    "seed": 171.424,
+    "default": 194.624,
+    "tc": 147.488
+   },
+   "perf_only_tc": 0.859,
+   "perf_only_def": 1.1339,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    16384,
+    4096
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 101.792,
+     "spread": 0.0009,
+     "round_medians": [
+      101.728,
+      101.76,
+      101.728,
+      101.824,
+      101.792,
+      101.824,
+      101.824,
+      101.792,
+      101.824
+     ],
+     "reps_per_round": 175,
+     "coldgraph_us": 102.144
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 122.24,
+     "spread": 0.0013,
+     "round_medians": [
+      122.176,
+      122.336,
+      122.24,
+      122.24,
+      122.24,
+      122.272,
+      122.24,
+      122.272,
+      122.272
+     ],
+     "reps_per_round": 175,
+     "coldgraph_us": 122.016
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 100.0,
+     "spread": 0.001,
+     "round_medians": [
+      99.936,
+      99.936,
+      100.0,
+      100.0,
+      100.0,
+      100.0,
+      99.968,
+      100.0,
+      100.032
+     ],
+     "reps_per_round": 175,
+     "coldgraph_us": 100.416
+    }
+   },
+   "G_tc": 0.9824,
+   "G_def": 1.2009,
+   "G_vllm": null,
+   "us": {
+    "seed": 101.792,
+    "default": 122.24,
+    "tc": 100.0
+   },
+   "coldgraph_us": {
+    "seed": 102.144,
+    "default": 122.016,
+    "tc": 100.416
+   },
+   "perf_only_tc": 0.9824,
+   "perf_only_def": 1.2009,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    16384,
+    5120
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 136.672,
+     "spread": 0.0007,
+     "round_medians": [
+      136.672,
+      136.64,
+      136.64,
+      136.672,
+      136.736,
+      136.672,
+      136.672,
+      136.64,
+      136.672
+     ],
+     "reps_per_round": 151,
+     "coldgraph_us": 136.832
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 150.336,
+     "spread": 0.0009,
+     "round_medians": [
+      150.272,
+      150.368,
+      150.4,
+      150.272,
+      150.368,
+      150.304,
+      150.336,
+      150.336,
+      150.336
+     ],
+     "reps_per_round": 151,
+     "coldgraph_us": 150.72
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 124.16,
+     "spread": 0.0008,
+     "round_medians": [
+      124.128,
+      124.224,
+      124.16,
+      124.128,
+      124.192,
+      124.128,
+      124.192,
+      124.128,
+      124.16
+     ],
+     "reps_per_round": 151,
+     "coldgraph_us": 123.84
+    }
+   },
+   "G_tc": 0.9085,
+   "G_def": 1.1,
+   "G_vllm": null,
+   "us": {
+    "seed": 136.672,
+    "default": 150.336,
+    "tc": 124.16
+   },
+   "coldgraph_us": {
+    "seed": 136.832,
+    "default": 150.72,
+    "tc": 123.84
+   },
+   "perf_only_tc": 0.9085,
+   "perf_only_def": 1.1,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    16384,
+    6400
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 178.048,
+     "spread": 0.0011,
+     "round_medians": [
+      177.952,
+      178.016,
+      178.08,
+      178.144,
+      178.048,
+      178.064,
+      178.016,
+      178.016,
+      178.064
+     ],
+     "reps_per_round": 130,
+     "coldgraph_us": 178.496
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 190.336,
+     "spread": 0.0008,
+     "round_medians": [
+      190.336,
+      190.336,
+      190.384,
+      190.432,
+      190.368,
+      190.32,
+      190.304,
+      190.368,
+      190.272
+     ],
+     "reps_per_round": 130,
+     "coldgraph_us": 190.656
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 153.312,
+     "spread": 0.0009,
+     "round_medians": [
+      153.312,
+      153.232,
+      153.28,
+      153.376,
+      153.232,
+      153.36,
+      153.312,
+      153.36,
+      153.28
+     ],
+     "reps_per_round": 130,
+     "coldgraph_us": 153.184
+    }
+   },
+   "G_tc": 0.8611,
+   "G_def": 1.069,
+   "G_vllm": null,
+   "us": {
+    "seed": 178.048,
+    "default": 190.336,
+    "tc": 153.312
+   },
+   "coldgraph_us": {
+    "seed": 178.496,
+    "default": 190.656,
+    "tc": 153.184
+   },
+   "perf_only_tc": 0.8611,
+   "perf_only_def": 1.069,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    8192,
+    8192
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 102.592,
+     "spread": 0.0012,
+     "round_medians": [
+      102.496,
+      102.592,
+      102.592,
+      102.528,
+      102.592,
+      102.624,
+      102.592,
+      102.592,
+      102.56
+     ],
+     "reps_per_round": 177,
+     "coldgraph_us": 102.944
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 112.064,
+     "spread": 0.002,
+     "round_medians": [
+      112.096,
+      112.064,
+      112.064,
+      112.192,
+      112.032,
+      111.968,
+      112.096,
+      112.064,
+      112.16
+     ],
+     "reps_per_round": 177,
+     "coldgraph_us": 112.192
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 100.0,
+     "spread": 0.001,
+     "round_medians": [
+      99.936,
+      100.0,
+      100.0,
+      99.968,
+      100.032,
+      100.032,
+      100.0,
+      100.032,
+      100.032
+     ],
+     "reps_per_round": 177,
+     "coldgraph_us": 100.256
+    }
+   },
+   "G_tc": 0.9747,
+   "G_def": 1.0923,
+   "G_vllm": null,
+   "us": {
+    "seed": 102.592,
+    "default": 112.064,
+    "tc": 100.0
+   },
+   "coldgraph_us": {
+    "seed": 102.944,
+    "default": 112.192,
+    "tc": 100.256
+   },
+   "perf_only_tc": 0.9747,
+   "perf_only_def": 1.0923,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    8192,
+    10240
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 125.6,
+     "spread": 0.0013,
+     "round_medians": [
+      125.472,
+      125.6,
+      125.6,
+      125.6,
+      125.6,
+      125.568,
+      125.568,
+      125.632,
+      125.6
+     ],
+     "reps_per_round": 157,
+     "coldgraph_us": 125.952
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 139.328,
+     "spread": 0.0016,
+     "round_medians": [
+      139.2,
+      139.296,
+      139.424,
+      139.264,
+      139.328,
+      139.424,
+      139.392,
+      139.392,
+      139.296
+     ],
+     "reps_per_round": 157,
+     "coldgraph_us": 140.352
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 124.0,
+     "spread": 0.0015,
+     "round_medians": [
+      123.84,
+      124.0,
+      124.032,
+      124.0,
+      124.0,
+      124.0,
+      124.0,
+      124.0,
+      124.0
+     ],
+     "reps_per_round": 157,
+     "coldgraph_us": 124.384
+    }
+   },
+   "G_tc": 0.9873,
+   "G_def": 1.1093,
+   "G_vllm": null,
+   "us": {
+    "seed": 125.6,
+    "default": 139.328,
+    "tc": 124.0
+   },
+   "coldgraph_us": {
+    "seed": 125.952,
+    "default": 140.352,
+    "tc": 124.384
+   },
+   "perf_only_tc": 0.9873,
+   "perf_only_def": 1.1093,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    8192,
+    16384
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 195.744,
+     "spread": 0.0003,
+     "round_medians": [
+      195.744,
+      195.744,
+      195.808,
+      195.744,
+      195.776,
+      195.744,
+      195.744,
+      195.744,
+      195.776
+     ],
+     "reps_per_round": 117,
+     "coldgraph_us": 195.648
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 218.24,
+     "spread": 0.0116,
+     "round_medians": [
+      219.712,
+      218.24,
+      218.72,
+      218.24,
+      218.368,
+      217.536,
+      218.144,
+      217.312,
+      219.84
+     ],
+     "reps_per_round": 117,
+     "coldgraph_us": 222.688
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 192.992,
+     "spread": 0.0005,
+     "round_medians": [
+      192.992,
+      192.928,
+      192.96,
+      192.992,
+      193.024,
+      192.992,
+      192.992,
+      192.992,
+      192.96
+     ],
+     "reps_per_round": 117,
+     "coldgraph_us": 193.184
+    }
+   },
+   "G_tc": 0.9859,
+   "G_def": 1.1149,
+   "G_vllm": null,
+   "us": {
+    "seed": 195.744,
+    "default": 218.24,
+    "tc": 192.992
+   },
+   "coldgraph_us": {
+    "seed": 195.648,
+    "default": 222.688,
+    "tc": 193.184
+   },
+   "perf_only_tc": 0.9859,
+   "perf_only_def": 1.1149,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    8192,
+    18176
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 220.576,
+     "spread": 0.0014,
+     "round_medians": [
+      220.496,
+      220.512,
+      220.576,
+      220.512,
+      220.576,
+      220.8,
+      220.768,
+      220.8,
+      220.784
+     ],
+     "reps_per_round": 108,
+     "coldgraph_us": 220.8
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 243.952,
+     "spread": 0.0033,
+     "round_medians": [
+      243.376,
+      244.144,
+      243.776,
+      243.92,
+      244.016,
+      244.176,
+      244.064,
+      243.584,
+      243.952
+     ],
+     "reps_per_round": 108,
+     "coldgraph_us": 242.688
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 215.296,
+     "spread": 0.0021,
+     "round_medians": [
+      215.008,
+      215.216,
+      215.232,
+      215.168,
+      215.296,
+      215.456,
+      215.424,
+      215.392,
+      215.392
+     ],
+     "reps_per_round": 108,
+     "coldgraph_us": 214.88
+    }
+   },
+   "G_tc": 0.9761,
+   "G_def": 1.106,
+   "G_vllm": null,
+   "us": {
+    "seed": 220.576,
+    "default": 243.952,
+    "tc": 215.296
+   },
+   "coldgraph_us": {
+    "seed": 220.8,
+    "default": 242.688,
+    "tc": 214.88
+   },
+   "perf_only_tc": 0.9761,
+   "perf_only_def": 1.106,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    4096,
+    20480
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 126.592,
+     "spread": 0.0005,
+     "round_medians": [
+      126.56,
+      126.592,
+      126.592,
+      126.528,
+      126.56,
+      126.56,
+      126.592,
+      126.592,
+      126.592
+     ],
+     "reps_per_round": 157,
+     "coldgraph_us": 126.688
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 136.384,
+     "spread": 0.0009,
+     "round_medians": [
+      136.416,
+      136.352,
+      136.416,
+      136.448,
+      136.32,
+      136.352,
+      136.352,
+      136.448,
+      136.384
+     ],
+     "reps_per_round": 157,
+     "coldgraph_us": 137.28
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 124.192,
+     "spread": 0.0005,
+     "round_medians": [
+      124.224,
+      124.16,
+      124.192,
+      124.16,
+      124.192,
+      124.16,
+      124.224,
+      124.224,
+      124.192
+     ],
+     "reps_per_round": 157,
+     "coldgraph_us": 123.952
+    }
+   },
+   "G_tc": 0.981,
+   "G_def": 1.0774,
+   "G_vllm": null,
+   "us": {
+    "seed": 126.592,
+    "default": 136.384,
+    "tc": 124.192
+   },
+   "coldgraph_us": {
+    "seed": 126.688,
+    "default": 137.28,
+    "tc": 123.952
+   },
+   "perf_only_tc": 0.981,
+   "perf_only_def": 1.0774,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    4096,
+    32768
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 196.016,
+     "spread": 0.0005,
+     "round_medians": [
+      196.032,
+      196.032,
+      196.016,
+      196.016,
+      196.096,
+      196.016,
+      196.0,
+      196.08,
+      196.016
+     ],
+     "reps_per_round": 118,
+     "coldgraph_us": 196.128
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 210.56,
+     "spread": 0.0008,
+     "round_medians": [
+      210.56,
+      210.464,
+      210.592,
+      210.592,
+      210.56,
+      210.624,
+      210.544,
+      210.496,
+      210.48
+     ],
+     "reps_per_round": 118,
+     "coldgraph_us": 212.128
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 192.736,
+     "spread": 0.0005,
+     "round_medians": [
+      192.8,
+      192.72,
+      192.8,
+      192.704,
+      192.768,
+      192.736,
+      192.736,
+      192.736,
+      192.752
+     ],
+     "reps_per_round": 118,
+     "coldgraph_us": 192.992
+    }
+   },
+   "G_tc": 0.9833,
+   "G_def": 1.0742,
+   "G_vllm": null,
+   "us": {
+    "seed": 196.016,
+    "default": 210.56,
+    "tc": 192.736
+   },
+   "coldgraph_us": {
+    "seed": 196.128,
+    "default": 212.128,
+    "tc": 192.992
+   },
+   "perf_only_tc": 0.9833,
+   "perf_only_def": 1.0742,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    32768,
+    4096
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 195.84,
+     "spread": 0.0007,
+     "round_medians": [
+      195.84,
+      195.744,
+      195.872,
+      195.744,
+      195.84,
+      195.808,
+      195.84,
+      195.808,
+      195.84
+     ],
+     "reps_per_round": 111,
+     "coldgraph_us": 196.16
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 259.296,
+     "spread": 0.0007,
+     "round_medians": [
+      259.328,
+      259.328,
+      259.296,
+      259.392,
+      259.296,
+      259.2,
+      259.264,
+      259.328,
+      259.232
+     ],
+     "reps_per_round": 111,
+     "coldgraph_us": 259.2
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 192.96,
+     "spread": 0.0013,
+     "round_medians": [
+      192.992,
+      192.8,
+      193.024,
+      192.768,
+      192.96,
+      192.864,
+      192.896,
+      192.96,
+      192.96
+     ],
+     "reps_per_round": 111,
+     "coldgraph_us": 192.96
+    }
+   },
+   "G_tc": 0.9853,
+   "G_def": 1.324,
+   "G_vllm": null,
+   "us": {
+    "seed": 195.84,
+    "default": 259.296,
+    "tc": 192.96
+   },
+   "coldgraph_us": {
+    "seed": 196.16,
+    "default": 259.2,
+    "tc": 192.96
+   },
+   "perf_only_tc": 0.9853,
+   "perf_only_def": 1.324,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    8192,
+    6400
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 93.12,
+     "spread": 0.0009,
+     "round_medians": [
+      93.056,
+      93.12,
+      93.12,
+      93.072,
+      93.12,
+      93.12,
+      93.088,
+      93.056,
+      93.136
+     ],
+     "reps_per_round": 194,
+     "coldgraph_us": 93.152
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 91.84,
+     "spread": 0.0028,
+     "round_medians": [
+      91.744,
+      91.792,
+      91.84,
+      91.84,
+      91.824,
+      91.888,
+      92.0,
+      91.792,
+      91.92
+     ],
+     "reps_per_round": 194,
+     "coldgraph_us": 91.52
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 80.512,
+     "spread": 0.0008,
+     "round_medians": [
+      80.512,
+      80.544,
+      80.48,
+      80.48,
+      80.48,
+      80.512,
+      80.512,
+      80.544,
+      80.48
+     ],
+     "reps_per_round": 194,
+     "coldgraph_us": 80.576
+    }
+   },
+   "G_tc": 0.8646,
+   "G_def": 0.9863,
+   "G_vllm": null,
+   "us": {
+    "seed": 93.12,
+    "default": 91.84,
+    "tc": 80.512
+   },
+   "coldgraph_us": {
+    "seed": 93.152,
+    "default": 91.52,
+    "tc": 80.576
+   },
+   "perf_only_tc": 0.8646,
+   "perf_only_def": 0.9863,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    16384,
+    10240
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 243.296,
+     "spread": 0.0009,
+     "round_medians": [
+      243.424,
+      243.392,
+      243.28,
+      243.328,
+      243.312,
+      243.296,
+      243.216,
+      243.216,
+      243.232
+     ],
+     "reps_per_round": 96,
+     "coldgraph_us": 243.264
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 299.328,
+     "spread": 0.0011,
+     "round_medians": [
+      299.184,
+      299.296,
+      299.344,
+      299.488,
+      299.2,
+      299.504,
+      299.168,
+      299.408,
+      299.328
+     ],
+     "reps_per_round": 96,
+     "coldgraph_us": 299.04
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 240.48,
+     "spread": 0.0013,
+     "round_medians": [
+      240.64,
+      240.64,
+      240.368,
+      240.656,
+      240.416,
+      240.672,
+      240.48,
+      240.464,
+      240.464
+     ],
+     "reps_per_round": 96,
+     "coldgraph_us": 240.768
+    }
+   },
+   "G_tc": 0.9884,
+   "G_def": 1.2303,
+   "G_vllm": null,
+   "us": {
+    "seed": 243.296,
+    "default": 299.328,
+    "tc": 240.48
+   },
+   "coldgraph_us": {
+    "seed": 243.264,
+    "default": 299.04,
+    "tc": 240.768
+   },
+   "perf_only_tc": 0.9884,
+   "perf_only_def": 1.2303,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    16384,
+    16384
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 383.008,
+     "spread": 0.0003,
+     "round_medians": [
+      383.04,
+      383.008,
+      383.072,
+      383.008,
+      383.008,
+      383.04,
+      382.944,
+      383.04,
+      382.944
+     ],
+     "reps_per_round": 67,
+     "coldgraph_us": 383.04
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 471.168,
+     "spread": 0.0004,
+     "round_medians": [
+      471.232,
+      471.072,
+      471.04,
+      471.2,
+      471.2,
+      471.168,
+      471.04,
+      471.072,
+      471.168
+     ],
+     "reps_per_round": 67,
+     "coldgraph_us": 472.064
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=0.000e+00",
+     "status": "ok",
+     "us": 378.56,
+     "spread": 0.0004,
+     "round_medians": [
+      378.56,
+      378.624,
+      378.656,
+      378.496,
+      378.56,
+      378.528,
+      378.56,
+      378.592,
+      378.56
+     ],
+     "reps_per_round": 67,
+     "coldgraph_us": 378.576
+    }
+   },
+   "G_tc": 0.9884,
+   "G_def": 1.2302,
+   "G_vllm": null,
+   "us": {
+    "seed": 383.008,
+    "default": 471.168,
+    "tc": 378.56
+   },
+   "coldgraph_us": {
+    "seed": 383.04,
+    "default": 472.064,
+    "tc": 378.576
+   },
+   "perf_only_tc": 0.9884,
+   "perf_only_def": 1.2302,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise",
+   "kernel": "bias_gelu",
+   "shape": [
+    8192,
+    32768
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2048
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     32,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 383.712,
+     "spread": 0.0008,
+     "round_medians": [
+      383.552,
+      383.552,
+      383.776,
+      383.68,
+      383.84,
+      383.712,
+      383.872,
+      383.616,
+      383.872
+     ],
+     "reps_per_round": 69,
+     "coldgraph_us": 384.192
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 432.544,
+     "spread": 0.0032,
+     "round_medians": [
+      432.416,
+      432.544,
+      432.832,
+      432.736,
+      432.8,
+      431.84,
+      431.712,
+      433.088,
+      432.416
+     ],
+     "reps_per_round": 69,
+     "coldgraph_us": 441.152
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=6.104e-05",
+     "status": "ok",
+     "us": 378.528,
+     "spread": 0.0006,
+     "round_medians": [
+      378.528,
+      378.592,
+      378.528,
+      378.496,
+      378.528,
+      378.56,
+      378.368,
+      378.368,
+      378.496
+     ],
+     "reps_per_round": 69,
+     "coldgraph_us": 378.528
+    }
+   },
+   "G_tc": 0.9865,
+   "G_def": 1.1273,
+   "G_vllm": null,
+   "us": {
+    "seed": 383.712,
+    "default": 432.544,
+    "tc": 378.528
+   },
+   "coldgraph_us": {
+    "seed": 384.192,
+    "default": 441.152,
+    "tc": 378.528
+   },
+   "perf_only_tc": 0.9865,
+   "perf_only_def": 1.1273,
+   "perf_only_vllm": null
+  }
+ ]
+}

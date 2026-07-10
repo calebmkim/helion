@@ -1,0 +1,424 @@
+{
+  "per_cell": {
+    "pointwise/bias_gelu/bf16": {
+      "n_shapes": 15,
+      "n_acc_pass": 15,
+      "geo_G_tc": 0.9527974283725534,
+      "geo_G_def": 1.1289671138926523,
+      "geo_G_vllm": null,
+      "n_gtc": 15,
+      "n_gdef": 15,
+      "n_gvllm": 0,
+      "min_G_tc": 0.859
+    },
+    "pointwise/geglu/bf16": {
+      "n_shapes": 17,
+      "n_acc_pass": 17,
+      "geo_G_tc": 0.9999058379483761,
+      "geo_G_def": 9.287820611828305,
+      "geo_G_vllm": null,
+      "n_gtc": 17,
+      "n_gdef": 17,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9991
+    },
+    "pointwise/heavy_transcendental_1d/bf16": {
+      "n_shapes": 1,
+      "n_acc_pass": 1,
+      "geo_G_tc": 1.0026,
+      "geo_G_def": 3.9756000000000005,
+      "geo_G_vllm": null,
+      "n_gtc": 1,
+      "n_gdef": 1,
+      "n_gvllm": 0,
+      "min_G_tc": 1.0026
+    },
+    "pointwise/relu_squared/bf16": {
+      "n_shapes": 12,
+      "n_acc_pass": 12,
+      "geo_G_tc": 0.9986823955570626,
+      "geo_G_def": 13.728192726647842,
+      "geo_G_vllm": null,
+      "n_gtc": 12,
+      "n_gdef": 12,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9968
+    },
+    "pointwise/residual_add/bf16": {
+      "n_shapes": 16,
+      "n_acc_pass": 16,
+      "geo_G_tc": 0.9809559458831967,
+      "geo_G_def": 1.2834363944342204,
+      "geo_G_vllm": null,
+      "n_gtc": 16,
+      "n_gdef": 16,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9698
+    },
+    "pointwise/rope_fwd/bf16": {
+      "n_shapes": 2,
+      "n_acc_pass": 2,
+      "geo_G_tc": 1.0676773388997258,
+      "geo_G_def": 17.172252385753016,
+      "geo_G_vllm": null,
+      "n_gtc": 2,
+      "n_gdef": 2,
+      "n_gvllm": 0,
+      "min_G_tc": 1.0079
+    },
+    "pointwise/swiglu/bf16": {
+      "n_shapes": 23,
+      "n_acc_pass": 23,
+      "geo_G_tc": 0.9999172508794504,
+      "geo_G_def": 9.286356961936276,
+      "geo_G_vllm": null,
+      "n_gtc": 23,
+      "n_gdef": 23,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9978
+    },
+    "pointwise/transposed_out_add/bf16": {
+      "n_shapes": 1,
+      "n_acc_pass": 1,
+      "geo_G_tc": 1.0303,
+      "geo_G_def": 1.0492,
+      "geo_G_vllm": null,
+      "n_gtc": 1,
+      "n_gdef": 1,
+      "n_gvllm": 0,
+      "min_G_tc": 1.0303
+    },
+    "pointwise_gen/bias_gelu/bf16": {
+      "n_shapes": 5,
+      "n_acc_pass": 5,
+      "geo_G_tc": 0.9698807167103519,
+      "geo_G_def": 1.135940537213705,
+      "geo_G_vllm": null,
+      "n_gtc": 5,
+      "n_gdef": 5,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9045
+    },
+    "pointwise_gen/dyt/bf16": {
+      "n_shapes": 18,
+      "n_acc_pass": 18,
+      "geo_G_tc": 0.9385006478443088,
+      "geo_G_def": 1.1542950459828338,
+      "geo_G_vllm": null,
+      "n_gtc": 18,
+      "n_gdef": 18,
+      "n_gvllm": 0,
+      "min_G_tc": 0.805
+    },
+    "pointwise_gen/geglu/bf16": {
+      "n_shapes": 5,
+      "n_acc_pass": 5,
+      "geo_G_tc": 0.9999599867992156,
+      "geo_G_def": 9.215874691348708,
+      "geo_G_vllm": null,
+      "n_gtc": 5,
+      "n_gdef": 5,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9997
+    },
+    "pointwise_gen/heavy_transcendental_1d/bf16": {
+      "n_shapes": 5,
+      "n_acc_pass": 5,
+      "geo_G_tc": 1.008427321449988,
+      "geo_G_def": 2.66540774611322,
+      "geo_G_vllm": null,
+      "n_gtc": 5,
+      "n_gdef": 5,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9894
+    },
+    "pointwise_gen/relu_squared/bf16": {
+      "n_shapes": 4,
+      "n_acc_pass": 4,
+      "geo_G_tc": 0.9994248189403847,
+      "geo_G_def": 13.478774839948848,
+      "geo_G_vllm": null,
+      "n_gtc": 4,
+      "n_gdef": 4,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9986
+    },
+    "pointwise_gen/residual_add/bf16": {
+      "n_shapes": 5,
+      "n_acc_pass": 5,
+      "geo_G_tc": 0.9739370628292304,
+      "geo_G_def": 1.2892799001131445,
+      "geo_G_vllm": null,
+      "n_gtc": 5,
+      "n_gdef": 5,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9645
+    },
+    "pointwise_gen/rope_fwd/bf16": {
+      "n_shapes": 6,
+      "n_acc_pass": 6,
+      "geo_G_tc": 1.1018163912376688,
+      "geo_G_def": 16.65279207389877,
+      "geo_G_vllm": null,
+      "n_gtc": 2,
+      "n_gdef": 5,
+      "n_gvllm": 0,
+      "min_G_tc": 1.0048
+    },
+    "pointwise_gen/swiglu/bf16": {
+      "n_shapes": 7,
+      "n_acc_pass": 7,
+      "geo_G_tc": 0.9999285118354418,
+      "geo_G_def": 9.24164731745426,
+      "geo_G_vllm": null,
+      "n_gtc": 7,
+      "n_gdef": 7,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9995
+    },
+    "pointwise_gen/transposed_out_add/bf16": {
+      "n_shapes": 6,
+      "n_acc_pass": 6,
+      "geo_G_tc": 0.960425510347185,
+      "geo_G_def": 1.1908776721687222,
+      "geo_G_vllm": null,
+      "n_gtc": 6,
+      "n_gdef": 6,
+      "n_gvllm": 0,
+      "min_G_tc": 0.9347
+    }
+  },
+  "headline": {
+    "reproduction_overall": [
+      0.9898353910340723,
+      4.63918944799287,
+      87,
+      87,
+      null,
+      0
+    ],
+    "generalization_overall": [
+      0.9751073442264978,
+      2.790744401287454,
+      57,
+      60,
+      null,
+      0
+    ],
+    "combined_overall": [
+      0.9839791247133228,
+      3.7700879090889106,
+      144,
+      147,
+      null,
+      0
+    ],
+    "reproduction_overall_device": [
+      0.9899218771094236,
+      4.643990311506744,
+      87,
+      87,
+      null,
+      0
+    ],
+    "generalization_overall_device": [
+      0.975207735580332,
+      2.794791866538351,
+      57,
+      60,
+      null,
+      0
+    ],
+    "combined_overall_device": [
+      0.9840711673377636,
+      3.7746286312631105,
+      144,
+      147,
+      null,
+      0
+    ],
+    "reproduction_bf16": [
+      0.9898353910340723,
+      4.63918944799287,
+      87,
+      87,
+      null,
+      0
+    ],
+    "generalization_bf16": [
+      0.9751073442264978,
+      2.790744401287454,
+      57,
+      60,
+      null,
+      0
+    ],
+    "combined_bf16": [
+      0.9839791247133228,
+      3.7700879090889106,
+      144,
+      147,
+      null,
+      0
+    ]
+  },
+  "per_corpus": {
+    "pointwise": [
+      0.9898353910340723,
+      4.63918944799287,
+      87,
+      87,
+      null,
+      0
+    ],
+    "pointwise_gen": [
+      0.9751073442264978,
+      2.790744401287454,
+      57,
+      60,
+      null,
+      0
+    ]
+  },
+  "disasters": [],
+  "n_xna": 5,
+  "xna": [
+    [
+      "pointwise_gen",
+      "rope_fwd",
+      [
+        2,
+        32,
+        2048,
+        256
+      ],
+      "bf16",
+      "default",
+      "compile-fail:timeout"
+    ],
+    [
+      "pointwise_gen",
+      "rope_fwd",
+      [
+        2,
+        32,
+        2048,
+        256
+      ],
+      "bf16",
+      "tc",
+      "compile-fail:InductorError"
+    ],
+    [
+      "pointwise_gen",
+      "rope_fwd",
+      [
+        1,
+        32,
+        4096,
+        128
+      ],
+      "bf16",
+      "tc",
+      "compile-fail:InductorError"
+    ],
+    [
+      "pointwise_gen",
+      "rope_fwd",
+      [
+        1,
+        16,
+        8192,
+        128
+      ],
+      "bf16",
+      "tc",
+      "compile-fail:InductorError"
+    ],
+    [
+      "pointwise_gen",
+      "rope_fwd",
+      [
+        4,
+        8,
+        4096,
+        128
+      ],
+      "bf16",
+      "tc",
+      "compile-fail:InductorError"
+    ]
+  ],
+  "accfail_perf": [],
+  "coldgraph_flags": [
+    {
+      "corpus": "pointwise",
+      "kernel": "transposed_out_add",
+      "shape": [
+        2048,
+        512
+      ],
+      "dtype": "bf16",
+      "dobench_us": 17.488,
+      "coldgraph_us": 8.448,
+      "launch_frac": 0.517
+    }
+  ],
+  "device_score_gate": 0.05,
+  "launch_bound_cells": [
+    {
+      "corpus": "pointwise",
+      "kernel": "transposed_out_add",
+      "shape": [
+        2048,
+        512
+      ],
+      "dtype": "bf16",
+      "worst_div": 0.643,
+      "eager_G_tc": 1.395,
+      "device_G_tc": 1.03,
+      "eager_G_def": 0.704,
+      "device_G_def": 1.049
+    },
+    {
+      "corpus": "pointwise_gen",
+      "kernel": "dyt",
+      "shape": [
+        8192,
+        8192
+      ],
+      "dtype": "bf16",
+      "worst_div": 0.06,
+      "eager_G_tc": 0.975,
+      "device_G_tc": 0.954,
+      "eager_G_def": 1.152,
+      "device_G_def": 1.197
+    },
+    {
+      "corpus": "pointwise_gen",
+      "kernel": "heavy_transcendental_1d",
+      "shape": [
+        65536
+      ],
+      "dtype": "bf16",
+      "worst_div": 0.553,
+      "eager_G_tc": 2.097,
+      "device_G_tc": 1.041,
+      "eager_G_def": 1.257,
+      "device_G_def": 1.344
+    },
+    {
+      "corpus": "pointwise_gen",
+      "kernel": "heavy_transcendental_1d",
+      "shape": [
+        262144
+      ],
+      "dtype": "bf16",
+      "worst_div": 0.122,
+      "eager_G_tc": 1.104,
+      "device_G_tc": 1.003,
+      "eager_G_def": 2.1,
+      "device_G_def": 2.154
+    }
+  ]
+}

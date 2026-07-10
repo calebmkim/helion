@@ -1,0 +1,801 @@
+{
+ "rows": [
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "rope_fwd",
+   "shape": [
+    1,
+    32,
+    4096,
+    256
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     1
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 99.616,
+     "spread": 0.0019,
+     "round_medians": [
+      99.552,
+      99.744,
+      99.616,
+      99.648,
+      99.648,
+      99.648,
+      99.584,
+      99.616,
+      99.584
+     ],
+     "reps_per_round": 49,
+     "coldgraph_us": 100.192
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 1585.664,
+     "spread": 0.0011,
+     "round_medians": [
+      1584.512,
+      1584.864,
+      1585.664,
+      1585.984,
+      1585.888,
+      1584.896,
+      1584.928,
+      1586.144,
+      1586.24
+     ],
+     "reps_per_round": 49,
+     "coldgraph_us": 1576.592
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 100.096,
+     "spread": 0.0035,
+     "round_medians": [
+      100.096,
+      100.224,
+      99.968,
+      99.872,
+      100.032,
+      100.096,
+      100.032,
+      100.096,
+      100.192
+     ],
+     "reps_per_round": 49,
+     "coldgraph_us": 99.456
+    }
+   },
+   "G_tc": 1.0048,
+   "G_def": 15.9178,
+   "G_vllm": null,
+   "us": {
+    "seed": 99.616,
+    "default": 1585.664,
+    "tc": 100.096
+   },
+   "coldgraph_us": {
+    "seed": 100.192,
+    "default": 1576.592,
+    "tc": 99.456
+   },
+   "perf_only_tc": 1.0048,
+   "perf_only_def": 15.9178,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "rope_fwd",
+   "shape": [
+    2,
+    32,
+    2048,
+    256
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     1
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     2,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 100.864,
+     "spread": 0.0005,
+     "round_medians": [
+      100.864,
+      100.864,
+      100.864,
+      100.832,
+      100.864,
+      100.832,
+      100.848,
+      100.864,
+      100.88
+     ],
+     "reps_per_round": 518,
+     "coldgraph_us": 100.976
+    },
+    "default": {
+     "config_present": true,
+     "status": "compile-fail:timeout",
+     "error": "compile > 150s (pathological ptxas)"
+    },
+    "tc": {
+     "status": "compile-fail:InductorError",
+     "error": "InductorError: _CompileTimeout: \n\nSet TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS=\"+dynamo\"\n"
+    }
+   },
+   "G_tc": null,
+   "G_def": null,
+   "G_vllm": null,
+   "us": {
+    "seed": 100.864,
+    "default": null,
+    "tc": null
+   },
+   "coldgraph_us": {
+    "seed": 100.976
+   },
+   "perf_only_tc": null,
+   "perf_only_def": null,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "rope_fwd",
+   "shape": [
+    1,
+    32,
+    4096,
+    128
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     1
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 54.176,
+     "spread": 0.0053,
+     "round_medians": [
+      54.208,
+      54.208,
+      54.176,
+      53.984,
+      54.208,
+      54.272,
+      54.144,
+      54.048,
+      54.144
+     ],
+     "reps_per_round": 85,
+     "coldgraph_us": 53.984
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 949.12,
+     "spread": 0.0013,
+     "round_medians": [
+      948.32,
+      949.12,
+      948.48,
+      949.44,
+      949.12,
+      949.056,
+      948.224,
+      949.28,
+      949.152
+     ],
+     "reps_per_round": 85,
+     "coldgraph_us": 949.392
+    },
+    "tc": {
+     "status": "compile-fail:InductorError",
+     "error": "InductorError: _CompileTimeout: \n\nSet TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS=\"+dynamo\"\n"
+    }
+   },
+   "G_tc": null,
+   "G_def": 17.5192,
+   "G_vllm": null,
+   "us": {
+    "seed": 54.176,
+    "default": 949.12,
+    "tc": null
+   },
+   "coldgraph_us": {
+    "seed": 53.984,
+    "default": 949.392
+   },
+   "perf_only_tc": null,
+   "perf_only_def": 17.5192,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "rope_fwd",
+   "shape": [
+    1,
+    16,
+    8192,
+    128
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     1
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 55.12,
+     "spread": 0.0081,
+     "round_medians": [
+      55.12,
+      55.232,
+      54.864,
+      55.04,
+      55.104,
+      54.896,
+      55.152,
+      55.136,
+      55.312
+     ],
+     "reps_per_round": 104,
+     "coldgraph_us": 55.648
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 732.368,
+     "spread": 0.001,
+     "round_medians": [
+      732.112,
+      732.368,
+      732.24,
+      732.528,
+      732.352,
+      732.32,
+      732.592,
+      732.528,
+      732.864
+     ],
+     "reps_per_round": 104,
+     "coldgraph_us": 732.16
+    },
+    "tc": {
+     "status": "compile-fail:InductorError",
+     "error": "InductorError: _CompileTimeout: \n\nSet TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS=\"+dynamo\"\n"
+    }
+   },
+   "G_tc": null,
+   "G_def": 13.2868,
+   "G_vllm": null,
+   "us": {
+    "seed": 55.12,
+    "default": 732.368,
+    "tc": null
+   },
+   "coldgraph_us": {
+    "seed": 55.648,
+    "default": 732.16
+   },
+   "perf_only_tc": null,
+   "perf_only_def": 13.2868,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "rope_fwd",
+   "shape": [
+    4,
+    8,
+    4096,
+    128
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     2
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     4,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 56.272,
+     "spread": 0.0065,
+     "round_medians": [
+      56.432,
+      56.432,
+      56.432,
+      56.16,
+      56.064,
+      56.336,
+      56.112,
+      56.224,
+      56.272
+     ],
+     "reps_per_round": 78,
+     "coldgraph_us": 56.512
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 1042.096,
+     "spread": 0.0013,
+     "round_medians": [
+      1041.824,
+      1042.096,
+      1042.704,
+      1041.92,
+      1042.08,
+      1042.688,
+      1042.336,
+      1041.392,
+      1042.496
+     ],
+     "reps_per_round": 78,
+     "coldgraph_us": 1042.208
+    },
+    "tc": {
+     "status": "compile-fail:InductorError",
+     "error": "InductorError: _CompileTimeout: \n\nSet TORCHDYNAMO_VERBOSE=1 for the internal stack trace (please do this especially if you're reporting a bug to PyTorch). For even more developer context, set TORCH_LOGS=\"+dynamo\"\n"
+    }
+   },
+   "G_tc": null,
+   "G_def": 18.5189,
+   "G_vllm": null,
+   "us": {
+    "seed": 56.272,
+    "default": 1042.096,
+    "tc": null
+   },
+   "coldgraph_us": {
+    "seed": 56.512,
+    "default": 1042.208
+   },
+   "perf_only_tc": null,
+   "perf_only_def": 18.5189,
+   "perf_only_vllm": null
+  },
+  {
+   "corpus": "pointwise_gen",
+   "kernel": "rope_fwd",
+   "shape": [
+    1,
+    32,
+    2048,
+    64
+   ],
+   "dtype": "bf16",
+   "fired_heuristics": [
+    "triton_pointwise"
+   ],
+   "seed_config": {
+    "block_sizes": [
+     1,
+     1
+    ]
+   },
+   "base_default_config": {
+    "block_sizes": [
+     1,
+     32
+    ],
+    "loop_orders": [
+     [
+      0,
+      1
+     ]
+    ],
+    "l2_groupings": [
+     1
+    ],
+    "range_unroll_factors": [
+     0
+    ],
+    "range_warp_specializes": [],
+    "range_num_stages": [
+     0
+    ],
+    "range_multi_buffers": [
+     null
+    ],
+    "range_flattens": [
+     null
+    ],
+    "load_eviction_policies": [
+     "",
+     "",
+     "",
+     ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer",
+     "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+   },
+   "configs_differ": true,
+   "arms": {
+    "seed": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 15.52,
+     "spread": 0.0062,
+     "round_medians": [
+      15.52,
+      15.52,
+      15.488,
+      15.52,
+      15.52,
+      15.52,
+      15.52,
+      15.552,
+      15.584
+     ],
+     "reps_per_round": 173,
+     "coldgraph_us": 15.424
+    },
+    "default": {
+     "config_present": true,
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 289.664,
+     "spread": 0.0027,
+     "round_medians": [
+      289.376,
+      289.664,
+      289.952,
+      290.08,
+      289.664,
+      289.408,
+      289.6,
+      290.144,
+      289.696
+     ],
+     "reps_per_round": 173,
+     "coldgraph_us": 289.664
+    },
+    "tc": {
+     "acc": true,
+     "acc_detail": "maxabs=3.125e-02",
+     "status": "ok",
+     "us": 18.752,
+     "spread": 0.0034,
+     "round_medians": [
+      18.72,
+      18.752,
+      18.752,
+      18.752,
+      18.784,
+      18.752,
+      18.752,
+      18.72,
+      18.752
+     ],
+     "reps_per_round": 173,
+     "coldgraph_us": 19.008
+    }
+   },
+   "G_tc": 1.2082,
+   "G_def": 18.6639,
+   "G_vllm": null,
+   "us": {
+    "seed": 15.52,
+    "default": 289.664,
+    "tc": 18.752
+   },
+   "coldgraph_us": {
+    "seed": 15.424,
+    "default": 289.664,
+    "tc": 19.008
+   },
+   "perf_only_tc": 1.2082,
+   "perf_only_def": 18.6639,
+   "perf_only_vllm": null
+  }
+ ]
+}
