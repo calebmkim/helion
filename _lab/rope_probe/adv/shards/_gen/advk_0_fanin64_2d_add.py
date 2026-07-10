@@ -1,0 +1,81 @@
+from __future__ import annotations
+import torch
+import helion
+import helion.language as hl
+
+@helion.kernel()
+def fanin64_2d_add(
+    x0: torch.Tensor,
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    x3: torch.Tensor,
+    x4: torch.Tensor,
+    x5: torch.Tensor,
+    x6: torch.Tensor,
+    x7: torch.Tensor,
+    x8: torch.Tensor,
+    x9: torch.Tensor,
+    x10: torch.Tensor,
+    x11: torch.Tensor,
+    x12: torch.Tensor,
+    x13: torch.Tensor,
+    x14: torch.Tensor,
+    x15: torch.Tensor,
+    x16: torch.Tensor,
+    x17: torch.Tensor,
+    x18: torch.Tensor,
+    x19: torch.Tensor,
+    x20: torch.Tensor,
+    x21: torch.Tensor,
+    x22: torch.Tensor,
+    x23: torch.Tensor,
+    x24: torch.Tensor,
+    x25: torch.Tensor,
+    x26: torch.Tensor,
+    x27: torch.Tensor,
+    x28: torch.Tensor,
+    x29: torch.Tensor,
+    x30: torch.Tensor,
+    x31: torch.Tensor,
+    x32: torch.Tensor,
+    x33: torch.Tensor,
+    x34: torch.Tensor,
+    x35: torch.Tensor,
+    x36: torch.Tensor,
+    x37: torch.Tensor,
+    x38: torch.Tensor,
+    x39: torch.Tensor,
+    x40: torch.Tensor,
+    x41: torch.Tensor,
+    x42: torch.Tensor,
+    x43: torch.Tensor,
+    x44: torch.Tensor,
+    x45: torch.Tensor,
+    x46: torch.Tensor,
+    x47: torch.Tensor,
+    x48: torch.Tensor,
+    x49: torch.Tensor,
+    x50: torch.Tensor,
+    x51: torch.Tensor,
+    x52: torch.Tensor,
+    x53: torch.Tensor,
+    x54: torch.Tensor,
+    x55: torch.Tensor,
+    x56: torch.Tensor,
+    x57: torch.Tensor,
+    x58: torch.Tensor,
+    x59: torch.Tensor,
+    x60: torch.Tensor,
+    x61: torch.Tensor,
+    x62: torch.Tensor,
+    x63: torch.Tensor,
+) -> torch.Tensor:
+    out = torch.empty_like(x0)
+    for tm, tn in hl.tile(x0.size()):
+        acc = (x0[tm, tn].to(torch.float32) + x1[tm, tn].to(torch.float32) + x2[tm, tn].to(torch.float32) + x3[tm, tn].to(torch.float32) + x4[tm, tn].to(torch.float32) + x5[tm, tn].to(torch.float32) + x6[tm, tn].to(torch.float32) + x7[tm, tn].to(torch.float32) + x8[tm, tn].to(torch.float32) + x9[tm, tn].to(torch.float32) + x10[tm, tn].to(torch.float32) + x11[tm, tn].to(torch.float32) + x12[tm, tn].to(torch.float32) + x13[tm, tn].to(torch.float32) + x14[tm, tn].to(torch.float32) + x15[tm, tn].to(torch.float32) + x16[tm, tn].to(torch.float32) + x17[tm, tn].to(torch.float32) + x18[tm, tn].to(torch.float32) + x19[tm, tn].to(torch.float32) + x20[tm, tn].to(torch.float32) + x21[tm, tn].to(torch.float32) + x22[tm, tn].to(torch.float32) + x23[tm, tn].to(torch.float32) + x24[tm, tn].to(torch.float32) + x25[tm, tn].to(torch.float32) + x26[tm, tn].to(torch.float32) + x27[tm, tn].to(torch.float32) + x28[tm, tn].to(torch.float32) + x29[tm, tn].to(torch.float32) + x30[tm, tn].to(torch.float32) + x31[tm, tn].to(torch.float32) + x32[tm, tn].to(torch.float32) + x33[tm, tn].to(torch.float32) + x34[tm, tn].to(torch.float32) + x35[tm, tn].to(torch.float32) + x36[tm, tn].to(torch.float32) + x37[tm, tn].to(torch.float32) + x38[tm, tn].to(torch.float32) + x39[tm, tn].to(torch.float32) + x40[tm, tn].to(torch.float32) + x41[tm, tn].to(torch.float32) + x42[tm, tn].to(torch.float32) + x43[tm, tn].to(torch.float32) + x44[tm, tn].to(torch.float32) + x45[tm, tn].to(torch.float32) + x46[tm, tn].to(torch.float32) + x47[tm, tn].to(torch.float32) + x48[tm, tn].to(torch.float32) + x49[tm, tn].to(torch.float32) + x50[tm, tn].to(torch.float32) + x51[tm, tn].to(torch.float32) + x52[tm, tn].to(torch.float32) + x53[tm, tn].to(torch.float32) + x54[tm, tn].to(torch.float32) + x55[tm, tn].to(torch.float32) + x56[tm, tn].to(torch.float32) + x57[tm, tn].to(torch.float32) + x58[tm, tn].to(torch.float32) + x59[tm, tn].to(torch.float32) + x60[tm, tn].to(torch.float32) + x61[tm, tn].to(torch.float32) + x62[tm, tn].to(torch.float32) + x63[tm, tn].to(torch.float32)) * 0.015625
+        out[tm, tn] = acc.to(out.dtype)
+    return out
+
+
+def make_inputs(shape):
+    return tuple(torch.randn(shape, device='cuda', dtype=torch.float32) for _ in range(64))

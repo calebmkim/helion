@@ -1,0 +1,23 @@
+[
+ {
+  "name": "int8_polyeval",
+  "targeted_gap": "reg_bytes_per_elem counts only memory-op slabs, not live fp32 temporaries; tiny int8 storage width green-lights a wide tile whose real fp32 working set spills at num_warps=4",
+  "hypothesis": "int8 storage (itemsize 1) => bpe=4 (3 loads+1 store) => budget_target=8192//4=2048; reg_bpe=16 (4 ops*fp32) => reg_cap=4096, so budget wins => seed [1,2048]. But the body holds ~10 live fp32 tiles (3 inputs + p0..p6) = ~80KB/program resident, ~2.5x the 32KB the reg model counts, with the default 4 warps => register spill vs the default [32,32] tile which is small enough to stay resident. Expect seed >10% slower.",
+  "code": "@helion.kernel()\ndef int8_polyeval(a, b, c):\n    out = torch.empty_like(a)\n    for tm, tn in hl.tile(a.size()):\n        x = a[tm, tn].to(torch.float32)\n        y = b[tm, tn].to(torch.float32)\n        z = c[tm, tn].to(torch.float32)\n        p0 = x * x * x + y * y - z\n        p1 = (x + y) * (y + z) * (z + x)\n        p2 = x * y * z + p0 - p1\n        p3 = (p0 * p1 - p2) * (x - y + z)\n        p4 = p3 * p2 + p1 * p0 - x * y\n        p5 = (p4 - p3 + p2 - p1 + p0) * (x + 1.0)\n        p6 = p5 * p4 - p3 * p2 + p1 * p0\n        r = (p0 + p1 + p2 + p3 + p4 + p5 + p6) * 0.015625\n        out[tm, tn] = r.to(out.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    g = lambda: torch.randint(-4, 4, (M, N), device='cuda', dtype=torch.int8)\n    return (g(), g(), g())\n",
+  "shapes": [[4096, 4096], [1024, 16384], [8192, 8192]]
+ },
+ {
+  "name": "int8_bitwise_heavy",
+  "targeted_gap": "4 int8 inputs (itemsize 1) keep bytes_per_elem small so the byte model sizes a wide tile, but the many live fp32 intermediates the reg model never counts overflow the register file at num_warps=4",
+  "hypothesis": "bpe=5 (4 loads+1 store, int8) => budget_target=8192//5=1638 => pow2 [1,1024]; reg_bpe=20 => reg_cap=3276, budget still wins. The kernel keeps 4 fp32 inputs + t0..t4 (~9 live fp32 tiles) resident over 1024 elems ~= 36KB, but the reg model only sees 5 memory ops (20 bytes/elem). With the default 4 warps this spills registers, whereas the default [32,32] tile fits comfortably. Expect seed >10% slower than default.",
+  "code": "@helion.kernel()\ndef int8_bitwise_heavy(a, b, c, d):\n    out = torch.empty_like(a)\n    for tm, tn in hl.tile(a.size()):\n        av = a[tm, tn].to(torch.float32)\n        bv = b[tm, tn].to(torch.float32)\n        cv = c[tm, tn].to(torch.float32)\n        dv = d[tm, tn].to(torch.float32)\n        t0 = av * bv + cv\n        t1 = (av - dv) * (bv + cv)\n        t2 = t0 * t0 - t1 * dv\n        t3 = (t1 + t2) * (av - cv)\n        t4 = t2 * bv - t3 * av + t0 * dv\n        r = (t0 + t1 + t2 + t3 + t4) * 0.03125\n        out[tm, tn] = r.to(out.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    g = lambda: torch.randint(-8, 8, (M, N), device='cuda', dtype=torch.int8)\n    return (g(), g(), g(), g())\n",
+  "shapes": [[4096, 4096], [2048, 8192], [8192, 8192]]
+ },
+ {
+  "name": "bool_where_fp32",
+  "targeted_gap": "bool mask (itemsize 1) + int8 operands make bytes_per_elem tiny so the byte model picks a wide tile, but a two-armed fp32 where() keeps both branch results live, doubling the true register footprint the reg model ignores",
+  "hypothesis": "bpe=4 (bool load + 2 int8 loads + int8 store) => budget_target=2048; reg_bpe=16 => reg_cap=4096, budget wins => seed [1,2048]. torch.where over two fp32 arms materializes both (av*2+1) and (bv*3-1) plus the fp32 inputs live simultaneously over 2048 elems, a resident set the reg model (4 memory ops) undercounts ~2x, so at the default 4 warps the wide tile spills vs the default [32,32]. Expect seed >10% slower.",
+  "code": "@helion.kernel()\ndef bool_where_fp32(m, a, b):\n    out = torch.empty_like(a)\n    for tm, tn in hl.tile(a.size()):\n        mv = m[tm, tn]\n        av = a[tm, tn].to(torch.float32)\n        bv = b[tm, tn].to(torch.float32)\n        r = torch.where(mv, av * 2.0 + 1.0, bv * 3.0 - 1.0)\n        out[tm, tn] = r.to(out.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    return (\n        torch.randint(0, 2, (M, N), device='cuda', dtype=torch.bool),\n        torch.randint(-8, 8, (M, N), device='cuda', dtype=torch.int8),\n        torch.randint(-8, 8, (M, N), device='cuda', dtype=torch.int8),\n    )\n",
+  "shapes": [[4096, 4096], [1024, 16384], [8192, 8192]]
+ }
+]

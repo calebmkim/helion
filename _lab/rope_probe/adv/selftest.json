@@ -1,0 +1,8 @@
+[
+ {"name":"flat_add","targeted_gap":"selftest-flat","hypothesis":"seed faster than default",
+  "shapes":[[8192,8192]],
+  "code":"@helion.kernel()\ndef flat_add(x,y):\n    out=torch.empty_like(x)\n    for tm,tn in hl.tile(x.size()):\n        out[tm,tn]=x[tm,tn]+y[tm,tn]\n    return out\ndef make_inputs(shape):\n    M,N=shape\n    return (torch.randn(M,N,device='cuda',dtype=torch.bfloat16),torch.randn(M,N,device='cuda',dtype=torch.bfloat16))\n"},
+ {"name":"full_extent_inner","targeted_gap":"selftest-fullextent","hypothesis":"patched heuristic should NOT be >10% worse than default now",
+  "shapes":[[2048,64,4096]],
+  "code":"@helion.kernel()\ndef full_extent_inner(x,s):\n    out=torch.empty_like(x)\n    for tb,tt in hl.tile([x.size(0),x.size(1)]):\n        out[tb,tt,:]=(x[tb,tt,:].to(torch.float32)*s[tb,tt,None].to(torch.float32)).to(x.dtype)\n    return out\ndef make_inputs(shape):\n    B,T,D=shape\n    return (torch.randn(B,T,D,device='cuda',dtype=torch.bfloat16),torch.randn(B,T,device='cuda',dtype=torch.bfloat16))\n"}
+]

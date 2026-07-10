@@ -1,0 +1,233 @@
+[
+ {
+  "SHA": "583b93fc",
+  "gate": "A-verify-refuter1",
+  "claim": "Lever1 contiguity transpose win",
+  "refuted": false,
+  "axis_that_failed": "none \u2014 the claim survives every refutation axis (noise, wrong-thing, reproduction, overfit, identity-smuggling, gaming). Only minor cosmetic imprecisions found, none load-bearing.",
+  "reasoning": "I verified the claim on the immutable commit 583b93fc (helion imports from the worktree). The edit is a faithful, pure derivation over walker facts with NO kernel-identity branching, and it reproduces on an independent harness.\n\nCODE (read the full diff of the 3 files):\n- config_spec.py adds MemoryOpFact.subscript_strides (raw fake.stride() provenance) and PointwiseElementwiseFact.contig_block_ids..."
+ },
+ {
+  "SHA": "583b93fc",
+  "gate": "A-verify-refuter2",
+  "claim": "Lever1 contiguity transpose win",
+  "refuted": false,
+  "axis_that_failed": "none \u2014 the claim survived all six attack axes (noise/fabrication, wrong-measurement, independent-reproduction, overfit, kernel-identity-smuggling, metric-gaming). It is CONFIRMED, not refuted.",
+  "reasoning": "I attacked all six axes and the claim held on every one. Environment verified: HEAD=583b93fc4de355f2322ff047356837361cccf05d on branch pointwise-seed-heuristic, clean tree, helion.__file__ under the worktree. HEAD is exactly ONE commit (\"stride/contiguity-aware tiling (Lever 1)\") on top of the Gate-R baseline 792268d9, touching only the 3 described files.\n\nCODE (read committed source): The lever i..."
+ },
+ {
+  "SHA": "583b93fc",
+  "gate": "A-verify-refuter3",
+  "claim": "Lever1 contiguity transpose win",
+  "refuted": false,
+  "axis_that_failed": "None of the six attack axes refuted the substantive claim. The only defect is a peripheral cross-reference error in the claim's item-3 narration: it cites oracle_vs_tc's oracle config for transposed_both_scale as [64,64] 0.99, but oracle_vs_tc.jsonl ...",
+  "reasoning": "I attacked all six axes and could not refute the substantive claim.\n\nMECHANISM (read committed code, not just claim): The lever is a pure workload-property derivation. device_ir.py:3068-3090 populates MemoryOpFact.subscript_strides = tuple(int(fake_strides[pos]) for pos in positions) inside the existing single walk (no extra graph walk). device_ir.py:1327-1331 derives contig = {bid for (bid,stride..."
+ },
+ {
+  "SHA": "583b93fc",
+  "gate": "D-factgate",
+  "claim": "subscript_strides + contig_block_ids faithful",
+  "refuted": false,
+  "generality_verdict": "general",
+  "doctrine": "PASS on all four doctrine checks. (1) NO WALK IN A DERIVED FACT: contig_block_ids is computed in build_pointwise_facts (device_ir.py ~1310) by iterating only spec.memory_op_facts (walker facts) and spec.block_sizes; the derivation `for (bid,stride) i...",
+  "faithfulness": "FAITHFUL (faithful_derivation). Both faithfulness checks pass with measured bind-only evidence. FACT DIVERGENCE: the lazy proxy \"last block dim is contiguous\" and the real property \"stride==1 axis\" di...",
+  "population": "AUTHORED (bind-only, no GPU launch, no do_bench, no compile_config()(*args)). Scripts at /tmp/gate_d_divergence2.py (single-axis) and /tmp/gate_d_divergence.py (conflict). Both bind identical-source r...",
+  "divergence_dump": "/tmp/gate_d_divergence2.py run (PYTHONPATH=helion-pointwise, CUDA_VISIBLE_DEVICES=0), helion=/home/calebkim/helion-new-heuristics/helion-pointwise/helion/__init__.py:\nrow-major stride: (4096, 1); transposed stride: (1, 4096)\n=== ROW-MAJOR in-place relu2 === block_ids order [0,1] last=1 dim0=0; conti...",
+  "reasoning": "I read the committed source at 583b93fc (verified helion.__file__ under helion-pointwise) and authored a bind-only fact dump. All three gate parts pass; the fact is a faithful stride-provenance derivation, not a lazy proxy.\n\nPART 1 DOCTRINE.\n(1) NO WALK IN A DERIVED FACT \u2014 PASS. The contig computation in build_pointwise_facts (device_ir.py ~1310) is: `tiled_ids = {bs.block_id for bs in spec.block_..."
+ },
+ {
+  "SHA": "583b93fc",
+  "gate": "F-mechanism",
+  "claim": "coalescing on stride-1 axis; num_warps pure launch knob",
+  "mechanism_found": true,
+  "matches_story": true,
+  "predicted_boundary": "The win reverses to ZERO (byte-identical, lever inert) exactly when the stride-1 (contiguous) axis is ALREADY the last block dim \u2014 i.e. a row-major / contiguous-layout pointwise kernel. Verified on a ...",
+  "inert_fields": [],
+  "better_neighbor": "Yes \u2014 asymmetric balanced tile for the CONFLICT kernels. [128,32] is the same 4096-element tile area as the seed's [64,64] but asymmetric, measured ~0.96 vs 0.94 (provided; I did not re-run GPU). It i...",
+  "reasoning": "Verified in generated Triton via bk.to_triton_code (pure codegen, no GPU) + bind-only fact dumps at commit 583b93fc.\n\nSINGLE-CONTIG (transposed_both_scale [4096,4096] fp32): load xT and store out both have subscript_strides=(1,4096) -> stride-1 on dim0 (block_id 0), contig_block_ids=(0,), seed=[1024,1]. The load address is byte-IDENTICAL in both configs: `xT + (indices_0[:,None]*1 + indices_1[None..."
+ },
+ {
+  "SHA": "583b93fc",
+  "gate": "H-generality",
+  "claim": "contiguity lever place+breadth",
+  "verdict": "KEEP",
+  "key_faithfulness": "FAITHFUL. stride==1 is a raw hardware/layout property read straight from fake.stride() at the single walker pass (device_ir.py:3090: subscript_strides...",
+  "breadth": "GENERAL, not fenced. Fires purely on stride==1 provenance across any FULL-EXTENT op at any rank; the 3 probe kernels are just anchors. Bound 5 unseen patterns: rank-3 transpose(1,2) roots wide tile on dim1 -> [1,256,4] (not last dim); both-transposed...",
+  "form": "MATCHES mechanism. Structural distribution rule keyed on stride provenance, not an if x>K. _seed_block_sizes (triton.py:...",
+  "downside": "NO regression. Gate R diff (792268d9 -> 583b93fc, full 264-cell matrix): exactly 9 changed cells, ALL transpose kernels, ALL improved (deepest 0.188->...",
+  "reasoning": "Read the committed source at 583b93fc (config_spec.py MemoryOpFact.subscript_strides ~L214 + PointwiseElementwiseFact.contig_block_ids ~L297; device_ir.py _collect_memory_op_facts ~L3090 + build_pointwise_facts ~L1327; triton.py _seed_block_sizes ~L404 + _balanced_block_sizes ~L449). Confirmed PYTHONPATH pins the worktree helion. All 5 adjudication axes pass: (1) KEY faithful \u2014 pure stride provena..."
+ },
+ {
+  "SHA": "534edd13",
+  "gate": "A-verify-refuter1",
+  "claim": "Lever2 SFU num_warps ramp win",
+  "refuted": false,
+  "reasoning": "I attempted to REFUTE the claim across all six attack axes and could not. Every component is real, reproducible, correct, and general.\n\nENVIRONMENT: Confirmed HEAD=534edd1330d1f73c2021bf73034a0013141da62a on branch pointwise-seed-heuristic; helion.__file__ under the worktree. Source read at the three cited locations (identifiers live in helion/autotuner/config_spec.py:292/307, helion/_compiler/dev..."
+ },
+ {
+  "SHA": "534edd13",
+  "gate": "A-verify-refuter2",
+  "claim": "Lever2 SFU num_warps ramp win",
+  "refuted": false,
+  "reasoning": "I tried to refute (default refuted=true) but the claim positively confirms as real, reproducible, correct, and general across all six attack axes.\n\nMECHANISM (read committed source @ 534edd13):\n- device_ir.py:1295-1309 counts sfu_ops in the SAME existing graph walk that computes compute_itemsize, matching each call_function node's base name (nm.split('.')[0]) against _SFU_OPS = {sin,cos,tan,tanh,e..."
+ },
+ {
+  "SHA": "534edd13",
+  "gate": "A-verify-refuter3",
+  "claim": "Lever2 SFU num_warps ramp win",
+  "refuted": false,
+  "reasoning": "I attempted to refute the claim across all six attack axes and could NOT. The claim positively confirms as real, reproducible, correct, and general.\n\nENVIRONMENT: Verified. Commit 534edd1330d1... on branch pointwise-seed-heuristic, clean tree, helion imports from the worktree.\n\nCODE (WRONG-THING / IDENTITY-SMUGGLING): The three source sites match the claim exactly. device_ir.py:1290-1355 counts sf..."
+ },
+ {
+  "SHA": "534edd13",
+  "gate": "D-factgate",
+  "claim": "sfu_ops fact faithful",
+  "refuted": false,
+  "generality_verdict": "general",
+  "faithfulness": "FAITHFUL to the real property (arithmetic intensity in high-latency SFU ops), NOT the total-op-count or op-name-identity proxy. FACT DIVERGENCE crux: horner_poly24=79 call nodes (48 mul+23 add, all FM...",
+  "population": "Bind-only dumps of spec.pointwise_facts[0].sfu_ops (AS-RETURNED): horner_poly24=0 -> ramp w4 (num_warps NOT emitted, seed [1,2048]); relu_squared=0 -> w4; swiglu=1 -> w4 (byte-identical flat family); ...",
+  "fact_divergence": "horner_poly24 [4096,4096]: 79 call_function nodes (48 mul + 23 add = ~71 FMA ops), sfu_ops=0 (dumped, bind-only) -> ramp keeps w4 (num_warps not emitted). manydiff_chains [4096,4096]: 90 call nodes but sfu_ops=20 (sin/cos/tanh/sigmoid/exp/log/rsqrt) ...",
+  "reasoning": "I read the immutable commit 534edd13 and confirmed helion loads from the pointwise worktree. All three parts of the refutation attempt FAIL to refute; the fact survives.\n\nPART 1 (DOCTRINE). sfu_ops is populated in build_pointwise_facts (device_ir.py:1290-1309) inside the SAME single graph walk that already computes compute_itemsize (the loop `for graph_info in self.graphs: for node in graph_info.g..."
+ },
+ {
+  "SHA": "534edd13",
+  "gate": "F-mechanism",
+  "claim": "warps hide SFU latency; num_warps not inert",
+  "mechanism_found": true,
+  "matches_story": true,
+  "predicted_boundary": "Ramp reverses in two regimes, both implemented and verified: (1) SMALL TILE -> over-warp starvation. _warps_for caps warps at cap = pow2_floor(tile_numel // ELEMS_PER_WARP=64); clamp lower-bound = DEF...",
+  "inert_fields": [],
+  "coupled": [
+   "block_sizes + num_warps: independent knobs but coupled in the seed decision \u2014 _warps_for caps num_warps by tile_numel//ELEMS_PER_WARP, and tile_numel is the product of block_sizes (Lever 1), so the block-size choice bounds the achievable num_warps (Lever 2). num_warps is additionally gated on fact.sfu_ops (the SFU op count fact)."
+  ],
+  "better_neighbor": "No. w16 is the seed ceiling and it is correct. MAX_WARPS=16 hard-caps _warps_for (verified: _warps_for(sfu=100, tile=2^20) = 16), so w32 is unreachable from the seed by construction. The stated measur...",
+  "reasoning": "MECHANISM (pure codegen, no GPU): For wide_row_trig_chain [2048,2048], to_triton_code(Config(block_sizes=[1,2048], num_warps=4)) vs num_warps=16 differ in EXACTLY ONE line \u2014 the _launcher(...) call argument num_warps=4 -> num_warps=16 (line 85). The @triton.jit body (lines 12-74: a dependent chain of tl_math.sin/cos/log, libdevice.tanh/exp, tl.sqrt_rn = the 12 SFU ops) is byte-identical. Same for ..."
+ },
+ {
+  "SHA": "534edd13",
+  "gate": "H-generality",
+  "claim": "SFU ramp place+breadth",
+  "verdict": "KEEP",
+  "key_faithfulness": "FAITHFUL \u2014 sfu_ops is a genuine hardware property (op-to-execution-unit mapping), not an op-pattern/identity proxy. It counts ops that dispatch to the...",
+  "breadth": "BROAD, unfenced. _warps_for(sfu_ops, tile_numel) keys purely on a continuous SFU count with a tile-size cap \u2014 no kernel name, dtype literal, rank, or shape gate. Fires on ANY transcendental-heavy pointwise kernel regardless of activation identity (si...",
+  "reasoning": "KEEP. The lever passes all five gates. (1) KEY: sfu_ops is a faithful hardware-execution-unit property, decisively distinguished from total-op-count by the horner control (verified live). (2) BREADTH: broad, unfenced, keyed on a continuous hardware count \u2014 the right first-order arithmetic-intensity signal, computed in the existing walk. (3) FORM: monotone ramp + tile cap matches the latency-hiding..."
+ },
+ {
+  "SHA": "30a007a6",
+  "gate": "A-verify-refuter1",
+  "claim": "Lever4 peak-live-SFU manydiff fix",
+  "refuted": false,
+  "reasoning": "I attempted to refute the claim across all six attack axes and it survived every one. Verification at commit 30a007a6 (helion.__file__ under the pinned worktree, confirmed).\n\nCODE (read, not just trusted): device_ir.py build_pointwise_facts (~1290) computes peak_live_sfu via an events-based liveness sweep (def index +1, last_use+1 -1, deaths sort before equal-index births) over SFU-result nodes whose base op-name is in _SFU_OPS and that have user..."
+ },
+ {
+  "SHA": "30a007a6",
+  "gate": "A-verify-refuter2",
+  "claim": "Lever4 peak-live-SFU manydiff fix",
+  "refuted": false,
+  "reasoning": "Verdict: NOT REFUTED (refuted=false). I attacked all six vectors at the immutable commit 30a007a6 and every load-bearing sub-claim held up.\n\nCODE READ (helion/_compiler/device_ir.py:1300-1382, helion/autotuner/config_spec.py:280-316, helion/_compiler/autotuner_heuristics/triton.py:344-414). The edit is exactly as described: a single liveness pass in the EXISTING compute-dtype graph traversal computes peak_live_sfu = max concurrent SFU results (ba..."
+ },
+ {
+  "SHA": "30a007a6",
+  "gate": "A-verify-refuter3",
+  "claim": "Lever4 peak-live-SFU manydiff fix",
+  "refuted": false,
+  "reasoning": "CLAIM VERIFIED on all six attack axes; I could not refute it.\n\nMECHANISM (read at commit 30a007a6, worktree helion-pointwise). device_ir.py build_pointwise_facts (~L1300-1330) computes peak_live_sfu in the existing single compute-dtype graph walk: for each call_function whose base op-name is in _SFU_OPS (sin/cos/tanh/exp/log/rsqrt/sigmoid/erf/... \u2014 a hardware-unit set, NOT a kernel/name fence), if it has users it emits a liveness interval [def_in..."
+ },
+ {
+  "SHA": "30a007a6",
+  "gate": "D-factgate",
+  "claim": "peak_live_sfu liveness faithful",
+  "refuted": false,
+  "generality_verdict": "general",
+  "doctrine": "PART 1 (folded into the single existing traversal, real provenance): CONFIRMED SOUND. peak_live_sfu is computed inside the ONE graph walk build_pointwise_facts already makes for compute_itemsize. device_ir.py:1308-1330 is a single `for graph_info in ...",
+  "population": "POPULATION (bind-only, NO GPU; interpreter /home/calebkim/.conda/envs/helion/bin/python, PYTHONPATH=/home/calebkim/helion-new-heuristics/helion-pointwise, helion.__file__ under the pointwise worktree ...",
+  "reasoning": "VERDICT: NOT REFUTED. The default refuted=true is overturned because all three parts pass on the committed code, verified bind-only.\n\nWHY GENERAL (not a disguised specific fence): peak_live_sfu is a genuine hardware-property aggregate \u2014 \"peak concurrent live fp32 transcendental-result registers\" \u2014 computed by a real liveness pass (def..last-use ove..."
+ },
+ {
+  "SHA": "30a007a6",
+  "gate": "F-mechanism",
+  "claim": "tile-shrink relieves live-SFU register spill",
+  "mechanism_found": true,
+  "matches_story": true,
+  "inert_fields": [
+   "num_stages",
+   "pid_type",
+   "indexing",
+   "range_unroll_factors",
+   "range_num_stages",
+   "range_multi_buffers",
+   "range_flattens",
+   "range_warp_specializes",
+   "load_eviction_policies"
+  ],
+  "reasoning": "MECHANISM (register-spill/occupancy relief, confirmed on immutable commit 30a007a6). The edit (device_ir.py build_pointwise_facts ~L1300-1372) computes peak_live_sfu = max concurrent live SFU-transcendental RESULTS via def..last-use liveness (events +1 at def, -1 at last_use+1, deaths-before-births sort) in the SAME single compute-dtype graph walk,..."
+ },
+ {
+  "SHA": "30a007a6",
+  "gate": "H-generality",
+  "claim": "peak-live-sfu reg model place",
+  "verdict": "KEEP",
+  "key_faithfulness": "FAITHFUL. peak_live_sfu is a genuine register property, not a proxy for kernel identity, dtype literal, or op-name fence. Verified in device_ir.py:130...",
+  "complexity_note": "Justified. The cost is one fact field (peak_live_sfu) plus a liveness sweep that is FREE of a new traversal: it rides the SINGLE existing compute-dtype graph walk build_pointwise_facts already makes (...",
+  "reasoning": "Verified at immutable commit 30a007a669e9b0e1b1eed9c72ceade8fa20a29e4 (helion.__file__ under helion-pointwise). Read both edit sites (config_spec.py PointwiseElementwiseFact ~line 245-316; device_ir.py build_pointwise_facts liveness pass 1300-1372) and the consumer (triton.py TritonPointwiseSeedHeuristic get_seed_config 344-414). Empirically confir..."
+ },
+ {
+  "SHA": "2e8d0b9c",
+  "gate": "A-verify-refuter1",
+  "claim": "Lever3 fan-in sizing win",
+  "refuted": false,
+  "reasoning": "CLAIM SUBSTANTIATED across all six attack vectors; I could not refute it.\n\nREPRODUCTION (my one allowed cfgbench spot-check, cold-L2 med-9 vs tc, fanin64_2d_add [4096,4096], CUDA_VISIBLE_DEVICES=0):\n  seed_cfg=[1,512], G_seed=0.9787, seed_ok=true; [1,128] G_tc=0.8704; default G=0.890; fact_bpe=260, fact_reg=20.\nThis exactly reproduces the claimed fanin64 0.87->0.979 lift, the [..."
+ },
+ {
+  "SHA": "2e8d0b9c",
+  "gate": "A-verify-refuter2",
+  "claim": "Lever3 fan-in sizing win",
+  "refuted": false,
+  "reasoning": "VERDICT: Claim SURVIVES refutation (refuted=false). I attacked all six vectors and the claim holds at the code/config level with a clean spot-check.\n\nGATE-R (authoritative, deterministic): I checked out the Lever-3 parent (30a007a6) into a worktree and ran an identical seed-config trace across the ENTIRE adversarial shard set at HEAD (2e8d0b9c) vs parent. Result: 82 cells, 68 b..."
+ },
+ {
+  "SHA": "2e8d0b9c",
+  "gate": "A-verify-refuter3",
+  "claim": "Lever3 fan-in sizing win",
+  "refuted": false,
+  "reasoning": "CLAIM SUBSTANTIATED (not refuted). Verified against immutable commit 2e8d0b9c (HEAD confirmed, helion.__file__ under the pointwise worktree).\n\nCODE READING. The Lever-3 edit is two mechanisms, both keyed on WORKLOAD PROPERTIES, no kernel-name fence:\n- device_ir.py ~1355-1391: splits reg into load/store; caps the load contribution at LIVE_LOAD_WINDOW=4 resident loads (capped_loa..."
+ },
+ {
+  "SHA": "2e8d0b9c",
+  "gate": "D-factgate",
+  "claim": "load-window + COALESCE_BYTES faithful",
+  "refuted": false,
+  "live_load_window_verdict": "FAITHFUL (bounded model, correctly scoped). 4*max_load_reg is a conservative BOUND on peak resident loads for a streamable pointwise combine, NOT a real liveness computation (unlike peak_live_sfu whic...",
+  "coalesce_bytes_verdict": "FAITHFUL breadth with a benign fp64 nuance. Fires when bytes_per_elem>16: fanin (194-260), fanout_flat_many (bpe=20 store-heavy, IMPROVES), and fp64 (24/32). Flat fp32 traffic-3=12<16 -> inert, byte-i...",
+  "reasoning": "Both changes verified by reading the immutable commit (2e8d0b9c) and bind-only fact dumps + one cfgbench spot-check. Attempted to REFUTE per Gate-D default; the refutation FAILS on both \u2014 the changes are faithful, disjoint, and inert on the flat family. Details below.\n\nDOCTRINE (Part 1) SOUND. Diff vs parent 30a007a6: register change splits the single pre-existing reg_bytes_per..."
+ },
+ {
+  "SHA": "2e8d0b9c",
+  "gate": "F-mechanism",
+  "claim": "both clamps load-bearing coupling",
+  "mechanism_found": true,
+  "coupled": [
+   "reg_bytes_per_elem (register cap via LIVE_LOAD_WINDOW) + bandwidth budget divisor (COALESCE_BYTES cap on bytes_per_elem) -> jointly determine pointwise block_sizes for high fan-in; removing either leaves the tile clamped (reg-only->[1,256], budget-only->[1,128])"
+  ],
+  "reasoning": "MECHANISM CONFIRMED and matches the stated story. Live trace of fanin64_2d_add (4096x4096) via the generated module reproduces the emitted seed exactly: FACT bytes_per_elem=260, reg_bytes_per_elem=20, sfu=0 -> SEED block_sizes=[1,512], num_warps=4. Hand-computed and code-verified.\n\nWHY [1,512] beats..."
+ },
+ {
+  "SHA": "2e8d0b9c",
+  "gate": "H-generality",
+  "claim": "fan-in sizing place+breadth",
+  "verdict": "KEEP",
+  "breadth": "CORRECT generalization \u2014 KEEP the broad form; do NOT make it fan-in-specific. The COALESCE_BYTES cap keys purely on bytes_per_elem > 16, a hardware property (coalescing-run saturation), so it fires wh...",
+  "complexity_note": "Complexity is JUSTIFIED and proportionate. The edit adds exactly 2 constants (LIVE_LOAD_WINDOW=4, COALESCE_BYTES=16) plus a load/store reg split (reg_load_bytes/reg_store_bytes/max_load_reg vs the old...",
+  "reasoning": "Read both edit sites in full at the immutable commit 2e8d0b9c (device_ir.py:1355-1401 register split + LIVE_LOAD_WINDOW; triton.py:349,374 COALESCE_BYTES), the fact schema (config_spec.py PointwiseElementwiseFact + MemoryOpFact.kind), and the full commit diff.\n\nVERDICT KEEP because all four adjudica..."
+ },
+ {
+  "SHA": "2e8d0b9c",
+  "gate": "E-FREEZE (sole TEST read, once)",
+  "claim": "all 5 gap classes tc-parity on held-out TEST",
+  "overfit": false,
+  "below_floor": [],
+  "verdict": "PASS",
+  "test_read": "transpose 0.94-1.0, wide_row 0.99, moderate 1.0, skinny 0.98, manydiff 1.02, fanin 0.956-0.982, bcast 1.01; all clear floor, beat default 1.02-1.69x; TEST tracks TRAIN, no overfit",
+  "reasoning": "Sole sanctioned TEST read on frozen champion 2e8d0b9c. No test shape below floor; interpolation not memorization (activation-blind seed)."
+ }
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "name": "wide_row_trig_chain",
+    "targeted_gap": "seed sizes a wide [1,2048] contiguous inner tile from the byte model but leaves num_warps=4; a latency-bound transcendental chain in that fat tile cannot hide its latency with only 4 warps, while the default [32,32] keeps far more resident warps per SM.",
+    "hypothesis": "bf16 traffic-2 (1 load + 1 store, bpe=4) -> seed [1,2048] at num_warps=4. Each of the 4 warps must serialize ~512 elements of a long sin/cos/tanh/exp/log chain; the SM holds too few resident warps to hide that latency. The default [32,32] spreads the same work over many small CTAs -> high resident-warp occupancy and full latency hiding. Measured seed 1.25-1.28x SLOWER than default across wide-N shapes.",
+    "code": "@helion.kernel()\ndef wide_row_trig_chain(x):\n    out = torch.empty_like(x)\n    for tm, tn in hl.tile(x.size()):\n        v = x[tm, tn].to(torch.float32)\n        v = torch.sin(v) + torch.cos(v * 1.1)\n        v = torch.tanh(v * 0.9) + torch.exp(-torch.abs(v) * 0.3)\n        v = torch.sin(v * 1.2) + torch.cos(v)\n        v = torch.tanh(v) + torch.exp(-torch.abs(v) * 0.4)\n        v = torch.sin(v) * torch.cos(v * 0.7) + v\n        v = torch.log(1.0 + torch.abs(v)) + torch.sqrt(torch.abs(v) + 1e-3)\n        out[tm, tn] = v.to(x.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    return (torch.randn(M, N, device='cuda', dtype=torch.bfloat16),)\n",
+    "shapes": [[512, 8192], [2048, 2048], [256, 16384]]
+  },
+  {
+    "name": "skinny_m_wide_n_chain",
+    "targeted_gap": "with tiny M and huge N the seed's [1,2048] tile makes the grid small (M * N/2048 programs) yet still 4 warps each; the SMs are left half-idle AND under-warped, while the default [32,32] launches many more programs.",
+    "hypothesis": "A short-M, very-wide-N bf16 traffic-2 row still gets seed [1,2048] at num_warps=4. The grid (M * ceil(N/2048)) is small and each fat program has only 4 warps, so both grid occupancy and per-SM warp occupancy are starved on a latency-bound chain. The default [32,32] gives M/32-rounded-up * N/32 programs -- far more CTAs to fill the SMs. Expect seed >10% slower.",
+    "code": "@helion.kernel()\ndef skinny_m_wide_n_chain(x):\n    out = torch.empty_like(x)\n    for tm, tn in hl.tile(x.size()):\n        v = x[tm, tn].to(torch.float32)\n        v = torch.sin(v * 1.3) + torch.cos(v)\n        v = torch.exp(-torch.abs(v) * 0.35) + torch.tanh(v * 0.8)\n        v = torch.sin(v) + torch.cos(v * 1.15)\n        v = torch.tanh(v * 1.1) + torch.exp(-v * v * 0.2)\n        v = torch.log(1.0 + torch.abs(v)) * torch.sin(v)\n        v = torch.sqrt(torch.abs(v) + 1e-3) + torch.cos(v * 0.9)\n        out[tm, tn] = v.to(x.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    return (torch.randn(M, N, device='cuda', dtype=torch.bfloat16),)\n",
+    "shapes": [[64, 65536], [128, 32768], [32, 131072]]
+  },
+  {
+    "name": "wide_row_moderate_chain",
+    "targeted_gap": "even a MODERATE compute chain in the seed's [1,2048]/4-warp tile crosses the 10% regression bar; the byte model over-sizes the tile without ramping warps, so the boundary where 4 warps stop hiding latency is low.",
+    "hypothesis": "bf16 traffic-2 with only a few transcendental ops still gets seed [1,2048] at num_warps=4. Even this lighter latency load exceeds what 4 warps on a 2048-wide tile can hide once the row is square-ish (2048x2048), where default [32,32] resident-warp occupancy wins. Measured ~1.10-1.13x slower -- shows the starvation bites well below a heavy chain, so the missing num_warps ramp is a broad gap.",
+    "code": "@helion.kernel()\ndef wide_row_moderate_chain(x):\n    out = torch.empty_like(x)\n    for tm, tn in hl.tile(x.size()):\n        v = x[tm, tn].to(torch.float32)\n        v = torch.sin(v) + torch.cos(v * 1.1)\n        v = torch.tanh(v * 0.9) + torch.exp(-torch.abs(v) * 0.3)\n        out[tm, tn] = v.to(x.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    return (torch.randn(M, N, device='cuda', dtype=torch.bfloat16),)\n",
+    "shapes": [[2048, 2048], [1024, 4096], [3072, 3072]]
+  }
+]

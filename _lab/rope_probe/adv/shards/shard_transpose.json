@@ -1,0 +1,23 @@
+[
+ {
+  "name": "transposed_out_add",
+  "targeted_gap": "byte model treats block_sizes[n-1] as contiguous, but the store is to a transposed output view whose innermost tiled axis has stride M",
+  "hypothesis": "seed gives the innermost tiled dim (block 1) a big 1024-elem tile, but on the transposed output out[tm,tn] that axis has stride M, so 1024 consecutive tn stores land M elems apart => zero store coalescing (1024 separate cache lines, 1 row). default [32,32] writes 32 contiguous runs of 32 along the actually-contiguous block-0 (tm) axis, so it coalesces far better and beats the seed.",
+  "code": "@helion.kernel()\ndef transposed_out_add(x, y):\n    M, N = x.size()\n    out = torch.empty(N, M, device=x.device, dtype=x.dtype).t()\n    for tm, tn in hl.tile([M, N]):\n        out[tm, tn] = (x[tm, tn].to(torch.float32) + y[tm, tn].to(torch.float32)).to(out.dtype)\n    return out\ndef make_inputs(shape):\n    M, N = shape\n    return (torch.randn(M, N, device='cuda', dtype=torch.bfloat16),\n            torch.randn(M, N, device='cuda', dtype=torch.bfloat16))\n",
+  "shapes": [[8192, 8192], [16384, 4096], [2048, 512]]
+ },
+ {
+  "name": "transposed_in_relu2",
+  "targeted_gap": "innermost tiled axis maps to a transposed INPUT view (stride M); the loads a big inner tile drags are non-contiguous but the byte model (slab==1) is blind to it",
+  "hypothesis": "traffic-2 relu-squared => seed picks an even bigger inner tile [1,2048]. The input xT is a transposed view so xT[tm,tn] has stride M along tn; 2048 consecutive tn loads are each M elems apart => the load coalesces terribly (2048 distinct 128B lines, one element used each). default [32,32] reads 32 contiguous 32-runs along the contiguous tm axis, so it coalesces and wins by >10%.",
+  "code": "@helion.kernel()\ndef transposed_in_relu2(xT):\n    M, N = xT.size()\n    out = torch.empty(M, N, device=xT.device, dtype=xT.dtype)\n    for tm, tn in hl.tile([M, N]):\n        v = xT[tm, tn].to(torch.float32)\n        out[tm, tn] = (v * v).to(out.dtype)\n    return out\ndef make_inputs(shape):\n    M, N = shape\n    base = torch.randn(N, M, device='cuda', dtype=torch.bfloat16)\n    return (base.t(),)\n",
+  "shapes": [[8192, 8192], [4096, 16384], [512, 2048]]
+ },
+ {
+  "name": "transposed_both_scale",
+  "targeted_gap": "BOTH the input read and the output store are transposed views (stride M on the innermost tiled axis); fp32 widens each strided element so the coalescing penalty is per-4-bytes",
+  "hypothesis": "fp32 scale => bpe=8 gives seed inner tile [1,1024]. Both xT[tm,tn] (load) and out[tm,tn] (store) are transposed, so the innermost axis has stride M on BOTH sides: 1024 consecutive tn indices are M*4 bytes apart => every load AND store is a fresh cache line with one 4B element used. default [32,32] gets contiguous runs along the block-0 tm axis on both, coalescing far better, so the seed is drastically slower.",
+  "code": "@helion.kernel()\ndef transposed_both_scale(xT, s):\n    M, N = xT.size()\n    out = torch.empty(N, M, device=xT.device, dtype=xT.dtype).t()\n    for tm, tn in hl.tile([M, N]):\n        out[tm, tn] = xT[tm, tn] * s\n    return out\ndef make_inputs(shape):\n    M, N = shape\n    base = torch.randn(N, M, device='cuda', dtype=torch.float32)\n    return (base.t(), 1.5)\n",
+  "shapes": [[4096, 4096], [8192, 2048], [1024, 1024]]
+ }
+]

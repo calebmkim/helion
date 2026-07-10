@@ -1,0 +1,23 @@
+[
+  {
+    "name": "bcast_many_colvecs",
+    "targeted_gap": "broadcast operands (accessed_numel < total_numel) are excluded from bytes_per_elem AND reg_bytes_per_elem, so the seed is blind to their per-tile register cost",
+    "hypothesis": "Only x+out count (bpe=4, reg_bpe=8) so the seed picks a huge [1,2048] inner tile; but the 8 excluded per-column vectors each materialize a 2048-wide fp32 broadcast register tile (8*2048*4 = 64KB), forcing a spill the byte model never saw. Default [32,32] materializes each broadcast as a 32-wide tile, so it is far cheaper per program despite the same 1024 elems.",
+    "code": "@helion.kernel()\ndef bcast_many_colvecs(x, a, b, c, d, e, f, g, h):\n    out = torch.empty_like(x)\n    for tm, tn in hl.tile(x.size()):\n        xv = x[tm, tn].to(torch.float32)\n        acc = (\n            xv * a[tn][None, :].to(torch.float32)\n            + b[tn][None, :].to(torch.float32)\n            + xv * c[tn][None, :].to(torch.float32)\n            + d[tn][None, :].to(torch.float32)\n            + xv * e[tn][None, :].to(torch.float32)\n            + f[tn][None, :].to(torch.float32)\n            + xv * g[tn][None, :].to(torch.float32)\n            + h[tn][None, :].to(torch.float32)\n        )\n        out[tm, tn] = acc.to(x.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    dev = 'cuda'\n    dt = torch.bfloat16\n    return (\n        torch.randn(M, N, device=dev, dtype=dt),\n        *[torch.randn(N, device=dev, dtype=dt) for _ in range(8)],\n    )\n",
+    "shapes": [[8192, 8192], [256, 2048]]
+  },
+  {
+    "name": "bcast_dual_axis_grid",
+    "targeted_gap": "broadcast along BOTH axes at once (3 per-column [N] + 3 per-row [M]) all fall under the accessed_numel<total_numel exclusion, so a mixed-broadcast affine kernel looks like a trivial copy to the byte model",
+    "hypothesis": "bpe stays 4 (only x+out) so the seed picks [1,2048]; but the 3 column-broadcasts AND 3 row-broadcasts each become a wide fp32 live tile across the 2048-wide inner block (6 invisible broadcast tiles), plus the row vectors are re-loaded/re-broadcast per column. Default [32,32] keeps every broadcast tile at 32-wide, so the seed should be >10% slower.",
+    "code": "@helion.kernel()\ndef bcast_dual_axis_grid(x, cs0, cs1, cs2, rs0, rs1, rs2):\n    out = torch.empty_like(x)\n    for tm, tn in hl.tile(x.size()):\n        v = x[tm, tn].to(torch.float32)\n        c0 = cs0[tn][None, :].to(torch.float32)\n        c1 = cs1[tn][None, :].to(torch.float32)\n        c2 = cs2[tn][None, :].to(torch.float32)\n        r0 = rs0[tm][:, None].to(torch.float32)\n        r1 = rs1[tm][:, None].to(torch.float32)\n        r2 = rs2[tm][:, None].to(torch.float32)\n        v = (v * c0 + r0) * c1 + r1\n        v = v * c2 + r2\n        out[tm, tn] = v.to(x.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    dev = 'cuda'\n    dt = torch.bfloat16\n    return (\n        torch.randn(M, N, device=dev, dtype=dt),\n        *[torch.randn(N, device=dev, dtype=dt) for _ in range(3)],\n        *[torch.randn(M, device=dev, dtype=dt) for _ in range(3)],\n    )\n",
+    "shapes": [[8192, 8192], [4096, 4096]]
+  },
+  {
+    "name": "bcast_rowvec_transcend",
+    "targeted_gap": "per-ROW broadcast operands [M] combined with heavy transcendental compute: excluded from both byte fields, so the seed hands a huge inner tile that replicates expensive per-element math across the whole broadcast row",
+    "hypothesis": "The 4 per-row vectors are stride-0 along the inner axis (accessed_numel=M<total_numel) so bpe=4 and the seed picks [1,2048]; each program then runs sin/cos/exp/tanh over a 2048-wide fp32 tile driven by broadcast row scalars, so register pressure from the transcendental temporaries plus 4 broadcast tiles overflows relative to the default [32,32] which keeps the live compute set tiny.",
+    "code": "@helion.kernel()\ndef bcast_rowvec_transcend(x, r0, r1, r2, r3):\n    out = torch.empty_like(x)\n    for tm, tn in hl.tile(x.size()):\n        v = x[tm, tn].to(torch.float32)\n        a0 = r0[tm][:, None].to(torch.float32)\n        a1 = r1[tm][:, None].to(torch.float32)\n        a2 = r2[tm][:, None].to(torch.float32)\n        a3 = r3[tm][:, None].to(torch.float32)\n        v = torch.sin(v * a0) + torch.cos(v * a1) + torch.exp(-(v * a2) * (v * a2)) + torch.tanh(v * a3)\n        out[tm, tn] = v.to(x.dtype)\n    return out\n\ndef make_inputs(shape):\n    M, N = shape\n    dev = 'cuda'\n    dt = torch.bfloat16\n    return (\n        torch.randn(M, N, device=dev, dtype=dt),\n        *[torch.randn(M, device=dev, dtype=dt) for _ in range(4)],\n    )\n",
+    "shapes": [[8192, 8192], [2048, 512]]
+  }
+]
