@@ -1,0 +1,106 @@
+{
+  "_meta": {
+    "purpose": "Machine-readable shape curriculum for the Helion matmul-FAMILY perf characterization (H100 sm90). Iterate THIS in the harness; the human mirror is the inline shape list in matmul-perf-characterization-task.md (same dir).",
+    "hardware": "DETECT at runtime (do not assume H100): read device props for L2 + SM count + compute capability. sm90=H100 (L2~50MB, bf16/fp16 peak~989.5, fp8~1978.9 TFLOP/s dense); sm100=B200 (larger L2, bf16~2250/fp8~4500 TFLOP/s dense, verify per SKU).",
+    "flush_policy": "L2-flush buffer = max(256MiB, 3-4 x device l2_cache_size); a fixed 256MB may NOT evict on B200.",
+    "arms": ["seed", "helion_default", "tc_max_autotune"],
+    "arms_note": "tc_max_autotune = torch.compile(op, mode=max-autotune-no-cudagraphs); op = torch.matmul/torch.bmm/torch._scaled_mm(fast_accum=True)/mamba-eager-ref per kernel. It subsumes raw-cuBLAS + eager. Ratios: G_vs_tc=tc/seed, xD_vs_default=default/seed.",
+    "seed_mechanism_note": "Seed under test = general FORMULA on BOTH GPUs (H100 TritonH100MatmulHeuristic; B200 TritonB200FormulaMatmulHeuristic, PR#3007) - fires on all shapes/dtypes, NO coverage gap. On B200 the helion_default arm IS the incumbent being beaten: the matmul_b200.json table (PR#2428, in-bucket fp16/bf16 2-D matmul only) where it fires, ELSE the base ~[16,16,16] fallback (that's fine - record default_source=table|base). NOT a separate arm. default_source=table -> head-to-head on the incumbent's tuned turf; default_source=base -> table declined and the formula rescues the catastrophic default (coverage win).",
+    "dtype_policy": "primaries only: bf16 for matmul/bmm/mamba, fp8_e4m3 for fp8_gemm (fp16/e5m2/TF32 are future adds)",
+    "methods": ["M1_cudagraph_coldL2", "M2_do_bench_coldL2"],
+    "methods_note": "both interleaved; per-round ratios; RETAIN raw per-round us for every round+arm. M1 canonical; M2's tc arm carries torch.compile host overhead on tiny shapes.",
+    "R_rounds_default": 7,
+    "R_rounds_small_shapes": 15,
+    "small_shape_us_threshold": 25,
+    "failure_policy": "each arm try/except + per-config compile timeout; record status in {ok,compile_fail,oom,timeout,acc_fail}; n/a us on failure; NEVER abort the sweep",
+    "compile_timeout_s": 120,
+    "static_shapes": true,
+    "total_cells": 48
+  },
+  "kernels": {
+    "matmul": {
+      "source": "examples/matmul.py",
+      "dtype": "bf16",
+      "tc_op": "torch.matmul (expect cuBLAS)",
+      "arms": ["seed", "helion_default", "tc_max_autotune"],
+      "shapes": [
+        {"mkn": [1024, 1024, 1024], "type": "cube", "prov": "small square (B200 incumbent-table tuned point -> default_source=table, beat-it-on-its-turf)"},
+        {"mkn": [2048, 2048, 2048], "type": "cube", "prov": "small training cube"},
+        {"mkn": [4096, 4096, 4096], "type": "cube", "prov": "7B hidden; QKV/O @ 4k tokens"},
+        {"mkn": [8192, 8192, 8192], "type": "cube", "prov": "70B hidden (B200: dims>4096 -> incumbent table declines -> default_source=base, formula rescues it)"},
+        {"mkn": [4096, 2048, 2048], "type": "rectangular", "prov": "B200 incumbent-table tuned point (its 33x headline shape) -> default_source=table"},
+        {"mkn": [4096, 4096, 14336], "type": "ffn_largeN", "prov": "Llama-3-8B gate/up"},
+        {"mkn": [4096, 14336, 4096], "type": "ffn_largeK", "prov": "Llama-3-8B down"},
+        {"mkn": [8192, 8192, 28672], "type": "ffn_large", "prov": "70B FFN up"},
+        {"mkn": [4096, 4096, 12288], "type": "attn_qkv", "prov": "7B fused QKV (3x hidden)"},
+        {"mkn": [8192, 5120, 5120], "type": "attn", "prov": "13B hidden=5120 proj"},
+        {"mkn": [4096, 4096, 128256], "type": "vocab", "prov": "Llama-3 LM head (huge N)"},
+        {"mkn": [1, 4096, 4096], "type": "decode", "prov": "single-token decode"},
+        {"mkn": [32, 8192, 8192], "type": "decode", "prov": "batch-32 decode, 70B"},
+        {"mkn": [16384, 8192, 512], "type": "tall_skinny", "prov": "large-M small-N"},
+        {"mkn": [32768, 4096, 256], "type": "tall_skinny_extreme", "prov": "stress"},
+        {"mkn": [512, 4096, 16384], "type": "wide", "prov": "small-M large-N"},
+        {"mkn": [256, 16384, 256], "type": "deep_K", "prov": "deep-K, tiny M.N, occupancy-starved"},
+        {"mkn": [8192, 512, 8192], "type": "small_K", "prov": "compute-light, large M.N"},
+        {"mkn": [3072, 3072, 3072], "type": "non_pow2", "prov": "honesty (seed ~0.75)"},
+        {"mkn": [5000, 5000, 5000], "type": "non_aligned", "prov": "honesty (seed ~0.68)"},
+        {"mkn": [4000, 4096, 4096], "type": "tile_tail", "prov": "honesty (M not x128)"},
+        {"mkn": [8191, 8191, 8191], "type": "prime", "prov": "honesty (seed can win)"}
+      ]
+    },
+    "fp8_gemm": {
+      "source": "examples/fp8_gemm.py",
+      "dtype": "fp8_e4m3",
+      "tc_op": "torch._scaled_mm(use_fast_accum=True) (expect cuBLASLt); optionally also record fast_accum=False",
+      "arms": ["seed", "helion_default", "tc_max_autotune"],
+      "b200_note": "B200 incumbent table is fp16/bf16 only -> declines fp8, so on B200 helion_default falls back to base ~[16,16,16] (default_source=base); the formula seed's fp8 coverage is a pure win over the status quo",
+      "shapes": [
+        {"mkn": [4096, 4096, 4096], "type": "cube", "prov": "7B"},
+        {"mkn": [8192, 8192, 8192], "type": "cube", "prov": "70B"},
+        {"mkn": [4096, 4096, 14336], "type": "ffn_largeN", "prov": "L3-8B FFN up"},
+        {"mkn": [4096, 14336, 4096], "type": "ffn_largeK", "prov": "L3-8B FFN down"},
+        {"mkn": [4096, 4096, 128256], "type": "vocab", "prov": "fp8 LM head"},
+        {"mkn": [1, 4096, 4096], "type": "decode", "prov": "single-token decode"},
+        {"mkn": [32, 8192, 8192], "type": "decode", "prov": "batch-32 decode"},
+        {"mkn": [8192, 512, 8192], "type": "small_K", "prov": "compute-light"},
+        {"mkn": [3072, 3072, 3072], "type": "non_pow2", "prov": "honesty"},
+        {"mkn": [16384, 8192, 512], "type": "tall_skinny", "prov": "tall"}
+      ]
+    },
+    "bmm": {
+      "source": "examples/bmm.py",
+      "dtype": "bf16",
+      "tc_op": "torch.bmm (expect cuBLAS batched)",
+      "arms": ["seed", "helion_default", "tc_max_autotune"],
+      "shape_order": "[B, M, K, N]",
+      "shapes": [
+        {"bmkn": [32, 2048, 128, 2048], "type": "attn_scores", "prov": "b.h=32, seq=2048, head_dim=128"},
+        {"bmkn": [32, 2048, 2048, 128], "type": "attn_context", "prov": "transposed roles"},
+        {"bmkn": [16, 4096, 128, 4096], "type": "long_seq_attn", "prov": "long-seq attention"},
+        {"bmkn": [64, 512, 512, 512], "type": "many_medium", "prov": "many-medium batched"},
+        {"bmkn": [8, 4096, 4096, 4096], "type": "few_large", "prov": "few-large (near-GEMM)"},
+        {"bmkn": [128, 256, 256, 256], "type": "many_small", "prov": "many-small (decode-ish)"},
+        {"bmkn": [16, 2048, 128, 128], "type": "gqa", "prov": "GQA-ish (small N)"},
+        {"bmkn": [4, 3072, 3072, 3072], "type": "non_pow2", "prov": "non-pow2 batched"}
+      ]
+    },
+    "mamba2_chunk_state": {
+      "source": "examples/mamba2_chunk_state.py",
+      "dtype": "bf16",
+      "tc_op": "eager reference fn (no cuBLAS analog -> expect max-autotune picks a Triton kernel)",
+      "arms": ["seed", "helion_default", "tc_max_autotune"],
+      "vs_cublas_note": "NO library GEMM analog (fused GEMM+decay); tc_max_autotune here is Triton, not cuBLAS -> report in a SEPARATE section, never in a GEMM-vs-cuBLAS aggregate",
+      "shape_order": "[batch, seqlen, nheads, chunk, headdim, dstate]",
+      "shapes": [
+        {"s": [2, 4096, 64, 256, 64, 128], "type": "model", "prov": "Mamba-2-1.3B"},
+        {"s": [8, 4096, 80, 256, 64, 128], "type": "model", "prov": "Mamba-2-2.7B"},
+        {"s": [8, 8192, 128, 256, 64, 128], "type": "long_seq", "prov": "7B, long-seq"},
+        {"s": [2, 4096, 80, 256, 64, 256], "type": "big_dstate", "prov": "dstate=256 (bigger dot-N)"},
+        {"s": [4, 4096, 64, 128, 64, 128], "type": "small_chunk", "prov": "chunk=128 (small-K dot)"},
+        {"s": [8, 2048, 64, 256, 128, 128], "type": "big_headdim", "prov": "headdim=128 (big-M dot)"},
+        {"s": [1, 4096, 64, 256, 64, 128], "type": "decode_grid", "prov": "batch-1 (decode grid)"},
+        {"s": [16, 2048, 64, 256, 64, 128], "type": "training_grid", "prov": "batch-16 (training grid)"}
+      ]
+    }
+  }
+}
