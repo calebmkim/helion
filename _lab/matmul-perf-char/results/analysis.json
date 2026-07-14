@@ -1,0 +1,3294 @@
+{
+  "header": {
+    "_run_header": true,
+    "device": "NVIDIA B200",
+    "sm_tag": "sm100",
+    "cc": "10.0",
+    "sm_count": 148,
+    "l2_mib": 126.5,
+    "flush_mib": 512,
+    "peak_tflops": {
+      "bf16": 2250.0,
+      "fp16": 2250.0,
+      "fp8_e4m3": 4500.0
+    },
+    "clocks_start": {
+      "sm_clock_mhz": "120",
+      "temp_c": "30",
+      "throttle": "0x0000000000000001"
+    }
+  },
+  "cells": [
+    {
+      "kernel": "matmul",
+      "shape": [
+        1024,
+        1024,
+        1024
+      ],
+      "type": "cube",
+      "prov": "small square (B200 incumbent-table tuned point -> default_source=table, beat-it-on-its-turf)",
+      "dtype": "bf16",
+      "default_source": "table",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          128,
+          64,
+          128
+        ],
+        "num_warps": 4,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          128,
+          64,
+          64
+        ],
+        "num_warps": 4,
+        "num_stages": 4
+      },
+      "acc_pass": true,
+      "max_rel": 0.0032051282469183207,
+      "tflops_seed_M1": 270.2732079940225,
+      "pct_peak_seed_M1": 12.012142577512112,
+      "R": 15,
+      "noise_floor": true,
+      "m1": {
+        "seed_us": 7.945603132247925,
+        "default_us": 10.03199815750122,
+        "tc_us": 4.8928022384643555,
+        "G_vs_tc": 0.6139987312973095,
+        "G_vs_tc_ci": [
+          0.41678273827097884,
+          0.6828342057362554
+        ],
+        "xD_vs_default": 1.2613539008630303
+      },
+      "m2": {
+        "seed_us": 11.296000331640244,
+        "default_us": 15.359999611973763,
+        "tc_us": 11.296000331640244,
+        "G_vs_tc": 1.0,
+        "xD_vs_default": 1.196581203668111
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        2048,
+        2048,
+        2048
+      ],
+      "type": "cube",
+      "prov": "small training cube",
+      "dtype": "bf16",
+      "default_source": "table",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          128,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          128,
+          128,
+          64
+        ],
+        "num_warps": 4,
+        "num_stages": 7
+      },
+      "acc_pass": true,
+      "max_rel": 0.0042553190141916275,
+      "tflops_seed_M1": 930.4522359061567,
+      "pct_peak_seed_M1": 41.353432706940296,
+      "R": 15,
+      "noise_floor": true,
+      "m1": {
+        "seed_us": 18.463999032974243,
+        "default_us": 24.479997158050537,
+        "tc_us": 14.348798990249634,
+        "G_vs_tc": 0.7771739130434783,
+        "G_vs_tc_ci": [
+          0.7128995595655427,
+          0.7869557747464866
+        ],
+        "xD_vs_default": 1.3224631113894039
+      },
+      "m2": {
+        "seed_us": 23.552000522613525,
+        "default_us": 29.69600073993206,
+        "tc_us": 19.45599913597107,
+        "G_vs_tc": 0.8263228776476587,
+        "xD_vs_default": 1.2591587421585517
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        4096,
+        4096,
+        4096
+      ],
+      "type": "cube",
+      "prov": "7B hidden; QKV/O @ 4k tokens",
+      "dtype": "bf16",
+      "default_source": "table",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          128,
+          128,
+          64
+        ],
+        "num_warps": 4,
+        "num_stages": 7
+      },
+      "acc_pass": true,
+      "max_rel": 0.0028248587623238564,
+      "tflops_seed_M1": 1387.218557274907,
+      "pct_peak_seed_M1": 61.65415810110698,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 99.07519817352295,
+        "default_us": 125.71200132369995,
+        "tc_us": 84.57920551300049,
+        "G_vs_tc": 0.8564852135076576,
+        "G_vs_tc_ci": [
+          0.8355146548661595,
+          0.8696060334485033
+        ],
+        "xD_vs_default": 1.2672171346281222
+      },
+      "m2": {
+        "seed_us": 99.32799637317657,
+        "default_us": 131.04000687599182,
+        "tc_us": 91.16800129413605,
+        "G_vs_tc": 0.9175258172738441,
+        "xD_vs_default": 1.3029347168278957
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        8192,
+        8192,
+        8192
+      ],
+      "type": "cube",
+      "prov": "70B hidden (B200: dims>4096 -> incumbent table declines -> default_source=base, formula rescues it)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0038759689778089523,
+      "tflops_seed_M1": 1556.5000567091752,
+      "pct_peak_seed_M1": 69.17778029818557,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 706.399992108345,
+        "default_us": 35554.55829203129,
+        "tc_us": 632.0320069789886,
+        "G_vs_tc": 0.8938852898015475,
+        "G_vs_tc_ci": [
+          0.888471135570804,
+          0.9382805414706479
+        ],
+        "xD_vs_default": 50.332047974567445
+      },
+      "m2": {
+        "seed_us": 713.7600183486938,
+        "default_us": 35565.60134887695,
+        "tc_us": 633.8559985160828,
+        "G_vs_tc": 0.8880519813683715,
+        "xD_vs_default": 49.82851439501905
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        4096,
+        2048,
+        2048
+      ],
+      "type": "rectangular",
+      "prov": "B200 incumbent-table tuned point (its 33x headline shape) -> default_source=table",
+      "dtype": "bf16",
+      "default_source": "table",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 7
+      },
+      "acc_pass": true,
+      "max_rel": 0.004048583097755909,
+      "tflops_seed_M1": 1184.1000428347284,
+      "pct_peak_seed_M1": 52.62666857043237,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 29.017597436904907,
+        "default_us": 30.83840012550354,
+        "tc_us": 24.835199117660522,
+        "G_vs_tc": 0.84891297459737,
+        "G_vs_tc_ci": [
+          0.8283800146264491,
+          0.8594905550917374
+        ],
+        "xD_vs_default": 1.0583437144603896
+      },
+      "m2": {
+        "seed_us": 33.56799855828285,
+        "default_us": 35.840000957250595,
+        "tc_us": 31.71199932694435,
+        "G_vs_tc": 0.9385051766269317,
+        "xD_vs_default": 1.0635386411816872
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        4096,
+        4096,
+        14336
+      ],
+      "type": "ffn_largeN",
+      "prov": "Llama-3-8B gate/up",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.005649717524647713,
+      "tflops_seed_M1": 1413.0838405917548,
+      "pct_peak_seed_M1": 62.80372624852243,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 340.41599184274673,
+        "default_us": 15188.19224089384,
+        "tc_us": 280.8320000767708,
+        "G_vs_tc": 0.8237843337148388,
+        "G_vs_tc_ci": [
+          0.8048025310728225,
+          0.8418376356366688
+        ],
+        "xD_vs_default": 44.63075991848607
+      },
+      "m2": {
+        "seed_us": 343.03998947143555,
+        "default_us": 15196.160316467285,
+        "tc_us": 285.69599986076355,
+        "G_vs_tc": 0.8327581447074278,
+        "xD_vs_default": 44.29666745703244
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        4096,
+        14336,
+        4096
+      ],
+      "type": "ffn_largeK",
+      "prov": "Llama-3-8B down",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0030303029343485832,
+      "tflops_seed_M1": 1491.7520434772332,
+      "pct_peak_seed_M1": 66.30009082121036,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 322.4640041589737,
+        "default_us": 15412.54411637783,
+        "tc_us": 302.40000039339066,
+        "G_vs_tc": 0.9369422790315234,
+        "G_vs_tc_ci": [
+          0.9041904767581963,
+          0.9446269816081424
+        ],
+        "xD_vs_default": 47.84364485354143
+      },
+      "m2": {
+        "seed_us": 324.67201352119446,
+        "default_us": 15414.30377960205,
+        "tc_us": 306.17600679397583,
+        "G_vs_tc": 0.9370070997738991,
+        "xD_vs_default": 47.454258188803436
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        8192,
+        8192,
+        28672
+      ],
+      "type": "ffn_large",
+      "prov": "70B FFN up",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.003703703638166189,
+      "tflops_seed_M1": 1474.6488040155152,
+      "pct_peak_seed_M1": 65.53994684513401,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 2609.6319928765297,
+        "default_us": 124458.81506055593,
+        "tc_us": 2233.695961534977,
+        "G_vs_tc": 0.8559428944894378,
+        "G_vs_tc_ci": [
+          0.8475079325251681,
+          0.859259565674471
+        ],
+        "xD_vs_default": 47.69390854011103
+      },
+      "m2": {
+        "seed_us": 2657.2799682617188,
+        "default_us": 124460.09826660156,
+        "tc_us": 2237.3440265655518,
+        "G_vs_tc": 0.8419677464505664,
+        "xD_vs_default": 46.840029285519456
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        4096,
+        4096,
+        12288
+      ],
+      "type": "attn_qkv",
+      "prov": "7B fused QKV (3x hidden)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.005376344081014395,
+      "tflops_seed_M1": 1402.6673282999734,
+      "pct_peak_seed_M1": 62.340770146665484,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 293.95199567079544,
+        "default_us": 13006.208293139935,
+        "tc_us": 239.1040101647377,
+        "G_vs_tc": 0.8141987154117205,
+        "G_vs_tc_ci": [
+          0.7774284420605835,
+          0.8159187372998432
+        ],
+        "xD_vs_default": 44.258219199383454
+      },
+      "m2": {
+        "seed_us": 295.9359884262085,
+        "default_us": 13009.984016418457,
+        "tc_us": 242.71999299526215,
+        "G_vs_tc": 0.8201773440467659,
+        "xD_vs_default": 43.95858836950466
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        8192,
+        5120,
+        5120
+      ],
+      "type": "attn",
+      "prov": "13B hidden=5120 proj",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.004830917809158564,
+      "tflops_seed_M1": 1350.1430576969894,
+      "pct_peak_seed_M1": 60.0063581198662,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 318.11201572418213,
+        "default_us": 13356.895923614502,
+        "tc_us": 246.11201137304306,
+        "G_vs_tc": 0.7768997365168525,
+        "G_vs_tc_ci": [
+          0.7417764248831842,
+          0.7801131896705161
+        ],
+        "xD_vs_default": 41.98561924218869
+      },
+      "m2": {
+        "seed_us": 320.5440044403076,
+        "default_us": 13362.175941467285,
+        "tc_us": 250.91201066970825,
+        "G_vs_tc": 0.7827693146462629,
+        "xD_vs_default": 41.674120780711654
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        4096,
+        4096,
+        128256
+      ],
+      "type": "vocab",
+      "prov": "Llama-3 LM head (huge N)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0051282052882015705,
+      "tflops_seed_M1": 1514.176947730272,
+      "pct_peak_seed_M1": 67.29675323245654,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 2842.1759009361267,
+        "default_us": 135597.31070697308,
+        "tc_us": 2457.1839198470116,
+        "G_vs_tc": 0.864948596062994,
+        "G_vs_tc_ci": [
+          0.8618972400637614,
+          0.8758239735267602
+        ],
+        "xD_vs_default": 47.70848176337628
+      },
+      "m2": {
+        "seed_us": 2868.2239055633545,
+        "default_us": 135606.2774658203,
+        "tc_us": 2467.8399562835693,
+        "G_vs_tc": 0.8600611311380199,
+        "xD_vs_default": 47.27707687060642
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        1,
+        4096,
+        4096
+      ],
+      "type": "decode",
+      "prov": "single-token decode",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          16,
+          32,
+          256
+        ],
+        "num_warps": 4,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0022123893722891808,
+      "tflops_seed_M1": 3.2839833734075903,
+      "pct_peak_seed_M1": 0.1459548165958929,
+      "R": 15,
+      "noise_floor": true,
+      "m1": {
+        "seed_us": 10.21760106086731,
+        "default_us": 164.04799222946167,
+        "tc_us": 14.182400703430176,
+        "G_vs_tc": 1.395520470924546,
+        "G_vs_tc_ci": [
+          1.3137382821009633,
+          1.4770851117402493
+        ],
+        "xD_vs_default": 16.060201904708787
+      },
+      "m2": {
+        "seed_us": 15.39199985563755,
+        "default_us": 168.96000504493713,
+        "tc_us": 19.45599913597107,
+        "G_vs_tc": 1.2634854288232018,
+        "xD_vs_default": 10.975051905865262
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        32,
+        8192,
+        8192
+      ],
+      "type": "decode",
+      "prov": "batch-32 decode, 70B",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          256
+        ],
+        "num_warps": 4,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.004830917809158564,
+      "tflops_seed_M1": 134.80186221713615,
+      "pct_peak_seed_M1": 5.991193876317162,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 31.861335039138794,
+        "default_us": 335.3919982910156,
+        "tc_us": 27.68000463644664,
+        "G_vs_tc": 0.8505408981386219,
+        "G_vs_tc_ci": [
+          0.7592921684338994,
+          0.8848343465012422
+        ],
+        "xD_vs_default": 10.526614715893626
+      },
+      "m2": {
+        "seed_us": 35.96799820661545,
+        "default_us": 341.0240113735199,
+        "tc_us": 33.824000507593155,
+        "G_vs_tc": 0.9403915200755333,
+        "xD_vs_default": 9.481317514934616
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        16384,
+        8192,
+        512
+      ],
+      "type": "tall_skinny",
+      "prov": "large-M small-N",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.003921568859368563,
+      "tflops_seed_M1": 1283.228998282782,
+      "pct_peak_seed_M1": 57.0323999236792,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 107.10399597883224,
+        "default_us": 4565.504170954227,
+        "tc_us": 101.02399438619614,
+        "G_vs_tc": 0.9445438213104603,
+        "G_vs_tc_ci": [
+          0.9138364076252475,
+          0.9601901104389197
+        ],
+        "xD_vs_default": 42.626233412902934
+      },
+      "m2": {
+        "seed_us": 109.56799983978271,
+        "default_us": 4571.167945861816,
+        "tc_us": 105.47199845314026,
+        "G_vs_tc": 0.9626277246028844,
+        "xD_vs_default": 41.698104241916
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        32768,
+        4096,
+        256
+      ],
+      "type": "tall_skinny_extreme",
+      "prov": "stress",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.002923976629972458,
+      "tflops_seed_M1": 928.0396360330462,
+      "pct_peak_seed_M1": 41.24620604591317,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 74.0479975938797,
+        "default_us": 2327.2319212555885,
+        "tc_us": 62.17600405216217,
+        "G_vs_tc": 0.8375920974311085,
+        "G_vs_tc_ci": [
+          0.7626943985284137,
+          0.8538832863551429
+        ],
+        "xD_vs_default": 31.447277541582004
+      },
+      "m2": {
+        "seed_us": 78.87999713420868,
+        "default_us": 2332.7040672302246,
+        "tc_us": 66.56000018119812,
+        "G_vs_tc": 0.8437500324819549,
+        "xD_vs_default": 29.54645269041722
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        512,
+        4096,
+        16384
+      ],
+      "type": "wide",
+      "prov": "small-M large-N",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.002994012087583542,
+      "tflops_seed_M1": 1261.7411594957857,
+      "pct_peak_seed_M1": 56.07738486647936,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 54.464004933834076,
+        "default_us": 2395.8720713853836,
+        "tc_us": 48.09600114822388,
+        "G_vs_tc": 0.9027026671762372,
+        "G_vs_tc_ci": [
+          0.85348496578334,
+          0.9258416403498065
+        ],
+        "xD_vs_default": 44.17802281384426
+      },
+      "m2": {
+        "seed_us": 58.36800113320351,
+        "default_us": 2398.207902908325,
+        "tc_us": 54.27199974656105,
+        "G_vs_tc": 0.9298629916083373,
+        "xD_vs_default": 41.087716837095336
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        256,
+        16384,
+        256
+      ],
+      "type": "deep_K",
+      "prov": "deep-K, tiny M.N, occupancy-starved",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          64,
+          64,
+          128
+        ],
+        "num_warps": 4,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0034246575087308884,
+      "tflops_seed_M1": 58.254226048599314,
+      "pct_peak_seed_M1": 2.5890767132710804,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 36.86399757862091,
+        "default_us": 533.4826707839966,
+        "tc_us": 9.557331601778671,
+        "G_vs_tc": 0.2590343888009727,
+        "G_vs_tc_ci": [
+          0.15169665038401572,
+          0.27748846861697374
+        ],
+        "xD_vs_default": 14.484955137655064
+      },
+      "m2": {
+        "seed_us": 41.760001331567764,
+        "default_us": 537.5999808311462,
+        "tc_us": 15.39199985563755,
+        "G_vs_tc": 0.3716474953088195,
+        "xD_vs_default": 12.87356234887753
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        8192,
+        512,
+        8192
+      ],
+      "type": "small_K",
+      "prov": "compute-light, large M.N",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0038759689778089523,
+      "tflops_seed_M1": 814.0575381974913,
+      "pct_peak_seed_M1": 36.180335030999615,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 84.4159945845604,
+        "default_us": 2224.2559269070625,
+        "tc_us": 48.22399467229843,
+        "G_vs_tc": 0.5684754173289606,
+        "G_vs_tc_ci": [
+          0.42920562679299257,
+          0.5811221113839629
+        ],
+        "xD_vs_default": 26.350267953843044
+      },
+      "m2": {
+        "seed_us": 89.08800035715103,
+        "default_us": 2228.2559871673584,
+        "tc_us": 52.22399905323982,
+        "G_vs_tc": 0.586206883574392,
+        "xD_vs_default": 25.023347544309953
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        3072,
+        3072,
+        3072
+      ],
+      "type": "non_pow2",
+      "prov": "honesty (seed ~0.75)",
+      "dtype": "bf16",
+      "default_source": "table",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          128,
+          128,
+          64
+        ],
+        "num_warps": 4,
+        "num_stages": 7
+      },
+      "acc_pass": true,
+      "max_rel": 0.003448275849223137,
+      "tflops_seed_M1": 1397.8857631816823,
+      "pct_peak_seed_M1": 62.1282561414081,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 41.47839546203613,
+        "default_us": 60.159993171691895,
+        "tc_us": 34.89600419998169,
+        "G_vs_tc": 0.8411321724588414,
+        "G_vs_tc_ci": [
+          0.8016598483231684,
+          0.8450255047650959
+        ],
+        "xD_vs_default": 1.4503934518574721
+      },
+      "m2": {
+        "seed_us": 46.08000069856644,
+        "default_us": 64.57599997520447,
+        "tc_us": 41.82400181889534,
+        "G_vs_tc": 0.9095337910661732,
+        "xD_vs_default": 1.4418927948556255
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        5000,
+        5000,
+        5000
+      ],
+      "type": "non_aligned",
+      "prov": "honesty (seed ~0.68)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.005076142027974129,
+      "tflops_seed_M1": 907.5859784234584,
+      "pct_peak_seed_M1": 40.337154596598154,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 275.4559963941574,
+        "default_us": 7357.632160186768,
+        "tc_us": 201.9839957356453,
+        "G_vs_tc": 0.7386258673286307,
+        "G_vs_tc_ci": [
+          0.6812919960383751,
+          0.7448420372027494
+        ],
+        "xD_vs_default": 26.70694095573037
+      },
+      "m2": {
+        "seed_us": 275.4560112953186,
+        "default_us": 7364.607810974121,
+        "tc_us": 205.82400262355804,
+        "G_vs_tc": 0.7472118747951101,
+        "xD_vs_default": 26.72118769589636
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        4000,
+        4096,
+        4096
+      ],
+      "type": "tile_tail",
+      "prov": "honesty (M not x128)",
+      "dtype": "bf16",
+      "default_source": "table",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          128,
+          128,
+          64
+        ],
+        "num_warps": 4,
+        "num_stages": 7
+      },
+      "acc_pass": true,
+      "max_rel": 0.002923976629972458,
+      "tflops_seed_M1": 1361.0358655677771,
+      "pct_peak_seed_M1": 60.490482914123426,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 98.6143946647644,
+        "default_us": 137.87200450897217,
+        "tc_us": 87.71519660949707,
+        "G_vs_tc": 0.8891475277302795,
+        "G_vs_tc_ci": [
+          0.8614436566952942,
+          0.8938076862402465
+        ],
+        "xD_vs_default": 1.3974867019415333
+      },
+      "m2": {
+        "seed_us": 99.35999661684036,
+        "default_us": 142.33599603176117,
+        "tc_us": 93.1520015001297,
+        "G_vs_tc": 0.9369572636310213,
+        "xD_vs_default": 1.4326676106909475
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "matmul",
+      "shape": [
+        8191,
+        8191,
+        8191
+      ],
+      "type": "prime",
+      "prov": "honesty (seed can win)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0034246575087308884,
+      "tflops_seed_M1": 255.13398944650814,
+      "pct_peak_seed_M1": 11.339288419844806,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 4307.967849075794,
+        "default_us": 41780.22550046444,
+        "tc_us": 734.7839921712875,
+        "G_vs_tc": 0.17065266572318297,
+        "G_vs_tc_ci": [
+          0.1669380826958865,
+          0.17113832445719815
+        ],
+        "xD_vs_default": 9.697193580034448
+      },
+      "m2": {
+        "seed_us": 4312.096118927002,
+        "default_us": 41778.2096862793,
+        "tc_us": 736.2880110740662,
+        "G_vs_tc": 0.17063314686260309,
+        "xD_vs_default": 9.689449562974417
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        4096,
+        4096,
+        4096
+      ],
+      "type": "cube",
+      "prov": "7B",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.00035511364694684744,
+      "tflops_seed_M1": 2107.4423294249336,
+      "pct_peak_seed_M1": 46.832051764998525,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 65.21599739789963,
+        "default_us": 2507.615938782692,
+        "tc_us": 47.07200080156326,
+        "G_vs_tc": 0.7260611951543646,
+        "G_vs_tc_ci": [
+          0.648254401033142,
+          0.743294968315854
+        ],
+        "xD_vs_default": 38.44210211120737
+      },
+      "m2": {
+        "seed_us": 68.60800087451935,
+        "default_us": 2513.9520168304443,
+        "tc_us": 52.22399905323982,
+        "G_vs_tc": 0.7611940063485444,
+        "xD_vs_default": 36.65671706624705
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        8192,
+        8192,
+        8192
+      ],
+      "type": "cube",
+      "prov": "70B",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0005091649945825338,
+      "tflops_seed_M1": 2720.4860123013923,
+      "pct_peak_seed_M1": 60.45524471780871,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 404.1600003838539,
+        "default_us": 20056.096829473972,
+        "tc_us": 316.0959929227829,
+        "G_vs_tc": 0.7797948388961695,
+        "G_vs_tc_ci": [
+          0.7482950498145705,
+          0.7877054953265318
+        ],
+        "xD_vs_default": 49.624150857149516
+      },
+      "m2": {
+        "seed_us": 406.5279960632324,
+        "default_us": 20079.61654663086,
+        "tc_us": 320.51199674606323,
+        "G_vs_tc": 0.7883510276068785,
+        "xD_vs_default": 49.38171997681481
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        4096,
+        4096,
+        14336
+      ],
+      "type": "ffn_largeN",
+      "prov": "L3-8B FFN up",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.00035410764394328,
+      "tflops_seed_M1": 2231.9800148680924,
+      "pct_peak_seed_M1": 49.599555885957614,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 215.5200019478798,
+        "default_us": 8718.71966868639,
+        "tc_us": 144.86400038003922,
+        "G_vs_tc": 0.6721603520357816,
+        "G_vs_tc_ci": [
+          0.6317904794478182,
+          0.6808825291344289
+        ],
+        "xD_vs_default": 40.45434108150611
+      },
+      "m2": {
+        "seed_us": 218.27200055122375,
+        "default_us": 8720.416069030762,
+        "tc_us": 148.47999811172485,
+        "G_vs_tc": 0.6800117538672457,
+        "xD_vs_default": 39.94267498617216
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        4096,
+        14336,
+        4096
+      ],
+      "type": "ffn_largeK",
+      "prov": "L3-8B FFN down",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0003993610152974725,
+      "tflops_seed_M1": 2652.6178454181804,
+      "pct_peak_seed_M1": 58.947063231515116,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 181.34400248527527,
+        "default_us": 7946.239806711674,
+        "tc_us": 156.54399991035461,
+        "G_vs_tc": 0.8632433263022616,
+        "G_vs_tc_ci": [
+          0.8007903276291292,
+          0.8773347932082863
+        ],
+        "xD_vs_default": 43.76453793233344
+      },
+      "m2": {
+        "seed_us": 184.79999899864197,
+        "default_us": 7950.33597946167,
+        "tc_us": 161.6320013999939,
+        "G_vs_tc": 0.8740062646173062,
+        "xD_vs_default": 43.04908517593885
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        4096,
+        4096,
+        128256
+      ],
+      "type": "vocab",
+      "prov": "fp8 LM head",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0005998800043016672,
+      "tflops_seed_M1": 2538.0493911790763,
+      "pct_peak_seed_M1": 56.40109758175725,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 1695.616029202938,
+        "default_us": 77623.26586991549,
+        "tc_us": 1273.5040336847305,
+        "G_vs_tc": 0.7505469680468824,
+        "G_vs_tc_ci": [
+          0.7444832628846461,
+          0.7617573969502851
+        ],
+        "xD_vs_default": 45.77253455020059
+      },
+      "m2": {
+        "seed_us": 1710.1119756698608,
+        "default_us": 77619.20166015625,
+        "tc_us": 1281.0560464859009,
+        "G_vs_tc": 0.7490075530533339,
+        "xD_vs_default": 45.39258534704257
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        1,
+        4096,
+        4096
+      ],
+      "type": "decode",
+      "prov": "single-token decode",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          16,
+          32,
+          256
+        ],
+        "num_warps": 4,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 1.4714357732259487e-08,
+      "tflops_seed_M1": 1.9103220974734747,
+      "pct_peak_seed_M1": 0.04245160216607722,
+      "R": 15,
+      "noise_floor": true,
+      "m1": {
+        "seed_us": 17.5648033618927,
+        "default_us": 61.046403646469116,
+        "tc_us": 8.339202404022217,
+        "G_vs_tc": 0.4744136125359878,
+        "G_vs_tc_ci": [
+          0.4137141487183567,
+          0.533285628055249
+        ],
+        "xD_vs_default": 3.476294496246626
+      },
+      "m2": {
+        "seed_us": 21.503999829292297,
+        "default_us": 66.56000018119812,
+        "tc_us": 13.311999849975109,
+        "G_vs_tc": 0.6181277769724612,
+        "xD_vs_default": 3.090638928107225
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        32,
+        8192,
+        8192
+      ],
+      "type": "decode",
+      "prov": "batch-32 decode",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          256
+        ],
+        "num_warps": 4,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.00030084236641414464,
+      "tflops_seed_M1": 187.1673461764168,
+      "pct_peak_seed_M1": 4.159274359475929,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 22.947204113006592,
+        "default_us": 147.29598760604858,
+        "tc_us": 17.871999740600586,
+        "G_vs_tc": 0.7678123573676489,
+        "G_vs_tc_ci": [
+          0.755336032710588,
+          0.7926370593329388
+        ],
+        "xD_vs_default": 6.3858623724343095
+      },
+      "m2": {
+        "seed_us": 28.672000393271446,
+        "default_us": 151.58399939537048,
+        "tc_us": 23.584000766277313,
+        "G_vs_tc": 0.8225446583005714,
+        "xD_vs_default": 5.286830263539729
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        8192,
+        512,
+        8192
+      ],
+      "type": "small_K",
+      "prov": "compute-light",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0005040322430431843,
+      "tflops_seed_M1": 1013.7609358247076,
+      "pct_peak_seed_M1": 22.528020796104617,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 67.7866687377294,
+        "default_us": 1265.237366159757,
+        "tc_us": 32.9066663980484,
+        "G_vs_tc": 0.48629177199915835,
+        "G_vs_tc_ci": [
+          0.4472008757198199,
+          0.4949463393741341
+        ],
+        "xD_vs_default": 18.652556751505923
+      },
+      "m2": {
+        "seed_us": 72.7040022611618,
+        "default_us": 1269.7279453277588,
+        "tc_us": 37.88800165057182,
+        "G_vs_tc": 0.5213562389742493,
+        "xD_vs_default": 17.471183137120857
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        3072,
+        3072,
+        3072
+      ],
+      "type": "non_pow2",
+      "prov": "honesty",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0008389261784031987,
+      "tflops_seed_M1": 2217.796172599113,
+      "pct_peak_seed_M1": 49.28435939109141,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 26.14399790763855,
+        "default_us": 985.5146408081056,
+        "tc_us": 20.88533341884613,
+        "G_vs_tc": 0.7857143257562464,
+        "G_vs_tc_ci": [
+          0.7054479152625344,
+          0.847922454167874
+        ],
+        "xD_vs_default": 37.65075780633429
+      },
+      "m2": {
+        "seed_us": 30.079999938607216,
+        "default_us": 992.1919703483582,
+        "tc_us": 25.599999353289604,
+        "G_vs_tc": 0.8499999721346304,
+        "xD_vs_default": 32.91914999228749
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "fp8_gemm",
+      "shape": [
+        16384,
+        8192,
+        512
+      ],
+      "type": "tall_skinny",
+      "prov": "tall",
+      "dtype": "fp8_e4m3",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 6
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          32
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0005138746346347034,
+      "tflops_seed_M1": 2183.51176270798,
+      "pct_peak_seed_M1": 48.52248361573289,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 62.943994998931885,
+        "default_us": 3088.2561206817627,
+        "tc_us": 55.48800528049469,
+        "G_vs_tc": 0.8731192272545861,
+        "G_vs_tc_ci": [
+          0.7954807919426022,
+          0.9150225923434879
+        ],
+        "xD_vs_default": 48.886187867816744
+      },
+      "m2": {
+        "seed_us": 66.56000018119812,
+        "default_us": 3091.4878845214844,
+        "tc_us": 60.447998344898224,
+        "G_vs_tc": 0.9077366344190819,
+        "xD_vs_default": 46.41345976037249
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "bmm",
+      "shape": [
+        32,
+        2048,
+        128,
+        2048
+      ],
+      "type": "attn_scores",
+      "prov": "b.h=32, seq=2048, head_dim=128",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          128,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.003225806402042508,
+      "tflops_seed_M1": 226.35271982032572,
+      "pct_peak_seed_M1": 10.060120880903366,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 151.79732938607532,
+        "default_us": 1263.3279512325923,
+        "tc_us": 52.085330088933304,
+        "G_vs_tc": 0.3420352592421283,
+        "G_vs_tc_ci": [
+          0.325591255163718,
+          0.3517672731432538
+        ],
+        "xD_vs_default": 8.322816235509766
+      },
+      "m2": {
+        "seed_us": 156.47999942302704,
+        "default_us": 1268.7360048294067,
+        "tc_us": 56.32000043988228,
+        "G_vs_tc": 0.36006547171069553,
+        "xD_vs_default": 8.107975520881196
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "bmm",
+      "shape": [
+        32,
+        2048,
+        2048,
+        128
+      ],
+      "type": "attn_context",
+      "prov": "transposed roles",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          256,
+          128,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.003846153849735856,
+      "tflops_seed_M1": 504.89429945460563,
+      "pct_peak_seed_M1": 22.43974664242692,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 68.05332998434703,
+        "default_us": 1413.8133575518925,
+        "tc_us": 60.437336564064026,
+        "G_vs_tc": 0.8862819156983358,
+        "G_vs_tc_ci": [
+          0.8774184244041991,
+          0.905957667239502
+        ],
+        "xD_vs_default": 20.74012653871685
+      },
+      "m2": {
+        "seed_us": 72.73600250482559,
+        "default_us": 1418.239951133728,
+        "tc_us": 66.56000018119812,
+        "G_vs_tc": 0.9150901601553133,
+        "xD_vs_default": 19.498458841474502
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "bmm",
+      "shape": [
+        16,
+        4096,
+        128,
+        4096
+      ],
+      "type": "long_seq_attn",
+      "prov": "long-seq attention",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          128,
+          256,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.003496503457427025,
+      "tflops_seed_M1": 231.68448947230206,
+      "pct_peak_seed_M1": 10.297088420991201,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 296.60801589488983,
+        "default_us": 2511.8078887462616,
+        "tc_us": 102.20799595117569,
+        "G_vs_tc": 0.34182361160340796,
+        "G_vs_tc_ci": [
+          0.3047233537408484,
+          0.3524607858221557
+        ],
+        "xD_vs_default": 8.46585322391173
+      },
+      "m2": {
+        "seed_us": 297.9840040206909,
+        "default_us": 2516.7999267578125,
+        "tc_us": 105.47199845314026,
+        "G_vs_tc": 0.35384449093500703,
+        "xD_vs_default": 8.44409813945533
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "bmm",
+      "shape": [
+        64,
+        512,
+        512,
+        512
+      ],
+      "type": "many_medium",
+      "prov": "many-medium batched",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          128,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.004048583097755909,
+      "tflops_seed_M1": 414.9994185317765,
+      "pct_peak_seed_M1": 18.444418601412288,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 41.3973331451416,
+        "default_us": 610.1226856311162,
+        "tc_us": 21.84533576170604,
+        "G_vs_tc": 0.5301050034420511,
+        "G_vs_tc_ci": [
+          0.4543332591427647,
+          0.5513873103958875
+        ],
+        "xD_vs_default": 14.763294757006886
+      },
+      "m2": {
+        "seed_us": 46.08000069856644,
+        "default_us": 615.4239773750305,
+        "tc_us": 27.68000029027462,
+        "G_vs_tc": 0.6002775790396196,
+        "xD_vs_default": 13.355554862093927
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "bmm",
+      "shape": [
+        8,
+        4096,
+        4096,
+        4096
+      ],
+      "type": "few_large",
+      "prov": "few-large (near-GEMM)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          128,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.005524862091988325,
+      "tflops_seed_M1": 919.4717504290437,
+      "pct_peak_seed_M1": 40.86541113017972,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 1195.8079487085342,
+        "default_us": 48396.000139415264,
+        "tc_us": 625.3440007567406,
+        "G_vs_tc": 0.5233716947058936,
+        "G_vs_tc_ci": [
+          0.514284162159191,
+          0.5246862736382554
+        ],
+        "xD_vs_default": 40.47769800845523
+      },
+      "m2": {
+        "seed_us": 1201.248049736023,
+        "default_us": 48400.41732788086,
+        "tc_us": 630.7520270347595,
+        "G_vs_tc": 0.5243098037024222,
+        "xD_vs_default": 40.291775989577644
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "bmm",
+      "shape": [
+        128,
+        256,
+        256,
+        256
+      ],
+      "type": "many_small",
+      "prov": "many-small (decode-ish)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          128,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.002808988792821765,
+      "tflops_seed_M1": 238.8215425083328,
+      "pct_peak_seed_M1": 10.614290778148126,
+      "R": 15,
+      "noise_floor": true,
+      "m1": {
+        "seed_us": 17.984002828598022,
+        "default_us": 159.83359813690186,
+        "tc_us": 10.448002815246582,
+        "G_vs_tc": 0.5806507100656857,
+        "G_vs_tc_ci": [
+          0.5592813048864228,
+          0.611758531500704
+        ],
+        "xD_vs_default": 8.885585879693691
+      },
+      "m2": {
+        "seed_us": 21.536000072956085,
+        "default_us": 164.86400365829468,
+        "tc_us": 17.40800030529499,
+        "G_vs_tc": 0.7459016875768946,
+        "xD_vs_default": 7.656760581945143
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "bmm",
+      "shape": [
+        16,
+        2048,
+        128,
+        128
+      ],
+      "type": "gqa",
+      "prov": "GQA-ish (small N)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          256,
+          128,
+          32
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0021276595070958138,
+      "tflops_seed_M1": 130.00562553436143,
+      "pct_peak_seed_M1": 5.778027801527174,
+      "R": 15,
+      "noise_floor": true,
+      "m1": {
+        "seed_us": 8.25919508934021,
+        "default_us": 44.40000057220459,
+        "tc_us": 6.144005060195923,
+        "G_vs_tc": 0.7424478845419964,
+        "G_vs_tc_ci": [
+          0.5289772164710282,
+          0.7861911428997344
+        ],
+        "xD_vs_default": 5.3665266056485725
+      },
+      "m2": {
+        "seed_us": 13.344000093638897,
+        "default_us": 50.144001841545105,
+        "tc_us": 11.264000087976456,
+        "G_vs_tc": 0.8441247009092888,
+        "xD_vs_default": 3.751195955041128
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "bmm",
+      "shape": [
+        4,
+        3072,
+        3072,
+        3072
+      ],
+      "type": "non_pow2",
+      "prov": "non-pow2 batched",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          1,
+          128,
+          256,
+          64
+        ],
+        "num_warps": 8,
+        "num_stages": 4
+      },
+      "default_cfg": {
+        "block_sizes": [
+          1,
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.003401360474526882,
+      "tflops_seed_M1": 890.4972948100841,
+      "pct_peak_seed_M1": 39.57765754711485,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 260.44799387454987,
+        "default_us": 9830.33587038517,
+        "tc_us": 136.76799833774567,
+        "G_vs_tc": 0.5274603711593456,
+        "G_vs_tc_ci": [
+          0.49183330301388556,
+          0.533483829409477
+        ],
+        "xD_vs_default": 37.667406323782274
+      },
+      "m2": {
+        "seed_us": 263.16800713539124,
+        "default_us": 9846.816062927246,
+        "tc_us": 140.28799533843994,
+        "G_vs_tc": 0.5333170903010298,
+        "xD_vs_default": 37.45926420762332
+      },
+      "tc_winner": "cuBLAS/cuBLASLt"
+    },
+    {
+      "kernel": "mamba2_chunk_state",
+      "shape": [
+        2,
+        4096,
+        64,
+        256,
+        64,
+        128
+      ],
+      "type": "model",
+      "prov": "Mamba-2-1.3B",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          64
+        ],
+        "num_warps": 1,
+        "num_stages": 2
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0008058017701841891,
+      "tflops_seed_M1": 174.80060376370673,
+      "pct_peak_seed_M1": 7.768915722831411,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 49.141332507133484,
+        "default_us": 320.533350110054,
+        "tc_us": 87.0826691389084,
+        "G_vs_tc": 1.7634035302321525,
+        "G_vs_tc_ci": [
+          1.7306313116666978,
+          1.8010903278245147
+        ],
+        "xD_vs_default": 6.525254831702761
+      },
+      "m2": {
+        "seed_us": 54.30399999022484,
+        "default_us": 326.6240060329437,
+        "tc_us": 93.21600198745728,
+        "G_vs_tc": 1.7159693901106248,
+        "xD_vs_default": 6.014731991966314
+      },
+      "tc_winner": "Triton"
+    },
+    {
+      "kernel": "mamba2_chunk_state",
+      "shape": [
+        8,
+        4096,
+        80,
+        256,
+        64,
+        128
+      ],
+      "type": "model",
+      "prov": "Mamba-2-2.7B",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          64
+        ],
+        "num_warps": 1,
+        "num_stages": 2
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0008019246160984039,
+      "tflops_seed_M1": 193.09125238639638,
+      "pct_peak_seed_M1": 8.581833439395394,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 222.43199745814007,
+        "default_us": 1551.615963379542,
+        "tc_us": 411.9359850883484,
+        "G_vs_tc": 1.8523584456471318,
+        "G_vs_tc_ci": [
+          1.825839870183535,
+          1.8598855987379754
+        ],
+        "xD_vs_default": 6.979619340818512
+      },
+      "m2": {
+        "seed_us": 226.1119931936264,
+        "default_us": 1553.3759593963623,
+        "tc_us": 415.77601432800293,
+        "G_vs_tc": 1.837268466337028,
+        "xD_vs_default": 6.870365521714968
+      },
+      "tc_winner": "Triton"
+    },
+    {
+      "kernel": "mamba2_chunk_state",
+      "shape": [
+        8,
+        8192,
+        128,
+        256,
+        64,
+        128
+      ],
+      "type": "long_seq",
+      "prov": "7B, long-seq",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          64
+        ],
+        "num_warps": 1,
+        "num_stages": 2
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0007917656330391765,
+      "tflops_seed_M1": 198.52858726702559,
+      "pct_peak_seed_M1": 8.823492767423359,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 692.2879740595818,
+        "default_us": 4998.655937612057,
+        "tc_us": 1316.8960437178612,
+        "G_vs_tc": 1.9040855092246685,
+        "G_vs_tc_ci": [
+          1.8594650407589473,
+          1.9082790329389911
+        ],
+        "xD_vs_default": 7.222612772544589
+      },
+      "m2": {
+        "seed_us": 693.2799816131592,
+        "default_us": 5003.2958984375,
+        "tc_us": 1323.0400085449219,
+        "G_vs_tc": 1.9083776304436268,
+        "xD_vs_default": 7.218324886590571
+      },
+      "tc_winner": "Triton"
+    },
+    {
+      "kernel": "mamba2_chunk_state",
+      "shape": [
+        2,
+        4096,
+        80,
+        256,
+        64,
+        256
+      ],
+      "type": "big_dstate",
+      "prov": "dstate=256 (bigger dot-N)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          64
+        ],
+        "num_warps": 1,
+        "num_stages": 2
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.000830564764328301,
+      "tflops_seed_M1": 186.91540854073514,
+      "pct_peak_seed_M1": 8.30735149069934,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 114.89066978295645,
+        "default_us": 785.5573346217473,
+        "tc_us": 162.17600802580515,
+        "G_vs_tc": 1.403344075192379,
+        "G_vs_tc_ci": [
+          1.3792500791007956,
+          1.421752934093024
+        ],
+        "xD_vs_default": 6.836926559347649
+      },
+      "m2": {
+        "seed_us": 118.81600320339203,
+        "default_us": 791.5520071983337,
+        "tc_us": 168.96000504493713,
+        "G_vs_tc": 1.4161911855165554,
+        "xD_vs_default": 6.654995662565261
+      },
+      "tc_winner": "Triton"
+    },
+    {
+      "kernel": "mamba2_chunk_state",
+      "shape": [
+        4,
+        4096,
+        64,
+        128,
+        64,
+        128
+      ],
+      "type": "small_chunk",
+      "prov": "chunk=128 (small-K dot)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          32
+        ],
+        "num_warps": 1,
+        "num_stages": 2
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0007315289112739265,
+      "tflops_seed_M1": 135.14118287415835,
+      "pct_peak_seed_M1": 6.006274794407037,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 127.12534268697102,
+        "default_us": 659.05066827933,
+        "tc_us": 176.7466614643733,
+        "G_vs_tc": 1.389984105953125,
+        "G_vs_tc_ci": [
+          1.37725903869699,
+          1.3926407932062954
+        ],
+        "xD_vs_default": 5.188957193860743
+      },
+      "m2": {
+        "seed_us": 130.048006772995,
+        "default_us": 664.6080017089844,
+        "tc_us": 181.2479943037033,
+        "G_vs_tc": 1.39370067101513,
+        "xD_vs_default": 5.110482030448105
+      },
+      "tc_winner": "Triton"
+    },
+    {
+      "kernel": "mamba2_chunk_state",
+      "shape": [
+        8,
+        2048,
+        64,
+        256,
+        128,
+        128
+      ],
+      "type": "big_headdim",
+      "prov": "headdim=128 (big-M dot)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          64
+        ],
+        "num_warps": 1,
+        "num_stages": 2
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0008183306199498475,
+      "tflops_seed_M1": 191.7624313550505,
+      "pct_peak_seed_M1": 8.522774726891134,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 179.1786750157674,
+        "default_us": 1250.656028588613,
+        "tc_us": 237.14133103688556,
+        "G_vs_tc": 1.3244728807856176,
+        "G_vs_tc_ci": [
+          1.3031358422208785,
+          1.3291854842322814
+        ],
+        "xD_vs_default": 6.985181751442846
+      },
+      "m2": {
+        "seed_us": 183.29599499702454,
+        "default_us": 1256.4480304718018,
+        "tc_us": 242.71999299526215,
+        "G_vs_tc": 1.3241403229506068,
+        "xD_vs_default": 6.854574008522707
+      },
+      "tc_winner": "Triton"
+    },
+    {
+      "kernel": "mamba2_chunk_state",
+      "shape": [
+        1,
+        4096,
+        64,
+        256,
+        64,
+        128
+      ],
+      "type": "decode_grid",
+      "prov": "batch-1 (decode grid)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          64
+        ],
+        "num_warps": 1,
+        "num_stages": 2
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0008176614646799862,
+      "tflops_seed_M1": 157.73618046779103,
+      "pct_peak_seed_M1": 7.010496909679602,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 27.22880244255066,
+        "default_us": 160.6304109096527,
+        "tc_us": 43.03039908409119,
+        "G_vs_tc": 1.580436584220492,
+        "G_vs_tc_ci": [
+          1.5550952147119392,
+          1.5984052410602831
+        ],
+        "xD_vs_default": 5.899282983471735
+      },
+      "m2": {
+        "seed_us": 31.775999814271927,
+        "default_us": 166.9120043516159,
+        "tc_us": 48.16000163555145,
+        "G_vs_tc": 1.51560932518387,
+        "xD_vs_default": 5.252769553348523
+      },
+      "tc_winner": "Triton"
+    },
+    {
+      "kernel": "mamba2_chunk_state",
+      "shape": [
+        16,
+        2048,
+        64,
+        256,
+        64,
+        128
+      ],
+      "type": "training_grid",
+      "prov": "batch-16 (training grid)",
+      "dtype": "bf16",
+      "default_source": "base",
+      "seed_fired": true,
+      "seed_cfg": {
+        "block_sizes": [
+          32,
+          64,
+          64
+        ],
+        "num_warps": 1,
+        "num_stages": 2
+      },
+      "default_cfg": {
+        "block_sizes": [
+          16,
+          16,
+          16
+        ],
+        "num_warps": 4,
+        "num_stages": 1
+      },
+      "acc_pass": true,
+      "max_rel": 0.0008237232104875147,
+      "tflops_seed_M1": 190.0427946182162,
+      "pct_peak_seed_M1": 8.446346427476275,
+      "R": 7,
+      "noise_floor": false,
+      "m1": {
+        "seed_us": 180.80000579357147,
+        "default_us": 1253.7706991036732,
+        "tc_us": 324.70399141311646,
+        "G_vs_tc": 1.7953424022711593,
+        "G_vs_tc_ci": [
+          1.7709581445024283,
+          1.8060055191820898
+        ],
+        "xD_vs_default": 6.9401768397445815
+      },
+      "m2": {
+        "seed_us": 183.32800269126892,
+        "default_us": 1260.543942451477,
+        "tc_us": 328.73600721359253,
+        "G_vs_tc": 1.7929830396554187,
+        "xD_vs_default": 6.874322894630643
+      },
+      "tc_winner": "Triton"
+    }
+  ],
+  "by_method": {},
+  "summary": {
+    "matmul": {
+      "m1": {
+        "n": 22,
+        "geo_G_vs_tc": 0.7397820180423338,
+        "min_G_vs_tc": 0.17065266572318297,
+        "max_G_vs_tc": 1.395520470924546,
+        "geo_xD_vs_default": 12.734319569166297
+      },
+      "m2": {
+        "n": 22,
+        "geo_G_vs_tc": 0.7850276699253507,
+        "min_G_vs_tc": 0.17063314686260309,
+        "max_G_vs_tc": 1.2634854288232018,
+        "geo_xD_vs_default": 12.20762645740584
+      }
+    },
+    "fp8_gemm": {
+      "m1": {
+        "n": 10,
+        "geo_G_vs_tc": 0.7041391575323431,
+        "min_G_vs_tc": 0.4744136125359878,
+        "max_G_vs_tc": 0.8731192272545861,
+        "geo_xD_vs_default": 25.534226334541003
+      },
+      "m2": {
+        "n": 10,
+        "geo_G_vs_tc": 0.7477360606292777,
+        "min_G_vs_tc": 0.5213562389742493,
+        "max_G_vs_tc": 0.9077366344190819,
+        "geo_xD_vs_default": 23.931858599012642
+      }
+    },
+    "bmm": {
+      "m1": {
+        "n": 8,
+        "geo_G_vs_tc": 0.5332409166870904,
+        "min_G_vs_tc": 0.34182361160340796,
+        "max_G_vs_tc": 0.8862819156983358,
+        "geo_xD_vs_default": 14.10707828506655
+      },
+      "m2": {
+        "n": 8,
+        "geo_G_vs_tc": 0.5772101377123043,
+        "min_G_vs_tc": 0.35384449093500703,
+        "max_G_vs_tc": 0.9150901601553133,
+        "geo_xD_vs_default": 12.912632749417389
+      }
+    },
+    "mamba2_chunk_state": {
+      "m1": {
+        "n": 8,
+        "geo_G_vs_tc": 1.6119927232210798,
+        "min_G_vs_tc": 1.3244728807856176,
+        "max_G_vs_tc": 1.9040855092246685,
+        "geo_xD_vs_default": 6.537722810288557
+      },
+      "m2": {
+        "n": 8,
+        "geo_G_vs_tc": 1.5989758943935308,
+        "min_G_vs_tc": 1.3241403229506068,
+        "max_G_vs_tc": 1.9083776304436268,
+        "geo_xD_vs_default": 6.309284586118708
+      }
+    },
+    "all_gemm": {
+      "m1": {
+        "n": 40,
+        "geo_G_vs_tc": 0.6843943116104589,
+        "min_G_vs_tc": 0.17065266572318297,
+        "max_G_vs_tc": 1.395520470924546,
+        "geo_xD_vs_default": 15.466952456796825
+      },
+      "m2": {
+        "n": 40,
+        "geo_G_vs_tc": 0.7292737843139891,
+        "min_G_vs_tc": 0.17063314686260309,
+        "max_G_vs_tc": 1.2634854288232018,
+        "geo_xD_vs_default": 14.60811719564339
+      }
+    },
+    "mamba_only": {
+      "m1": {
+        "n": 8,
+        "geo_G_vs_tc": 1.6119927232210798,
+        "min_G_vs_tc": 1.3244728807856176,
+        "max_G_vs_tc": 1.9040855092246685,
+        "geo_xD_vs_default": 6.537722810288557
+      },
+      "m2": {
+        "n": 8,
+        "geo_G_vs_tc": 1.5989758943935308,
+        "min_G_vs_tc": 1.3241403229506068,
+        "max_G_vs_tc": 1.9083776304436268,
+        "geo_xD_vs_default": 6.309284586118708
+      }
+    },
+    "by_type_gemm": {
+      "attn": {
+        "n": 1,
+        "geo_G_vs_tc": 0.7768997365168525,
+        "min_G_vs_tc": 0.7768997365168525,
+        "max_G_vs_tc": 0.7768997365168525,
+        "geo_xD_vs_default": 41.98561924218868
+      },
+      "attn_context": {
+        "n": 1,
+        "geo_G_vs_tc": 0.8862819156983358,
+        "min_G_vs_tc": 0.8862819156983358,
+        "max_G_vs_tc": 0.8862819156983358,
+        "geo_xD_vs_default": 20.740126538716854
+      },
+      "attn_qkv": {
+        "n": 1,
+        "geo_G_vs_tc": 0.8141987154117205,
+        "min_G_vs_tc": 0.8141987154117205,
+        "max_G_vs_tc": 0.8141987154117205,
+        "geo_xD_vs_default": 44.25821919938345
+      },
+      "attn_scores": {
+        "n": 1,
+        "geo_G_vs_tc": 0.3420352592421283,
+        "min_G_vs_tc": 0.3420352592421283,
+        "max_G_vs_tc": 0.3420352592421283,
+        "geo_xD_vs_default": 8.322816235509766
+      },
+      "cube": {
+        "n": 6,
+        "geo_G_vs_tc": 0.7690244630632445,
+        "min_G_vs_tc": 0.6139987312973095,
+        "max_G_vs_tc": 0.8938852898015475,
+        "geo_xD_vs_default": 7.6660102576342695
+      },
+      "decode": {
+        "n": 4,
+        "geo_G_vs_tc": 0.8108880738967379,
+        "min_G_vs_tc": 0.4744136125359878,
+        "max_G_vs_tc": 1.395520470924546,
+        "geo_xD_vs_default": 7.826975257329089
+      },
+      "deep_K": {
+        "n": 1,
+        "geo_G_vs_tc": 0.2590343888009727,
+        "min_G_vs_tc": 0.2590343888009727,
+        "max_G_vs_tc": 0.2590343888009727,
+        "geo_xD_vs_default": 14.484955137655065
+      },
+      "few_large": {
+        "n": 1,
+        "geo_G_vs_tc": 0.5233716947058936,
+        "min_G_vs_tc": 0.5233716947058936,
+        "max_G_vs_tc": 0.5233716947058936,
+        "geo_xD_vs_default": 40.477698008455235
+      },
+      "ffn_large": {
+        "n": 1,
+        "geo_G_vs_tc": 0.8559428944894378,
+        "min_G_vs_tc": 0.8559428944894378,
+        "max_G_vs_tc": 0.8559428944894378,
+        "geo_xD_vs_default": 47.69390854011104
+      },
+      "ffn_largeK": {
+        "n": 2,
+        "geo_G_vs_tc": 0.8993381841689999,
+        "min_G_vs_tc": 0.8632433263022616,
+        "max_G_vs_tc": 0.9369422790315234,
+        "geo_xD_vs_default": 45.7586604919102
+      },
+      "ffn_largeN": {
+        "n": 2,
+        "geo_G_vs_tc": 0.7441203986932006,
+        "min_G_vs_tc": 0.6721603520357816,
+        "max_G_vs_tc": 0.8237843337148388,
+        "geo_xD_vs_default": 42.491269508797316
+      },
+      "gqa": {
+        "n": 1,
+        "geo_G_vs_tc": 0.7424478845419964,
+        "min_G_vs_tc": 0.7424478845419964,
+        "max_G_vs_tc": 0.7424478845419964,
+        "geo_xD_vs_default": 5.3665266056485725
+      },
+      "long_seq_attn": {
+        "n": 1,
+        "geo_G_vs_tc": 0.341823611603408,
+        "min_G_vs_tc": 0.34182361160340796,
+        "max_G_vs_tc": 0.34182361160340796,
+        "geo_xD_vs_default": 8.46585322391173
+      },
+      "many_medium": {
+        "n": 1,
+        "geo_G_vs_tc": 0.5301050034420511,
+        "min_G_vs_tc": 0.5301050034420511,
+        "max_G_vs_tc": 0.5301050034420511,
+        "geo_xD_vs_default": 14.763294757006888
+      },
+      "many_small": {
+        "n": 1,
+        "geo_G_vs_tc": 0.5806507100656857,
+        "min_G_vs_tc": 0.5806507100656857,
+        "max_G_vs_tc": 0.5806507100656857,
+        "geo_xD_vs_default": 8.88558587969369
+      },
+      "non_aligned": {
+        "n": 1,
+        "geo_G_vs_tc": 0.7386258673286307,
+        "min_G_vs_tc": 0.7386258673286307,
+        "max_G_vs_tc": 0.7386258673286307,
+        "geo_xD_vs_default": 26.706940955730374
+      },
+      "non_pow2": {
+        "n": 3,
+        "geo_G_vs_tc": 0.7037843157389541,
+        "min_G_vs_tc": 0.5274603711593456,
+        "max_G_vs_tc": 0.8411321724588414,
+        "geo_xD_vs_default": 12.717695516348954
+      },
+      "prime": {
+        "n": 1,
+        "geo_G_vs_tc": 0.17065266572318297,
+        "min_G_vs_tc": 0.17065266572318297,
+        "max_G_vs_tc": 0.17065266572318297,
+        "geo_xD_vs_default": 9.69719358003445
+      },
+      "rectangular": {
+        "n": 1,
+        "geo_G_vs_tc": 0.84891297459737,
+        "min_G_vs_tc": 0.84891297459737,
+        "max_G_vs_tc": 0.84891297459737,
+        "geo_xD_vs_default": 1.0583437144603896
+      },
+      "small_K": {
+        "n": 2,
+        "geo_G_vs_tc": 0.5257802944489849,
+        "min_G_vs_tc": 0.48629177199915835,
+        "max_G_vs_tc": 0.5684754173289606,
+        "geo_xD_vs_default": 22.16979630998997
+      },
+      "tall_skinny": {
+        "n": 2,
+        "geo_G_vs_tc": 0.908129600536555,
+        "min_G_vs_tc": 0.8731192272545861,
+        "max_G_vs_tc": 0.9445438213104603,
+        "geo_xD_vs_default": 45.649031257197336
+      },
+      "tall_skinny_extreme": {
+        "n": 1,
+        "geo_G_vs_tc": 0.8375920974311085,
+        "min_G_vs_tc": 0.8375920974311085,
+        "max_G_vs_tc": 0.8375920974311085,
+        "geo_xD_vs_default": 31.447277541582007
+      },
+      "tile_tail": {
+        "n": 1,
+        "geo_G_vs_tc": 0.8891475277302795,
+        "min_G_vs_tc": 0.8891475277302795,
+        "max_G_vs_tc": 0.8891475277302795,
+        "geo_xD_vs_default": 1.3974867019415333
+      },
+      "vocab": {
+        "n": 2,
+        "geo_G_vs_tc": 0.8057198931958226,
+        "min_G_vs_tc": 0.7505469680468824,
+        "max_G_vs_tc": 0.864948596062994,
+        "geo_xD_vs_default": 46.73048394626098
+      },
+      "wide": {
+        "n": 1,
+        "geo_G_vs_tc": 0.9027026671762372,
+        "min_G_vs_tc": 0.9027026671762372,
+        "max_G_vs_tc": 0.9027026671762372,
+        "geo_xD_vs_default": 44.17802281384426
+      }
+    },
+    "aligned_gemm": {
+      "n": 23,
+      "geo_G_vs_tc": 0.7068652711765084,
+      "min_G_vs_tc": 0.34182361160340796,
+      "max_G_vs_tc": 0.9369422790315234,
+      "geo_xD_vs_default": 16.195188220820576
+    },
+    "adversarial_gemm": {
+      "n": 17,
+      "geo_G_vs_tc": 0.6551251666649294,
+      "min_G_vs_tc": 0.17065266572318297,
+      "max_G_vs_tc": 1.395520470924546,
+      "geo_xD_vs_default": 14.53353616971799
+    },
+    "default_source_split": {
+      "table_headtohead": {
+        "n": 6,
+        "geo_xD_vs_default": 1.2865360730506434,
+        "min_xD": 1.0583437144603896,
+        "max_xD": 1.4503934518574721,
+        "cells": [
+          {
+            "kernel": "matmul",
+            "shape": [
+              1024,
+              1024,
+              1024
+            ],
+            "type": "cube",
+            "xD": 1.2613539008630303,
+            "G_vs_tc": 0.6139987312973095
+          },
+          {
+            "kernel": "matmul",
+            "shape": [
+              2048,
+              2048,
+              2048
+            ],
+            "type": "cube",
+            "xD": 1.3224631113894039,
+            "G_vs_tc": 0.7771739130434783
+          },
+          {
+            "kernel": "matmul",
+            "shape": [
+              4096,
+              4096,
+              4096
+            ],
+            "type": "cube",
+            "xD": 1.2672171346281222,
+            "G_vs_tc": 0.8564852135076576
+          },
+          {
+            "kernel": "matmul",
+            "shape": [
+              4096,
+              2048,
+              2048
+            ],
+            "type": "rectangular",
+            "xD": 1.0583437144603896,
+            "G_vs_tc": 0.84891297459737
+          },
+          {
+            "kernel": "matmul",
+            "shape": [
+              3072,
+              3072,
+              3072
+            ],
+            "type": "non_pow2",
+            "xD": 1.4503934518574721,
+            "G_vs_tc": 0.8411321724588414
+          },
+          {
+            "kernel": "matmul",
+            "shape": [
+              4000,
+              4096,
+              4096
+            ],
+            "type": "tile_tail",
+            "xD": 1.3974867019415333,
+            "G_vs_tc": 0.8891475277302795
+          }
+        ]
+      },
+      "base_coverage": {
+        "n": 42,
+        "geo_xD_vs_default": 18.726389547560103,
+        "min_xD": 3.476294496246626,
+        "max_xD": 50.332047974567445
+      }
+    },
+    "m1_vs_m2_divergence_top": [
+      {
+        "kernel": "matmul",
+        "shape": [
+          1024,
+          1024,
+          1024
+        ],
+        "seed_us": 7.945603132247925,
+        "G_M1": 0.6139987312973095,
+        "G_M2": 1.0,
+        "rel_delta": 0.6286678604157923,
+        "noise_floor": true
+      },
+      {
+        "kernel": "matmul",
+        "shape": [
+          256,
+          16384,
+          256
+        ],
+        "seed_us": 36.86399757862091,
+        "G_M1": 0.2590343888009727,
+        "G_M2": 0.3716474953088195,
+        "rel_delta": 0.4347419160410102,
+        "noise_floor": false
+      },
+      {
+        "kernel": "fp8_gemm",
+        "shape": [
+          1,
+          4096,
+          4096
+        ],
+        "seed_us": 17.5648033618927,
+        "G_M1": 0.4744136125359878,
+        "G_M2": 0.6181277769724612,
+        "rel_delta": 0.3029301028447442,
+        "noise_floor": true
+      },
+      {
+        "kernel": "bmm",
+        "shape": [
+          128,
+          256,
+          256,
+          256
+        ],
+        "seed_us": 17.984002828598022,
+        "G_M1": 0.5806507100656857,
+        "G_M2": 0.7459016875768946,
+        "rel_delta": 0.2845961860487778,
+        "noise_floor": true
+      },
+      {
+        "kernel": "bmm",
+        "shape": [
+          16,
+          2048,
+          128,
+          128
+        ],
+        "seed_us": 8.25919508934021,
+        "G_M1": 0.7424478845419964,
+        "G_M2": 0.8441247009092888,
+        "rel_delta": 0.13694808549426352,
+        "noise_floor": true
+      },
+      {
+        "kernel": "bmm",
+        "shape": [
+          64,
+          512,
+          512,
+          512
+        ],
+        "seed_us": 41.3973331451416,
+        "G_M1": 0.5301050034420511,
+        "G_M2": 0.6002775790396196,
+        "rel_delta": 0.13237485996534182,
+        "noise_floor": false
+      },
+      {
+        "kernel": "matmul",
+        "shape": [
+          32,
+          8192,
+          8192
+        ],
+        "seed_us": 31.861335039138794,
+        "G_M1": 0.8505408981386219,
+        "G_M2": 0.9403915200755333,
+        "rel_delta": 0.10563939033801462,
+        "noise_floor": false
+      },
+      {
+        "kernel": "matmul",
+        "shape": [
+          4096,
+          2048,
+          2048
+        ],
+        "seed_us": 29.017597436904907,
+        "G_M1": 0.84891297459737,
+        "G_M2": 0.9385051766269317,
+        "rel_delta": 0.10553755768906026,
+        "noise_floor": false
+      },
+      {
+        "kernel": "matmul",
+        "shape": [
+          1,
+          4096,
+          4096
+        ],
+        "seed_us": 10.21760106086731,
+        "G_M1": 1.395520470924546,
+        "G_M2": 1.2634854288232018,
+        "rel_delta": -0.09461347565462053,
+        "noise_floor": true
+      },
+      {
+        "kernel": "fp8_gemm",
+        "shape": [
+          3072,
+          3072,
+          3072
+        ],
+        "seed_us": 26.14399790763855,
+        "G_M1": 0.7857143257562464,
+        "G_M2": 0.8499999721346304,
+        "rel_delta": 0.08181809122101646,
+        "noise_floor": false
+      },
+      {
+        "kernel": "matmul",
+        "shape": [
+          3072,
+          3072,
+          3072
+        ],
+        "seed_us": 41.47839546203613,
+        "G_M1": 0.8411321724588414,
+        "G_M2": 0.9095337910661732,
+        "rel_delta": 0.08132089206310655,
+        "noise_floor": false
+      },
+      {
+        "kernel": "fp8_gemm",
+        "shape": [
+          8192,
+          512,
+          8192
+        ],
+        "seed_us": 67.7866687377294,
+        "G_M1": 0.48629177199915835,
+        "G_M2": 0.5213562389742493,
+        "rel_delta": 0.07210581999144261,
+        "noise_floor": false
+      }
+    ],
+    "m1_vs_m2_median_abs_delta": 0.028493491699445872,
+    "arm_failures": []
+  }
+}
