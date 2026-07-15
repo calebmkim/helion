@@ -1,0 +1,126 @@
+{
+  "_doc": "Rank-0 POC train set: 8 fp8 (float8_e4m3fn, scaled_mm) matmul shapes. Goldens extracted from fp8-shape-sweep (measured on helion-main 6d4381f6; RE-TIMED fresh on 300516ab via the cudagraph cold-L2 ruler). shape name m{M}_k{K}_n{N}; helion block_sizes=[bm,bn,bk]. class=target (a reachable config should beat stock) | guard (golden ALREADY=plateau, must not regress). ratio = ratio-to-aten, lower=faster. Golden configs transcribed from the agent extraction; warp_spec fields omitted take helion defaults.",
+  "base_seed": 2000,
+  "shapes": [
+    {
+      "name": "m64_k6144_n2048", "m": 64, "k": 6144, "n": 2048,
+      "dtype": "float8_e4m3fn", "epilogue": "scaled_mm",
+      "class": "target", "test": "T6", "regime": "deep-K narrow-N",
+      "gap_pct": 14.4, "golden_us": 14.208, "golden_ratio_aten": 0.776,
+      "stock_winner_us": 16.256, "stock_ratio_aten": 0.888,
+      "cutlass_us": 14.208, "cutlass_ratio_aten": 0.869, "best_config_null": false,
+      "golden_config": {
+        "block_sizes": [64, 32, 256], "tcgen05_ab_stages": 8, "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2, "tcgen05_num_epi_warps": 4, "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1, "tcgen05_l2_swizzle_size": 1, "pid_type": "persistent_blocked",
+        "tcgen05_persistence_model": "static_persistent", "l2_groupings": [1]
+      },
+      "stock_winner_config": {"block_sizes": [64, 16, 128], "tcgen05_ab_stages": 10, "pid_type": "flat"},
+      "note": "bk=256 is OUTSIDE the search space (K-block max_size=128) -> pure T6 coverage-unreachable fix."
+    },
+    {
+      "name": "m64_k4096_n24576", "m": 64, "k": 4096, "n": 24576,
+      "dtype": "float8_e4m3fn", "epilogue": "scaled_mm",
+      "class": "target", "test": "T5a", "regime": "wide-N ~1-wave",
+      "gap_pct": 6.3, "golden_us": 30.62, "golden_ratio_aten": 0.834,
+      "stock_winner_us": 32.70, "stock_ratio_aten": 0.889,
+      "cutlass_us": 28.64, "cutlass_ratio_aten": 0.778, "best_config_null": false,
+      "golden_config": {
+        "block_sizes": [64, 64, 128], "tcgen05_ab_stages": 12, "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2, "tcgen05_num_epi_warps": 4, "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1, "tcgen05_l2_swizzle_size": 1, "pid_type": "persistent_blocked",
+        "tcgen05_persistence_model": "static_persistent", "l2_groupings": [1]
+      },
+      "stock_winner_config": {"block_sizes": [64, 256, 128], "tcgen05_ab_stages": 4, "pid_type": "persistent_interleaved"},
+      "note": "joint (bn64, ab12) corner never co-sampled -> T5a. Sanity search on 300516ab reproduced stock miss [64,256,128]/ab4."
+    },
+    {
+      "name": "m64_k5120_n51200", "m": 64, "k": 5120, "n": 51200,
+      "dtype": "float8_e4m3fn", "epilogue": "scaled_mm",
+      "class": "target", "test": "T5a", "regime": "huge-N multi-wave BW",
+      "gap_pct": 3.1, "golden_us": 61.41, "golden_ratio_aten": 0.968,
+      "stock_winner_us": 63.33, "stock_ratio_aten": 0.998,
+      "cutlass_us": 59.26, "cutlass_ratio_aten": 0.935, "best_config_null": false,
+      "golden_config": {
+        "block_sizes": [64, 64, 128], "tcgen05_ab_stages": 12, "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2, "tcgen05_num_epi_warps": 4, "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1, "tcgen05_l2_swizzle_size": 1, "pid_type": "persistent_blocked",
+        "tcgen05_persistence_model": "static_persistent", "l2_groupings": [1]
+      },
+      "stock_winner_config": {"block_sizes": [64, 128, 128], "tcgen05_ab_stages": 8, "pid_type": "persistent_interleaved"},
+      "note": "bn64 frees SMEM for ab12 -> T5a. Strictly monotone ab8<ab10<ab12."
+    },
+    {
+      "name": "m512_k4096_n4096", "m": 512, "k": 4096, "n": 4096,
+      "dtype": "float8_e4m3fn", "epilogue": "scaled_mm",
+      "class": "guard", "test": "STRONGEST", "regime": "above-wave device-fill (F6 keystone)",
+      "gap_pct": 0.0, "golden_us": 20.35, "golden_ratio_aten": 1.112,
+      "cutlass_us": 16.35, "cutlass_ratio_aten": 0.889, "best_config_null": true,
+      "golden_config": {
+        "block_sizes": [128, 128, 128], "tcgen05_ab_stages": 6, "tcgen05_acc_stages": 1,
+        "tcgen05_c_stages": 2, "tcgen05_num_epi_warps": 4, "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1, "tcgen05_l2_swizzle_size": 8, "pid_type": "persistent_interleaved",
+        "tcgen05_strategy": "role_local_monolithic", "tcgen05_persistence_model": "static_persistent",
+        "l2_groupings": [16]
+      },
+      "note": "best_config=null literally: no reachable config beats plateau. 22% cutlass residual is CODEGEN gap. STRONGEST guard."
+    },
+    {
+      "name": "m512_k2048_n4096", "m": 512, "k": 2048, "n": 4096,
+      "dtype": "float8_e4m3fn", "epilogue": "scaled_mm",
+      "class": "guard", "test": "guard", "regime": "one-wave shallow-K",
+      "gap_pct": 0.0, "golden_us": 16.26, "golden_ratio_aten": 1.144,
+      "cutlass_us": 14.30, "cutlass_ratio_aten": 1.000, "best_config_null": true,
+      "golden_config": {
+        "block_sizes": [128, 128, 128], "tcgen05_ab_stages": 6, "tcgen05_acc_stages": 1,
+        "tcgen05_c_stages": 2, "tcgen05_num_epi_warps": 4, "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1, "tcgen05_l2_swizzle_size": 8, "pid_type": "persistent_interleaved",
+        "tcgen05_strategy": "role_local_monolithic", "tcgen05_persistence_model": "static_persistent",
+        "l2_groupings": [16]
+      },
+      "note": "golden=plateau; no reachable config beats. shallow-K sibling of keystone."
+    },
+    {
+      "name": "m64_k5120_n5120", "m": 64, "k": 5120, "n": 5120,
+      "dtype": "float8_e4m3fn", "epilogue": "scaled_mm",
+      "class": "guard", "test": "guard", "regime": "below-wave (runway model)",
+      "gap_pct": 0.0, "golden_us": 16.35, "golden_ratio_aten": 0.800,
+      "cutlass_us": 14.30, "cutlass_ratio_aten": 0.700, "best_config_null": true,
+      "golden_config": {
+        "block_sizes": [64, 64, 128], "tcgen05_ab_stages": 12, "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2, "tcgen05_num_epi_warps": 4, "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1, "tcgen05_l2_swizzle_size": 1, "pid_type": "persistent_blocked",
+        "tcgen05_persistence_model": "static_persistent", "l2_groupings": [1]
+      },
+      "note": "golden=plateau (PR==plateau). grid-fill falsified. 14% cutlass residual = warp/reg CODEGEN."
+    },
+    {
+      "name": "m64_k2048_n2048", "m": 64, "k": 2048, "n": 2048,
+      "dtype": "float8_e4m3fn", "epilogue": "scaled_mm",
+      "class": "guard", "test": "guard", "regime": "extreme sub-wave",
+      "gap_pct": 0.0, "golden_us": 12.16, "golden_ratio_aten": 1.000,
+      "cutlass_us": null, "cutlass_ratio_aten": 0.834, "best_config_null": true,
+      "golden_config": {
+        "block_sizes": [64, 16, 256], "tcgen05_ab_stages": 8, "tcgen05_acc_stages": 1,
+        "tcgen05_c_stages": 2, "tcgen05_num_epi_warps": 4, "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1, "tcgen05_l2_swizzle_size": 1, "pid_type": "flat",
+        "tcgen05_persistence_model": "non_persistent", "l2_groupings": [1]
+      },
+      "note": "golden=plateau; ratio 1.000 is TIMER-QUANTIZED (both floor at 2.048us quantum); ncu gap ~15%. Golden itself uses bk=256 -> T6 stress test: widening bk may LET it find bk256 (improvement OK, only regression disallowed). explicit-epi-tile gate is the frozen site."
+    },
+    {
+      "name": "m64_k25600_n5120", "m": 64, "k": 25600, "n": 5120,
+      "dtype": "float8_e4m3fn", "epilogue": "scaled_mm",
+      "class": "guard", "test": "T6-stress", "regime": "deep-K reduction (split-K OUT OF SCOPE)",
+      "gap_pct": 0.0, "golden_us": 42.98, "golden_ratio_aten": 0.778,
+      "cutlass_us": 38.82, "cutlass_ratio_aten": 0.704, "best_config_null": true,
+      "golden_config": {
+        "block_sizes": [64, 64, 128], "tcgen05_ab_stages": 12, "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2, "tcgen05_num_epi_warps": 4, "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1, "tcgen05_l2_swizzle_size": 1, "pid_type": "persistent_blocked",
+        "tcgen05_persistence_model": "static_persistent", "l2_groupings": [1]
+      },
+      "note": "T6 KEY STRESS: deep-K (K=25600) like the bk=256 target, but golden is bk=128. After T6 widens bk->256, this guard must STILL pick bk128 (LFBO must learn bk256 is bad here). split-K absent = 10.5% residual, out of scope."
+    }
+  ]
+}
