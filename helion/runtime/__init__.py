@@ -13,6 +13,7 @@ import linecache
 import logging
 import os
 import sys
+import time
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
@@ -3145,8 +3146,13 @@ class _CompiledCuteLauncher:
             import cutlass.cute as cute
 
             compiled = None
+            _probe = os.environ.get("HELION_RANK0_COMPILE_PROBE")
+            _probe_t0 = time.perf_counter() if _probe else 0.0
+            _probe_outcome = "cold_compile"
             if self._cache_key is not None:
                 compiled = self._reload_from_disk()
+                if compiled is not None:
+                    _probe_outcome = "disk_reload"
             if compiled is None:
                 if self._compile_options is None:
                     compiled = cute.compile(self._jit_func, *args)
@@ -3158,6 +3164,23 @@ class _CompiledCuteLauncher:
                     )
                 if self._cache_key is not None:
                     self._persist_to_disk(compiled)
+            if _probe:
+                # RANK-0 probe (env-gated, no behavior change): record every
+                # first-materialization of a launcher -- disk reload (warm) vs
+                # cute.compile (cold) -- with pid so parent-vs-worker and
+                # benchmark-vs-rebench recompiles are separable post-hoc.
+                with suppress(Exception), open(_probe, "a") as _pf:
+                    _pf.write(
+                        json.dumps(
+                            {
+                                "pid": os.getpid(),
+                                "outcome": _probe_outcome,
+                                "dt_s": round(time.perf_counter() - _probe_t0, 3),
+                                "cache_key": str(self._cache_key)[:16],
+                            }
+                        )
+                        + "\n"
+                    )
             self._compiled = compiled
         return cast("Any", compiled)(*args)
 
