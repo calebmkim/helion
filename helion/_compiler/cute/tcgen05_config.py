@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+import os
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import NamedTuple
@@ -11,6 +13,7 @@ from ...autotuner.config_fragment import BooleanFragment
 from ...autotuner.config_fragment import ConfigSpecFragment
 from ...autotuner.config_fragment import EnumFragment
 from ...autotuner.config_fragment import IntegerFragment
+from ...autotuner.config_fragment import ListOf
 from ...exc import InvalidConfig
 from ...runtime.config import Config
 from .strategies import ROLE_LOCAL_MONOLITHIC_DEFAULT_WARP_SPEC
@@ -134,6 +137,68 @@ if TYPE_CHECKING:
     from ...autotuner.config_fragment import BlockSizeFragment
     from ...autotuner.config_spec import ConfigSpec
     from ...runtime.config import PidTypeLiteral
+
+
+def rank0_pin_knobs_enabled() -> bool:
+    """Env-gated experiment arm (``experiments/cute_knob_restriction``): when set,
+    the tcgen05 SEARCH surface pins a fixed subset of knobs to a single value so
+    autotuning explores only the remaining ("tunable") axes. Default off => the
+    search surface is byte-identical to current. This never touches the VALIDATION
+    surface, so an explicit ``helion.Config`` that sets a pinned knob to a
+    non-default value still round-trips and validates (the pin is search-only, via
+    ``EnumFragment.search_choices``). See the kit SPEC for the pin/tune split and
+    the ablation rationale it derives from.
+    """
+    return os.environ.get("HELION_RANK0_PIN_KNOBS") == "1"
+
+
+def _rank0_pinned_enum_values() -> dict[str, object]:
+    """The scalar/enum PIN set for the ``cute_knob_restriction`` experiment: the
+    single value each pinned knob is fixed to under ``HELION_RANK0_PIN_KNOBS=1``.
+    Each value is the constant seen across all 8 train-set goldens (SPEC (c)) and
+    equals the fragment default, so a default (unset) config is unchanged.
+    ``indexing`` is pinned separately (a per-slot ListOf, not a scalar).
+    """
+    reg_split = ROLE_LOCAL_MONOLITHIC_DEFAULT_WARP_SPEC.register_split
+    return {
+        "tcgen05_c_stages": 2,
+        "tcgen05_num_epi_warps": 4,
+        TCGEN05_STRATEGY_CONFIG_KEY: Tcgen05Strategy.ROLE_LOCAL_MONOLITHIC.value,
+        TCGEN05_LAYOUT_STRATEGY_CONFIG_KEY: Tcgen05LayoutStrategy.DEFAULT.value,
+        TCGEN05_WARP_SPEC_MMA_WARPS_KEY: 1,
+        TCGEN05_WARP_SPEC_AB_LOAD_WARPS_KEY: 1,
+        TCGEN05_WARP_SPEC_EPI_LOAD_WARPS_KEY: 0,
+        TCGEN05_WARP_SPEC_SCHEDULER_WARPS_KEY: 0,
+        TCGEN05_WARP_SPEC_C_INPUT_WARPS_KEY: 0,
+        TCGEN05_WARP_SPEC_STORE_WARPS_KEY: 0,
+        TCGEN05_WARP_SPEC_REGISTER_DECREASE_KEY: reg_split[0],
+        TCGEN05_WARP_SPEC_REGISTER_INCREASE_KEY: reg_split[1],
+    }
+
+
+def _config_violates_rank0_pin(config: dict[str, object]) -> bool:
+    """True if *config* sets any pinned knob to a value other than its pin (used
+    to drop compiler seeds that bypass the fragment ``search_choices`` narrowing).
+    A missing key is not a violation (the default equals the pin)."""
+    for key, pinned in _rank0_pinned_enum_values().items():
+        if key in config and config[key] != pinned:
+            return True
+    indexing = config.get("indexing")
+    return isinstance(indexing, list) and any(v != "pointer" for v in indexing)
+
+
+def _pin_enum_search(fragment: EnumFragment, value: object) -> EnumFragment:
+    """Return a copy of *fragment* whose SEARCH draws only *value* (a subset of
+    its full ``choices``), leaving the validation-facing ``choices`` intact.
+
+    If *value* is not among the fragment's choices this is a spec bug (a pin to a
+    value the surface cannot express); we assert rather than silently no-op so the
+    150s pin-verification probe surfaces it.
+    """
+    assert value in fragment.choices, (
+        f"rank0 pin value {value!r} not in fragment choices {fragment.choices!r}"
+    )
+    return dataclasses.replace(fragment, search_choices=(value,))
 
 
 class Tcgen05ClusterM2SearchConstraints(NamedTuple):
@@ -715,6 +780,14 @@ class CuteTcgen05Config:
                     )
                     if clc_aux_tma_narrow_n_seed is not None:
                         seeds.append(clc_aux_tma_narrow_n_seed)
+        if rank0_pin_knobs_enabled():
+            # Compiler seeds bypass the fragment ``search_choices`` narrowing
+            # (they are injected as full gen-0 configs), so under the pin arm they
+            # would smuggle the excluded ``role_local_with_scheduler`` +
+            # scheduler/c_input-warp family (all pinned OFF) back into the search.
+            # Drop any seed that sets a pinned knob to a non-pinned value so Arm B
+            # is a faithful restriction. See the kit SPEC pitfall #1.
+            seeds = [s for s in seeds if not _config_violates_rank0_pin(s.config)]
         return seeds
 
     def _fix_cluster_m2_search_config(self, config: dict[str, object]) -> None:
@@ -2623,4 +2696,33 @@ class CuteTcgen05Config:
             and self.config_spec.indexing.length > 0
         ):
             fields["indexing"] = self.config_spec.indexing
+        if rank0_pin_knobs_enabled():
+            self._apply_rank0_pin(fields)
         return fields
+
+    def _apply_rank0_pin(
+        self, fields: dict[str, BlockIdSequence[Any] | ConfigSpecFragment]
+    ) -> None:
+        """Collapse the ``experiments/cute_knob_restriction`` PIN set to singleton
+        SEARCH choices, in place. TUNE knobs (block_sizes, l2_groupings,
+        l2_swizzle_size, ab_stages, acc_stages, cluster_m/n, pid_type,
+        persistence_model, epilogue_subtile) are deliberately left untouched.
+
+        Only the ``search_choices`` subset is narrowed; ``choices`` stays full, so
+        the validation surface is unchanged and an explicit user Config still
+        validates. Each pinned value is the constant seen across all 8 train-set
+        goldens (see SPEC (c)); it also equals the fragment default, so a default
+        (unset) config is byte-identical whether pinned or not. Idempotent no-op
+        for knobs already collapsed to a single choice on this shape.
+        """
+        for key, value in _rank0_pinned_enum_values().items():
+            fragment = fields.get(key)
+            if isinstance(fragment, EnumFragment):
+                fields[key] = _pin_enum_search(fragment, value)
+        # ``indexing`` is a ListOf(EnumFragment) sequence; pin every slot's SEARCH
+        # to "pointer" (the tcgen05 seed default) while keeping full choices.
+        indexing = fields.get("indexing")
+        if isinstance(indexing, ListOf) and isinstance(indexing.inner, EnumFragment):
+            fields["indexing"] = dataclasses.replace(
+                indexing, inner=_pin_enum_search(indexing.inner, "pointer")
+            )
