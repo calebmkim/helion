@@ -5336,6 +5336,74 @@ class TestCuteBackend(TestCase):
         self.assertEqual(second, ("launched", ("launch-arg", "stream-B")))
         self.assertEqual(third, ("launched", ("launch-arg", "stream-C")))
 
+    def test_cute_disk_reload_reconstructs_fast_ffi_object(self) -> None:
+        """Option A: a disk-cache reload must reconstruct the FAST TVM-FFI object
+        (``TVMFFIJitCompiledFunction``), matching what a cold ``cute.compile``
+        produces, so a reloaded kernel launches through the C-level FFI dispatch
+        rather than the ~2x-slower per-arg-marshalling path.  The reloaded kernel
+        must also be numerically identical to the cold-compiled one.
+
+        This guards the fix for the subprocess-autotune mis-selection: when the
+        rebench pass reloads a config from disk, it previously got the slow
+        object, whose ~2x-higher wall-clock launch time inflated the good
+        config's rebench and knocked it out of selection.
+        """
+        import tempfile
+
+        from cutlass.cutlass_dsl.tvm_ffi_provider import TVMFFIJitCompiledFunction
+
+        args = (
+            torch.randn(65, 23, device=DEVICE, dtype=torch.float32),
+            torch.randn(65, 23, device=DEVICE, dtype=torch.float32),
+        )
+        x, y = args
+
+        # Bind with a fixed (default) config so the launch path is exercised
+        # without triggering autotuning (which would spawn subprocess workers).
+        bound = cute_add.bind(args)
+        config = bound.config_spec.default_config()
+
+        with (
+            tempfile.TemporaryDirectory(prefix="helion_cute_reload_test_") as cache,
+            patch.dict(os.environ, {"CUTE_DSL_CACHE_DIR": cache}),
+        ):
+            # Cold compile + first launch -> persists the artifact to disk.
+            out_cold = bound.compile_config(config)(*args)
+            torch.testing.assert_close(out_cold, x + y)
+
+            # Locate the cute_kernel holding the in-memory launcher cache.
+            compiled = bound._compile_cache.get(config)
+            self.assertIsNotNone(compiled)
+            cute_kernel = compiled.__globals__.get(f"_helion_{cute_add.name}")
+            launchers = getattr(cute_kernel, "_helion_cute_compiled_launchers", None)
+            self.assertTrue(launchers, "expected a compiled launcher in cache")
+            launcher = next(iter(launchers.values()))
+            self.assertEqual(
+                type(launcher._compiled).__name__,
+                "TVMFFIJitCompiledFunction",
+                "cold compile should yield the fast TVM-FFI object",
+            )
+
+            # Reload directly from the persisted artifact and assert it is the
+            # fast object (not the slow per-arg-marshalling one).
+            reloaded = launcher._reload_from_disk()
+            self.assertIsNotNone(
+                reloaded, "reload from the persisted artifact should succeed"
+            )
+            self.assertIsInstance(
+                reloaded,
+                TVMFFIJitCompiledFunction,
+                "reload must reconstruct the fast TVM-FFI object, not the "
+                "slow per-arg-marshalling CudaDialectJitCompiledFunction",
+            )
+
+            # Install the reloaded object as the launcher's compiled kernel and
+            # drive a real launch through it, so we exercise the reloaded
+            # object's dispatch and confirm bitwise-identical results.
+            launcher._compiled = reloaded
+            out_reload = bound.compile_config(config)(*args)
+            torch.testing.assert_close(out_reload, out_cold, rtol=0, atol=0)
+
     def test_cute_build_schema_excludes_stream_from_cached_args(self) -> None:
         # The stream must never be part of the cached launch args produced by
         # ``_build_cute_schema_and_args`` (it is appended per launch instead).

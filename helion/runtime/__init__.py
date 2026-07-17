@@ -43,6 +43,12 @@ log: logging.Logger = logging.getLogger(__name__)
 
 _CUTLASS_SHUTDOWN_PATCHED = False
 
+# Emit the "fast CuTe reload fell back to the slow object" warning at most once
+# per process: the fallback is per-cache-key and would otherwise spam across a
+# many-config autotune, but a silent slow-object regression (e.g. after a
+# cutlass bump) is exactly what this path exists to avoid, so surface it once.
+_WARNED_CUTE_FAST_RELOAD_FALLBACK = False
+
 
 def _patch_cutlass_jit_shutdown_unload() -> None:
     """Avoid CUDA library unload hangs during interpreter shutdown.
@@ -3123,8 +3129,13 @@ class _CompiledCuteLauncher:
     own ``no_cache=True`` path, so Helion drives the on-disk cache itself: it
     writes the post-pass ``ir_module`` bytecode (plus a small JSON sidecar
     holding the mangled entry symbol) and, on a hit, reconstructs a runnable
-    ``CudaDialectJitCompiledFunction`` by JIT-loading the stored module.
-    Any failure in the cache layer falls back to a plain ``cute.compile``.
+    kernel by JIT-loading the stored module.  Because the persisted IR is
+    already post-``attach_ffi_func`` (it carries the ``__tvm_ffi_<name>`` entry
+    symbol), the reload rebuilds the fast ``TVMFFIJitCompiledFunction`` -- the
+    same object kind a cold ``cute.compile`` produces, so a reloaded kernel
+    launches at cold-compile speed rather than through the slower per-arg
+    marshalling path.  It falls back to a plain ``CudaDialectJitCompiledFunction``
+    (and then to a full ``cute.compile``) if that reconstruction fails.
     """
 
     __slots__ = ("_cache_key", "_compile_options", "_compiled", "_jit_func")
@@ -3276,19 +3287,65 @@ class _CompiledCuteLauncher:
             # need to be persisted.
             wrapped = getattr(self._jit_func, "__wrapped__", self._jit_func)
             signature = inspect.signature(cast("Any", wrapped), eval_str=True)
-            # Empty kernel_info / default extra-arg state is correct only for the
-            # non-experimental ``cute.compile`` path Helion uses here; the
-            # experimental DSL would populate these from module attributes.
+        except Exception:
+            # Any cutlass-internal change or corrupt artifact -> recompile.
+            return None
+
+        # Constructor arguments shared by both the fast (TVM-FFI) and the plain
+        # reconstruction. Empty kernel_info / default extra-arg state is correct
+        # only for the non-experimental ``cute.compile`` path Helion uses here;
+        # the experimental DSL would populate these from module attributes.
+        ctor_args = (
+            module,
+            engine,
+            capi_func,
+            signature,
+            function_name,
+            {},
+            False,
+            None,
+        )
+        has_gpu_module = bool(metadata.get("has_gpu_module", True))
+
+        # Prefer reconstructing the fast TVM-FFI object. The persisted IR is
+        # already post-``attach_ffi_func`` (it carries the ``__tvm_ffi_<name>``
+        # entry symbol), so ``TVMFFIJitCompiledFunction`` can rebuild its
+        # JITLink dispatch engine from the reloaded module -- matching the
+        # cold-compile launch cost (~70us) instead of the plain object's
+        # per-arg-marshalling path (~135us). The MCJIT ``engine`` above is only
+        # a truthiness gate for ``_create_tvm_ffi_function``; it rebuilds a
+        # ``BinaryExecutionEngine`` from ``ir_module`` internally.
+        try:
+            from cutlass.cutlass_dsl.tvm_ffi_provider import TVMFFIJitCompiledFunction
+
+            return TVMFFIJitCompiledFunction(*ctor_args, has_gpu_module=has_gpu_module)
+        except Exception:
+            # Older cutlass without the FFI provider, an artifact persisted
+            # before the FFI pass, or a JITLink rebuild failure: fall back to
+            # the plain (slower-launch but always-correct) reconstruction so we
+            # never regress below the previous reload behavior.
+            global _WARNED_CUTE_FAST_RELOAD_FALLBACK
+            if not _WARNED_CUTE_FAST_RELOAD_FALLBACK:
+                _WARNED_CUTE_FAST_RELOAD_FALLBACK = True
+                # Surface once: silently reloading the slow-launch object defeats
+                # the point of the fast-reload path (autotune rebench timings and
+                # cache-hit launches would regress).
+                log.warning(
+                    "CuTe disk reload could not reconstruct the fast TVM-FFI "
+                    "object; falling back to the slower per-arg-marshalling "
+                    "object (this warning is emitted once per process)",
+                    exc_info=True,
+                )
+            else:
+                log.debug(
+                    "CuTe fast (TVM-FFI) reload failed for key %s; using plain object",
+                    self._cache_key,
+                    exc_info=True,
+                )
+
+        try:
             return CudaDialectJitCompiledFunction(
-                module,
-                engine,
-                capi_func,
-                signature,
-                function_name,
-                {},
-                False,
-                None,
-                has_gpu_module=bool(metadata.get("has_gpu_module", True)),
+                *ctor_args, has_gpu_module=has_gpu_module
             )
         except Exception:
             # Any cutlass-internal change or corrupt artifact -> recompile.
