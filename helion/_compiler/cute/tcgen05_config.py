@@ -2019,8 +2019,28 @@ class CuteTcgen05Config:
             # Validation exposes the two direct-entry controls for explicit
             # configs. Layout overrides already have a generic validation path
             # below; only the seed/search surface narrows them to its fixed tile.
+            #
+            # FFI direct-entry is a seed, not a search dimension:
+            # ``search_choices=(False,)`` makes the search only ever draw
+            # False, so the FFI envelope enters solely via the
+            # eligibility-gated ``CuteTcgen05ClusterM2FfiHeuristic`` seed
+            # (which still round-trips ``tvm_ffi_launch=True`` verbatim
+            # because ``choices`` carries True and the round-trip reads the
+            # stored value, not ``_active_choices()``). Keeping True *first*
+            # preserves ``EnumFragment.default() == choices[0] == True`` so
+            # the no-autotune ``default_config()`` still promotes to the
+            # validated full-tile FFI envelope on eligible shapes (the
+            # search view and the fragment-default path share this
+            # fragment). ``choices`` carrying both values also lets the
+            # surrogate encode the seed's True without raising
+            # ``Invalid enum value`` (``encode()`` uses full ``choices``,
+            # config_fragment.py). Validation keeps a Boolean surface so an
+            # absent user-config key still means "no FFI promotion
+            # requested" (default False).
             tvm_ffi_launch_fragment: ConfigSpecFragment = (
-                EnumFragment((True,)) if for_search else BooleanFragment()
+                EnumFragment((True, False), search_choices=(False,))
+                if for_search
+                else BooleanFragment()
             )
             fragments.update(
                 {
