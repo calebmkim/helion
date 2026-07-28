@@ -1,0 +1,397 @@
+{
+  "baseline": "origin/main 74378a6ca",
+  "units": "cold-L2 CUDA-graph TFLOP/s unless noted; deltas are helion-over-helion",
+  "note": "Each unreachable_winner is a config that compiles, passes accuracy, and beats the best config the autotuner can reach on that shape. Challenge: autotune the shape on main and try to beat winner_perf.",
+  "cases": [
+    {
+      "class": "C1",
+      "role": "biggest",
+      "problem": {
+        "M": 1152,
+        "K": 4096,
+        "N": 4096,
+        "dtype": "bfloat16",
+        "epilogue": "none"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          128,
+          256,
+          32
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "pid_type": "flat",
+        "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_ab_stages": 8,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2,
+        "tcgen05_l2_swizzle_size": 1,
+        "tcgen05_num_epi_warps": 4
+      },
+      "best_reachable": "ab6 @ 997.5 TF/s",
+      "winner_perf": "1184.3 TF/s",
+      "delta_helion_over_helion": "+18.7%",
+      "why_unreachable": "tcgen05_ab_stages=8 exceeds the 16-bit hard cap of 6"
+    },
+    {
+      "class": "C1",
+      "role": "production",
+      "problem": {
+        "M": 512,
+        "K": 14336,
+        "N": 4096,
+        "dtype": "bfloat16",
+        "epilogue": "none"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          256,
+          128,
+          64
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "pid_type": "persistent_interleaved",
+        "tcgen05_cluster_m": 2,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_ab_stages": 8,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2,
+        "tcgen05_num_epi_warps": 4,
+        "tcgen05_persistence_model": "static_persistent"
+      },
+      "best_reachable": "ab6 @ 948 TF/s",
+      "winner_perf": "1088.7 TF/s",
+      "delta_helion_over_helion": "+15%",
+      "why_unreachable": "tcgen05_ab_stages=8 exceeds the 16-bit hard cap of 6"
+    },
+    {
+      "class": "C1",
+      "role": "extra",
+      "problem": {
+        "M": 896,
+        "K": 4096,
+        "N": 4096,
+        "dtype": "bfloat16",
+        "epilogue": "none"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          128,
+          256,
+          32
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "pid_type": "flat",
+        "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_ab_stages": 8,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2,
+        "tcgen05_l2_swizzle_size": 1,
+        "tcgen05_num_epi_warps": 4
+      },
+      "best_reachable": "ab6 @ 817.7 TF/s",
+      "winner_perf": "921.1 TF/s",
+      "delta_helion_over_helion": "+12.7%",
+      "why_unreachable": "tcgen05_ab_stages=8 exceeds the 16-bit hard cap of 6"
+    },
+    {
+      "class": "C2",
+      "role": "biggest",
+      "problem": {
+        "M": 8192,
+        "K": 8192,
+        "N": 10240,
+        "dtype": "bfloat16",
+        "epilogue": "none"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "pid_type": "persistent_interleaved",
+        "tcgen05_cluster_m": 2,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_ab_stages": 6,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2,
+        "tcgen05_l2_swizzle_size": 8,
+        "tcgen05_num_epi_warps": 4,
+        "tcgen05_persistence_model": "static_persistent",
+        "tcgen05_layout_strategy": "explicit_epi_tile",
+        "tcgen05_layout_overrides_epi_tile_m": 128,
+        "tcgen05_layout_overrides_epi_tile_n": 32,
+        "tcgen05_layout_overrides_d_store_box_n": 32,
+        "tcgen05_flat_role_coordinates": true,
+        "tcgen05_tvm_ffi_launch": true
+      },
+      "best_reachable": "seed swz1 @ 1331.6 TF/s",
+      "winner_perf": "1408.5 TF/s",
+      "delta_helion_over_helion": "+6.0%",
+      "why_unreachable": "(ab_stages=6, c_stages=2) is not in TCGEN05_DIRECT_ENTRY_STAGE_TUPLES_BY_BK[64]"
+    },
+    {
+      "class": "C2",
+      "role": "second",
+      "problem": {
+        "M": 512,
+        "K": 5120,
+        "N": 152064,
+        "dtype": "bfloat16",
+        "epilogue": "none"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "pid_type": "persistent_interleaved",
+        "tcgen05_cluster_m": 2,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_ab_stages": 6,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2,
+        "tcgen05_l2_swizzle_size": 1,
+        "tcgen05_num_epi_warps": 4,
+        "tcgen05_persistence_model": "static_persistent",
+        "tcgen05_layout_strategy": "explicit_epi_tile",
+        "tcgen05_layout_overrides_epi_tile_m": 128,
+        "tcgen05_layout_overrides_epi_tile_n": 32,
+        "tcgen05_layout_overrides_d_store_box_n": 32,
+        "tcgen05_flat_role_coordinates": true,
+        "tcgen05_tvm_ffi_launch": true
+      },
+      "best_reachable": "ab3 @ 1228.4 TF/s",
+      "winner_perf": "1289.3 TF/s",
+      "delta_helion_over_helion": "+4.9%",
+      "why_unreachable": "(ab_stages=6, c_stages=2) is not in TCGEN05_DIRECT_ENTRY_STAGE_TUPLES_BY_BK[64]"
+    },
+    {
+      "class": "C4",
+      "role": "biggest",
+      "problem": {
+        "M": 2048,
+        "K": 4096,
+        "N": 32000,
+        "dtype": "bfloat16",
+        "epilogue": "none"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "pid_type": "persistent_interleaved",
+        "tcgen05_cluster_m": 2,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_ab_stages": 6,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2,
+        "tcgen05_l2_swizzle_size": 1,
+        "tcgen05_num_epi_warps": 4,
+        "tcgen05_persistence_model": "static_persistent",
+        "tcgen05_layout_strategy": "explicit_epi_tile",
+        "tcgen05_layout_overrides_epi_tile_m": 128,
+        "tcgen05_layout_overrides_epi_tile_n": 32,
+        "tcgen05_layout_overrides_d_store_box_n": 32,
+        "tcgen05_flat_role_coordinates": true,
+        "tcgen05_tvm_ffi_launch": true
+      },
+      "best_reachable": "seed l2g[2] @ 1291 TF/s",
+      "winner_perf": "1448.7 TF/s",
+      "delta_helion_over_helion": "+12.2%",
+      "why_unreachable": "search space collapses to the single FFI direct-entry seed"
+    },
+    {
+      "class": "C4",
+      "role": "production",
+      "problem": {
+        "M": 2048,
+        "K": 4096,
+        "N": 14336,
+        "dtype": "bfloat16",
+        "epilogue": "none"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          256,
+          256,
+          64
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "pid_type": "persistent_interleaved",
+        "tcgen05_cluster_m": 2,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_ab_stages": 6,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 4,
+        "tcgen05_l2_swizzle_size": 1,
+        "tcgen05_num_epi_warps": 4,
+        "tcgen05_persistence_model": "static_persistent",
+        "tcgen05_layout_strategy": "explicit_epi_tile",
+        "tcgen05_layout_overrides_epi_tile_m": 128,
+        "tcgen05_layout_overrides_epi_tile_n": 32,
+        "tcgen05_layout_overrides_d_store_box_n": 32,
+        "tcgen05_flat_role_coordinates": true,
+        "tcgen05_tvm_ffi_launch": true
+      },
+      "best_reachable": "seed bk128/ab3/l2g2 @ 1366 TF/s",
+      "winner_perf": "1416.5 TF/s",
+      "delta_helion_over_helion": "+3.7%",
+      "why_unreachable": "search space collapses to the single FFI direct-entry seed"
+    },
+    {
+      "class": "C5",
+      "role": "biggest",
+      "problem": {
+        "M": 512,
+        "K": 2048,
+        "N": 4096,
+        "dtype": "float8_e4m3fn",
+        "epilogue": "scaled_mm"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          256,
+          128,
+          128
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "pid_type": "persistent_interleaved",
+        "tcgen05_cluster_m": 2,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2,
+        "tcgen05_ab_stages": 8,
+        "tcgen05_num_epi_warps": 4,
+        "l2_groupings": [
+          1
+        ],
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "tcgen05_persistence_model": "static_persistent",
+        "tcgen05_strategy": "role_local_monolithic",
+        "tcgen05_layout_strategy": "default"
+      },
+      "best_reachable": "shipped seed [256,256,128] @ 420.1 TF/s",
+      "winner_perf": "527.0 TF/s",
+      "delta_helion_over_helion": "+25.4%",
+      "why_unreachable": "block_n=128 with cluster_m=2 is rewritten to block_n=256"
+    },
+    {
+      "class": "C6",
+      "role": "production",
+      "problem": {
+        "M": 640,
+        "K": 4096,
+        "N": 4096,
+        "dtype": "bfloat16",
+        "epilogue": "none"
+      },
+      "unreachable_winner": {
+        "block_sizes": [
+          128,
+          256,
+          64
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "num_warps": 8,
+        "num_stages": 4,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "tensor_descriptor"
+        ],
+        "pid_type": "flat",
+        "tcgen05_cluster_m": 1,
+        "tcgen05_cluster_n": 1,
+        "tcgen05_ab_stages": 4,
+        "tcgen05_acc_stages": 2,
+        "tcgen05_c_stages": 2,
+        "tcgen05_l2_swizzle_size": 1,
+        "tcgen05_num_epi_warps": 4
+      },
+      "best_reachable": "ab3 @ 525.9 TF/s",
+      "winner_perf": "619.1 TF/s",
+      "delta_helion_over_helion": "+17.7%",
+      "why_unreachable": "tcgen05_ab_stages=4 exceeds the 16-bit SEARCH cap of 3"
+    }
+  ]
+}
