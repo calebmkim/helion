@@ -129,7 +129,12 @@ class TileStrategyDispatch:
             # TRIVIALLY: ``reduction_loop`` is passed through exactly as the config states it,
             # so the GRAPH (split from ``config.reduction_loops`` in
             # ``DeviceIR.build_codegen_graphs``) and the STRATEGY read the same value and
-            # cannot disagree. Any future rewrite here must be mirrored there.
+            # cannot disagree.  MEASURED when only ``normalize`` was fixed and this site was
+            # not: at N=2048 with ``cute_cluster_n=[2]``, ``normalize`` correctly left
+            # ``[None]`` while this site rolled anyway -- a persistent graph with a looped
+            # strategy, dying in ``LoopedReductionStrategy.codegen_reduction`` with
+            # ``IndexError: list index out of range``.  ⇒ any future rewrite here must be
+            # mirrored there.
             strategy = env.backend.create_reduction_strategy(
                 fn, block_id, reduction_loop
             )

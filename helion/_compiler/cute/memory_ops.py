@@ -1734,7 +1734,12 @@ def _cute_tv_stage_slice(
         # SAME chunk coordinate as the gmem ``local_tile``: sweep 2's chunk c must
         # read what sweep 1 wrote at chunk c.  Using 0 here instead makes every
         # chunk alias the last one -- MEASURED relerr 261.6.
-        chunk_idx_var = cast("str", strategy._cute_tv_chunk_index_var)
+        #
+        # ⚠ The CTA-LOCAL chunk index, which equals the gmem one unless a cluster is
+        # in play.  With a cluster the staged tile only spans this CTA's share of the
+        # row (that is what keeps its footprint flat in N), so a global chunk number
+        # would index past the end for every peer of rank > 0.
+        chunk_idx_var = cast("str", strategy._cute_tv_stage_chunk_index_var)
         emit(plan.emit_stage_local_tile(stile_var, smem_var, row_axis, chunk_idx_var))
         # ``partition_D`` for the writer and ``partition_S`` for the reader, both
         # off THE shared slice, so the two land on identical elements -- the same

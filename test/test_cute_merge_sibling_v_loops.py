@@ -186,6 +186,7 @@ class TestLayeredVecSplitTailIsNotNested(TestCase):
         reduction_loops=[None],
         cute_vector_widths=[8, 1],
         cute_threads_per_row=[128],
+        cute_cluster_n=[1],
     )
     _M, _N = 512, 1024
 

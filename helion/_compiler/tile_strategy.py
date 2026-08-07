@@ -3649,6 +3649,11 @@ class TileStrategy:
     # CLONED by the split pass rather than lowered.  ``None`` is the inert answer and means
     # "rewrite nothing"; a two-lowering-site strategy never populates it.
     _cute_tv_stage_read_by_frag: dict[str, str] | None = None
+    # ``cute_cluster_n`` as EMITTED.  ``1`` == no cluster, which is the inert answer and the
+    # only one a strategy without capability ② can honestly give: ``_cute_stage_num_chunks``
+    # divides the extent by this, so a value the emission does not implement would size the
+    # staged buffer for a CTA share no loop bound produces.
+    _cute_cluster_n_emitted: int = 1
     # ⭐⭐ THE THREE SENTINELS THAT MUST TRAVEL WITH THE METHODS, AND THE ONE I MISSED BROKE
     # THE TREE.  ``cute_row_residency_forbids_sweep_cache`` reads
     # ``_cute_row_residency_requested``, and ``device_function.codegen_function_def`` calls
@@ -4356,6 +4361,26 @@ class TileStrategy:
                 total,
             )
             return None
+        # ⚠ TRAP 1, the flatness half.  With a cluster this CTA only ever sees
+        # ``total // cluster_n`` of the row, so the staged tile must be that size --
+        # NOT the whole row.  This is the single line that makes the SMEM footprint go
+        # FLAT in N (PORT_SPEC §9c): as N doubles the ladder doubles ``cluster_n``, the
+        # quotient is unchanged, and the same 64 KB cap that declined N>=16384 before
+        # now admits it.  It is also the reason the tiler edit and the staging size
+        # cannot drift apart -- they read the same ``cluster_n``.
+        cluster_n = self._cute_cluster_n_emitted
+        if cluster_n > 1:
+            if total % cluster_n:
+                log.debug(
+                    "cute staging DECLINE block=%s: extent total=%d is not divisible by "
+                    "cluster_n=%d, so this CTA's share of the row is not a whole number "
+                    "of elements",
+                    self.cute_stage_block_id(),
+                    total,
+                    cluster_n,
+                )
+                return None
+            total //= cluster_n
         return max(1, total // chunk)
 
     def _cute_stage_row_axis_expr(self) -> str:
@@ -6617,7 +6642,7 @@ class CuteNDTileStrategy(NDTileStrategy):
         if numel is None:
             return None
         plan = self._cute_tv_plan_by_block[block_id]
-        rounded = rounded_extent(numel, plan.chunk)
+        rounded = rounded_extent(numel, plan.chunk, 1)
         return None if rounded == numel else rounded
 
     def cute_tv_tail_predicate(self) -> str | None:
@@ -6915,8 +6940,20 @@ class CuteNDTileStrategy(NDTileStrategy):
     def _cute_tv_stage_chunk_index_var(self) -> str | None:
         """⭐ THE CTA-LOCAL CHUNK COORDINATE, WHICH HERE IS THE GLOBAL ONE (plan item 4).
 
-        The staged tile's ``local_tile`` column coordinate. This strategy's CTA
-        owns the whole row, so its global and CTA-local chunk coordinates coincide.
+        The staged tile's ``local_tile`` column coordinate.  On the looped path this is a
+        distinct ``_tv_chunklocal_N`` var whenever a cluster is in play, because a clustered
+        staged tile spans only this CTA's share of the row and a global chunk number would
+        index past its end.  **This strategy has no cluster mechanism at all** (capability ②
+        is not implemented here and ``_cute_cluster_n_emitted`` stays at its base 1), so the
+        CTA's share IS the whole row and the two coordinates coincide -- exactly the looped
+        path's no-cluster branch, which reuses the same var for the same reason.
+
+        ⚠ IF ② EVER ARRIVES HERE, THIS MUST GROW THE SUBTRACTION (``chunk - cluster_y *
+        chunks_per_cta``).  Returning the global var under a cluster would index off the end
+        of the buffer for every peer of rank > 0 -- a silent wrong answer, and a FAST one.
+        The gate test ``reload_smem_is_chunk_indexed`` asserts the staged ``local_tile``'s
+        column is a ``_tv_chunk*``-prefixed var, which this satisfies either way, so that
+        guard would NOT catch the mistake.
         """
         return self._cute_tv_chunk_index_var
 
@@ -7166,14 +7203,17 @@ class CuteNDTileStrategy(NDTileStrategy):
         # machinery, and (b) still need ``peel_ragged_tile``.  Both of Task 6's
         # deletions were blocked on this one gate.
         #
-        # Asked through the shared predicate rather than by re-deriving
-        # ``numel % chunk``, so the overshoot budget and divisibility rule are one
-        # decision for both paths.
+        # ``cluster_n=1``: this strategy emits no cluster (``_cute_cluster_n_emitted``
+        # stays 1), so the tile granularity is ``chunk`` alone.  Asked through the
+        # SHARED predicate rather than by re-deriving ``numel % chunk``, so the
+        # overshoot budget and the divisibility rule are one decision for both paths.
         numel = env.block_sizes[block_id].numel
         tail_predicated = not isinstance(numel, (int, sympy.Integer)) or bool(
             int(numel) % chunk
         )
-        if tail_predicated and not ragged_tile_admissible(env, numel, chunk, vec=1):
+        if tail_predicated and not ragged_tile_admissible(
+            env, numel, chunk, cluster_n=1, vec=1
+        ):
             return None
         # ⚠ fp8 IS EXCLUDED, and not for tidiness.  ⭐ AND THE GATE BELONGS TO THIS
         # CALLER, NOT TO THE PLAN BUILDER, which is why it is asked HERE and not
@@ -7421,9 +7461,10 @@ class CuteNDTileStrategy(NDTileStrategy):
         # they are ``local_tile``s of THIS chunk body.  ``_cute_tv_staged_tensors`` is
         # deliberately NOT reset -- it is what makes the later sweep's read legal.
         self._cute_tv_stage_partitions_by_block[block_id] = {}
-        # ``_cute_tv_chunk``'s contract is "the extent one CTA covers in one pass".
-        # That is exactly the block size here; read it from the same accessor the plan
-        # used so the staged buffer's size and the copy's width cannot disagree.
+        # ``_cute_tv_chunk``'s contract is "the extent ONE CTA covers in one pass".  On
+        # this path there is no cluster, so that is exactly the block size -- read, not
+        # re-derived, from the same accessor the plan used, so the staged buffer's size and
+        # the copy's width cannot disagree.
         chunk = self._configured_block_size_int(
             self.block_size[self.block_ids.index(block_id)]
         )

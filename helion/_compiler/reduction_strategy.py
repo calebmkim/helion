@@ -25,11 +25,13 @@ from .cute.layout_propagation import META_KEY as _CUTE_LAYOUT_META_KEY
 from .cute.ragged_tail import assert_vec_divides_extent
 from .cute.ragged_tail import ragged_tile_admissible
 from .cute.ragged_tail import rounded_extent
+from .cute.ragged_tail import tile_granularity
 from .cute.tv_layout import ROW_RESIDENCY_GMEM
 from .cute.tv_layout import ChunkTVPlan
 from .cute.tv_layout import TVParticipants
 from .cute.tv_layout import build_tv_plan
 from .cute.tv_layout import emit_lane_base_for
+from .cute.tv_layout import max_cluster_n_for_arch
 from .device_function import find_block_size_symbols
 from .host_function import HostFunction
 from .inductor_lowering import ReductionLowering
@@ -754,6 +756,28 @@ class ReductionStrategy(TileStrategy):
     # ``_loop_block_size``, or a loop-free strategy's whole padded extent.
     # ``0`` means "no chunk geometry", which every capability reads as a decline.
     _cute_tv_chunk: int = 0
+    # ``cute_cluster_n``: request (knob-and-shape facts) and emitted decision.
+    _cute_cluster_n_requested: int = 1
+    _cute_cluster_n_emitted: int = 1
+    # fx-node id -> its kernel-preamble mbarrier var, and the ``block_idx()[1]``
+    # var naming this CTA's rank along the cluster's N axis.
+    #
+    # ⭐ ON THE BASE CLASS because ``_cute_cluster_mbar_var`` / ``_cute_cluster_y_var``
+    # are, and for the same reason the rest of this block is: they are the state the
+    # cluster EMITTERS dereference, and a strategy that reaches an emitter without
+    # them would raise ``AttributeError`` rather than decline.  Per NODE, not per
+    # strategy: one strategy can carry several reduction nodes (layer_norm's mean +
+    # variance) and each needs its own barrier phase.
+    _cute_cluster_mbar_names: dict[int, str] | None = None
+    _cute_cluster_y_name: str | None = None
+    # ⭐ The columns THIS CTA owns when a SUBDIVIDING cluster is in play (a loop-free
+    # strategy: the cluster partitions one fixed swept extent rather than multiplying a
+    # per-iteration chunk).  ``0`` -- the sentinel every field in this block uses -- means
+    # "no subdividing split", which is both the no-cluster case and the looped path,
+    # whose split lives in its ``for roffset`` bound instead.  Read by the index-offset
+    # emitter so the value that sized the split and the value that offsets the index are
+    # ONE number.
+    _cute_cluster_per_cta_columns: int = 0
     # The per-thread column base var, read by ``cute_tv_tail_predicate``.
     _cute_lane_base_index_var: str | None = None
     # The lane var the copies are sliced by (``plan.emit_lane_slice``).
@@ -1808,9 +1832,9 @@ class ReductionStrategy(TileStrategy):
         )
 
     # ══════════════════════════════════════════════════════════════════════════
-    # CuTe reduction CAPABILITIES.  On the BASE class deliberately: these four
-    # blocks (the TV plan, SMEM staging, the ragged tail, and mask elision) used
-    # to live inside ``LoopedReductionStrategy``, so a
+    # CuTe reduction CAPABILITIES.  On the BASE class deliberately: these five
+    # blocks (the TV plan, the cluster/DSMEM combine, SMEM staging, the ragged
+    # tail, mask elision) used to live inside ``LoopedReductionStrategy``, so a
     # consumer had to test the CLASS to discover whether a CAPABILITY existed.
     #
     # ⭐ THE COUPLING WAS ONE FIELD.  ``_build_cute_tv_plan``'s only
@@ -1832,7 +1856,17 @@ class ReductionStrategy(TileStrategy):
         therefore reads ``None`` as "nothing to predicate", and the divisible path
         stays byte-identical because ``None`` is what it saw before this existed.
 
-        The tile granularity is one ``chunk``.
+        The granularity is ``chunk * cluster_n``, not ``chunk``: see
+        :func:`ragged_tail.tile_granularity`.
+
+        ⚠ ``cluster_n`` is the **EMITTED** one, deliberately.  The requested cluster
+        can still be declined at codegen time (``cute_cluster_feasible``), and the
+        loop bound, the per-CTA split and the staging size are all emitted from
+        THIS number -- so reading the request here would round to a granularity the
+        emitted kernel does not use.  The mask, by contrast, is created from the
+        REQUEST (in ``__init__``, before the emitted value exists), which is the
+        safe asymmetry: request >= emitted, so the mask can only be redundant,
+        never missing.
         """
         if self._cute_tv_plan is None:
             return None
@@ -1840,14 +1874,17 @@ class ReductionStrategy(TileStrategy):
         numel = env.block_sizes[self.block_index].numel
         if not isinstance(numel, (int, sympy.Integer)):
             return None
-        rounded = rounded_extent(int(numel), self._cute_tv_chunk)
+        cluster_n = self._cute_cluster_emitted_n()
+        rounded = rounded_extent(int(numel), self._cute_tv_chunk, cluster_n)
         if rounded == int(numel):
             return None
         # A rounded tile is only sound if the identity gate exists at the combine
         # (invariant I4), and that gate is ``self._mask_var``.  If it is absent the
-        # phantom columns would reach the accumulator ungated.  ``__init__`` creates
-        # the mask against the chunk granularity, so this assert should be unreachable;
-        # it is here because the alternative to crashing is a silent wrong answer.
+        # phantom columns would reach the accumulator ungated -- MEASURED wrong at
+        # N=12288/chunk=4096/cluster=2.  ``__init__`` creates the mask against the
+        # requested cluster, which dominates the emitted one, so this assert should
+        # be unreachable; it is here because the alternative to crashing is a silent
+        # wrong answer.
         assert self._mask_var is not None, (
             f"rounded tile {int(numel)} -> {rounded} without a reduction-axis mask: "
             "the out-of-range lanes would reach the combine ungated.  See "
@@ -1882,6 +1919,7 @@ class ReductionStrategy(TileStrategy):
 
     def _build_cute_tv_plan(
         self,
+        fn: DeviceFunction,
         *,
         chunk: int,
         state_free: bool,
@@ -1899,8 +1937,10 @@ class ReductionStrategy(TileStrategy):
         ``state_free`` marks that this runs from ``__init__``, before any
         ``CodegenState`` exists, so only the device IR and the config may be
         consulted (that is the *point*: the width must be known before any
-        address is emitted).  ``block_index`` is passed explicitly because this
-        runs BEFORE ``super().__init__``, so ``self.block_ids`` does not exist yet.
+        address is emitted).  ``fn`` is passed explicitly for the same reason
+        ``block_index`` is: this runs BEFORE ``super().__init__``, so ``self.fn``
+        does not exist yet.  It is needed to read ``cute_cluster_n``, which sets
+        the tile granularity the round-up must respect.
 
         ⭐ ``chunk`` IS A PARAMETER, NOT ``self._loop_block_size``.  That single
         field was this method's ONLY loop-specific input -- "the reduction-axis
@@ -1942,7 +1982,25 @@ class ReductionStrategy(TileStrategy):
         # ``block_index`` is passed explicitly: this runs BEFORE
         # ``super().__init__``, so ``self.block_ids`` does not exist yet.
         numel = env.block_sizes[block_index].numel
-        if not ragged_tile_admissible(env, numel, chunk, vec=1):
+        # ``cluster_n`` is read here rather than taken from
+        # ``self._cute_cluster_n_requested`` because that field is assigned AFTER
+        # this method runs (it depends on ``_loop_block_size``).  Both read the same
+        # knob through the same method, so the granularity used to decide
+        # admissibility and the granularity the cluster later demands cannot
+        # disagree.
+        #
+        # ``rounded=True`` is required, not incidental: without it this asks about a
+        # cluster that must divide ``N`` exactly, gets 1 at a ragged extent, and
+        # therefore validates the round-up against granularity ``chunk`` while the
+        # emitted kernel later rounds to ``chunk * cluster_n``.  Admissibility is
+        # monotone DECREASING in ``cluster_n`` (a bigger granularity can only
+        # overshoot more), so asking at the largest cluster in play is the
+        # conservative direction: every cluster codegen can still settle on is a
+        # divisor of it and is therefore also admissible.
+        cluster_req = self._cute_cluster_n_config(
+            fn, block_index, chunk=chunk, rounded=True
+        )
+        if not ragged_tile_admissible(env, numel, chunk, cluster_n=cluster_req, vec=1):
             return None
         # A read-after-write on the SAME tensor is a hazard: the TV path's load
         # copy is anchored ABOVE the per-element loop and its store flush BELOW
@@ -2013,6 +2071,181 @@ class ReductionStrategy(TileStrategy):
             # the width and cannot skew.  A caller that fixed its trip count from
             # ``vec_cap`` BEFORE asking must pass it; this one must not.
         )
+
+    def _cute_cluster_n_config(
+        self,
+        fn: DeviceFunction,
+        block_index: int,
+        *,
+        chunk: int,
+        rounded: bool = False,
+        subdivides: bool = False,
+    ) -> int:
+        """Read ``cute_cluster_n``: the REQUEST half of the cluster decision.
+
+        Split from :meth:`cute_cluster_feasible` for exactly the reason E017 trap 4
+        records for ``reload_from``: this runs from ``__init__``, where
+        ``thread_block_dims()`` is not final (sibling strategies do not exist yet, so
+        the row axis still reports 1).  A feasibility test here would decline every
+        config.  So this reads only knob-and-shape facts, and everything needing real
+        geometry lives in the codegen-time check.
+
+        Two declines are made here because both are pure functions of the knob:
+
+        * ``cluster_n <= 1`` -- no cluster requested, nothing to do;
+        * ``cap_cluster_n`` (quack ``reduction_base.py:28-40``) -- when
+          ``threads_per_row * cluster_n`` exceeds the row's vector-block count, one
+          CTA tile already spans the whole row, every peer would reduce the SAME
+          columns, and the cluster combine would multiply the answer by
+          ``cluster_n``.  Capping is not an optimisation; without it the result is
+          silently wrong.
+
+        ``rounded`` says the caller will cover a **rounded-up** extent
+        ``N' = ceil(N/(chunk*cluster_n))*chunk*cluster_n`` and predicate the tail
+        (``ragged_tail``).  Then the two divisibility declines below are vacuous by
+        construction -- ``N'`` is a multiple of ``chunk * cluster_n`` -- so they are
+        skipped rather than answered.  ⚠ It must stay a parameter and not be
+        inferred: without the round-up the loop bound is the TRUE extent, the
+        per-CTA share ``N // cluster_n`` is then ragged, and each CTA would silently
+        cover the wrong columns.  Defaulting to ``False`` keeps every non-TV caller
+        on the exact-division rule, so "I forgot to thread it through" fails closed.
+
+        ⭐ WHY THIS IS NOT CIRCULAR even though the plan gate calls it.  Admissibility
+        of the round-up is *monotone decreasing* in ``cluster_n`` (a smaller cluster
+        means a smaller granularity, hence no more overshoot).  So the plan gate asks
+        with ``rounded=True`` to learn the LARGEST granularity in play, and any
+        cluster the codegen later settles on is a divisor of it and therefore also
+        admissible.  Nothing here consults the plan.
+
+        ``chunk`` is a PARAMETER for the same reason it is one on
+        :meth:`_build_cute_tv_plan`: it was the only loop-specific input, and the
+        two must read the SAME number or the granularity used to decide
+        admissibility and the granularity the cluster later demands disagree.
+
+        ⭐ ``subdivides`` -- THE THIRD SHAPE OF THE SAME QUESTION, AND THE ONE A
+        LOOP-FREE STRATEGY ASKS.  Both branches below assume the caller's ``chunk`` is
+        a *per-iteration* extent that the cluster MULTIPLIES: the total swept is
+        ``chunk * iters * cluster_n``, so ``cluster_n`` adds a second divisibility
+        requirement and a wider round-up granularity.  A PERSISTENT reduction is the
+        other way round.  Its ``chunk`` is the whole padded extent
+        ``next_pow2(N) == thread_count * lane_extent``, swept once, and a cluster
+        **subdivides** that fixed total into ``cluster_n`` shares of
+        ``chunk // cluster_n`` -- it does not enlarge it.  Passing that geometry to
+        the non-rounded branch asks the WRONG question and always answers 1:
+        MEASURED at N=1024, chunk=1024, cluster_n=2 the ``cap_cluster_n`` loop tests
+        ``(1024 // 2) % 1024 == 512 != 0`` and halves to 1, i.e. it reads
+        "one CTA tile already spans the row" from a chunk that describes ``cluster_n``
+        CTAs' work rather than one CTA's.
+
+        So under ``subdivides`` the requirement is the one that is actually load-bearing
+        for a subdividing cluster, and it is stated on the quantity being subdivided:
+        ``cluster_n`` must divide ``chunk``, so every CTA's share
+        ``per_cta = chunk // cluster_n`` is a whole number of threads' worth of
+        columns.  ⚠ AND THE SHARE MUST STILL BE ADDRESSABLE BY ONE CTA -- ``per_cta``
+        threads is capped by the launch, so a share below one thread per column is
+        declined rather than emitted.  Narrowing (halving) rather than refusing keeps
+        this monotone in ``cluster_n`` like the other two branches, so the codegen-time
+        decision can only ever be a divisor of what is returned here.
+
+        ⚠ ``subdivides`` MUST BE A PARAMETER, not inferred from ``rounded`` or from the
+        class.  It names a property of the CALLER'S LOOP NEST ("is my chunk the whole
+        extent or one iteration of it?"), which no amount of shape inspection recovers:
+        ``chunk == padded`` is *also* true of a looped strategy whose single iteration
+        happens to cover the row, and there the multiplying reading is the correct one.
+        Defaulting to ``False`` keeps every existing caller on the multiplying rule, so
+        "I forgot to thread it through" fails closed -- the same convention ``rounded``
+        uses one paragraph above.
+        """
+        env = CompileEnvironment.current()
+        cluster_cfg = cast(
+            "list[int]", fn.config.config.get("cute_cluster_n", []) or []
+        )
+        requested = env.config_spec.cute_cluster_n.config_get(
+            cluster_cfg, block_index, 1
+        )
+        if not isinstance(requested, int) or requested <= 1:
+            return 1
+        numel = env.block_sizes[block_index].numel
+        total = shape_env_size_hint(env.shape_env, numel)
+        if total <= 0:
+            return 1
+        capability = env.config_spec.target_device_capability
+        capped = min(
+            requested,
+            max_cluster_n_for_arch(capability[0] if capability is not None else None),
+        )
+        if chunk <= 0:
+            return 1
+        if subdivides:
+            # The cluster PARTITIONS a fixed swept extent (see the ``subdivides``
+            # paragraph).  ``chunk`` here is the whole padded extent, so the only
+            # divisibility that matters is of ``chunk`` by ``cluster_n`` -- and because
+            # ``chunk`` is a power of two (``thread_count * lane_extent``, both powers
+            # of two) and ``cluster_n`` is too, this can only fail when the cluster
+            # exceeds the extent.  Halve until the share is a whole number of columns
+            # AND at least one column per thread of the CTA's own share.
+            while capped > 1 and (chunk % capped or chunk // capped < 1):
+                capped //= 2
+            return max(1, capped)
+        if rounded:
+            # Every divisibility requirement below is satisfied by ``N'``.  What is
+            # left is the *cost* of the round-up, which grows with the granularity,
+            # so narrow the cluster until the overshoot is admissible.
+            while capped > 1 and not ragged_tile_admissible(
+                env, numel, chunk, cluster_n=capped, vec=1
+            ):
+                capped //= 2
+            return max(1, capped)
+        # The cluster splits the REDUCTION extent across CTAs, so the row must divide
+        # evenly among them; a ragged split would need the tail predicated, which
+        # only the TV path does (``rounded=True`` above).
+        if total % requested:
+            return 1
+        # quack's ``_cap_cluster_n``, on the chunk the strategy actually runs: the
+        # per-CTA share of the row must stay a whole number of chunks.
+        while capped > 1 and (total // capped) % chunk:
+            capped //= 2
+        return max(1, capped)
+
+    def cute_cluster_feasible(self) -> int:
+        """``cluster_n`` when a clustered launch is affordable AND safe, else 1.
+
+        Called at codegen time, where the geometry is final.  Every decline below is
+        either a correctness requirement or a **hang** requirement -- per the brief, a
+        hang is worse than a slow kernel, so an infeasible request is declined at
+        compile time rather than emitted and discovered at runtime:
+
+        1. **The grid must be a clean product.**  A clustered launch requires the grid
+           to be a multiple of the cluster shape; CUDA fails the launch otherwise.
+           Because the cluster occupies grid.y and grid.y IS ``cluster_n`` here, that
+           holds by construction -- the grid is widened to ``(..., cluster_n, 1)`` in
+           ``DeviceFunction.codegen_function_call`` -- so there is no rounding that
+           could leave a partial cluster.
+        2. **The intra-CTA combine must be the grouped one.**  The cluster step
+           composes ON TOP of ``_cute_grouped_reduce_shared_two_stage``, so that path
+           must have been taken (``thread_count > 32``, linear lane index).  Below a
+           warp there is no group geometry to hang the exchange off.
+
+        ⚠ NOT a decline: several reductions in one kernel.  Each clustered reduction
+        needs its OWN mbarrier -- ``mbarrier_wait(mbar, 0)`` waits for phase 0, so a
+        second reduction reusing one barrier either hangs or falls straight through
+        with a stale buffer.  MEASURED: layer_norm emits **2** ``_cute_cluster_reduce``
+        calls against **1** ``_cute_cluster_mbar_alloc``, because it is ONE
+        ``LoopedReductionStrategy`` with two reduction *nodes* (mean, then variance) --
+        so a guard counting reduction *strategies* does not see it.  That is why the
+        barrier is allocated per REDUCTION NODE (see ``_cute_cluster_mbar_var``) rather
+        than per strategy, which is quack's own answer to the same problem
+        (``rmsnorm.py:302`` passes ``mbar_ptr + 1`` to its second moment).
+        """
+        if self._cute_cluster_n_requested <= 1:
+            return 1
+        env = CompileEnvironment.current()
+        if env.backend.name != "cute":
+            return 1
+        # (2) the grouped intra-CTA combine must be reachable.
+        if self._reduction_thread_count() <= _CUTE_WARP_REDUCTION_THREADS:
+            return 1
+        return self._cute_cluster_n_requested
 
     def cute_stage_widest_dtype_bits(self) -> int:
         """This reduction's participants -- see the base for why the SMEM charge needs this."""
@@ -2171,6 +2404,143 @@ class ReductionStrategy(TileStrategy):
                     )
                 )
         return TVParticipants.from_accesses(accesses)
+
+    def _cute_cluster_emitted_n(self) -> int:
+        """``cluster_n`` for THIS kernel, decided once and cached.
+
+        Idempotent and keyed on the strategy, like ``cute_stage_feasible``: the
+        combine emitter, the loop-bound emitter and the launch all ask, and they must
+        all get the same answer or the kernel and its launch geometry disagree -- which
+        is the failure mode that hangs rather than the one that computes wrongly.
+        """
+        if self._cute_cluster_n_emitted > 1:
+            return self._cute_cluster_n_emitted
+        cluster_n = self.cute_cluster_feasible()
+        if cluster_n > 1:
+            self._cute_cluster_n_emitted = cluster_n
+            # The launch side already exists end-to-end: ``cute_state.cluster_shape``
+            # is emitted as ``_helion_cute_cluster_shape`` by
+            # ``generate_ast.py:1530-1536`` and consumed by
+            # ``runtime/__init__.py:3292-3309`` -> ``:3414-3416``.  Setting it is the
+            # whole of the plumbing this leg needed.
+            self.fn.cute_state.cluster_shape = (1, cluster_n, 1)
+        return cluster_n
+
+    def _cute_cluster_y_var(self, state: CodegenState) -> str:
+        """``block_idx()[1]`` -- this CTA's rank along the cluster's N axis.
+
+        quack ``rmsnorm.py:162`` (``cluster_y``).  Deliberately ``block_idx()[1]`` and
+        NOT ``block_idx_in_cluster()``: the two agree only because the cluster shape is
+        ``(1, cluster_n, 1)`` and grid.y IS ``cluster_n``, but the *tile* coordinate is
+        a grid property while ``block_idx_in_cluster`` is a cluster property, and they
+        would diverge the moment grid.y carried anything else.  The exchange in
+        ``reduce_helpers`` uses ``block_idx_in_cluster()`` because there the cluster
+        rank is what indexes the buffer; here the grid coordinate is what indexes the
+        DATA.
+
+        ⚠ NOT reusable as the staging row coordinate (E017 trap 6 / trap 4 in this
+        commit's notes): DSMEM peer addressing and the per-CTA staging buffer are
+        different address spaces, and the staging tile's row stays ``thread_idx()[1]``.
+
+        ⭐ ON THE BASE CLASS, with ``_cute_cluster_mbar_var`` below it, because the
+        cluster is a capability and not a class: BOTH looped and persistent need this
+        CTA's rank (looped to offset its ``for roffset`` bound, persistent to offset
+        its ``thread_idx()``-derived index), and the var must be allocated ONCE per
+        strategy whichever asks.
+        """
+        existing = self._cute_cluster_y_name
+        if existing is not None:
+            return existing
+        fn = state.device_function
+        cy_var = fn.new_var("_cluster_y", dce=False)
+        fn.preamble.append(
+            statement_from_string(f"{cy_var} = cutlass.Int32(cute.arch.block_idx()[1])")
+        )
+        self._cute_cluster_y_name = cy_var
+        return cy_var
+
+    def _cute_cluster_mbar_var(self, state: CodegenState) -> str:
+        """Allocate a mbarrier for THIS reduction node in the kernel preamble.
+
+        ⚠ ONE BARRIER PER REDUCTION NODE, keyed on the fx node -- NOT one per
+        strategy.  ``mbarrier_wait(mbar, 0)`` waits for phase 0, so two reductions
+        sharing one barrier either hang or fall straight through onto a stale buffer.
+        MEASURED: layer_norm emitted **2** ``_cute_cluster_reduce`` calls against
+        **1** barrier before this was keyed, because it is ONE
+        ``LoopedReductionStrategy`` carrying TWO reduction nodes (mean, then variance)
+        -- so a guard that counts reduction *strategies* cannot see it, which is
+        exactly what the first version of ``cute_cluster_feasible`` tried to do.
+        quack has the identical constraint and the identical answer: allocate ``stage``
+        barriers and hand the second moment ``mbar_ptr + 1`` (``rmsnorm.py:302``).
+
+        In the PREAMBLE, and unconditionally, because ``alloc_smem`` is a trace-order
+        bump allocator: every CTA of the cluster must compute the SAME shared address
+        for a given barrier.  ``mapa.shared::cluster`` maps a local address into a
+        peer, so a divergent allocation order would silently map to a different object
+        there.  Allocating per node in one fixed order keeps every CTA's SMEM layout
+        identical.
+
+        ⚠ THE PER-NODE DICT IS LAZILY CREATED HERE, not in a subclass ``__init__``.
+        The class default is ``None`` (the "no cluster state" sentinel every field in
+        that block uses) so a strategy that never clusters carries no per-instance
+        dict; the first emitter to ask materialises one on the instance.  A MUTABLE
+        class-level ``{}`` default would be shared by every strategy in the process,
+        which is how one kernel's barrier name leaks into another's.
+        """
+        node = state.fx_node
+        key = id(node) if node is not None else 0
+        names = self._cute_cluster_mbar_names
+        if names is None:
+            names = {}
+            self._cute_cluster_mbar_names = names
+        existing = names.get(key)
+        if existing is not None:
+            return existing
+        fn = state.device_function
+        mbar_var = fn.new_var("_cluster_mbar", dce=False)
+        fn.preamble.append(
+            statement_from_string(f"{mbar_var} = _cute_cluster_mbar_alloc()")
+        )
+        fn.preamble.append(
+            statement_from_string(
+                f"_cute_cluster_mbar_init({mbar_var}, "
+                "cutlass.Int32(cute.arch.thread_idx()[0]) "
+                "+ cutlass.Int32(cute.arch.thread_idx()[1]))"
+            )
+        )
+        names[key] = mbar_var
+        return mbar_var
+
+    def _cute_cluster_per_cta_extent(self) -> int | None:
+        """The reduction extent ONE CTA of the cluster covers, or None if not static.
+
+        This is quack's ``tiler_mn[1]``: ``N' // cluster_n``, a whole number of chunks.
+
+        ⭐ IT IS THE **ROUNDED** EXTENT THAT IS SPLIT, not the true one.  quack
+        ``reduction_base.py:47`` divides the ``ceil_div``-ed block count, so its
+        per-CTA tile is a whole number of vector blocks even at ragged ``N``; the
+        tail then falls inside the LAST CTA's tile and is handled by the same
+        predicate as the non-clustered case.  Splitting the *true* extent instead
+        would give a ragged per-CTA share, and CTA ``cy``'s loop would start
+        mid-chunk -- every CTA of rank > 0 covering the wrong columns, silently.
+        Since ``N'`` is a multiple of ``chunk * cluster_n`` by construction
+        (:func:`ragged_tail.tile_granularity`), this division is always exact.
+        """
+        env = CompileEnvironment.current()
+        cluster_n = self._cute_cluster_n_emitted
+        if cluster_n <= 1:
+            return None
+        total = shape_env_size_hint(
+            env.shape_env, env.block_sizes[self.block_index].numel
+        )
+        if total <= 0:
+            return None
+        rounded = self.cute_tv_rounded_extent()
+        if rounded is not None:
+            total = rounded
+        if total % cluster_n:
+            return None
+        return total // cluster_n
 
 
 class PersistentReductionStrategy(ReductionStrategy):
@@ -2518,10 +2888,160 @@ class PersistentReductionStrategy(ReductionStrategy):
         if env.backend.name == "cute" and self._thread_count > 0:
             padded = self._thread_count * self._synthetic_cute_lane_extent
             self._cute_tv_chunk = padded
+            # ⭐ CAPABILITY ② (cluster/DSMEM): the REQUEST half, on persistent.
+            #
+            # Safe to read unconditionally here, unlike ``cute_threads_per_row``:
+            # ``CuteClusterNSpec._fill_missing`` returns **1** for an omitted slot,
+            # and its own comment records WHY that asymmetry exists ("clustering
+            # changes the launch geometry, so a hand-written config that never
+            # named it must not get a cluster it did not ask for (run-2 E067)").
+            # VERIFIED by reading that spec: the E067 trap that makes a
+            # ``cute_threads_per_row`` read here unsound does not apply.
+            #
+            # ⭐ ``subdivides=True`` -- AND IT IS THE WHOLE REASON THIS REQUEST WAS
+            # PREVIOUSLY ALWAYS 1.  Persistent sweeps ``padded`` columns ONCE, so a
+            # cluster PARTITIONS that fixed total; the looped path's ``chunk`` is a
+            # per-ITERATION extent that the cluster MULTIPLIES.  Handing persistent's
+            # geometry to the multiplying rule asks the wrong question and always
+            # declines -- MEASURED at N=1024/chunk=1024/cluster_n=2: ``cap_cluster_n``
+            # tests ``(1024 // 2) % 1024 == 512 != 0`` and halves to 1, i.e. it read
+            # "one CTA tile already spans the row" off a chunk that describes
+            # ``cluster_n`` CTAs' work.  See the ``subdivides`` paragraph on
+            # ``_cute_cluster_n_config``.
+            self._cute_cluster_n_requested = self._cute_cluster_n_config(
+                fn, block_index, chunk=padded, rounded=False, subdivides=True
+            )
+            # ── THE PER-CTA EXTENT SPLIT, WHICH IS WHAT MAKES THE EXCHANGE SOUND ────
+            #
+            # Persistent has no ``for roffset`` whose bound the cluster can edit (that
+            # is the looped path's ``loop_begin = cy * per_cta``).  Its index is
+            # ``thread_idx()[0] + synthetic_lane * thread_count``, which covers the
+            # WHOLE extent in EVERY CTA -- so emitting the exchange without splitting
+            # would make every peer reduce the SAME columns and multiply the answer by
+            # ``cluster_n``.  The split therefore happens in the GEOMETRY: this CTA
+            # owns ``per_cta = padded // cluster_n`` columns, and ``codegen_preamble``
+            # offsets the index by ``cluster_y * per_cta`` so the ``cluster_n`` shares
+            # tile ``[0, padded)`` exactly once.
+            #
+            # ⭐ WHY LOWERING ``_thread_count`` IS SOUND HERE, WHERE THE
+            # ``cute_threads_per_row`` CLAMP WAS NOT.  The ⛔ block above records that
+            # cutting the count leaves ``padded/new - padded/old`` lanes' worth of the
+            # axis NEVER REDUCED (#2643, MEASURED: 683292/4194304 elements wrong).  That
+            # argument turns on WHO covers the columns the shrunken count drops.  For
+            # the clamp the answer was "nobody", which is the bug.  Here it is "the
+            # other CTAs of the cluster, and the DSMEM combine folds their partials",
+            # so total coverage is
+            #
+            #     cluster_n * thread_count' * lane_extent' == padded
+            #
+            # which is asserted below rather than trusted.  ⇒ the cluster is not an
+            # exception to #2643; it SATISFIES it, with the cross-CTA combine playing
+            # the role the lane loop plays there.
+            #
+            # ⚠ ``cluster_n`` READ HERE IS THE **REQUEST**, and the asymmetry is
+            # deliberate and fail-safe in ONE direction only.  ``cute_cluster_feasible``
+            # runs at codegen and can only DECLINE (request >= emitted), so a geometry
+            # split for a cluster that is later declined would leave each CTA covering
+            # ``padded/cluster_n`` with no peers to supply the rest -- a WRONG ANSWER,
+            # not a slow one.  So the two must agree, and they are made to agree by
+            # construction: every decline in ``cute_cluster_feasible`` is re-checked
+            # HERE, against this same geometry, before the split is committed.  The
+            # ``_thread_count > 32`` one is the only geometric decline it makes, and it
+            # is evaluated on the POST-split count because that is the count the
+            # emitted combine will use.
+            if self._cute_cluster_n_requested > 1:
+                cluster_n = self._cute_cluster_n_requested
+                # ⚠⚠ THE EXTENT SPLIT IS TAKEN FROM ``next_power_of_2(size_hint)``, NOT
+                # FROM THE LOCAL ``padded`` ABOVE, AND THE DIFFERENCE IS A MEASURED
+                # SILENT WRONG ANSWER.  ``padded`` is
+                # ``_thread_count * _synthetic_cute_lane_extent``, which EQUALS the
+                # padded extent only when a synthetic lane loop was created to cover the
+                # surplus.  It is not always: ``needs_synthetic`` is
+                # ``not is_graph_reduction_dim or thread_count < next_pow2(min(N, max))``,
+                # and for a GRAPH reduction dim at N > max_reduction_threads both
+                # disjuncts are false (``1024 < next_pow2(min(2048, 1024)) == 1024`` is
+                # False), so ``lane_extent`` stays 1 and ``padded`` reports 1024 for a row
+                # of 2048.
+                #
+                # That was HARMLESS before, and only because the force-roll guaranteed
+                # persistent never saw N > max_reduction_threads.  Honouring
+                # ``reduction_loops=[None]`` removes that guarantee, so the identity has
+                # to be established here instead of assumed.  MEASURED
+                # with the local ``padded``: at N=2048/cluster_n=2 the split gave
+                # ``per_cta=512`` and total coverage ``2 * 512 * 1 = 1024`` -- HALF THE ROW
+                # NEVER REDUCED.  The exact-coverage conjunct below is what turns that from
+                # a wrong answer into a decline, and it is why that conjunct is an
+                # equality and not an inequality.
+                true_padded = next_power_of_2(max(1, size_hint))
+                per_cta = true_padded // cluster_n
+                split_threads = min(self._thread_count, per_cta)
+                split_lanes = per_cta // split_threads if split_threads > 0 else 0
+                if (
+                    # The grouped two-stage intra-CTA combine the exchange composes on
+                    # top of needs more than a warp; this is
+                    # ``cute_cluster_feasible``'s only geometric decline, asked on the
+                    # POST-split count so the two cannot disagree.
+                    split_threads > _CUTE_WARP_REDUCTION_THREADS
+                    # Coverage, as an exact identity rather than an inequality, and
+                    # against the TRUE padded extent -- see the ⚠⚠ note above.  This is
+                    # the conjunct that declines the N=2048 half-coverage geometry.
+                    and cluster_n * split_threads * split_lanes == true_padded
+                    # An indexed reduction's warp primitive takes <= 32 lanes, so it
+                    # never reaches the grouped combine and must not be split.
+                    and not _block_has_indexed_reduction(fn, block_index)
+                ):
+                    self._thread_count = split_threads
+                    self._synthetic_cute_lane_extent = split_lanes
+                    if split_lanes > 1 and self._synthetic_cute_lane_var is None:
+                        self._synthetic_cute_lane_var = fn.new_var(
+                            f"synthetic_lane_{block_index}",
+                            dce=False,
+                        )
+                    elif split_lanes == 1:
+                        # The share fits one thread per column, so there is no lane
+                        # loop left to emit.  Dropping the var (rather than emitting a
+                        # trip-count-1 loop) keeps ``codegen_reduction``'s marker/
+                        # cross-warp routing reading the same "is there a lane loop"
+                        # question it does without a cluster.
+                        self._synthetic_cute_lane_var = None
+                    # ⭐ THE PER-CTA CHUNK.  ``_cute_tv_chunk``'s contract is "the extent
+                    # ONE CTA covers in one pass" (see the ⭐ note at capability ①'s plan
+                    # build, which READS this field rather than re-deriving ``padded``
+                    # for exactly this reason).  Narrowed HERE, after the split, so the
+                    # TV plan below and every base-class capability get the per-CTA
+                    # number instead of the whole row.
+                    self._cute_tv_chunk = per_cta
+                    self._cute_cluster_per_cta_columns = per_cta
+                else:
+                    # Fail CLOSED: forget the request entirely rather than carry one the
+                    # emit site would honour on an unsplit geometry.  ``_cute_cluster_n_emitted``
+                    # is derived from this field, so zeroing it here is what keeps the
+                    # emitted combine and the launch cluster shape consistent.
+                    log.debug(
+                        "cute cluster DECLINED on a persistent reduction block=%s: "
+                        "cluster_n=%s true_padded=%s chunk_padded=%s per_cta=%s "
+                        "split_threads=%s split_lanes=%s (needs threads>%s and "
+                        "cluster_n*threads*lanes == true_padded).",
+                        block_index,
+                        cluster_n,
+                        true_padded,
+                        padded,
+                        per_cta,
+                        split_threads,
+                        split_lanes,
+                        _CUTE_WARP_REDUCTION_THREADS,
+                    )
+                    self._cute_cluster_n_requested = 1
             # ── CAPABILITY ①: BUILD THE TV PLAN, HERE, FROM ``_cute_tv_chunk`` ─────
             #
-            # The chunk is read from the shared capability field rather than
-            # re-derived so every consumer uses one geometry value.
+            # ⭐ THE CHUNK IS **READ**, NOT RE-DERIVED.  It is ``self._cute_tv_chunk``
+            # above and deliberately not the local ``padded``: the field's contract is
+            # "the extent ONE CTA covers in one pass", which is ``padded`` without a
+            # cluster and ``padded // cluster_n`` with one.  A capability that recomputed
+            # ``padded`` here would keep working today (``cluster_n == 1``) and silently
+            # build a plan for twice the columns a CTA owns the moment a cluster lands --
+            # the trip count assuming a width the access does not use, bug class 1.  One
+            # field, one reading.
             #
             # ⚠ ``requested_vec`` GATES THIS, for the SAME reason it gates the thread-count
             # clamp above and the looped path's (LEDGER E067): ``fn.config.config`` is the
@@ -2557,6 +3077,7 @@ class PersistentReductionStrategy(ReductionStrategy):
             # ``codegen_preamble`` builds is sufficient and no marker is owed.
             if isinstance(requested_vec_plan, int) and requested_vec_plan > 1:
                 plan = self._build_cute_tv_plan(
+                    fn,
                     chunk=self._cute_tv_chunk,
                     state_free=True,
                     vec_cap=requested_vec_plan,
@@ -2628,6 +3149,40 @@ class PersistentReductionStrategy(ReductionStrategy):
     def offset_var(self, block_idx: int) -> str:
         assert block_idx == self.block_index
         return "0"
+
+    def _cute_cluster_column_offset(self, state: CodegenState, *, scale: int) -> str:
+        """``+ cluster_y * (per_cta // scale)`` -- this CTA's column base, or ``""``.
+
+        ⭐ THE ENTIRE PER-CTA EXTENT SPLIT, AS ONE TERM.  Persistent has no loop bound
+        for the cluster to edit, so what makes the ``cluster_n`` peers cover DISJOINT
+        columns is this offset on their index.  ``__init__`` has already narrowed
+        ``_thread_count`` / ``_synthetic_cute_lane_extent`` so each CTA's index spans
+        exactly ``[0, per_cta)``; adding ``cluster_y * per_cta`` tiles the ``cluster_n``
+        shares over ``[0, padded)`` once each, which is the invariant the DSMEM combine's
+        correctness rests on (without it every peer folds the SAME partial and the answer
+        is multiplied by ``cluster_n``).
+
+        ⚠ ``scale`` EXISTS BECAUSE THE THREE CALLERS MULTIPLY BY DIFFERENT FACTORS, and
+        getting it wrong is a silent wrong answer rather than a crash.  The TV branch
+        builds ``base = (thread_expr) * vec + ...``, so a term folded into
+        ``thread_expr`` is scaled by ``vec`` and must be pre-divided by it; the scalar
+        branches add the term to the index directly and pass ``scale=1``.  It is a
+        PARAMETER rather than inferred from ``self._cute_tv_plan`` because the caller
+        knows its own arithmetic and the plan does not know where it is being spliced.
+        The division is exact: ``per_cta == thread_count * lane_extent * vec`` by the
+        coverage identity asserted in ``__init__``, so ``vec | per_cta``.
+
+        Returns ``""`` -- not ``None`` -- so callers can concatenate unconditionally and
+        the no-cluster path stays BYTE-IDENTICAL to what it emits today.
+        """
+        per_cta = self._cute_cluster_per_cta_columns
+        if per_cta <= 0 or self._cute_cluster_emitted_n() <= 1:
+            return ""
+        assert per_cta % scale == 0, (
+            f"cluster column offset does not divide the split: per_cta={per_cta} "
+            f"scale={scale}"
+        )
+        return f" + {self._cute_cluster_y_var(state)} * {per_cta // scale}"
 
     def codegen_preamble(self, state: CodegenState) -> None:
         env = CompileEnvironment.current()
@@ -2756,6 +3311,7 @@ class PersistentReductionStrategy(ReductionStrategy):
                 None,
                 lane_var,
                 f"({thread_expr})",
+                extra_terms=self._cute_cluster_column_offset(state, scale=1),
             )
             lane_body: list[ast.AST] = [
                 statement_from_string(f"{base_var} = {lane_base_expr}"),
@@ -2864,8 +3420,14 @@ class PersistentReductionStrategy(ReductionStrategy):
             # LITERAL ``0`` -- which is the whole of the "loopless body is the
             # ``num_chunks == 1`` case" argument, at the emission site.
             #
-            # It is the CTA-local chunk number. Persistent covers one chunk, so its
-            # staged coordinate is the literal ``0`` as well.
+            # ⚠ It is the CTA-LOCAL chunk number, and here that is ``0`` even WITH a
+            # cluster, where the looped path has to subtract ``cluster_y *
+            # chunks_per_cta`` from a global chunk index.  The reason is that
+            # persistent's cluster split lives in the per-CTA COLUMN OFFSET on the
+            # index (``_cute_cluster_column_offset``) rather than in a loop bound, so
+            # this CTA's ``_cute_tv_chunk`` already IS its share: chunk 0 of a
+            # ``per_cta``-wide tile.  ``_cute_stage_num_chunks`` divides the extent by
+            # the same ``cluster_n``, so buffer and coordinate cannot drift.
             self._cute_tv_stage_chunk_index_var = "0"
             self._cute_tv_chunk_prefix = chunk_body
             self._cute_tv_partitions = {}
@@ -2897,6 +3459,7 @@ class PersistentReductionStrategy(ReductionStrategy):
             index_expr = (
                 f"({self._index_init_expr(block_size_var, env.index_type(), block_idx)})"
                 f" + cutlass.Int32({synthetic_lane_var}) * {self._thread_count}"
+                f"{self._cute_cluster_column_offset(state, scale=1)}"
             )
             current_grid.lane_setup_statements.append(
                 statement_from_string(f"{index_var} = {index_expr}")
@@ -2908,10 +3471,12 @@ class PersistentReductionStrategy(ReductionStrategy):
                     )
                 )
         else:
-            # No lane loop: one thread per column.
+            # No lane loop: one thread per column of THIS CTA's share.  The cluster
+            # offset is still required -- it is what distinguishes the peers.
             state.add_statement(
                 f"{index_var} = "
                 f"{self._index_init_expr(block_size_var, env.index_type(), block_idx)}"
+                f"{self._cute_cluster_column_offset(state, scale=1)}"
             )
             if mask_var is not None:
                 state.add_statement(
@@ -3011,10 +3576,29 @@ class PersistentReductionStrategy(ReductionStrategy):
             lane_expr = (
                 f"{tid0} + ({tid1}) * ({bdim0}) + ({tid2}) * ({bdim0}) * ({bdim1})"
             )
-            # Derive the group count from the launch geometry. ``axis_sizes`` is
-            # branch-local, so a sibling branch can widen ``blockDim`` and make
-            # redundant rows re-run this reduction. ``max_thread_block_dims`` already
-            # folds in the
+            # ⭐⭐ ONE GROUP COUNT, DERIVED FROM THE LAUNCH GEOMETRY (FIXLIST item 5).
+            #
+            # There used to be TWO numbers here and they were genuinely different
+            # questions -- a SMEM-keying CAPACITY that deliberately over-counted
+            # (``ceil(MAX_THREADS_PER_BLOCK / group_span)``) and a cluster ``expect_tx``
+            # PROMISE that used the branch-LOCAL ``num_threads``.  Conflating them either
+            # way is a bug in one direction or the other:
+            #
+            #   * over-promising HANGS.  MEASURED at N=1024 cluster_n=2: the launch is
+            #     ``block=(512,1,1)`` with ``group_span=512``, so the live count is 1 while
+            #     the keying count is ``1024//512 == 2``.  ``expect_tx`` named
+            #     ``2*2*4 = 16`` bytes against ``1*2*4 = 8`` actually stored, and the probe
+            #     spun at 100% GPU with zero output until killed -- the signature
+            #     ``_cute_cluster_exchange``'s own ``elect_one`` note records.
+            #   * under-counting the CAPACITY races.  ``axis_sizes`` is branch-LOCAL: a
+            #     sibling control-flow branch can widen ``blockDim`` (e.g. a free
+            #     ``hl.arange`` another mutually-exclusive branch maps onto thread axis
+            #     1/2), and the redundant rows that then re-run this reduction must key
+            #     their partials on distinct slots.
+            #
+            # ⇒ THE FIX IS ONE NUMBER THAT IS BOTH: the group count of the LAUNCH that
+            # actually happens.  ``self._codegen.max_thread_block_dims`` is the running
+            # per-axis maximum of that launch, and crucially it **already folds in the
             # synthetic ``hl.arange`` axes** that ``tile_strategy.thread_block_dims()``
             # cannot see (``generate_ast._current_active_thread_axis_sizes`` merges
             # ``cute_synthetic_arange_axis_sizes`` explicitly).  So the elementwise
@@ -3030,6 +3614,29 @@ class PersistentReductionStrategy(ReductionStrategy):
             # by a live thread, so using it here would read unwritten SMEM partials".  The
             # merge applies that established shape to this site.
             #
+            # ⚠ IT CANNOT RESURRECT THE HANG, because it is bounded on both sides:
+            # ``max_thread_block_dims`` only ever grows, and the launcher hard-caps the
+            # product (``check_thread_limit`` raises above ``MAX_THREADS_PER_BLOCK`` ==
+            # 1024).  So
+            #     live_count  <=  merged_count  <=  ceil(1024 / group_span)
+            # i.e. the merged value is sandwiched between the old promise and the old
+            # capacity -- which is precisely what lets one number serve both consumers.
+            #
+            # ⛔⛔ WHAT THIS DOES **NOT** FIX, and it is a real open bug -- see
+            # ``_cute_cluster_exchange`` in ``cute/reduce_helpers.py``.  The store there is
+            # predicated on ``lane_in_group < cluster_n`` with **no ``group_id <
+            # group_count`` conjunct**, while ``group_id`` is a RUNTIME value
+            # (``lane_var // group_span`` where ``lane_var`` is built from
+            # ``cute.arch.block_dim()``) and ``group_count`` sizes the exchange buffer.  So
+            # a group whose runtime id exceeds ANY compile-time count computes a
+            # ``crd2idx`` past the allocation and stores into a peer CTA's SMEM.  No
+            # compile-time count -- this one, either old one, or any future one -- can bound
+            # a runtime index that nothing predicates against.  The sound fix is either a
+            # ``group_id`` bound on the store or a runtime ``expect_tx`` (the DSL types it
+            # ``bytes: Int``, and helion already issues a runtime-predicated arrival in
+            # ``program_id.py``).  Structurally reachable, unwitnessed in-tree
+            # (``cute_cluster_n`` appears only as ``[1]`` in the suite).  Recorded, not
+            # fixed here.
             launch_threads = 1
             # ⚠ ``state.codegen``, NOT ``self._codegen``.  ``state.codegen`` IS the
             # ``GenerateAST`` and is already dereferenced ~20 lines above
@@ -3042,6 +3649,7 @@ class PersistentReductionStrategy(ReductionStrategy):
             for recorded, planned in zip(recorded_dims, planned_dims, strict=True):
                 launch_threads *= max(int(recorded), int(planned), 1)
             group_count = max(1, launch_threads // group_span)
+            cluster_group_count = group_count
         else:
             # The two-stage shared-memory reduction assumes its ``lane_var`` is
             # the linear thread index across ALL of the launch block's threads.
@@ -3058,6 +3666,11 @@ class PersistentReductionStrategy(ReductionStrategy):
             if lane_expr is None:
                 return None
             group_count = num_threads // group_span
+            # Already the live count on this branch (it is derived from
+            # ``num_threads``, which this branch has just checked equals the planned
+            # block threads), so the two coincide.  Named anyway so the cluster leg
+            # reads ONE variable rather than choosing per branch.
+            cluster_group_count = max(1, group_count)
 
         lane_var = self.fn.new_var("persistent_reduce_lane", dce=True)
         lane_in_group_var = self.fn.new_var("persistent_reduce_lane_in_group", dce=True)
@@ -3073,6 +3686,45 @@ class PersistentReductionStrategy(ReductionStrategy):
             f"acc_dtype={_dtype_str(dtype)}, "
             f"pre=1, group_span={group_span}, group_count={group_count})"
         )
+        # ── CAPABILITY ②: THE CLUSTER LEG, across CTAs (PORT_SPEC §9) ───────────────
+        #
+        # ⭐ THIS IS THE CALL SITE THAT DID NOT EXIST.  ``_cute_cluster_emitted_n`` is the
+        # only setter of ``fn.cute_state.cluster_shape`` (which the host emits as
+        # ``_helion_cute_cluster_shape``), and it was called ONLY from
+        # ``LoopedReductionStrategy``; persistent inherited the method and never asked, so
+        # the knob was inert here.  Asking it here -- at the point the intra-CTA result
+        # exists -- is what makes the launch geometry, the exchange and the barrier appear
+        # together, which is the property the acceptance test's three legs check.
+        #
+        # Structurally identical to the looped leg (``LoopedReductionStrategy``'s own
+        # ``_cute_cross_warp_reduction_expr``), and deliberately so: the exchange composes
+        # ON TOP of the intra-CTA ``_cute_grouped_reduce_shared_two_stage`` result rather
+        # than being fused into it, so the only difference between the two paths is WHERE
+        # the statements are appended -- persistent has no ``device_loop.outer_suffix``, so
+        # they go straight into the body via ``state.add_statement``.
+        #
+        # The ORDERING is quack's (``rmsnorm.py:316`` passes ``cluster_wait`` as
+        # ``row_reduce``'s ``hook_fn``): local combine, then ``cluster_wait``, then the
+        # exchange.  Waiting EARLIER is correct but slower; waiting LATER races the peers'
+        # barrier initialisation.
+        cluster_n = self._cute_cluster_emitted_n()
+        if cluster_n > 1:
+            mbar_var = self._cute_cluster_mbar_var(state)
+            cluster_var = self.fn.new_var("persistent_reduce_cluster", dce=True)
+            group_id_var = self.fn.new_var("persistent_reduce_group", dce=True)
+            state.add_statement(f"{group_id_var} = ({lane_var}) // {group_span}")
+            state.add_statement("cute.arch.cluster_wait()")
+            state.add_statement(
+                f"{cluster_var} = _cute_cluster_reduce("
+                f"{result_var}, {reduction_type!r}, "
+                f"{group_id_var}, {lane_in_group_var}, {mbar_var}, "
+                f"acc_dtype={_dtype_str(dtype)}, "
+                # ⚠ ``cluster_group_count``, NOT ``group_count`` -- see the ⚠⚠ note where
+                # it is derived.  The exchange's ``expect_tx`` byte count must match the
+                # stores that actually happen or the barrier never flips.
+                f"group_count={cluster_group_count}, cluster_n={cluster_n})"
+            )
+            return cluster_var
         return result_var
 
     def codegen_reduction(
@@ -3336,6 +3988,10 @@ class LoopedReductionStrategy(ReductionStrategy):
         self._cute_tv_constexpr_loop: ast.For | None = None
         # The chunk's tile coordinate along N (``roffset // chunk``).
         self._cute_tv_chunk_index_var: str | None = None
+        # The CTA-LOCAL chunk coordinate, for the per-CTA staging buffer.  Equal to
+        # ``_cute_tv_chunk_index_var`` without a cluster; offset by the CTA's cluster
+        # rank with one.  See the note where it is emitted.
+        self._cute_tv_stage_chunk_index_var: str | None = None
         # ``cute_reduction_reload``: where the SECOND read of the row comes from.
         # ``None`` = wherever it comes from today; ``"smem"`` = a per-CTA staged
         # tile written during the first sweep.  Set below, next to the plan,
@@ -3366,6 +4022,28 @@ class LoopedReductionStrategy(ReductionStrategy):
         # Memo for the device-IR walk that decides which tensors are read more
         # than once (``_cute_tv_multi_read_tensors``).
         self._cute_tv_multi_read_cache: frozenset[str] | None = None
+        # ``cute_cluster_n``: CTAs of a launch cluster that split ONE row and combine
+        # through DSMEM (quack ``rmsnorm_config.py:58-82``).  Split request/decision
+        # exactly like ``reload_from`` above and for the same reason (E017 trap 4):
+        # ``thread_block_dims()`` is not final here, so only knob-and-shape facts are
+        # checked now and the geometry-dependent half is ``cute_cluster_feasible()``.
+        #
+        # ⚠ Requested UNCONDITIONALLY, not only on the TV path.  The cluster splits the
+        # reduction EXTENT across CTAs, which is a property of the loop nest, not of the
+        # copy width -- so it applies whether or not a ``ChunkTVPlan`` was built.  That
+        # matters concretely: MEASURED, the N=32768 cell's best config lands on
+        # ``vec=4`` where the plan exists, but the N>=65536 cells' configs also want the
+        # cluster and gating on the plan would have coupled two independent decisions.
+        self._cute_cluster_n_requested = 1
+        # Set by codegen once the launch geometry is committed, so the emitter and the
+        # launch cannot disagree about whether a cluster is in play.
+        self._cute_cluster_n_emitted = 1
+        # ``_cute_cluster_mbar_names`` (fx-node id -> mbarrier var) and
+        # ``_cute_cluster_y_name`` are NOT initialised here any more: they are base-class
+        # fields whose emitters (``_cute_cluster_mbar_var`` / ``_cute_cluster_y_var``)
+        # moved to ``ReductionStrategy`` so PERSISTENT can reach them too.  The mbar dict
+        # is materialised lazily by that emitter, on the instance, rather than as a
+        # mutable class default -- see its docstring.
         if (
             env.backend.name == "cute"
             and thread_count > 0
@@ -3406,6 +4084,7 @@ class LoopedReductionStrategy(ReductionStrategy):
             # iteration covers.  It is the ONE loop-specific input the base-class
             # plan builder takes, and it is read AFTER the round-up above.
             plan = self._build_cute_tv_plan(
+                fn,
                 chunk=self._loop_block_size,
                 state_free=True,
                 vec_cap=vec_width,
@@ -3449,13 +4128,58 @@ class LoopedReductionStrategy(ReductionStrategy):
                     "no TV plan was built for this reduction (the copy width "
                     "collapsed to 1), so there is no partitioned row to cache"
                 )
+        # AFTER the block above, because the request is a function of
+        # ``self._loop_block_size`` -- which that block rounds up from ``block_size``.
+        # Reading the knob earlier would cap the cluster against the wrong chunk.
+        #
+        # ``rounded=`` is the plan's own answer: a TV plan predicates its tail, so the
+        # cluster may use the rounded extent; without a plan the exact-division rule
+        # applies.  Passing ``self._cute_tv_plan is not None`` rather than re-deriving
+        # it is what keeps the tiler (the loop bound), the staging size and the cluster
+        # reading ONE decision -- E014's four consequences of a single decline are
+        # exactly what happens when they disagree.
+        #
         # ``_cute_tv_chunk`` is the base class's name for "the extent one chunk
-        # covers". Assigned here, after the round-up, so the codegen-time
-        # ``cute_tv_rounded_extent`` reads the same number as the plan builder.
+        # covers".  Assigned HERE, after the round-up, so the codegen-time
+        # ``cute_tv_rounded_extent`` reads the same number ``_build_cute_tv_plan``
+        # and ``_cute_cluster_n_config`` were handed above.
         self._cute_tv_chunk = self._loop_block_size
-        if env.known_multiple(
-            env.block_sizes[block_index].numel, self._loop_block_size
-        ):
+        if env.backend.name == "cute" and thread_count > 0:
+            self._cute_cluster_n_requested = self._cute_cluster_n_config(
+                fn,
+                block_index,
+                chunk=self._loop_block_size,
+                rounded=self._cute_tv_plan is not None,
+            )
+        # ── THE MASK MUST EXIST WHENEVER THE TILE CAN EXCEED ``numel`` ─────────
+        #
+        # 🔴 THIS LINE IS INVARIANT I4's PRECONDITION, and getting it wrong is a
+        # SILENT WRONG ANSWER.  I4 says the op identity is already supplied at the
+        # combine by ``_mask_to`` -- but ``_mask_to`` only fires when this
+        # ``mask_var`` exists, so the granularity tested here must be the same one
+        # the round-up uses, namely ``chunk * cluster_n``.
+        #
+        # MEASURED, by the ``n_wrong`` A/B (verification step 4), when it was
+        # ``known_multiple(numel, chunk)`` alone: at N=12288, chunk=4096,
+        # cluster_n=2 the extent IS an exact multiple of the chunk, so no mask was
+        # created -- yet the tile granularity is 8192, so the loop still rounded up
+        # to 16384 and swept 4096 phantom columns with NO identity gate on the
+        # accumulate.  18 of 1440 configs wrong, relerr 0.14 (rms_norm) and 6.4
+        # (layer_norm).  Note the *copies* were correctly guarded throughout; what
+        # leaked was the stale fragment content reaching the combine, which is
+        # precisely the failure mode E005 item 4 warned about and which the
+        # ``:1692`` comment misdiagnosed as needing a fill AT THE LOAD.
+        #
+        # The cluster read here is the REQUESTED one, which is >= the one codegen
+        # finally emits (``cute_cluster_feasible`` can only decline).  So this can
+        # only ever create a mask the round-up turns out not to need -- a redundant
+        # compare, never a missing one.  Fail-closed in the correct direction.
+        mask_granularity = self._loop_block_size
+        if self._cute_tv_plan is not None:
+            mask_granularity = tile_granularity(
+                self._loop_block_size, self._cute_cluster_n_requested
+            )
+        if env.known_multiple(env.block_sizes[block_index].numel, mask_granularity):
             mask_var: str | None = None
         else:
             mask_var = fn.new_var(f"mask_{block_index}", dce=True)
@@ -3564,6 +4288,118 @@ class LoopedReductionStrategy(ReductionStrategy):
                 f"pre=1, group_span={group_span}, group_count={group_count})"
             )
         )
+        # ── the CLUSTER leg: one more combine, across CTAs (PORT_SPEC §9) ──────
+        #
+        # Composed on TOP of the intra-CTA result rather than fused into it -- see
+        # the section header in ``cute/reduce_helpers.py`` for why.  The ordering
+        # here is quack's: local combine, then ``cluster_wait``, then the exchange
+        # (quack passes ``cluster_wait`` as ``row_reduce``'s ``hook_fn``,
+        # ``rmsnorm.py:316``, which places it after the shuffle and before the
+        # cross-CTA step).  Emitting the wait EARLIER would be correct but slower;
+        # emitting it LATER would race the peers' barrier initialisation.
+        cluster_n = self._cute_cluster_emitted_n()
+        if cluster_n > 1:
+            mbar_var = self._cute_cluster_mbar_var(state)
+            cluster_var = self.fn.new_var("looped_reduce_cluster", dce=True)
+            group_id_var = self.fn.new_var("looped_reduce_group", dce=True)
+            # ⭐ TIER 2: ``group_count`` MUST COUNT ROW GROUPS, NOT THREADS.
+            #
+            # ``group_count = num_threads // group_span`` above is a THREAD count.  When
+            # ``block_sizes[0] > num_threads[0]`` (more rows per CTA than threads on the
+            # row axis) the extra rows are covered by a SERIAL loop that the tile strategy
+            # mints (``for lane_0 in range(bs0 // nt0)``), and this exchange sits INSIDE
+            # it.  So the thread count stops being the row count: measured
+            # ``bs=2 nt=1 cn=2`` -> ``group_count=1`` with ``lane_loops=[('lane_0', 2)]``,
+            # i.e. one thread arrives TWICE against a barrier armed for one round and both
+            # rows index the same ``(group_count, cluster_n)`` slot.  Result: a hard
+            # ``unspecified launch failure`` that POISONS THE CUDA CONTEXT.
+            #
+            # The serial trip count is available as data -- ``grid.lane_loops`` is the
+            # list the tile strategy registered, reachable here without asking the sibling
+            # strategy for its private dicts (measured ``[('lane_0', 2)]`` at the emission
+            # site).  Multiply it in, so the buffer, the barrier's expected-transaction
+            # count and the number of stores actually issued are all sized by the same
+            # number again.
+            grid_state = state.codegen.current_grid_state
+            serial_rows = 1
+            for _lane_name, lane_extent in (
+                getattr(grid_state, "lane_loops", None) or []
+            ):
+                serial_rows *= max(1, int(lane_extent))
+            # ⛔⛔ SIZING THE BUFFER FOR ALL ROWS AT ONCE DEADLOCKS -- MEASURED.
+            #
+            # The obvious reading of "make group_count count rows" is
+            # ``group_count * serial_rows``, arming the barrier for every row's stores.
+            # That HANGS (measured: kernel never returns, GPU idle at 0%), and the reason
+            # is that the barrier is a per-rendezvous object, not an accumulator:
+            # ``expect_tx`` is issued INSIDE the serial loop, and the
+            # ``mbarrier_wait(mbar, 0)`` at the end of the SAME iteration blocks until the
+            # full byte count arrives -- but the remaining rows' stores are only issued by
+            # LATER iterations of the very loop the wait is blocking.  It waits for bytes
+            # that cannot exist yet.
+            #
+            # ⇒ each serial iteration is its own complete exchange: ``cluster_n`` stores
+            # in, ``cluster_n`` expected.  The BUFFER, however, must still be per-row so
+            # the iterations do not overwrite each other's slots -- those are two different
+            # numbers, and the current helper derives both from the single
+            # ``group_count`` parameter.  That coupling is the real Tier-2 blocker; see the
+            # scoping note.  Keeping the arming per-iteration is what the phase-0 barrier
+            # can express today.
+            cluster_group_count = group_count
+            # ⛔ AND ``group_id`` MUST DISTINGUISH ROW 0 FROM ROW 1 OF THE SAME THREAD.
+            # Resizing the buffer alone is not enough: ``group_id`` is derived from the
+            # thread index, so every serial iteration would still write the SAME slot and
+            # the last row would win.  The serial loop variable is the row index within
+            # this thread, so it is exactly the missing coordinate.  ``group_count`` is the
+            # per-iteration stride (thread-groups per row), which keeps the existing
+            # thread-derived component contiguous within a row.
+            device_loop.outer_suffix.append(
+                statement_from_string(f"{group_id_var} = ({lane_var}) // {group_span}")
+            )
+            # ⭐ ``row_slot`` = which BUFFER ROW this serial iteration owns, and ``phase`` =
+            # which barrier parity this iteration waits on.  Both are the serial row index;
+            # they are separate parameters because they answer different questions
+            # (storage vs rendezvous) and only one of them is a parity.
+            # ⚠ EMITTED ONLY WHEN THEY DO SOMETHING.  A non-serial reduction (the common
+            # case, and 13 of the 40 frozen cells) leaves ``serial_kwargs`` EMPTY rather
+            # than spelling out ``row_slot=Int32(0), phase=Int32(0), buf_rows=<group_count>``
+            # -- which are exactly the callee's defaults, so the two spellings are
+            # semantically identical.  Omitting them keeps those cells BYTE-identical, which
+            # turns "this diff is a provably inert default" from an argument I have to make
+            # into one the hasher makes for me.  (Per APPROVED_CHANGES.md's "READ ONCE":
+            # explicit-default noise is an *acceptable* diff, but a free byte-identical is
+            # strictly better than an acceptable diff.)
+            serial_kwargs = ""
+            if serial_rows > 1:
+                lane_names = [n for n, _e in grid_state.lane_loops]
+                # One serial row axis only: with two nested row lane loops the row index is
+                # a mixed-radix combination and a single stride would alias.  Assert rather
+                # than emit a plausible wrong answer.
+                assert len(lane_names) == 1, (
+                    "cluster + multiple serial row lane loops is not expressible: "
+                    f"lane_loops={grid_state.lane_loops}"
+                )
+                row_var = lane_names[0]
+                serial_kwargs = (
+                    f", row_slot=({group_id_var}) * {serial_rows}"
+                    f" + cutlass.Int32({row_var})"
+                    f", phase=cutlass.Int32({row_var}) % 2"
+                    f", buf_rows={group_count * serial_rows}"
+                )
+            device_loop.outer_suffix.append(
+                statement_from_string("cute.arch.cluster_wait()")
+            )
+            device_loop.outer_suffix.append(
+                statement_from_string(
+                    f"{cluster_var} = _cute_cluster_reduce("
+                    f"{result_var}, {reduction_type!r}, "
+                    f"{group_id_var}, {lane_in_group_var}, {mbar_var}, "
+                    f"acc_dtype={_dtype_str(dtype)}, "
+                    f"group_count={cluster_group_count}, cluster_n={cluster_n}"
+                    f"{serial_kwargs})"
+                )
+            )
+            return cluster_var
         return result_var
 
     def codegen_device_loop(self, state: CodegenState) -> DeviceLoopState:
@@ -3775,6 +4611,42 @@ class LoopedReductionStrategy(ReductionStrategy):
                             f"{chunk_index_var} = {offset_var} // {block_size_var}"
                         ),
                     )
+                    # ⚠ THE STAGING TILE NEEDS A **CTA-LOCAL** CHUNK INDEX.
+                    #
+                    # ``chunk_index_var`` is a GLOBAL chunk number, which is what the
+                    # gmem ``local_tile`` wants (it tiles the whole row).  But the
+                    # staging buffer only holds this CTA's share -- ``num_chunks =
+                    # N / cluster_n / chunk`` entries -- because that is exactly what
+                    # makes its footprint flat in N.  Indexing it globally would run
+                    # off the end for every CTA of rank > 0.
+                    #
+                    # Without a cluster the two indices are identical, and the same var
+                    # is reused so the no-cluster path stays byte-identical.
+                    cluster_n_here = self._cute_cluster_emitted_n()
+                    if cluster_n_here > 1:
+                        per_cta = self._cute_cluster_per_cta_extent()
+                        assert per_cta is not None
+                        # Named with the ``_tv_chunk`` prefix on purpose: the gate test
+                        # ``reload_smem_is_chunk_indexed`` asserts the staged
+                        # ``local_tile``'s column coordinate is a ``_tv_chunk*`` var
+                        # (a constant there means every chunk aliases one slot --
+                        # MEASURED relerr 261.6, and FASTER than correct).  Keeping the
+                        # prefix means that guard covers the clustered form too instead
+                        # of being silently bypassed by a new variable name.
+                        stage_chunk_var = self.fn.new_var(
+                            f"_tv_chunklocal_{block_index}", dce=False
+                        )
+                        chunks_per_cta = per_cta // self._loop_block_size
+                        body.insert(
+                            1,
+                            statement_from_string(
+                                f"{stage_chunk_var} = {chunk_index_var} - "
+                                f"{self._cute_cluster_y_var(state)} * {chunks_per_cta}"
+                            ),
+                        )
+                        self._cute_tv_stage_chunk_index_var = stage_chunk_var
+                    else:
+                        self._cute_tv_stage_chunk_index_var = chunk_index_var
                     self._cute_tv_chunk_prefix = body
                     self._cute_tv_lane_loop = body[-1]
             else:
@@ -3786,6 +4658,20 @@ class LoopedReductionStrategy(ReductionStrategy):
                     )
                 ]
 
+        # ── TRAP 1: ``cluster_n`` GOES IN THE TILER, not just the launch ────────
+        #
+        # quack ``reduction_base.py:47`` puts ``cluster_n`` in ``num_blocks_N``'s
+        # DENOMINATOR, so ``tiler_mn[1]`` *shrinks* as the cluster grows and the
+        # per-CTA SMEM footprint stays FLAT as N rises (32 KB across an 8x range of N,
+        # PORT_SPEC §2b).  helion has no ``tiler_n`` variable -- its analogue is the
+        # extent of this ``for roffset`` loop -- so the tiler edit IS this loop bound:
+        # CTA ``cy`` of the cluster covers ``[cy * per_cta, (cy+1) * per_cta)`` instead
+        # of the whole row.
+        #
+        # The one-line diagnostic PORT_SPEC §9c asks for: if the staged SMEM footprint
+        # grows with N, ``cluster_n`` is missing from the tiler.  It cannot be, here:
+        # ``_cute_stage_num_chunks`` divides by the same ``cluster_n``, so the two move
+        # together by construction rather than by agreement.
         loop_begin = "0"
         loop_end = state.sympy_expr(numel)
         # ── AND THE RAGGED TAIL IS ALSO A TILER EDIT ────────────────────────────
@@ -3800,6 +4686,16 @@ class LoopedReductionStrategy(ReductionStrategy):
         rounded = self.cute_tv_rounded_extent()
         if rounded is not None:
             loop_end = str(rounded)
+        cluster_n = self._cute_cluster_emitted_n()
+        if cluster_n > 1:
+            per_cta = self._cute_cluster_per_cta_extent()
+            assert per_cta is not None, (
+                "cluster requested but the per-CTA extent is not static; "
+                "cute_cluster_feasible should have declined"
+            )
+            cy_var = self._cute_cluster_y_var(state)
+            loop_begin = f"{cy_var} * {per_cta}"
+            loop_end = f"{cy_var} * {per_cta} + {per_cta}"
         for_node = create(
             ast.For,
             target=create(ast.Name, id=offset_var, ctx=ast.Store()),

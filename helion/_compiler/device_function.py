@@ -1229,6 +1229,35 @@ class DeviceFunction:
         assert pid is not None
 
         call_grid_expr = pid.codegen_grid()
+        # ── the CLUSTER launch (PORT_SPEC_layout.md §9) ─────────────────────────
+        #
+        # A clustered row reduction splits ONE row across ``cluster_n`` CTAs, which
+        # quack expresses as ``grid=[ceil_div(M, tiler_m), cluster_n, num_heads]`` plus
+        # ``cluster=[1, cluster_n, 1]`` (``rmsnorm.py:137-142``).  The ``cluster=``
+        # half already flows end-to-end via ``cute_state.cluster_shape``
+        # (``generate_ast.py`` -> ``runtime/__init__.py:3292``); only grid.y was
+        # missing, so this widens the grid tuple to match.
+        #
+        # ⚠ THE LAUNCH-FAILURE / HANG CONSTRAINT.  CUDA requires the grid to be a
+        # multiple of the cluster shape.  Making grid.y *be* ``cluster_n`` satisfies
+        # that identically rather than by arithmetic luck -- there is no rounding here
+        # that could leave a partial cluster, which is the case that fails to launch
+        # (or, with a barrier in flight, hangs).  The assert makes that structural
+        # rather than incidental.
+        cluster_shape = self._cute_state.cluster_shape
+        if (
+            cluster_shape is not None
+            and env.backend.name == "cute"
+            and cluster_shape[0] == 1
+            and cluster_shape[2] == 1
+            and cluster_shape[1] > 1
+        ):
+            cluster_n = cluster_shape[1]
+            grid_src = ast.unparse(call_grid_expr)
+            # Only the single-axis grid shape is handled; anything else already uses
+            # grid.y for its own purpose and must not have the cluster folded in.
+            if grid_src.endswith(",)"):
+                call_grid_expr = expr_from_string(f"({grid_src[1:-2]}, {cluster_n}, 1)")
         # Extra params are positional and must come before any keyword args that
         # build_launcher_args appends (e.g. num_warps=, num_stages=).
         args.extend(self.codegen._extra_params)

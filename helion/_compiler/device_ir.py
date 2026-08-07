@@ -34,6 +34,7 @@ from .. import language as hl
 from ..autotuner.config_spec import FULL_EXTENT_CATEGORIES
 from ..autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
 from ..autotuner.config_spec import CoResidencyGroup
+from ..autotuner.config_spec import CuteClusterNSpec
 from ..autotuner.config_spec import CuteRowResidencySpec
 from ..autotuner.config_spec import CuteThreadsPerRowSpec
 from ..autotuner.config_spec import CuteVectorWidthSpec
@@ -1066,9 +1067,10 @@ class DeviceIR:
     ) -> None:
         """Register the reduction TV-layout slots (one per reduction dim).
 
-        ``cute_threads_per_row`` and ``cute_row_residency`` describe how one row
-        of the reduction axis is partitioned and retained in a CTA. Their defaults
-        are pure functions of the reduction extent, so
+        ``cute_threads_per_row`` / ``cute_cluster_n`` / ``cute_row_residency``
+        together describe how one row of the reduction axis is partitioned across
+        a CTA (and, with a cluster, across peer CTAs).  Their defaults are pure
+        functions of the reduction extent — quack's threshold ladders — so
         ``default_config()`` reports the layout each shape wants without the
         autotuner having to find it.
 
@@ -1087,6 +1089,12 @@ class DeviceIR:
                 continue
             env.config_spec.cute_threads_per_row.append(
                 CuteThreadsPerRowSpec(
+                    block_id=rdim.block_id,
+                    size_hint=size_hint_val,
+                )
+            )
+            env.config_spec.cute_cluster_n.append(
+                CuteClusterNSpec(
                     block_id=rdim.block_id,
                     size_hint=size_hint_val,
                 )

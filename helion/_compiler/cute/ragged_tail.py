@@ -4,14 +4,14 @@ THE PROBLEM THIS FILE OWNS.  ``reduction_loops`` is forced to a power of two, so
 at a reduction extent like ``N = 12000`` or ``N = 100000`` (both ``2^5 · odd``)
 **no** legal chunk divides ``N``.  Before this module, every place that needed
 ``numel % chunk == 0`` answered "no" and the whole TV plan was declined, taking
-three optimisations down with it: the vector width, the ``_tv_sweep_cache`` rmem
-reload, and ``cute_reduction_reload="smem"``.  The kernel fell back to scalar
-``.load()`` and lost 38–200%.
+four optimisations down with it: the vector width, the ``_tv_sweep_cache`` rmem
+reload, ``cute_reduction_reload="smem"``, and the cluster.  The kernel fell back
+to scalar ``.load()`` and lost 38–200%.
 
 THE FIX, WHICH IS QUACK'S.  quack's geometry **never sees N**
 (``reduction_base.py:47``)::
 
-    num_blocks_N = cute.ceil_div(self.N // vecsize, threads_per_row)
+    num_blocks_N = cute.ceil_div(self.N // vecsize, threads_per_row * cluster_n)
 
 ``ceil_div``, so the *tile* is ``>= N``; the tail is then **predicated**
 (``rmsnorm.py:225-230`` ``predicate_k``) and out-of-bounds lanes are filled with
@@ -22,14 +22,15 @@ So: **round the TILE up, predicate the TAIL, and keep every lane group a power o
 two.**  That last clause matters: ``LEDGER`` E031 measured that admitting a
 non-pow2 ``threads_per_row`` returns relerr 0.15-2.6, because the cross-lane
 combine is a butterfly (xor-shuffle) and a butterfly only totals correctly over a
-power-of-two group.  Nothing here changes any lane group; ``threads_per_row`` and
-``vec`` stay exactly the powers of two they were.
+power-of-two group.  Nothing here changes any lane group; ``threads_per_row``,
+``vec`` and ``cluster_n`` stay exactly the powers of two they were.
 
 
 ⭐ THE INVARIANT, STATED FOR EVERY CALLER
 =========================================
-Let ``chunk``, ``vec`` and ``tpr`` be the TV plan's geometry and ``N`` the true
-reduction extent.  Write ``N' = ceil(N / chunk) * chunk``
+Let ``chunk``, ``vec``, ``tpr`` and ``cluster_n`` be the TV plan's geometry and
+``N`` the true reduction extent.  Write ``G = chunk * cluster_n`` (the *tile
+granularity*, :func:`tile_granularity`) and ``N' = ceil(N / G) * G``
 (:func:`rounded_extent`).  Then:
 
   **(I1) COVERAGE.**  The emitted loop walks ``[0, N')`` in steps of ``chunk``, so
@@ -79,9 +80,19 @@ reduction extent.  Write ``N' = ceil(N / chunk) * chunk``
   ``rindex = base + vi`` *is* the element that fragment slot ``vi`` holds, so the
   existing per-element mask is already per-element and already correct.
 
-  **I4 HAS A PRECONDITION.** ``_mask_to`` only fires when the strategy actually
-  created a reduction-axis ``mask_var``. The guard lives in
-  ``LoopedReductionStrategy.__init__`` and is asserted in
+  🔴 **I4 HAS A PRECONDITION, AND IT IS NOT AUTOMATIC.**  ``_mask_to`` only fires
+  when the strategy actually created a reduction-axis ``mask_var``, and that
+  decision is made from ``numel % <granularity>``.  Historically the granularity
+  was ``chunk``; with a rounded tile it must be ``chunk * cluster_n``, because a
+  ``numel`` that divides the *chunk* but not the *tile* still gets rounded up and
+  therefore still has phantom columns.  MEASURED: at ``N = 12288``,
+  ``chunk = 4096``, ``cluster_n = 2`` the extent is an exact multiple of the chunk,
+  so no mask existed, yet the tile granularity is 8192 and the loop rounded to
+  16384 -- 4096 phantom columns reaching the accumulator ungated, 18 of 1440
+  configs wrong (relerr 0.14 rms_norm / 6.4 layer_norm).  The copies were
+  correctly guarded throughout; what leaked was stale fragment content reaching
+  the *combine*.  Caught by the ``n_wrong`` A/B, not by any suite.  The guard now
+  lives in ``LoopedReductionStrategy.__init__`` and is asserted in
   ``cute_tv_rounded_extent``.
 
   **(I5) DEFERRED FOLDS STAY SOUND.**  ``defer_online_merge`` folds lanes *after*
@@ -132,24 +143,43 @@ if TYPE_CHECKING:
 # some point the price wins.  MEASURED on the ceiling probe
 # (``_redfix2/repro/r3_b3_ragged_probe.py``) at rms_norm 8192x100000: +0.35%,
 # +2.4%, +6.5% and +14.7% overshoot all beat the declined (scalar) path by
-# 0.71-1.01x vs 0.42x. So this bound is deliberately generous -- it exists to stop a
+# 0.71-1.01x vs 0.42x, and the ranking is dominated by GEOMETRY not by overshoot
+# (+6.5% at tpr512/cluster2 scored 1.013 while +2.4% at tpr256/cluster2 scored
+# 0.914).  So this bound is deliberately generous -- it exists to stop a
 # pathological case (a tiny ``N`` with a huge chunk, where ``N'`` could be many
 # multiples of ``N``), not to express a tuning preference.  1/3 is the point at
 # which the tail costs more iterations than the body can amortise.
 MAX_TILE_OVERSHOOT = 1 / 3
 
 
-def rounded_extent(numel: int, chunk: int) -> int:
+def tile_granularity(chunk: int, cluster_n: int) -> int:
+    """The extent the rounded-up tile must be a multiple of.
+
+    ``chunk * cluster_n``, and the ``cluster_n`` factor is **not** optional: the
+    cluster splits the row across CTAs and each CTA's share must itself be a whole
+    number of chunks, which is a *second* divisibility requirement
+    (``LoopedReductionStrategy._cute_cluster_n_config``).  Rounding only to
+    ``chunk`` leaves the cluster declining for its own reasons -- MEASURED, that
+    is worth 0.92 vs 1.01 at rms_norm 8192x100000.
+
+    This is quack ``reduction_base.py:47`` with ``vec`` already folded into
+    ``chunk``: ``ceil_div(N // vecsize, threads_per_row * cluster_n)`` scaled by
+    ``vecsize * threads_per_row``.
+    """
+    return max(1, chunk) * max(1, cluster_n)
+
+
+def rounded_extent(numel: int, chunk: int, cluster_n: int = 1) -> int:
     """``N'``: ``numel`` rounded UP to a whole number of tiles (quack's ``ceil_div``)."""
-    gran = max(1, chunk)
+    gran = tile_granularity(chunk, cluster_n)
     return -(-max(numel, 0) // gran) * gran
 
 
-def overshoot_fraction(numel: int, chunk: int) -> float:
+def overshoot_fraction(numel: int, chunk: int, cluster_n: int = 1) -> float:
     """``(N' - N) / N``: the fraction of the tile that is pure tail."""
     if numel <= 0:
         return 0.0
-    return (rounded_extent(numel, chunk) - numel) / numel
+    return (rounded_extent(numel, chunk, cluster_n) - numel) / numel
 
 
 def legal_tail_vec(vec: int, numel: int) -> int:
@@ -197,9 +227,9 @@ def assert_vec_divides_extent(vec: int, numel: int) -> None:
     )
 
 
-def tail_is_ragged(numel: int, chunk: int) -> bool:
+def tail_is_ragged(numel: int, chunk: int, cluster_n: int = 1) -> bool:
     """True when the last tile is partial and therefore needs predication."""
-    return rounded_extent(numel, chunk) != numel
+    return rounded_extent(numel, chunk, cluster_n) != numel
 
 
 def ragged_tile_admissible(
@@ -207,12 +237,14 @@ def ragged_tile_admissible(
     numel: sympy.Expr,
     chunk: int,
     *,
+    cluster_n: int = 1,
     vec: int = 1,
 ) -> bool:
     """Whether a ragged extent may be covered by a rounded-up, predicated tile.
 
     This is the single predicate that replaces ``env.known_multiple(numel, chunk)``
-    at every gate on the TV path. It returns True for the *divisible* case
+    at every gate on the TV path, so the plan, the staging sizing and the cluster
+    cannot drift apart in their answer.  It returns True for the *divisible* case
     too (``N' == N``, no tail), which is what keeps the divisible path unchanged.
 
     Declines, all of them "fail closed":
@@ -226,14 +258,14 @@ def ragged_tile_admissible(
     """
     if chunk <= 0:
         return False
-    if env.known_multiple(numel, chunk):
+    if env.known_multiple(numel, tile_granularity(chunk, cluster_n)):
         return True
     hint = _static_extent(env, numel)
     if hint is None or hint <= 0:
         return False
     if vec > 1 and hint % vec:
         return False
-    return overshoot_fraction(hint, chunk) <= MAX_TILE_OVERSHOOT
+    return overshoot_fraction(hint, chunk, cluster_n) <= MAX_TILE_OVERSHOOT
 
 
 def _static_extent(env: CompileEnvironment, numel: sympy.Expr) -> int | None:

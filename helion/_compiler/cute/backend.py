@@ -888,10 +888,11 @@ class CuteBackend(Backend):
         if (
             key == "num_threads"
             or key == "cute_vector_widths"
-            # The reduction TV-layout knob (quack's threads_per_row). cute-only:
-            # the base ``Backend``
+            # The reduction TV-layout knobs (quack's threads_per_row /
+            # cluster_n).  cute-only: the base ``Backend``
             # rejects every ``BACKEND_SPECIFIC_KEYS`` member by default.
             or key == "cute_threads_per_row"
+            or key == "cute_cluster_n"
             # ⚠ ``cute_reduction_reload`` IS STILL ACCEPTED BUT IS NO LONGER A KNOB
             # (task 1).  It has no ``ConfigSpec`` sequence and no search slot; it is an
             # INPUT SPELLING that ``_normalize_cute_row_residency`` translates into
@@ -1157,6 +1158,10 @@ class CuteBackend(Backend):
             "_cute_grouped_reduce_shared_tree": "from helion._compiler.cute.reduce_helpers import _cute_grouped_reduce_shared_tree",
             "_cute_grouped_reduce_shared_two_stage": "from helion._compiler.cute.reduce_helpers import _cute_grouped_reduce_shared_two_stage",
             "_cute_grouped_reduce_warp": "from helion._compiler.cute.reduce_helpers import _cute_grouped_reduce_warp",
+            "_cute_cluster_reduce": "from helion._compiler.cute.reduce_helpers import _cute_cluster_reduce",
+            "_cute_cluster_mbar_alloc": "from helion._compiler.cute.reduce_helpers import _cute_cluster_mbar_alloc",
+            "_cute_cluster_mbar_init": "from helion._compiler.cute.reduce_helpers import _cute_cluster_mbar_init",
+            "_cute_store_shared_remote": "from helion._compiler.cute.cluster_helpers import store_shared_remote as _cute_store_shared_remote",
             "_cute_store_shared_remote_x4": "from helion._compiler.cute.cluster_helpers import store_shared_remote_x4 as _cute_store_shared_remote_x4",
             "_cute_issue_clc_query_nomulticast": "from helion._compiler.cute.clc_helpers import issue_clc_query_nomulticast as _cute_issue_clc_query_nomulticast",
             "_cute_inline_asm_elementwise": "from helion._compiler.cute.inline_asm_helpers import inline_asm_elementwise as _cute_inline_asm_elementwise",

@@ -26,6 +26,19 @@ import operator
 import cutlass
 import cutlass.cute as cute
 
+from .cluster_helpers import store_shared_remote
+
+# ``cutlass.Int32(0)`` as a module-level singleton so the cluster helpers below can default
+# ``row_slot``/``phase`` without calling a constructor in an argument default (ruff B008: the
+# call would run once at import and be shared, which is fine for an immutable zero but is
+# exactly the pattern the rule exists to stop people relying on).  Reading it from here is
+# both lint-clean and cheaper -- one object instead of one per call site.
+#
+# SEMANTICS: ``row_slot=0``/``phase=0`` mean "no serial row loop", i.e. a single-row-per-thread
+# reduction whose one exchange owns buffer row 0 and waits on barrier phase 0 -- which is
+# precisely today's non-serial behaviour, so every existing caller is unaffected.
+_CLUSTER_NO_SERIAL_ROW = cutlass.Int32(0)
+
 
 @cute.jit
 def _warp_reduce_sum(value: cute.Numeric, *, threads_in_group: int) -> cute.Numeric:
@@ -232,6 +245,373 @@ def _cute_grouped_reduce_warp(
         acc_dtype=acc_dtype,
         pre=pre,
         group_span=group_span,
+    )
+
+
+# ======================================================================================
+# The cluster / DSMEM combine (``PORT_SPEC_layout.md`` §9, quack ``reduce.py:31-82``).
+#
+# A clustered reduction splits ONE row across ``cluster_n`` CTAs of a launch cluster.
+# Each CTA reduces its own N-tile down to a per-row total with the ordinary intra-CTA
+# combine above, then every CTA broadcasts that total to every peer with
+# ``st.async.shared::cluster`` and waits on one mbarrier whose expected-transaction
+# count is exactly the number of incoming stores.  After the wait every CTA holds all
+# ``cluster_n`` partials for its row and folds them locally, so **all peers
+# independently compute the same total** -- which is what lets each peer go on to write
+# its own slice of the output with no further communication.
+#
+# ⚠ HOW THIS DEVIATES FROM QUACK, AND WHY.  quack's ``cluster_reduce``
+# (``reduce.py:31-66``) fuses the cross-WARP and cross-CTA combines into one exchange
+# over a ``(rows_per_block, (warps_per_row, cluster_n))`` buffer, then finishes with a
+# warp shuffle.  helion already has a *working, tested* cross-warp combine
+# (``_cute_grouped_reduce_shared_two_stage``) whose group geometry is
+# ``(group_count, group_span)`` over the LINEAR thread index -- not warps -- and which
+# already broadcasts its result to every thread of the group.  Composing on top of it
+# means the cluster step exchanges ONE scalar per (row group, CTA) instead of one per
+# (warp, CTA): fewer DSMEM stores, no dependence on ``warps_per_row``, and -- the real
+# reason -- the warp-vs-group geometries never have to be reconciled.  Reconciling them
+# is where an aliasing bug would live, and an aliasing bug here is SILENT (see below).
+# The cost is one extra barrier's worth of latency, which is what the measurement in
+# ``_redfix/LEDGER.md`` E018 prices.
+#
+# ⚠ ONE ENTRY POINT, op chosen by dispatch (quack's ``block_or_cluster_reduce``,
+# ``reduce.py:69-82``).  The block/cluster choice is a function of ``cluster_n``, a
+# compile-time constant, and the two combines differ only in their tail.  Keeping one
+# entry point means the reduction BUFFER LAYOUT is written once, so a block/cluster skew
+# in the indexing is not expressible.  ``cluster_n == 1`` never reaches here at all --
+# the emitter simply does not request a cluster -- so the pre-existing block path stays
+# byte-identical.
+#
+# ⚠ THE ALIASING HAZARD, and why every index is derived here rather than passed in.
+# Each CTA writes its partial at column ``cta_rank`` -- an address determined by the
+# **SENDER's** rank -- into EVERY peer's buffer.  So peer p's slot for sender s is the
+# same slot in every CTA, and no two senders collide.  Getting this backwards is not a
+# crash and not a hang: the mbarrier's byte count is still satisfied exactly, so the
+# kernel completes and returns a plausible wrong number.  MEASURED while building this:
+# indexing the column by the *destination* lane instead gives relerr 7.6e-1 at
+# cluster_n=4 (about 1/cluster_n of the truth) with zero diagnostics.  That is the same
+# failure mode ``reload_smem_is_chunk_indexed`` exists to pin on the staging buffer,
+# where a chunk-indexed alias measured 1.033x -- the fastest number of the session --
+# at relerr 261.6.  Hence: this helper takes ``group_count`` / ``cluster_n`` as
+# constexprs and computes every address itself; the emitter cannot hand it a
+# pre-flattened offset.
+# ======================================================================================
+
+
+@cute.jit
+def _cute_cluster_mbar_alloc() -> cute.Pointer:
+    """One mbarrier for one clustered reduction.
+
+    Allocated separately from the exchange buffer because ``alloc_smem`` is a
+    trace-order bump allocator whose result must be identical in every CTA of the
+    cluster, and because the barrier needs its own 8-byte-aligned ``Int64`` slot.
+
+    ⚠ ONE PER REDUCTION, never shared between two.  ``mbarrier_wait(mbar, 0)``
+    waits for phase 0; a second reduction reusing the same barrier would be waiting
+    on phase 1 and would either hang or fall straight through.  quack has the same
+    constraint and solves it the same way, by allocating ``stage`` barriers and
+    passing ``mbar_ptr + 1`` to the second reduction (``rmsnorm.py:302``).
+    """
+    return cute.arch.alloc_smem(cutlass.Int64, 1, 8)
+
+
+@cute.jit
+def _cute_cluster_mbar_init(mbar_ptr: cute.Pointer, tidx: cutlass.Int32) -> None:
+    """quack ``reduction_base.py:80-97`` ``_initialize_cluster``.
+
+    Arrival count 1 because it is the ``expect_tx`` BYTE count, not an arrival count,
+    that gates the wait.  ``mbarrier_init_fence`` then ``cluster_arrive_relaxed``
+    publishes the initialised barrier to the peers before any peer can store into it.
+    The matching ``cluster_wait`` is emitted at the reduce site rather than here --
+    quack passes it as ``row_reduce``'s ``hook_fn`` so it lands after the local
+    combine and before the exchange (``rmsnorm.py:316``), which is the latest point
+    that is still correct and therefore the cheapest.
+    """
+    if tidx < 1:
+        cute.arch.mbarrier_init(mbar_ptr, 1)
+    cute.arch.mbarrier_init_fence()
+    cute.arch.cluster_arrive_relaxed()
+
+
+@cute.jit
+def _cute_cluster_exchange(
+    value: cute.Numeric,
+    buf: cute.Tensor,
+    mbar_ptr: cute.Pointer,
+    group_id: cutlass.Int32,
+    lane_in_group: cutlass.Int32,
+    *,
+    acc_dtype: cutlass.Constexpr,
+    group_count: cutlass.Constexpr[int],
+    cluster_n: cutlass.Constexpr[int],
+    row_slot: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    phase: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+) -> None:
+    """Publish this CTA's per-row partial to all ``cluster_n`` peers and wait.
+
+    quack ``reduce.py:45-59``.  One thread names the byte count of ALL incoming
+    stores (``group_count * cluster_n * sizeof(acc)``); the first ``cluster_n`` lanes
+    of each row group then each send that group's partial to one peer.  The store is
+    itself the release -- it completes a transaction on the peer's barrier -- so the
+    ``mbarrier_wait`` below is what orders every read after every incoming write, and
+    no separate fence is needed or would suffice.
+
+    ⚠ NO ``cute.arch.elect_one()`` HERE, and its absence is load-bearing.  quack
+    wraps the ``expect_tx`` in ``with cute.arch.elect_one():`` (``reduce.py:46``)
+    because *its* enclosing predicate is ``warp_idx == 0``, i.e. a whole warp, and
+    one arrival must be issued rather than 32.  helion's enclosing predicate here
+    already selects EXACTLY ONE thread (``lane_in_group == 0 and group_id == 0``), so
+    ``elect_one`` would be electing from a single-thread mask -- and MEASURED, that
+    HANGS: the kernel spins at 100% GPU with the barrier never flipping.  ``elect``
+    is a warp-convergent vote, so entering it already divergent down to one lane does
+    not terminate.  If this predicate is ever widened to a warp, ``elect_one`` must
+    come back with it; the two are a matched pair, not independent.
+    """
+    if lane_in_group == 0 and group_id == 0:
+        cute.arch.mbarrier_arrive_and_expect_tx(
+            mbar_ptr, group_count * cluster_n * (acc_dtype.width // 8)
+        )
+    cta_rank = cute.arch.block_idx_in_cluster()
+    if lane_in_group < cluster_n:
+        # Column = the SENDER's rank; peer = ``lane_in_group``.  See the hazard note
+        # at the top of this section -- swapping these is silently wrong.
+        store_shared_remote(
+            acc_dtype(value),
+            buf.iterator + cute.crd2idx((row_slot, cta_rank), buf.layout),
+            mbar_ptr,
+            lane_in_group,
+        )
+    cute.arch.mbarrier_wait(mbar_ptr, phase)
+
+
+def _cute_cluster_buffer(
+    acc_dtype: cutlass.Constexpr,
+    group_count: int,
+    cluster_n: int,
+) -> cute.Tensor:
+    """The ``(group_count, cluster_n)`` exchange buffer.
+
+    ``order=(1, 0)`` puts the cluster rank fastest-varying, so one row group's
+    ``cluster_n`` partials are contiguous and the fold below reads them in sequence.
+    """
+    return cute.make_tensor(
+        cute.arch.alloc_smem(acc_dtype, group_count * cluster_n, 8),
+        cute.make_ordered_layout((group_count, cluster_n), order=(1, 0)),
+    )
+
+
+@cute.jit
+def _cute_cluster_reduce_sum(
+    input_value: cute.Numeric,
+    group_id: cutlass.Int32,
+    lane_in_group: cutlass.Int32,
+    mbar_ptr: cute.Pointer,
+    *,
+    acc_dtype: cutlass.Constexpr,
+    group_count: cutlass.Constexpr[int],
+    cluster_n: cutlass.Constexpr[int],
+    row_slot: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    phase: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    buf_rows: cutlass.Constexpr[int] = 0,
+) -> cute.Numeric:
+    buf = _cute_cluster_buffer(acc_dtype, buf_rows or group_count, cluster_n)
+    _cute_cluster_exchange(
+        acc_dtype(input_value),
+        buf,
+        mbar_ptr,
+        group_id,
+        lane_in_group,
+        acc_dtype=acc_dtype,
+        group_count=group_count,
+        cluster_n=cluster_n,
+        row_slot=row_slot,
+        phase=phase,
+    )
+    # Every thread folds all ``cluster_n`` partials of its own row group.  Redundant
+    # across threads on purpose: it makes the result already broadcast, matching what
+    # the intra-CTA combine returns, so the caller needs no further shuffle.
+    acc = buf[row_slot, 0]
+    for i in cutlass.range_constexpr(1, cluster_n):
+        acc = acc + buf[row_slot, i]
+    return acc
+
+
+@cute.jit
+def _cute_cluster_reduce_max(
+    input_value: cute.Numeric,
+    group_id: cutlass.Int32,
+    lane_in_group: cutlass.Int32,
+    mbar_ptr: cute.Pointer,
+    *,
+    acc_dtype: cutlass.Constexpr,
+    group_count: cutlass.Constexpr[int],
+    cluster_n: cutlass.Constexpr[int],
+    row_slot: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    phase: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    buf_rows: cutlass.Constexpr[int] = 0,
+) -> cute.Numeric:
+    buf = _cute_cluster_buffer(acc_dtype, buf_rows or group_count, cluster_n)
+    _cute_cluster_exchange(
+        acc_dtype(input_value),
+        buf,
+        mbar_ptr,
+        group_id,
+        lane_in_group,
+        acc_dtype=acc_dtype,
+        group_count=group_count,
+        cluster_n=cluster_n,
+        row_slot=row_slot,
+        phase=phase,
+    )
+    acc = buf[row_slot, 0]
+    for i in cutlass.range_constexpr(1, cluster_n):
+        candidate = buf[row_slot, i]
+        acc = max(acc, candidate)
+    return acc
+
+
+@cute.jit
+def _cute_cluster_reduce_min(
+    input_value: cute.Numeric,
+    group_id: cutlass.Int32,
+    lane_in_group: cutlass.Int32,
+    mbar_ptr: cute.Pointer,
+    *,
+    acc_dtype: cutlass.Constexpr,
+    group_count: cutlass.Constexpr[int],
+    cluster_n: cutlass.Constexpr[int],
+    row_slot: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    phase: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    buf_rows: cutlass.Constexpr[int] = 0,
+) -> cute.Numeric:
+    buf = _cute_cluster_buffer(acc_dtype, buf_rows or group_count, cluster_n)
+    _cute_cluster_exchange(
+        acc_dtype(input_value),
+        buf,
+        mbar_ptr,
+        group_id,
+        lane_in_group,
+        acc_dtype=acc_dtype,
+        group_count=group_count,
+        cluster_n=cluster_n,
+        row_slot=row_slot,
+        phase=phase,
+    )
+    acc = buf[row_slot, 0]
+    for i in cutlass.range_constexpr(1, cluster_n):
+        candidate = buf[row_slot, i]
+        acc = min(acc, candidate)
+    return acc
+
+
+@cute.jit
+def _cute_cluster_reduce_prod(
+    input_value: cute.Numeric,
+    group_id: cutlass.Int32,
+    lane_in_group: cutlass.Int32,
+    mbar_ptr: cute.Pointer,
+    *,
+    acc_dtype: cutlass.Constexpr,
+    group_count: cutlass.Constexpr[int],
+    cluster_n: cutlass.Constexpr[int],
+    row_slot: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    phase: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    buf_rows: cutlass.Constexpr[int] = 0,
+) -> cute.Numeric:
+    buf = _cute_cluster_buffer(acc_dtype, buf_rows or group_count, cluster_n)
+    _cute_cluster_exchange(
+        acc_dtype(input_value),
+        buf,
+        mbar_ptr,
+        group_id,
+        lane_in_group,
+        acc_dtype=acc_dtype,
+        group_count=group_count,
+        cluster_n=cluster_n,
+        row_slot=row_slot,
+        phase=phase,
+    )
+    acc = buf[row_slot, 0]
+    for i in cutlass.range_constexpr(1, cluster_n):
+        acc = acc * buf[row_slot, i]
+    return acc
+
+
+_CLUSTER_DISPATCH = {
+    "sum": _cute_cluster_reduce_sum,
+    "max": _cute_cluster_reduce_max,
+    "min": _cute_cluster_reduce_min,
+    "prod": _cute_cluster_reduce_prod,
+}
+
+
+# ``store_shared_remote``'s inline asm has 32-bit and 64-bit forms only
+# (``cluster_helpers.py:25`` ``_ASYNC_STORE_SUFFIX`` = f32/s32/s64), so a NARROWER
+# accumulator cannot cross a cluster.  Widen it for the exchange.
+#
+# WHY THIS IS NEEDED AT ALL, and why the obvious place is the wrong one (LEDGER E039).
+# ``reduction_acc_dtype`` widens integer accumulators to int64 for ``sum``/``prod``
+# (the class-5 ABI) but deliberately leaves ``max``/``min`` at the input width,
+# because a selecting reduction's running value is always one of its inputs and so
+# cannot leave the input's range.  That is correct *semantics* -- and it means an
+# int8/int16 ``amax``/``amin`` arrives here with an 8/16-bit accumulator and trips
+# ``store_shared_remote``'s assert.  ``cluster_helpers.py:20-24`` states the
+# assumption that broke: "integer accumulators widen to int64", true for sum, false
+# for max/min.
+#
+# Fixed HERE rather than in ``reduction_acc_dtype`` because the constraint is about
+# the TRANSPORT, not the arithmetic: widening the semantic accumulator would change
+# the reduction's result dtype and defeat the reason max/min are exempt. Widening
+# only the exchange is value-preserving for a selecting reduction by construction
+# (every value is one of the inputs, so it fits the narrow range and round-trips),
+# and the caller keeps its own narrow ``dtype`` for everything downstream.
+#
+# MEASURED (adversary half 1): without this, ``torch.amax``/``amin`` on an int8 or
+# int16 input raises ``AssertionError: store_shared_remote val must be Float32,
+# Int32 or Int64, got Int16`` at every N>=32768 -- reachable from a plain
+# ``kernel(x)`` call with NO user config, because ``default_config()`` supplies
+# ``cute_cluster_n`` from quack's ladder and LEDGER E026 lowered the cluster's
+# threshold to N>=32768. 8 of 16 dtype x op combinations crashed on the branch;
+# 16/16 were fine on upstream base (where the knob does not exist).
+_CLUSTER_EXCHANGE_MIN_BITS = 32
+
+
+def _cluster_exchange_dtype(acc_dtype: cutlass.Constexpr) -> cutlass.Constexpr:
+    width = getattr(acc_dtype, "width", None)
+    if width is not None and width < _CLUSTER_EXCHANGE_MIN_BITS:
+        return cutlass.Int32 if not acc_dtype.is_float else cutlass.Float32
+    return acc_dtype
+
+
+def _cute_cluster_reduce(
+    input_value: cute.Numeric,
+    reduction_type: str,
+    group_id: cutlass.Int32,
+    lane_in_group: cutlass.Int32,
+    mbar_ptr: cute.Pointer,
+    *,
+    acc_dtype: cutlass.Constexpr,
+    group_count: int,
+    cluster_n: int,
+    row_slot: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    phase: cutlass.Int32 = _CLUSTER_NO_SERIAL_ROW,
+    buf_rows: int = 0,
+) -> cute.Numeric:
+    """The cross-CTA row combine.  One entry point; see the section header."""
+    impl = _CLUSTER_DISPATCH.get(reduction_type)
+    if impl is None:
+        raise ValueError(f"unsupported CuTe cluster reduction type: {reduction_type!r}")
+    return impl(
+        input_value,
+        group_id,
+        lane_in_group,
+        mbar_ptr,
+        acc_dtype=_cluster_exchange_dtype(acc_dtype),
+        group_count=group_count,
+        cluster_n=cluster_n,
+        row_slot=row_slot,
+        phase=phase,
+        buf_rows=buf_rows,
     )
 
 

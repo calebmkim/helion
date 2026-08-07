@@ -9100,6 +9100,190 @@ class TestCuteThreadBudgetRejection(TestCase):
 
 
 @onlyBackends(["cute"])
+class TestCuteRowsPerCtaWithClusterSerialRows(TestCase):
+    """⭐ MORE ROWS PER CTA THAN ROW-AXIS THREADS, **PLUS A CLUSTER**, IS NOW CORRECT.
+
+    This class used to be ``TestCuteRowsPerCtaWithClusterRejection`` and pinned the opposite
+    behaviour: ``block_sizes[0] > num_threads[0]`` together with ``cute_cluster_n > 1`` was a
+    hard CUDA fault, so ``ConfigSpec.normalize`` rejected the combination outright.  ⇒ **the
+    guard is gone and the combination is served.**  Rewritten rather than deleted, because the
+    fail-capability arms below are exactly what makes the new behaviour non-vacuous.
+
+    WHY IT FAULTED.  ``group_count`` was ``launch_threads // group_span`` -- a THREAD count.
+    Once rows per CTA exceeded row-axis threads it stopped tracking the rows: it collapsed to
+    1 while the cluster exchange sat inside a serial ``for lane_0 in range(rows)`` loop.  One
+    thread then arrived ``rows`` times against a barrier armed for ONE arrival, indexing a
+    ``(group_count, cluster_n)`` buffer sized for a single row -- so peers overwrote each
+    other's slot and the mbarrier byte count never matched the traffic.
+
+    THE FIX, and it is three numbers rather than one (``APPROVED_CHANGES.md`` §A3 Tier 2):
+
+    * ``buf_rows = group_count * serial_rows`` -- every serial iteration owns its own slot;
+    * ``row_slot = group_id*serial_rows + lane`` -- which slot this iteration writes;
+    * ``phase = lane % 2`` -- the mbarrier parity, because ONE barrier is now reused once per
+      serial row and ``mbarrier_wait(mbar, 0)`` would fall straight through on the second.
+
+    ⛔ The barrier's ``expect_tx`` is deliberately **NOT** scaled by ``serial_rows``.  Arming
+    for all rows at once is unsatisfiable by construction: ``expect_tx`` is issued inside the
+    loop, and the wait at the end of the SAME iteration would block on bytes that only later
+    iterations can send.  MEASURED: implemented that way the kernel never returns (GPU idle at
+    0%).  Buffer size and barrier arming answer different questions; that is the whole trick.
+
+    MEASURED, ``{-1,+1}`` integer data so a correct kernel MUST be bit-exact:
+
+        rowsum 64x1024, tpr=64, rl=512, cn=2
+            bs0=2 nt0=1  ->  pre-fix: CUDA error: unspecified launch failure;  now BIT-EXACT
+            bs0=4 nt0=1  ->  pre-fix: same fault;                              now BIT-EXACT
+        rms_norm 16384x65536 (the original report's shape), cn=4
+            bs0=2 nt0=1, bs0=4 nt0=2  ->  pre-fix: launch failure;  now BIT-EXACT
+
+    ⚠ ``bs0=4 nt0=2`` is the case the original write-up omitted: ``group_count == 2`` AND a
+    serial loop of 2, so the buffer needs their **product**, not either one.
+    """
+
+    @staticmethod
+    def _emit(
+        rows_per_cta: int,
+        cluster_n: int,
+        row_threads: int,
+    ) -> tuple[str, torch.Tensor, torch.Tensor]:
+        """Emit + run ``rowsum`` at this (bs0, cluster_n, nt0) triple.
+
+        ``{-1,+1}`` data: every partial sum is a small integer exactly representable in
+        fp32, so a correct kernel is **bit-exact** and any cluster mis-indexing shows up as
+        an exact integer mismatch rather than a tolerance question.
+        """
+
+        @helion.kernel(static_shapes=True, autotune_effort="none")
+        def rowsum(x: torch.Tensor) -> torch.Tensor:
+            m, n = x.size()
+            out = torch.empty([m], dtype=torch.float32, device=x.device)
+            for tile_m in hl.tile(m):
+                out[tile_m] = x[tile_m, :].sum(dim=-1)
+            return out
+
+        torch.manual_seed(0)
+        x = torch.randint(0, 2, (64, 1024), device=DEVICE, dtype=torch.float32) * 2 - 1
+        code, out = code_and_output(
+            rowsum,
+            (x,),
+            block_sizes=[rows_per_cta],
+            num_threads=[row_threads],
+            cute_cluster_n=[cluster_n],
+            cute_threads_per_row=[64],
+            cute_vector_widths=[1, 1],
+            reduction_loops=[512],
+        )
+        return code, out, x.sum(dim=-1)
+
+    def test_the_old_fault_shape_is_now_BIT_EXACT(self) -> None:
+        """⭐ The headline: the configs the deleted guard rejected now compute the right answer.
+
+        Both triples were ``unspecified launch failure`` before Tier 2 (verified on a
+        pre-fix worktree with the guard bypassed, one config per process because a launch
+        failure poisons the CUDA context).
+        """
+        for rows_per_cta in (2, 4):
+            with self.subTest(rows_per_cta=rows_per_cta):
+                _code, out, ref = self._emit(rows_per_cta, 2, 1)
+                # Bit-exact, not assert_close: integer data admits no tolerance.
+                torch.testing.assert_close(out, ref, rtol=0, atol=0)
+
+    def test_the_serial_row_path_is_actually_TAKEN(self) -> None:
+        """⛔ THE ANTI-VACUITY ARM: without this the numeric test above proves nothing.
+
+        If the cluster silently declined (``cluster_n`` capped to 1), the kernel would be
+        trivially correct and the test would pass while exercising none of the fix.  So pin
+        the three emitted markers: a cluster exchange, a serial row loop, and the per-row
+        slot/phase arguments that only the ``serial_rows > 1`` path emits.
+        """
+        code, _out, _ref = self._emit(2, 2, 1)
+        self.assertIn("_cute_cluster_reduce(", code)
+        self.assertIn("for lane_0 in range(2)", code)
+        self.assertIn("row_slot=", code)
+        self.assertIn("phase=", code)
+        self.assertIn("buf_rows=2", code)
+
+    def test_a_matched_row_axis_emits_NO_serial_kwargs(self) -> None:
+        """``bs0 == nt0`` has no serial row loop, so the extra arguments must be ABSENT.
+
+        Not cosmetic: it is what keeps the 13 clustered frozen cells byte-identical, so the
+        codegen gate can prove Tier 2 inert on the benchmarked basis instead of my having to
+        argue that ``row_slot=Int32(0)`` is a no-op.
+
+        ⚠ **EMISSION ONLY -- deliberately no numeric assertion here.**  ``bs0 == nt0`` with a
+        cluster is a **pre-existing wrong answer** on this branch, independent of Tier 2:
+        MEASURED ``bs0=nt0=2 cn=2`` maxdiff 106 and ``bs0=nt0=4 cn=2`` maxdiff 106 with
+        ``{-1,+1}`` data, and *identically wrong on a pre-Tier-2 tree* (`791deb1c4`), while the
+        same configs at ``cn=1`` are bit-exact.  The serial-row path is not involved (no
+        ``row_slot``, no ``for lane_0``).  ⇒ asserting correctness here would pin a bug as
+        expected behaviour; asserting the ABSENCE of the serial kwargs is the real invariant
+        this test owns.  See ``TestCuteClusterMatchedRowAxisIsWrong`` for the bug itself,
+        which is an xfail so it flips to a failure the day it is fixed.
+        """
+        code, _out, _ref = self._emit(2, 2, 2)
+        self.assertIn("_cute_cluster_reduce(", code)
+        self.assertNotIn("row_slot=", code)
+        self.assertNotIn("buf_rows=", code)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "PRE-EXISTING cluster bug, NOT Tier 2: bs0 == nt0 with cute_cluster_n > 1 "
+            "returns a wrong answer (maxdiff 106 on {-1,+1} data). Identically wrong on a "
+            "pre-Tier-2 tree (791deb1c4); bit-exact at cluster_n=1, so the cluster exchange "
+            "is the culprit and the serial-row path is not involved. strict=True so this "
+            "flips to a FAILURE the moment it is fixed, forcing the xfail to be removed."
+        ),
+    )
+    def test_a_matched_row_axis_is_NUMERICALLY_correct(self) -> None:
+        """⛔ KNOWN-BROKEN, pinned so it cannot be forgotten.
+
+        ⚠ Reproduces ONLY in an isolated process.  The same 18-config grid run in ONE process
+        reports every config OK; run one-config-per-process, ``bs0=nt0=2`` and ``bs0=nt0=4``
+        are wrong.  (Same instrument lesson as the A0 transposed-lane-index bug: an in-sequence
+        sweep is structurally unable to see this class of defect.)  A single-config test body
+        like this one IS the isolated instrument, which is why it is expressible here at all.
+
+        ⚠ NO ``subTest`` here: a failure raised inside ``subTest`` is reported to the result
+        object directly and does NOT propagate as the exception ``xfail`` needs to see, so the
+        test would be reported FAILED despite the marker.  MEASURED.  ``bs0 = nt0 = 2`` alone
+        is enough to express the defect.
+        """
+        _code, out, ref = self._emit(2, 2, 2)
+        torch.testing.assert_close(out, ref, rtol=0, atol=0)
+
+    def test_the_config_is_no_longer_REJECTED(self) -> None:
+        """The guard's removal, pinned at the normalize layer.
+
+        ``cute_cluster_n`` must survive normalization unchanged on both paths -- the user
+        path (which used to raise ``InvalidConfig``) and the autotuner's ``_fix_invalid``
+        path (which used to silently clamp the cluster to 1).
+        """
+
+        @helion.kernel(backend="cute")
+        def rowsum(x: torch.Tensor) -> torch.Tensor:
+            m, n = x.size()
+            out = torch.empty([m], dtype=torch.float32, device=x.device)
+            for tile_m in hl.tile(m):
+                out[tile_m] = x[tile_m, :].to(torch.float32).sum(dim=-1)
+            return out
+
+        x = torch.randn(256, 4096, device=DEVICE, dtype=torch.bfloat16)
+        spec = rowsum.bind((x,)).config_spec
+        for fix_invalid in (False, True):
+            with self.subTest(fix_invalid=fix_invalid):
+                config = helion.Config(
+                    block_sizes=[2],
+                    reduction_loops=[512],
+                    num_threads=[1],
+                    cute_cluster_n=[4],
+                ).config
+                spec.normalize(config, _fix_invalid=fix_invalid)
+                self.assertEqual(config.get("cute_cluster_n"), [4])
+
+
+@onlyBackends(["cute"])
 class TestCuteTileVecWarpReduceHeuristic(TestCase):
     """Pins the ``CuteTileVecWarpReduceHeuristic`` autotuner seed:
     ``block_sizes=[1, V*32]``, ``num_threads=[0, 32]``,

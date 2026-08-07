@@ -12984,6 +12984,11 @@ class TestCuteLowerings(unittest.TestCase):
             # for ``getattr`` there would reintroduce the "does this attribute exist"
             # question the sentinels exist to answer.
             _cute_tv_plan=None,
+            # No cluster either.  The real ``_cute_cluster_column_offset`` returns ``""``
+            # (no per-CTA column offset) whenever ``cluster_n == 1``, which is this
+            # test's geometry, so the double supplies that ANSWER rather than the
+            # cluster machinery that computes it.
+            _cute_cluster_column_offset=lambda state, *, scale: "",
             block_size_var=lambda block_idx: "_RDIM_SIZE_0",
             index_var=lambda block_idx: "indices_0",
             _get_thread_axis=lambda: 0,

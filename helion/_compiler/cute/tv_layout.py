@@ -178,6 +178,13 @@ THREADS_PER_ROW_CHOICES: tuple[int, ...] = _pow2_menu(
     _THREADS_PER_ROW_MIN, MAX_THREADS_PER_BLOCK
 )
 
+# quack ``rmsnorm_config.py:370`` ``get_all_fwd_configs``, DERIVED from the arch cap
+# rather than listed: every value above ``max_cluster_n_for_arch``'s maximum is
+# unreachable on every arch, so listing one would be a choice no ``_fragment`` can
+# ever offer.  16 is the Hopper/Blackwell CTA-cluster maximum; the per-arch narrowing
+# happens in ``CuteClusterNSpec._fragment``.
+CLUSTER_N_CHOICES: tuple[int, ...] = _pow2_menu(1, 16)
+
 # quack ``rmsnorm_config.py:21-23`` ``RmsNormFwdConfig.reload_from``.  ``"gmem"``
 # is deliberately omitted: quack's forward ladder never selects it
 # (``rmsnorm_config.py:89``).
@@ -277,6 +284,44 @@ def quack_rows_per_cta_for(n: int) -> int:
     is *derived*, not a separate knob).
     """
     return max(1, quack_num_threads_for(n) // threads_per_row_for(n))
+
+
+def max_cluster_n_for_arch(arch_major: int | None) -> int:
+    """quack ``rmsnorm_config.py:353-358`` ``_max_cluster_for``."""
+    if arch_major is None or arch_major < 9:
+        return 1
+    # SM12x (RTX 50) tops out at 8; Hopper/Blackwell at 16.
+    return 8 if arch_major == 12 else 16
+
+
+def cluster_n_for(
+    n: int,
+    dtype_bits: int,
+    arch_major: int | None,
+    *,
+    is_layernorm: bool = False,
+) -> int:
+    """quack ``rmsnorm_config.py:58-82``: the cluster ladder, arch-capped.
+
+    Not yet capped by ``cap_cluster_n`` -- that needs ``vec``, which needs the
+    participating dtypes, so the caller applies it once the plan's width is known
+    (``ReductionStrategy._cute_cluster_n_config``).
+    """
+    max_cluster = max_cluster_n_for_arch(arch_major)
+    if max_cluster == 1:
+        return 1
+    if arch_major == 12 and dtype_bits >= 32:
+        thresholds = ((8 * 1024, 1), (16 * 1024, 2), (32 * 1024, 4), (64 * 1024, 8))
+    elif dtype_bits == 16:
+        thresholds = ((16 * 1024, 1), (32 * 1024, 2), (64 * 1024, 4), (128 * 1024, 8))
+    elif is_layernorm:
+        thresholds = ((8 * 1024, 1), (64 * 1024, 2), (128 * 1024, 4), (256 * 1024, 8))
+    else:
+        thresholds = ((32 * 1024, 1), (64 * 1024, 2), (128 * 1024, 4), (256 * 1024, 8))
+    for limit, cluster in thresholds:
+        if n <= limit:
+            return cluster
+    return max_cluster
 
 
 def reload_from_for(n: int) -> str | None:

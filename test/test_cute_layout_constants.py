@@ -13,7 +13,7 @@ against survives as ``TileStrategy._cute_stage_smem_capacity_bytes`` and is pinn
 ``_notes/tests/test_staging_lane_extent.py::test_smem_capacity_refusal_still_fires``.
 ⇒ what remains here is THE DERIVATIONS, which are independent of that knob.
 
-⭐ THE DERIVATIONS.  Three numbers were replaced by the computation that produced them:
+⭐ THE DERIVATIONS.  Four numbers were replaced by the computation that produced them:
 
 * ``_THREADS_PER_ROW_MAX = 256`` -> :data:`_DEFAULT_MAX_THREADS_PER_ROW`, which is
   ``max(_NUM_THREADS_SMALL, _NUM_THREADS_LARGE)``.  The 256 was never independent: a CTA
@@ -26,6 +26,7 @@ against survives as ``TileStrategy._cute_stage_smem_capacity_bytes`` and is pinn
   could not reach values the SEARCH could -- invisible unless both lines are read
   together.  The two bounds have genuinely different principles (``num_threads`` vs the
   hardware CTA limit), which is why they still differ; only their derivation is shared.
+* ``CLUSTER_N_CHOICES`` -> powers of two up to the arch cluster maximum.
 * ``TV_COPY_MAX_VEC_BITS = 128`` -> ``MAX_COPY_BITS``, and ``assumed_align_bytes=16`` /
   ``alignment=16`` (five sites) -> ``ASSUMED_ALIGN_BYTES``, which names helion's blanket
   pointer-alignment promise (``runtime/__init__.py:3981``) once.
@@ -50,9 +51,11 @@ from helion._compiler.cute.thread_budget import MAX_THREADS_PER_BLOCK
 from helion._compiler.cute.tv_layout import _DEFAULT_MAX_THREADS_PER_ROW
 from helion._compiler.cute.tv_layout import ASSUMED_ALIGN_BYTES
 from helion._compiler.cute.tv_layout import BYTES_PER_KIB
+from helion._compiler.cute.tv_layout import CLUSTER_N_CHOICES
 from helion._compiler.cute.tv_layout import MAX_COPY_BITS
 from helion._compiler.cute.tv_layout import THREADS_PER_ROW_CHOICES
 from helion._compiler.cute.tv_layout import TV_COPY_MAX_VEC_BITS
+from helion._compiler.cute.tv_layout import max_cluster_n_for_arch
 from helion._compiler.cute.tv_layout import quack_num_threads_for
 from helion._compiler.cute.tv_layout import quack_rows_per_cta_for
 from helion._compiler.cute.tv_layout import threads_per_row_for
@@ -172,6 +175,16 @@ class TestCuteTvLayoutDerivations(TestCase):
         for n in _LADDER_NS:
             with self.subTest(n=n):
                 self.assertIn(threads_per_row_for(n), THREADS_PER_ROW_CHOICES)
+
+    def test_cluster_menu_is_powers_of_two_to_the_arch_cap(self) -> None:
+        """No choice may exceed what any arch can launch, or the fragment would offer a
+        value ``max_cluster_n_for_arch`` filters out on every device."""
+        widest = max(max_cluster_n_for_arch(arch) for arch in (None, 8, 9, 10, 12, 13))
+        self.assertEqual(max(CLUSTER_N_CHOICES), widest)
+        self.assertEqual(min(CLUSTER_N_CHOICES), 1)
+        for choice in CLUSTER_N_CHOICES:
+            with self.subTest(choice=choice):
+                self.assertEqual(choice & (choice - 1), 0)
 
     def test_copy_width_ceiling_is_the_atom_width(self) -> None:
         """``TV_COPY_MAX_VEC_BITS`` is the SAME hardware fact as ``MAX_COPY_BITS``.

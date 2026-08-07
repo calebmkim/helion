@@ -58,12 +58,15 @@ from .._compiler.cute.tcgen05_config import CuteTcgen05Config
 from .._compiler.cute.tcgen05_config import Tcgen05AbStagesThreeSearchConstraints
 from .._compiler.cute.tcgen05_config import Tcgen05ClusterM2SearchConstraints
 from .._compiler.cute.tcgen05_constants import TCGEN05_TWO_CTA_MAX_K_TILES
+from .._compiler.cute.tv_layout import CLUSTER_N_CHOICES
 from .._compiler.cute.tv_layout import NDTILE_TV_CHOICES
 from .._compiler.cute.tv_layout import ONLINE_DEFER_CHOICES
 from .._compiler.cute.tv_layout import REDUCTION_RELOAD_CHOICES
 from .._compiler.cute.tv_layout import ROW_RESIDENCY_CHOICES
 from .._compiler.cute.tv_layout import ROW_RESIDENCY_GMEM
 from .._compiler.cute.tv_layout import THREADS_PER_ROW_CHOICES
+from .._compiler.cute.tv_layout import cluster_n_for
+from .._compiler.cute.tv_layout import max_cluster_n_for_arch
 from .._compiler.cute.tv_layout import ndtile_tv_for
 from .._compiler.cute.tv_layout import online_defer_for
 from .._compiler.cute.tv_layout import row_residency_for
@@ -437,6 +440,7 @@ BACKEND_SPECIFIC_KEYS: frozenset[str] = (
         "num_threads",
         "cute_vector_widths",
         "cute_threads_per_row",
+        "cute_cluster_n",
         # ⚠ ACCEPTED BUT NOT A KNOB (task 1): an input spelling with no spec sequence and
         # no search slot, translated into ``cute_row_residency`` and stripped by
         # ``_normalize_cute_row_residency``.  Listed here so an old config migrates
@@ -492,6 +496,7 @@ VALID_KEYS: frozenset[str] = frozenset(
         "pallas_pre_broadcast",
         "cute_vector_widths",
         "cute_threads_per_row",
+        "cute_cluster_n",
         "cute_reduction_reload",
         "cute_row_residency",
         "cute_ndtile_tv",
@@ -638,12 +643,14 @@ class ConfigSpec:
         self.cute_vector_widths: BlockIdSequence[CuteVectorWidthSpec] = (
             BlockIdSequence()
         )
-        # The TV-layout knobs are registered together (one slot per reduction
-        # block) so a reduction's layout is fully described by block size,
-        # threads per row, vector width, and row residency.
+        # The three TV-layout knobs.  Registered together (one slot per
+        # reduction block) so a reduction's layout is fully described by
+        # ``(block_sizes[M], cute_threads_per_row, cute_cluster_n,
+        # cute_vector_widths)`` plus ``cute_row_residency``.
         self.cute_threads_per_row: BlockIdSequence[CuteThreadsPerRowSpec] = (
             BlockIdSequence()
         )
+        self.cute_cluster_n: BlockIdSequence[CuteClusterNSpec] = BlockIdSequence()
         # ⭐ The ONE three-way residency axis (registers / smem / gmem) -- and after
         # task 1 it is the ONLY key carrying that decision.  ``cute_reduction_reload``
         # used to be declared right here on the same domain, which is what let one
@@ -2008,6 +2015,7 @@ class ConfigSpec:
             ("reduction_loops", self.reduction_loops, True),
             ("cute_vector_widths", self.cute_vector_widths, True),
             ("cute_threads_per_row", self.cute_threads_per_row, True),
+            ("cute_cluster_n", self.cute_cluster_n, True),
             ("cute_row_residency", self.cute_row_residency, True),
             ("cute_ndtile_tv", self.cute_ndtile_tv, True),
             ("cute_online_defer", self.cute_online_defer, True),
@@ -2255,6 +2263,7 @@ class ConfigSpec:
             "reduction_loops",
             "cute_vector_widths",
             "cute_threads_per_row",
+            "cute_cluster_n",
             "cute_row_residency",
             # Stripped only when the LIST is empty (no slot registered at all,
             # e.g. a kernel with no device loop, or a non-cute backend).  A
@@ -2435,6 +2444,25 @@ class ConfigSpec:
                 fix_invalid=_fix_invalid,
             )
             self._normalize_cute_flash(config, fix_invalid=_fix_invalid)
+            # ⭐ NO ``block_sizes[0] > num_threads[0]`` + cluster REJECTION HERE ANY MORE.
+            #
+            # There used to be a ``_reject_cute_rows_per_cta_with_cluster`` guard on this line,
+            # because that combination was a hard CUDA launch failure: ``group_count`` was a
+            # THREAD count (``launch_threads // group_span``), so once rows per CTA exceeded
+            # row-axis threads it stopped tracking the rows -- collapsing to 1 while the cluster
+            # exchange sat inside a serial row loop.  One thread then arrived N times against a
+            # barrier armed for one arrival, indexing a buffer sized for one row.
+            #
+            # The accounting is now correct (``ReductionStrategy``'s cluster emission gives the
+            # exchange a per-row slot and an alternating barrier phase, and sizes the buffer
+            # ``group_count * serial_rows``), so the combination is LEGAL and this guard would
+            # reject configs that work.  Deleting it is the point of the fix, not a side effect:
+            # MEASURED bit-exact at ``bs/nt/cn`` = 2/1/2, 4/1/4 and 4/2/4, all of which were
+            # ``unspecified launch failure`` before.
+            #
+            # ⚠ Do NOT reintroduce a rows-vs-threads rejection without first re-checking
+            # ``_emit_cute_cluster_reduce``: a config this guard used to reject is now a config
+            # the tests pin as correct (``test_cute_cluster_serial_rows.py``).
 
         if self.supports_config_key("num_sm_multiplier"):
             # Validate num_sm_multiplier is a power of two in range
@@ -2818,6 +2846,7 @@ class ConfigSpec:
                         cute_key: cute_seq
                         for cute_key, cute_seq in (
                             ("cute_threads_per_row", self.cute_threads_per_row),
+                            ("cute_cluster_n", self.cute_cluster_n),
                             ("cute_row_residency", self.cute_row_residency),
                             ("cute_ndtile_tv", self.cute_ndtile_tv),
                             ("cute_online_defer", self.cute_online_defer),
@@ -3380,16 +3409,19 @@ class CuteVectorWidthSpec(_BlockIdItem):
 # ``tv_layout.TV_LAYOUT_KNOBS_SEARCHABLE`` that drove it.  Both are DELETED, and the
 # deletion is the finding.
 #
-# The flag existed to pin TV-layout knobs' *search* to their own defaults
+# The flag existed to pin the three TV-layout knobs' *search* to their own defaults
 # while codegen did not yet read them: varying an unread knob only spends autotuner
 # population on identical kernels.  It was then flipped to True for
 # ``cute_reduction_reload`` while its comment continued to say that
-# ``cute_threads_per_row`` was still unread by codegen.
+# ``cute_threads_per_row`` / ``cute_cluster_n`` "are still unread by codegen" and were
+# only sharing the flag to avoid leaving a second dead one behind — i.e. one flag doing
+# two jobs.
 #
-# The remaining knobs are read by codegen today:
+# All three are read by codegen TODAY, so neither job is left:
 #
 #   cute_threads_per_row  -> ``LoopedReductionStrategy.__init__``  (lowers the row's
 #                            thread count when a wider copy is on the table)
+#   cute_cluster_n        -> ``LoopedReductionStrategy._cute_cluster_n_config``
 #   cute_reduction_reload -> ``LoopedReductionStrategy._cute_reload_from_config``
 #
 # With the flag True, ``_tv_search_choices`` returned ``None`` unconditionally, which is
@@ -3445,6 +3477,71 @@ class CuteThreadsPerRowSpec(_PowerOfTwoBlockIdItem):
 
     def _fill_missing(self) -> int:
         return self._default()
+
+
+class CuteClusterNSpec(_PowerOfTwoBlockIdItem):
+    """Per-reduction-block CTA cluster width along the reduction axis (CuTe).
+
+    quack's ``cluster_n`` (``quack/rmsnorm_config.py:58-82``): the number of CTAs
+    that split one row and combine through DSMEM.  ``cluster_n`` sits in the
+    *denominator* of the tiler's ``num_blocks_N``
+    (``quack/reduction_base.py:47``), so raising it shrinks the per-CTA tile and
+    keeps the staged SMEM footprint flat as the row grows.
+
+    Bounded twice: by the arch (1 below sm_90, 8 on sm_12x, else 16 —
+    ``quack/rmsnorm_config.py:353-358``) and, at layout-build time, by
+    ``_cap_cluster_n`` (``quack/reduction_base.py:28-40``) so peer CTAs cannot
+    land on the same tile and double-count.
+    """
+
+    def __init__(
+        self,
+        *,
+        block_id: int,
+        size_hint: int,
+    ) -> None:
+        super().__init__([block_id])
+        self.size_hint = size_hint
+
+    def _max_cluster_n(self, base: ConfigSpec) -> int:
+        capability = base.target_device_capability
+        arch_major = capability[0] if capability is not None else None
+        return max_cluster_n_for_arch(arch_major)
+
+    def _default(self, base: ConfigSpec) -> int:
+        capability = base.target_device_capability
+        arch_major = capability[0] if capability is not None else None
+        # bf16/fp16 is the ladder this port is measured against; a spec has no
+        # dtype, so use the 16-bit thresholds and let the layout builder narrow
+        # for wider dtypes.
+        return cluster_n_for(self.size_hint, 16, arch_major)
+
+    def _fragment(self, base: ConfigSpec) -> EnumFragment:
+        default = self._default(base)
+        max_cluster_n = self._max_cluster_n(base)
+        allowed = [c for c in CLUSTER_N_CHOICES if c <= max_cluster_n]
+        choices = (default, *(c for c in allowed if c != default))
+        return EnumFragment(choices=choices)
+
+    def _normalize(self, name: str, value: object) -> int:
+        normalized = super()._normalize(name, value)
+        if normalized not in CLUSTER_N_CHOICES:
+            raise InvalidConfig(
+                f"{name} must be one of {CLUSTER_N_CHOICES}, got {value!r}"
+            )
+        return normalized
+
+    def _fill_missing(self) -> int:
+        # DELIBERATELY 1, not the ladder value -- the same asymmetry
+        # ``NumThreadsSpec`` (0 = "auto") and ``ReductionLoopSpec`` (None =
+        # persistent) already use: ``_fill_missing`` answers "the user wrote a
+        # config and omitted this key", where the conservative choice wins,
+        # while the *fragment* default answers "what does this shape want" and
+        # supplies the ladder to ``default_config()``.  Clustering changes the
+        # launch geometry, so it must not switch itself on inside a hand-written
+        # config.  ``_fill_missing`` also has no ``base`` and therefore cannot
+        # consult the arch cap, and 1 is legal on every arch.
+        return 1
 
 
 # ⛔ ``CuteReductionReloadSpec`` WAS DELETED HERE (task 1, FIXLIST item 1).
@@ -3681,7 +3778,15 @@ class CuteOnlineDeferSpec(_BlockIdItem):
         return value
 
     def _fill_missing(self) -> bool:
-        # The ladder value is what every config in the tree already compiles to,
+        # "USE THE LADDER", deliberately -- the OPPOSITE choice from
+        # ``CuteClusterNSpec._fill_missing``, and the asymmetry is the point.
+        #
+        # The test is whether the omitted key's default is a NEW behaviour or the
+        # EXISTING one.  ``cute_cluster_n`` fills 1 because clustering changes the
+        # launch geometry, so a hand-written config that never named it must not
+        # get a cluster it did not ask for (run-2 E067: ``cute_threads_per_row``
+        # firing unasked on configs that never named it was a real bug).  Here the
+        # ladder value IS what every config in the tree already compiles to,
         # because the pass ran unconditionally before this knob existed.  Filling
         # ``False`` would mean every frozen config -- all of which omit this key --
         # silently switched to the slower in-loop form.  So "omitted" means "use
