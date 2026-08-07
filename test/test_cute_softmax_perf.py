@@ -1,13 +1,10 @@
-"""Tests for the CuTe softmax performance changes (P1, P2, P5, P6, P7, P11, P14).
+"""Tests for the CuTe softmax performance changes (P1, P6, P7, P11, P14).
 
 These tests exercise the codegen paths that lifted Helion CuTe softmax
 performance from ~0.45x ATen to ~0.66x ATen on (4096, *) shapes:
 
 - P1: tile-loop vec hoist (CuteNDTileStrategy emits ``cute.arch.load``
   with ``ir.VectorType`` so masked reductions can vectorize).
-- P2/P5: ``fuse_two_pass_loads`` extended alias map to canonicalize
-  per-sweep ``mask_<N>``, ``lane_base_<N>``, ``vec_lane_<N>``, and
-  ``_tile_unroll_vec_<N>_<M>`` so the fuser fires across sweeps.
 - P6: ``CuteBackend.launcher_keyword_args`` raises ``BackendUnsupported``
   when the launcher would silently truncate joint thread count below
   what codegen committed to (was producing nan-valued kernels that
@@ -208,94 +205,6 @@ class TestCuteSoftmaxVecHoist(TestCase):
         ref = torch.nn.functional.softmax(x, dim=1)
         torch.testing.assert_close(out, ref, atol=1e-2, rtol=1e-2)
         self.assertNotIn("_tile_unroll_vec_", code)
-
-
-@onlyBackends(["cute"])
-class TestCuteFuseTwoPassAlias(TestCase):
-    """P2/P5: alias map covers mask/lane_base/vec_lane/_tile_unroll_vec names."""
-
-    def test_fuser_fires_with_vec_hoist(self) -> None:
-        """When the vec hoist runs, the two sweeps' loads use names like
-        ``lane_base_1`` vs ``lane_base_2``, ``vec_lane_1`` vs ``vec_lane_2``,
-        and ``_tile_unroll_vec_1_0`` vs ``_tile_unroll_vec_1_1``. P5's
-        alias map canonicalizes these so the fuser matches and emits one
-        ``_fuse_cache_*`` fragment instead of re-reading from gmem.
-
-        The cache_size cap is 64; for (4096, 1024) with block_size 128 we
-        have trip=8 and lane_trip=1 → cache_size=8 → fits.
-        """
-        x = torch.randn(4096, 1024, device=DEVICE, dtype=HALF_DTYPE)
-        code, out = code_and_output(
-            softmax_two_pass_kernel,
-            (x,),
-            block_sizes=[1, 128],
-            num_threads=[0, 32],
-            cute_vector_widths=[1, 4],
-        )
-        ref = torch.nn.functional.softmax(x, dim=1)
-        torch.testing.assert_close(out, ref, atol=1e-2, rtol=1e-2)
-        # Cache fragment allocated.
-        self.assertIn("_fuse_cache_", code)
-        # When the P18 load-pipeline pass is OFF the consume sweep just
-        # reads from cache so the kernel has 1 ``cute.arch.load`` total.
-        # With pipelining ON the reduce sweep's load is hoisted into a
-        # prologue + per-iter prefetch (2 load sites), so the total is
-        # 2 — but it's STILL the case that the consume sweep emits NO
-        # load (cache hit).  Both forms are correct.  Verify the consume
-        # sweep is cache-only by looking at the inner consume loop.
-        load_count = code.count("cute.arch.load(")
-        self.assertTrue(
-            load_count in {1, 2},
-            f"expected 1 or 2 cute.arch.load sites, got {load_count}",
-        )
-        # The consume sweep (second top-level ``for tile_offset`` loop)
-        # must not contain a gmem load.
-        consume_marker = "for tile_offset_2 in range"
-        consume_start = code.rfind(consume_marker)
-        self.assertGreater(consume_start, 0)
-        self.assertNotIn(
-            "cute.arch.load(",
-            code[consume_start:],
-            "consume sweep must read from _fuse_cache_, not gmem",
-        )
-
-    def test_fuser_skips_when_cache_size_too_large(self) -> None:
-        """Auto-policy keeps the original cache_size>64 cap to avoid the
-        register-pressure regression measured in P8. So for trip > 64 we
-        expect the consume sweep to still load from gmem.
-
-        For (4096, 12672) with block_size 128, trip = 99, V = 4, so the
-        cache_size would be 99 — fuser must bail.
-        """
-        x = torch.randn(4096, 12672, device=DEVICE, dtype=HALF_DTYPE)
-        code, out = code_and_output(
-            softmax_two_pass_kernel,
-            (x,),
-            block_sizes=[1, 128],
-            num_threads=[0, 32],
-            cute_vector_widths=[1, 4],
-        )
-        ref = torch.nn.functional.softmax(x, dim=1)
-        torch.testing.assert_close(out, ref, atol=1e-2, rtol=1e-2)
-        # Both sweeps load from gmem (cache fragment NOT allocated since
-        # the fuser bails on cache_size > 64).
-        self.assertNotIn("_fuse_cache_", code)
-        # When the P18 load-pipeline pass is OFF the kernel has exactly
-        # 2 ``cute.arch.load`` calls (one per sweep).  With pipelining
-        # ON each load site is hoisted into a prologue and a per-iter
-        # prefetch, so the total is 4 (2 prologue + 2 inner-loop
-        # prefetch).  Both forms are correct; assert at least 2.
-        self.assertGreaterEqual(code.count("cute.arch.load("), 2)
-        # Each sweep must contain at least one gmem load (either
-        # inline or as a per-iter prefetch).
-        first_sweep_marker = "for tile_offset_2 in range"
-        first_sweep_start = code.find(first_sweep_marker)
-        second_sweep_start = code.find(first_sweep_marker, first_sweep_start + 1)
-        self.assertGreater(second_sweep_start, first_sweep_start)
-        first_sweep = code[first_sweep_start:second_sweep_start]
-        second_sweep = code[second_sweep_start:]
-        self.assertIn("cute.arch.load(", first_sweep)
-        self.assertIn("cute.arch.load(", second_sweep)
 
 
 @onlyBackends(["cute"])

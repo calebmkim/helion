@@ -1022,13 +1022,8 @@ class DeviceFunction:
             ],
         )
         if backend.name == "cute":
-            from .cute.fuse_two_pass_loads import fuse_two_pass_loads
-
-            # Collect static integer values for constexpr names so the
-            # fusion pass can resolve range(..., step=cutlass.Int32(NAME))
-            # trip counts. Three sources: literal constexpr inlined args,
-            # host-side literal assignments to constexpr-named variables,
-            # and the inlined module-level constexpr decls.
+            # Static values used by later loop transformations such as load
+            # pipelining when a range step is a named constexpr.
             constexpr_values: dict[str, int] = {}
             for arg in constexpr_to_inline:
                 try:
@@ -1045,139 +1040,7 @@ class DeviceFunction:
                     and isinstance(stmt.value.value, int)
                 ):
                     constexpr_values[stmt.targets[0].id] = stmt.value.value
-            # Pass the per-axis thread dims so the fuser can size
-            # SMEM-backed caches correctly and build a per-thread
-            # linear slot index when ``cache_size`` exceeds the
-            # register-fragment threshold (opt-in via
-            # ``HELION_FUSER_MODE=smem``).
-            try:
-                thread_dims = self.tile_strategy.thread_block_dims()
-                thread_block_dims: tuple[int, int, int] = (
-                    int(thread_dims[0]),
-                    int(thread_dims[1]),
-                    int(thread_dims[2]),
-                )
-            except Exception:
-                thread_block_dims = (1, 1, 1)
-            kernel_body = fuse_two_pass_loads(
-                kernel_body,
-                constexpr_values,
-                thread_block_dims=thread_block_dims,
-            )
-            # The same idea for the TV-layout path, whose gmem read is a
-            # ``cute.copy`` STATEMENT into a register fragment rather than an
-            # assignment of ``ptr.load()`` -- so ``fuse_two_pass_loads``
-            # structurally cannot see it.  ``layer_norm`` needs ``mean`` before
-            # ``centered = x - mean``, so it sweeps the row THREE times and
-            # re-reads ``x`` from gmem each time; quack reads it ONCE and
-            # reloads from registers (``reload_from=None``).  This caches the
-            # fragment lanes across the sweeps so the later ones hit registers.
-            # MEASURED at 32768x1024 (LEDGER E055): 6 copies -> 4, ratio vs
-            # quack 0.900 -> 1.066.
-            #
-            # The per-thread register budget it may spend is the
-            # ``cute_tv_sweep_cache`` knob (``CuteTvSweepCacheSpec``), keyed by the
-            # sweep loop's offset variable; ``0`` declines.  A loop with no slot is
-            # simply absent from the map, and the pass falls back to its own
-            # default for those -- so an empty map is today's behaviour exactly.
-            # ⭐ ``cute_row_residency=["gmem"]`` VETOES the cache by zeroing its budget.
-            # ``gmem`` means "no mechanism -- sweep 2 re-reads global", so it must
-            # suppress the register cache; expressed as a budget of 0 because that is
-            # already the pass's own spelling for "decline this loop", so the veto adds
-            # no second mechanism.  Only an EXPLICIT ``gmem`` vetoes -- a refused
-            # ``smem`` request still falls back to the cache exactly as it does today
-            # (see ``cute_row_residency_forbids_sweep_cache`` for the measurement).
-            #
-            # Resolved through the SAME ``_cute_pass_knob_by_offset_var`` bridge the
-            # budget itself uses, rather than by asking each strategy: that helper
-            # already owns block-id -> offset-var naming and already skips a strategy
-            # with no per-block offset variable.  It reads the key POST-NORMALIZE, so
-            # the legacy derivation (``_normalize_cute_row_residency``) has already
-            # run and this sees the one authoritative residency per block.
-            residency_veto = {
-                offset_var
-                for offset_var, value in self._cute_pass_knob_by_offset_var(
-                    "cute_row_residency"
-                ).items()
-                if value == "gmem"
-            }
-            # ⭐ AND THE SAME VETO, ASKED OF THE STRATEGIES THAT RESOLVED A RESIDENCY
-            # WITHOUT OWNING A CONFIG SLOT.  The bridge above reads the config KEY, so it
-            # can only see a block that owns a ``cute_row_residency`` slot -- and a TILED
-            # reduction axis owns none (those slots are registered per REDUCTION BLOCK by
-            # ``DeviceIR._register_cute_tv_layout_slots``).  MEASURED on a tile-regime
-            # two-sweep kernel whose strategy resolved ``gmem``: the bridge returned ``{}``,
-            # the veto never fired, and ``fuse_tv_copy_sweeps`` emitted 10 ``_tv_sweep_cache``
-            # statements -- i.e. ``gmem`` and ``registers`` compiled to the SAME kernel, which
-            # is precisely the collapse ``cute_row_residency_forbids_sweep_cache`` exists to
-            # prevent (it is the one thing that makes ``gmem`` a distinct value rather than a
-            # synonym).
-            #
-            # ⚠ ASKED, NOT INFERRED, and asked of the capability rather than the class:
-            # ``cute_row_residency_forbids_sweep_cache`` is on ``TileStrategy``, so every
-            # strategy can answer and one that never resolved a residency answers False.
-            # ⚠ A UNION, never a replacement: the config-key path stays authoritative for
-            # every block that DOES own a slot, so this cannot un-veto a rolled reduction --
-            # it only adds loops the key could not name.  That keeps the edit inert wherever
-            # the old path already had an answer.
-            #
-            # ⛔⛔ AND IT MUST ASK "WAS A RESIDENCY *ASKED FOR*", NOT ONLY "IS IT gmem".
-            # ``cute_row_residency_forbids_sweep_cache()`` is ``requested == "gmem"``, and
-            # ``gmem`` is ALSO the base-class default -- it means "no mechanism", which is the
-            # honest answer for a strategy that never participated in the axis.  So the
-            # predicate alone cannot tell an EXPLICIT ``gmem`` (which must veto, because that
-            # is the only thing making ``gmem`` a distinct kernel rather than a synonym for
-            # ``registers``) from an ABSENT request (which must NOT veto, or every kernel in
-            # the tree silently loses ``fuse_tv_copy_sweeps``).
-            #
-            # That distinction is exactly what ``cute_row_residency_forbids_sweep_cache``'s own
-            # docstring is about: it vetoes on ``gmem`` ALONE and the asymmetry is measured, not
-            # tidiness -- vetoing on a REFUSED ``smem`` request would suppress the fallback that
-            # is today's behaviour for every cell whose staging is declined.  The same argument
-            # applies one step out: vetoing on a DEFAULT ``gmem`` would suppress it everywhere.
-            #
-            # ⇒ the request must be one this strategy actually RESOLVED, which is what the
-            # per-block record answers.  A strategy that never resolved one is skipped.
-            #
-            # ⭐⭐ ASKED OF THE STRATEGY, NOT REIMPLEMENTED HERE (task 4, FIXLIST item 4).
-            # This loop used to inline the predicate itself -- ``if value != "gmem":
-            # continue`` over ``getattr(strategy, "_cute_row_residency_requested_by_block",
-            # None)`` -- while ``TileStrategy.cute_row_residency_forbids_sweep_cache``, whose
-            # docstring is the SPECIFICATION for this veto, was NEVER CALLED (measured: one
-            # grep hit, the ``def``).  So the veto had two live implementations and one dead
-            # specification, which is item 4's complaint in its sharpest form: a documented
-            # decision site that decides nothing.  ``cute_row_residency_veto_offset_vars``
-            # now RETURNS the answer, so the docstring governs the code that runs and the
-            # provenance rule ("was a residency actually RESOLVED") lives in one place.
-            for strategy in self.tile_strategy.strategies:
-                residency_veto |= strategy.cute_row_residency_veto_offset_vars()
-            # ⭐ THE VETO IS THE ONLY THING THIS SITE HANDS THE PASS (task 1 steps 2-3).
-            #
-            # It used to also pass ``slot_budgets`` -- the ``cute_tv_sweep_cache`` per-thread
-            # register budget -- and that knob is DELETED.  A budget could make the
-            # ``registers`` arm decline, i.e. a *performance* ceiling could turn a config's
-            # named residency into a different emitted one; MEASURED on the frozen table,
-            # that is how 13 of 40 cells came to record a residency the kernel never used.
-            #
-            # ⚠ AND THE VETO IS NOW ITS OWN CHANNEL RATHER THAN ``budget=0``.  Encoding "the
-            # user asked for no mechanism" as a quantity of zero is what let
-            # ``HELION_TV_SWEEP_FUSE_SLOTS`` silently un-veto three explicit-``gmem`` cells
-            # (measured): the override replaced the whole map, zero included.  A set cannot be
-            # raised by an override that only knows about numbers.
-            # ⭐⭐ ``fuse_tv_copy_sweeps`` IS GONE.  The ``registers`` residency is now decided
-            # and emitted AT LOWERING -- ``memory_ops._cute_tv_partition_hoist``'s rmem branch
-            # publishes the first read's lanes into a per-thread cache and serves every later
-            # read of the SAME TILE from it, with no gmem copy.
-            #
-            # ⛔ DELETED BECAUSE NOTHING REACHED IT, not because something reimplemented it.
-            # MEASURED before removal, on two independent populations:
-            #   * the 40 FROZEN CELLS  -- 40/40 compile, 40 pass calls, **0 fusions**;
-            #   * 10 cute test files   -- 709 passed, 798 pass calls, **0 fusions**.
-            # The last survivor was a two-multi-read-tensor kernel where ``smem`` staging takes
-            # one tensor and refused the other; the lowering arm now picks that one up too.
-            #
-            # ⚠ ``residency_veto`` above is retained: it is still the channel by which an
-            # explicit ``gmem`` request suppresses the register mechanism.
+
             # Hoist warp reductions out of constexpr V-loops to collapse
             # 4 per-V-lane warp reductions into 1 V-fold + 1 warp reduce.
             # For online softmax style kernels this drops per-row reductions
@@ -1301,12 +1164,8 @@ class DeviceFunction:
                 kernel_body, list(self.cute_ragged_peels.values())
             )
             # ⭐ THE ONE canonical row-residency statement, emitted LAST so it is a
-            # function of the FINAL body.  It must come after ``fuse_tv_copy_sweeps``
-            # in particular: that pass is what decides ``registers`` vs ``gmem`` (it
-            # can still decline on its register budget), so a marker written any
-            # earlier could only say "gmem/registers" and name two values where the
-            # reader needs one.  Reading the emitted instructions is what makes
-            # "stated == observed" true by construction.
+            # function of the FINAL body. Reading the lowering artifacts in the
+            # emitted instructions makes "stated == observed" true by construction.
             #
             # ⚠ UNDER ``SyntheticLocation``, and that is not cosmetic.  A statement
             # built outside it inherits whatever source location was current, so the

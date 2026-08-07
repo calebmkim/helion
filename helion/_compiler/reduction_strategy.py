@@ -26,6 +26,8 @@ from .cute.ragged_tail import assert_vec_divides_extent
 from .cute.ragged_tail import ragged_tile_admissible
 from .cute.ragged_tail import rounded_extent
 from .cute.ragged_tail import tile_granularity
+from .cute.row_residency import RowOwnership
+from .cute.row_residency import SegmentedRowCacheBinding
 from .cute.tv_layout import ROW_RESIDENCY_GMEM
 from .cute.tv_layout import ChunkTVPlan
 from .cute.tv_layout import TVParticipants
@@ -725,6 +727,8 @@ class ReductionStrategy(TileStrategy):
         # shared dict would carry one kernel's fragment->partition rewrites into the
         # next, and the emitted fragment names repeat across kernels.
         self._cute_tv_stage_read_by_frag: dict[str, str] = {}
+        self._cute_row_cache_by_key: dict[tuple[object, ...], object] = {}
+        self._cute_segmented_row_cache_bindings: list[SegmentedRowCacheBinding] = []
 
     # ── CuTe capability STATE, on the base class ──────────────────────────────
     #
@@ -871,6 +875,13 @@ class ReductionStrategy(TileStrategy):
     # kernels, so a leak would silently HIT rather than fail.  Same reasoning as
     # ``_cute_tv_stage_read_by_frag`` above.
     _cute_tv_rmem_frag_by_tile: dict[tuple[object, ...], str] | None = None
+    # Semantic row identity -> lowering cache entry for scalar/classic loads.
+    # ``None`` is the inert class default; ReductionStrategy.__init__ creates the
+    # per-instance dict so emitted variable names cannot leak between kernels.
+    _cute_row_cache_by_key: dict[tuple[object, ...], object] | None = None
+    _cute_row_multi_read_cache: frozenset[str] | None = None
+    _cute_row_stored_cache: frozenset[str] | None = None
+    _cute_segmented_row_cache_bindings: list[SegmentedRowCacheBinding] | None = None
 
     def cute_tv_capable(self) -> bool:
         """Does THIS strategy carry a live TV plan whose emission scaffolding
@@ -905,6 +916,70 @@ class ReductionStrategy(TileStrategy):
             and self._cute_tv_chunk_index_var is not None
             and self._cute_reduction_lane_var is not None
         )
+
+    def cute_row_ownership(self, state: CodegenState) -> RowOwnership | None:
+        """Return the current row element's per-thread cache coordinate.
+
+        This describes ownership only. The load path decides how the value first
+        reaches the slot, while row residency decides whether the slot is backed by
+        registers, shared memory, or not allocated at all.
+        """
+        chunk = self._cute_tv_chunk
+        if chunk <= 0:
+            return None
+        env = CompileEnvironment.current()
+        numel = env.block_sizes[self.block_index].numel
+        total = shape_env_size_hint(env.shape_env, numel)
+        rounded = self.cute_tv_rounded_extent()
+        if rounded is not None:
+            total = rounded
+        cluster_n = self._cute_cluster_emitted_n()
+        if cluster_n > 1:
+            if total % cluster_n:
+                return None
+            total //= cluster_n
+        num_chunks = max(1, (total + chunk - 1) // chunk)
+
+        vec = max(1, self._cute_reduction_vec_width)
+        lane_extent = max(
+            1,
+            self._cute_reduction_lane_extent,
+            int(getattr(self, "_synthetic_cute_lane_extent", 1)),
+        )
+        lane_var = self._cute_reduction_lane_var
+        if lane_var is None:
+            lane_var = getattr(self, "_synthetic_cute_lane_var", None)
+        lane_expr = lane_var if isinstance(lane_var, str) else "0"
+
+        vec_expr = "0"
+        vec_loop = self._cute_tv_constexpr_loop
+        if vec > 1:
+            if not isinstance(vec_loop, ast.For) or not isinstance(
+                vec_loop.target, ast.Name
+            ):
+                return None
+            vec_expr = vec_loop.target.id
+
+        offset = self.offset_var(self.block_index)
+        if offset == "0":
+            chunk_expr = "0"
+        else:
+            local_offset = offset
+            if cluster_n > 1:
+                per_cta = self._cute_cluster_per_cta_extent()
+                if per_cta is None:
+                    return None
+                local_offset = (
+                    f"({offset} - {self._cute_cluster_y_var(state)} * {per_cta})"
+                )
+            chunk_expr = f"({local_offset}) // {chunk}"
+
+        slots = num_chunks * lane_extent * vec
+        slot_expr = (
+            f"({chunk_expr}) * {lane_extent * vec} "
+            f"+ ({lane_expr}) * {vec} + ({vec_expr})"
+        )
+        return RowOwnership(slots, slot_expr)
 
     def cute_tv_lane_block_id(self) -> int | None:
         """This reduction's own axis, when it carries a plan.
@@ -3142,6 +3217,10 @@ class PersistentReductionStrategy(ReductionStrategy):
                     # is: every strategy that answers ``cute_tv_capable()`` needs the real
                     # object, not just the inert default.
                     self._cute_tv_rmem_frag_by_tile = {}
+        if env.backend.name == "cute" and self._cute_tv_plan is None:
+            self._cute_row_residency_requested = self._cute_row_residency_config(
+                fn, block_index
+            )
 
     def _reduction_thread_count(self) -> int:
         return self._thread_count
@@ -3347,6 +3426,11 @@ class PersistentReductionStrategy(ReductionStrategy):
             # ⚠ The clone must be deep: two sibling loops holding the same node objects
             # alias, and a later in-place rewrite of one would edit both.
             current_grid.add_lane_loop(block_idx, lane_var, lane_extent)
+            segmented_row_cache_bindings = cast(
+                "list[SegmentedRowCacheBinding]",
+                self._cute_segmented_row_cache_bindings,
+            )
+            published_row_cache_producers: set[int] = set()
 
             def _rebuild_nest(
                 segment_body: list[ast.AST],
@@ -3364,7 +3448,40 @@ class PersistentReductionStrategy(ReductionStrategy):
                 # re-parses as an ``IndentationError``.  MEASURED as exactly that.  Cloning
                 # is still right for every OTHER statement (the hoisted copies and the base
                 # assignment are complete), so only the loop itself is re-minted.
-                fresh_sink: list[ast.AST] = [*segment_body]
+                from .ast_read_writes import ReadWrites
+
+                segment_reads: set[str] = set()
+                for segment_stmt in segment_body:
+                    segment_reads.update(ReadWrites.from_ast(segment_stmt).reads)
+                active_bindings = [
+                    binding
+                    for binding in segmented_row_cache_bindings
+                    if binding.value_var in segment_reads
+                ]
+                resident_producer_ids = {
+                    id(binding.producer_stmt)
+                    for binding in segmented_row_cache_bindings
+                }
+                first_by_producer = {
+                    id(binding.producer_stmt): id(binding.producer_stmt)
+                    not in published_row_cache_producers
+                    for binding in active_bindings
+                }
+                fresh_sink: list[ast.AST] = [
+                    *(
+                        _clone_stmt(binding.replay_stmt)
+                        for binding in active_bindings
+                        if not first_by_producer[id(binding.producer_stmt)]
+                        and binding.replay_stmt is not None
+                    ),
+                    *segment_body,
+                    *(
+                        _clone_stmt(binding.publish_stmt)
+                        for binding in active_bindings
+                        if first_by_producer[id(binding.producer_stmt)]
+                        and binding.publish_stmt is not None
+                    ),
+                ]
                 fresh_vec_for = cast(
                     "ast.For",
                     ast.parse(
@@ -3375,6 +3492,7 @@ class PersistentReductionStrategy(ReductionStrategy):
                 fresh_vec_for.body = fresh_sink  # type: ignore[assignment]
                 fresh: list[ast.AST] = []
                 seen_vec_loop = False
+                retained_producers: set[int] = set()
                 for stmt in _lane_body:
                     if (
                         isinstance(stmt, ast.For)
@@ -3383,10 +3501,25 @@ class PersistentReductionStrategy(ReductionStrategy):
                         fresh.append(fresh_vec_for)
                         seen_vec_loop = True
                     else:
+                        producer_id = id(stmt)
+                        if producer_id in resident_producer_ids:
+                            if first_by_producer.get(producer_id):
+                                fresh.append(_clone_stmt(stmt))
+                                retained_producers.add(producer_id)
+                            continue
                         fresh.append(_clone_stmt(stmt))
                 assert seen_vec_loop, (
                     "prebuilt nest rebuild found no constexpr vec loop in the lane body"
                 )
+                expected_producers = {
+                    producer_id
+                    for producer_id, first in first_by_producer.items()
+                    if first
+                }
+                assert retained_producers == expected_producers, (
+                    "a segmented row cache publication lost its first-load producer"
+                )
+                published_row_cache_producers.update(expected_producers)
                 # ⛔⛔ THE NEST IS TWO LEVELS, AND REBUILDING ONLY THE INNER ONE LOSES THE
                 # TENSORS.  ``chunk_body`` is ``[<per-chunk declarations>, <lane loop>]``:
                 # ``_cute_tv_partition_hoist`` inserts the ``local_tile`` /
@@ -4109,25 +4242,12 @@ class LoopedReductionStrategy(ReductionStrategy):
                         fn, plan, block_index
                     )
         if env.backend.name == "cute" and self._cute_tv_plan is None:
-            # ⚠ NO TV PLAN, so no mechanism can serve the second read -- but the config
-            # may still have ASKED for one, and that request must not vanish silently.
-            # MEASURED before this branch existed: ``cute_vector_widths=[1]`` with
-            # ``cute_row_residency=["smem"]`` emitted NO marker at all while the config
-            # read ``['smem']`` -- i.e. the loudest decline was the only invisible one,
-            # which is the exact defect the marker exists to remove.
-            #
-            # ⚠ AND IT SITS OUTSIDE THE ``block_size > thread_count`` GUARD ABOVE, which
-            # is where I first put it and where it was DEAD: that guard is false whenever
-            # the block exactly fills the thread count (MEASURED: bs=1024, tc=1024 at
-            # ``vw=1``), which is precisely the no-plan shape this branch is for.
+            # Residency is independent of the load mechanism. A scalar/classic path
+            # still exposes row ownership and is served by the lowering cache in
+            # cute.memory_ops.
             self._cute_row_residency_requested = self._cute_row_residency_config(
                 fn, block_index
             )
-            if self._cute_row_residency_requested != ROW_RESIDENCY_GMEM:
-                self._cute_row_residency_decline = (
-                    "no TV plan was built for this reduction (the copy width "
-                    "collapsed to 1), so there is no partitioned row to cache"
-                )
         # AFTER the block above, because the request is a function of
         # ``self._loop_block_size`` -- which that block rounds up from ``block_size``.
         # Reading the knob earlier would cap the cluster against the wrong chunk.

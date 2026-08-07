@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import dataclasses
 import logging
 import math
 import operator
@@ -53,6 +54,7 @@ from ..ast_extension import statement_from_string
 from ..compile_environment import CompileEnvironment
 from .cute_epilogue import analyze_tcgen05_unary_epilogue_chain
 from .cute_fx_walk import reach_tcgen05_matmul_anchors
+from .row_residency import SegmentedRowCacheBinding
 from .tv_layout import ROW_RESIDENCY_REGISTERS
 from .tv_layout import ROW_RESIDENCY_SMEM
 from .tv_layout import legal_vec
@@ -62,6 +64,27 @@ if TYPE_CHECKING:
     from .tv_layout import ChunkTVPlan
 
 log = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class _RowCacheEntry:
+    cache_var: str
+    backing: str
+    slots_per_thread: int
+    reuse_marked: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class _RowResidence:
+    cache_expr: str
+    first_read: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class _HoistedVectorLoad:
+    expr: str
+    value_var: str
+    producer_stmt: ast.AST
 
 
 def _log_cute_layout(state: CodegenState, op_name: str) -> None:
@@ -514,44 +537,6 @@ def _cute_tv_rmem_slice(
     """
     if not _cute_tv_rmem_reuse_enabled(state, strategy, tensor, tensor_name):
         return None
-    # ⛔⛔ DECLINE WHERE THE LOOP STRUCTURE IS NOT YET FINAL, i.e. where an AST pass will still
-    # RESTRUCTURE the nest this cache is indexed against.
-    #
-    # The cache index is ``chunk*lane_extent*vec + lane*vec + vi``, computed HERE against the
-    # nest as it stands.  On the LOOP-FREE path (``cute_stage_restages_cloned_sweeps()``: one
-    # lowering site, remaining sweeps CLONED) the lane-split pass still has to cut that nest into
-    # accumulate/finalize/consume -- so an index minted now describes a structure that is about
-    # to change.
-    #
-    # ⚠ AND IT IS WORSE THAN "the index might be stale": the per-element publish
-    # (``cache[base+vi] = frag[vi]``) lands INSIDE the constexpr V-loop, and
-    # ``_split_lane_loop_over_constexpr_vec`` requires exactly one V-loop with every marker as a
-    # DIRECT child of it.  MEASURED: with the publish present that pass returns ``None``, the
-    # marker reaches the safety net, and ``partial_fold`` RAISES -- so the emission does not
-    # merely risk a wrong index, it **turns working kernels into `BackendUnsupported`**.  Caught
-    # by gate level 2 (phase A: 17 passed / 1 failed) after I minted this strategy's cache dict.
-    #
-    # ⭐ THIS IS THE SAME PREREQUISITE THE ``smem`` ARM HAS, and stating it here is the point:
-    # a residency mechanism decided at lowering needs the loop structure to be FINAL at lowering.
-    # It is final on the looped/tile regimes (N re-lowered sweeps) and NOT on the loop-free one.
-    # ⇒ the loop-free regime is blocked on raising the lane split to lowering -- exactly like
-    # ``smem`` -- and until then this declines and the row is re-read from gmem, which is correct
-    # and merely unoptimised.
-    # ⚠ TESTED VIA THE GRID STATE'S **PREBUILT NEST**, NOT ``cute_stage_restages_cloned_sweeps()``
-    # and NOT an ``isinstance`` ladder.  MEASURED: that predicate answers ``False`` on
-    # ``PersistentReductionStrategy`` -- it keys on ``offset_var == "0"``, which is a statement
-    # about the STAGING coordinate, not about whether an AST pass will restructure the nest -- so
-    # gating on it left this shape firing and still raising.
-    #
-    # ⭐ ``DeviceGridState.prebuilt_lane_nest`` is the honest sentinel and is already the
-    # tree's own name for this regime: it is set exactly when a strategy built ONE lane nest up
-    # front because it has a single lowering site (``reduction_strategy.py``'s ``codegen_preamble``
-    # TV branch), and it is what ``wrap_body`` keys on.  ⇒ asking the state "was a nest supplied?"
-    # is the same question, asked of a capability rather than of a class -- which is this repo's
-    # documented rule (the enumeration antipattern: ask what a strategy can do, never what it is).
-    grid_state = state.codegen.current_grid_state
-    if getattr(grid_state, "prebuilt_lane_nest", None) is not None:
-        return None
     num_chunks = strategy._cute_stage_num_chunks()  # pyrefly: ignore
     if num_chunks is None or num_chunks < 1:
         # No chunk geometry: ``_cute_stage_num_chunks`` logs its own reasons.  A decline
@@ -630,9 +615,9 @@ def _cute_tv_emit_cross_sweep_stmt(
     if block_index is not None:
         loops = state.codegen.active_device_loops.get(block_index) or []
         for loop_state in reversed(loops):
-            outer_prefix = getattr(loop_state, "outer_prefix", None)
-            if isinstance(outer_prefix, list):
-                outer_prefix.append(statement_from_string(text))
+            cross_sweep_prefix = loop_state.cross_sweep_prefix()
+            if cross_sweep_prefix is not None:
+                cross_sweep_prefix.append(statement_from_string(text))
                 return
     # ⚠ No enclosing device loop for this block: the loop-FREE persistent shape, which has a
     # SINGLE sweep -- so the chunk body IS the enclosing scope there and the fallback is the
@@ -1067,6 +1052,7 @@ def _cute_tv_partition_hoist(
     constexpr_loop = strategy._cute_tv_constexpr_loop
     assert isinstance(constexpr_loop, ast.For)
     loop_pos = next(i for i, stmt in enumerate(lane_body) if stmt is constexpr_loop)
+    copy_stmt: ast.AST | None = None
     if copy_text is None:
         # ⭐ THE DELETED COPY: the rmem cache already holds this tile, so no load is emitted
         # at all.  Nothing is inserted, and the fragment the V-loop reads is filled by the
@@ -1074,7 +1060,6 @@ def _cute_tv_partition_hoist(
         # no copy; every other arm has one.
         pass
     else:
-        copy_stmt: ast.AST
         if guards:
             copy_stmt = ast.fix_missing_locations(
                 ast.If(
@@ -1105,17 +1090,38 @@ def _cute_tv_partition_hoist(
         vec_var = constexpr_loop.target
         assert isinstance(vec_var, ast.Name)
         elem = f"{rmem_slice[:-1]} + {vec_var.id}]"
+        publish_stmt = cast(
+            "ast.stmt",
+            statement_from_string(f"{elem} = {frag_var}[{vec_var.id}]"),
+        )
+        replay_stmt = cast(
+            "ast.stmt",
+            statement_from_string(f"{frag_var}[{vec_var.id}] = {elem}"),
+        )
         constexpr_loop.body.insert(
             0 if not rmem_first else len(constexpr_loop.body),
-            cast(
-                "ast.stmt",
-                statement_from_string(
-                    f"{elem} = {frag_var}[{vec_var.id}]"
-                    if rmem_first
-                    else f"{frag_var}[{vec_var.id}] = {elem}"
-                ),
-            ),
+            publish_stmt if rmem_first else replay_stmt,
         )
+        # A persistent TV reduction is lowered once, then its lane nest is rebuilt
+        # for each dependency segment. Record the first-load/replay operations as
+        # lowering data so the factory can retain the producer only for the first
+        # segment that consumes this fragment and replay the cache thereafter.
+        bindings = strategy._cute_segmented_row_cache_bindings  # pyrefly: ignore
+        grid = state.codegen.current_grid_state
+        if (
+            rmem_first
+            and copy_stmt is not None
+            and isinstance(bindings, list)
+            and getattr(grid, "prebuilt_lane_nest_factory", None) is not None
+        ):
+            bindings.append(
+                SegmentedRowCacheBinding(
+                    producer_stmt=copy_stmt,
+                    value_var=frag_var,
+                    publish_stmt=publish_stmt,
+                    replay_stmt=replay_stmt,
+                )
+            )
     if stage is not None and stage[1]:
         # The publish, immediately AFTER the gmem read that filled the fragment
         # and still BEFORE the constexpr loop.  quack ``rmsnorm.py:233`` stages
@@ -1220,7 +1226,6 @@ def _cute_tv_record_residency(
 # ``rms_norm``-shaped M=2048 N=8192 bf16 -- registers 0/1/3, smem 4/0/3, gmem 0/0/4
 # (``_tv_spart`` / rmem-cache-decl / ``cute.copy(``).
 _RESIDENCY_SMEM_RE = re.compile(r"_tv_spart_[0-9]+")
-_RESIDENCY_REGISTERS_RE = re.compile(r"_tv_sweep_cache_[0-9]+ = cute\.make_rmem_tensor")
 # The LOWERING path's signature: the emitter leaves this mark where it declined to emit a
 # second copy because the fragment already holds the tile.
 #
@@ -1243,6 +1248,14 @@ _RESIDENCY_REGISTERS_RE = re.compile(r"_tv_sweep_cache_[0-9]+ = cute\.make_rmem_
 # mark says the same thing in a spelling that cannot be mistaken for the canonical line.
 _RMEM_REUSE_MARK = "tv rmem reuse: second read served from the register cache"
 _RESIDENCY_RMEM_REUSE_RE = re.compile(re.escape(_RMEM_REUSE_MARK))
+_ROW_RMEM_REUSE_MARK = (
+    "row rmem reuse: later reads served from the lowering register cache"
+)
+_ROW_SMEM_REUSE_MARK = (
+    "row smem reuse: later reads served from the lowering shared-memory cache"
+)
+_RESIDENCY_ROW_RMEM_REUSE_RE = re.compile(re.escape(_ROW_RMEM_REUSE_MARK))
+_RESIDENCY_ROW_SMEM_REUSE_RE = re.compile(re.escape(_ROW_SMEM_REUSE_MARK))
 
 
 def cute_observed_row_residency(source: str) -> str:
@@ -1255,31 +1268,13 @@ def cute_observed_row_residency(source: str) -> str:
     correct because it is defined by the ABSENCE of both caches plus the second gmem
     read, and the second read is implied once neither cache exists.
 
-    ⭐⭐ ``registers`` NOW HAS **TWO** EMITTED SIGNATURES, and reading only the first one
-    made the better emission read as a DECLINE.
-
-    * ``fuse_tv_copy_sweeps`` (the AST post-pass) materialises an explicit rmem cache
-      tensor -- ``_tv_sweep_cache_N = cute.make_rmem_tensor`` -- copies the producer's
-      fragment into it, and redirects the consumer's element reads at it.
-    * The LOWERING path (``_cute_tv_partition_hoist``'s rmem branch) does not need a cache
-      tensor at all: the second read simply **reuses the fragment the first read filled**
-      and emits no copy.  ⇒ strictly less code and one fewer register-to-register copy,
-      but it leaves NO ``_tv_sweep_cache_N`` for a regex to find.
-
-    ⛔ MEASURED, and this is why the second signature exists: with only the cache-tensor
-    regex, ``rms_norm`` at ``cute_row_residency=['registers']`` reused the fragment
-    correctly (the row's second gmem read WAS eliminated) and the marker still reported
-    ``gmem``, so the explicit-request check raised ``CuteRowResidencyUnavailable`` -- the
-    artifact contradicting the emission it was describing.
-
-    ⇒ the second signature is the ABSENCE of a second gmem read of a multi-read row, which
-    is what ``registers`` *means*; it is supplied by the emitter as an explicit marker
-    comment rather than inferred by counting copies here, because a count would have to
-    re-derive which tensor is the row -- exactly the drift this function exists to avoid.
+    Lowering records register and shared-memory reuse explicitly. The marks describe
+    the absence of a later global read without forcing this final artifact check to
+    rediscover which tensor is the reduced row.
     """
-    if _RESIDENCY_SMEM_RE.search(source):
+    if _RESIDENCY_SMEM_RE.search(source) or _RESIDENCY_ROW_SMEM_REUSE_RE.search(source):
         return "smem"
-    if _RESIDENCY_REGISTERS_RE.search(source) or _RESIDENCY_RMEM_REUSE_RE.search(
+    if _RESIDENCY_RMEM_REUSE_RE.search(source) or _RESIDENCY_ROW_RMEM_REUSE_RE.search(
         source
     ):
         return "registers"
@@ -1295,19 +1290,9 @@ def cute_emit_row_residency_marker(
     Returns the marker statement, or ``None`` when this kernel has no reduction row to
     describe (no strategy participates in the residency axis).
 
-    ⭐ WHY IT IS COMPUTED HERE AND NOT AT THE LOAD SITE.  The choice between
-    ``registers`` and ``gmem`` is not made at any load site: it is made by
-    ``fuse_tv_copy_sweeps``, an AST pass that runs AFTER every load has lowered and can
-    still decline on its register budget.  A marker written at the load site therefore
-    could not know which of the two it got, and the honest thing it could say is
-    "gmem/registers" -- which is exactly what the previous version said, and which
-    names two values where the reader needs one.  Reading the FINAL body removes the
-    guess: the statement is a function of the emitted instructions, so
-    "stated == observed" holds by construction rather than by discipline.
-
-    ⚠ It is still produced AT THE EMISSION SITE in the sense that matters -- from the
-    artifact, never from the ``Config``.  Moving it later makes that property stronger,
-    not weaker: it now sees the last pass's decision too.
+    The mechanism is chosen at lowering. This final artifact check converts the
+    lowering marks into one canonical user-facing statement and keeps the reported
+    residency tied to emitted instructions rather than to the requested config.
 
     The wording is ``row residency: <effective>`` plus, only when the request was NOT
     granted, ``(requested <r>; declined: <reason>)``.  The token ``row residency:`` is
@@ -1371,10 +1356,8 @@ def cute_emit_row_residency_marker(
         # ⭐ MOST SPECIFIC CAUSE FIRST.  A site that knows exactly why it refused
         # (``cute_stage_feasible``'s SMEM-budget arithmetic) sets
         # ``_cute_row_residency_decline``; the per-tensor staging chain contributes
-        # coarser reasons; and the register budget leaves no trace at all, because
-        # ``fuse_tv_copy_sweeps`` declines inside an AST pass that never sees a
-        # strategy.  Two different declines MUST read differently -- one hardcoded
-        # string is not a diagnosis, it just moves the silence.
+        # coarser reasons. Two different declines MUST read differently -- one
+        # hardcoded string is not a diagnosis, it just moves the silence.
         specific = strategy._cute_row_residency_decline  # pyrefly: ignore [missing-attribute]
         reasons = list(getattr(strategy, "_cute_row_residency_reasons", None) or [])
         if specific:
@@ -1382,50 +1365,9 @@ def cute_emit_row_residency_marker(
         elif reasons:
             why = "; ".join(reasons)
         elif requested == ROW_RESIDENCY_REGISTERS:
-            # ⛔⛔ THIS USED TO NAME THE BUDGET UNCONDITIONALLY, AND IT WAS WRONG ON 10 OF
-            # THE 13 CELLS IT FIRED ON.  It read:
-            #
-            #     "the row's cache footprint exceeds the cute_tv_sweep_cache register budget"
-            #
-            # -- a hardcoded string asserting the budget as the cause, which is the exact
-            # thing the ⭐ comment above forbids ("one hardcoded string is not a diagnosis,
-            # it just moves the silence").
-            #
-            # MEASURED 2026-08-01 on all 40 frozen cells, by re-emitting the whole table
-            # with the cap lifted through the pass's own override
-            # (``HELION_TV_SWEEP_FUSE_SLOTS=1000000``) -- the fail-capability arm for "is
-            # the budget what refuses these?":
-            #   * 11 cells requested ``registers`` and emitted ``gmem``;
-            #   * at an INFINITE budget only **ONE** of them flipped
-            #     (``cross_entropy/8192x100000``, which needs 784 slots > 128);
-            #   * the other 10 still emitted ``gmem``, so the budget was NOT their cause,
-            #     while every one of them carried the budget string above.
-            #
-            # The real cause for those 10 is structural, inside ``fuse_tv_copy_sweeps``:
-            # ``_resolve_sweep`` refuses a sweep whose lane trip exceeds 64
-            # (``fuse_tv_copy_sweeps.py`` ~:331), among ~13 other shape declines, and none
-            # of them records anything -- the pass runs on the AST and never sees a
-            # strategy.  ⇒ the honest answer names the two candidates and says which
-            # instrument separates them, rather than picking one and sounding certain.
-            # ⛔⛔ THIS STRING IS SHIPPED TO USERS AND IT NAMED TWO THINGS THAT NO LONGER
-            # EXIST.  It used to read "either the row's footprint exceeds the
-            # cute_tv_sweep_cache budget, or fuse_tv_copy_sweeps declined on the sweep's
-            # shape ...; re-run with HELION_TV_SWEEP_FUSE_SLOTS raised to tell the two
-            # apart" -- but task 1 deleted BOTH the ``cute_tv_sweep_cache`` budget and the
-            # ``HELION_TV_SWEEP_FUSE_SLOTS`` override.  ⇒ it offered a diagnosis that cannot
-            # happen and an action that cannot be taken, which is worse than saying less:
-            # a user following it gets "unrecognised env var" and concludes the tool is
-            # broken.  With the budget gone there is only ONE cause left, so the string can
-            # be both shorter and TRUE.
-            #
-            # ⚠ The remaining instrument is the whole-pass kill switch
-            # (``HELION_TV_SWEEP_FUSE=disabled``), which is an A/B rather than a way to
-            # widen a budget -- so it is offered as attribution, not as a fix.
             why = (
-                "fuse_tv_copy_sweeps declined this loop on the sweep's shape (e.g. lane "
-                "trip > 64, fewer than two sibling sweeps, or a store to the same tensor "
-                "between the reads); set HELION_TV_SWEEP_FUSE=disabled to confirm by A/B "
-                "that the pass is what changes the emitted kernel"
+                "lowering could not establish a stable row identity and per-thread "
+                "ownership for publication and replay on this access"
             )
         else:
             why = "no reason recorded"
@@ -1816,9 +1758,12 @@ def _cute_tv_stage_slice(
     return (plan.emit_lane_slice(cached, lane_var), first_read)
 
 
-def _cute_tv_multi_read_tensors(
+def _cute_axis_multi_read_tensors(
     state: CodegenState,
     strategy: object,  # a ReductionStrategy with cute_tv_capable() at runtime
+    *,
+    cache_attr: str,
+    exact_rank: int | None,
 ) -> frozenset[str]:
     """Names of tensors this kernel reads along the reduction axis MORE THAN ONCE.
 
@@ -1848,12 +1793,19 @@ def _cute_tv_multi_read_tensors(
     a width one gate admits and the other refuses.
     """
     from ...language import memory_ops as _memory_ops
+    from ..device_ir import ForLoopGraphInfo
+    from ..device_ir import RootGraphInfo
     from ..host_function import HostFunction
 
-    cached = strategy._cute_tv_multi_read_cache  # pyrefly: ignore [missing-attribute]
+    cached = getattr(strategy, cache_attr)
     if cached is not None:
         return cast("frozenset[str]", cached)
     counts: dict[str, int] = {}
+    # Lowering order is not execution dominance. Reads in runtime branches,
+    # while loops, or helpers cannot publish a cache that an access outside
+    # that graph may replay. Structured for loops are retained: normal NDTile
+    # reduction sweeps use ForLoopGraphInfo and have strategy-owned lifetimes.
+    control_flow_names: set[str] = set()
     hf = HostFunction.current()
     if hf._device_ir is not None:
         for graph_info in hf.device_ir.graphs:
@@ -1880,20 +1832,58 @@ def _cute_tv_multi_read_tensors(
                     if isinstance(tensor_node, torch.fx.Node)
                     else tensor_node
                 )
-                if not isinstance(val, torch.Tensor) or val.ndim != 2:
+                if (
+                    not isinstance(val, torch.Tensor)
+                    or val.ndim < 1
+                    or (exact_rank is not None and val.ndim != exact_rank)
+                    or val not in hf.tensor_to_origin
+                ):
                     continue
                 name = state.device_function.tensor_arg(val).name
                 counts[name] = counts.get(name, 0) + 1
-    result = frozenset(name for name, n in counts.items() if n > 1)
-    strategy._cute_tv_multi_read_cache = result  # pyrefly: ignore [missing-attribute]
+                if not isinstance(graph_info, (RootGraphInfo, ForLoopGraphInfo)):
+                    control_flow_names.add(name)
+    result = frozenset(
+        name for name, n in counts.items() if n > 1 and name not in control_flow_names
+    )
+    setattr(strategy, cache_attr, result)
     return result
 
 
-def _cute_tv_stored_tensors(
+def _cute_tv_multi_read_tensors(
+    state: CodegenState,
+    strategy: object,
+) -> frozenset[str]:
+    """Multi-read rank-2 rows eligible for the TV residency mechanism."""
+    return _cute_axis_multi_read_tensors(
+        state,
+        strategy,
+        cache_attr="_cute_tv_multi_read_cache",
+        exact_rank=2,
+    )
+
+
+def _cute_row_multi_read_tensors(
+    state: CodegenState,
+    strategy: object,
+) -> frozenset[str]:
+    """Multi-read tensors eligible for scalar/classic row residency."""
+    return _cute_axis_multi_read_tensors(
+        state,
+        strategy,
+        cache_attr="_cute_row_multi_read_cache",
+        exact_rank=None,
+    )
+
+
+def _cute_axis_stored_tensors(
     state: CodegenState,
     strategy: object,  # a ReductionStrategy with cute_tv_capable() at runtime
+    *,
+    cache_attr: str,
+    exact_rank: int | None,
 ) -> frozenset[str]:
-    """Names of tensors this kernel WRITES along the reduction axis.
+    """Names of reduction-row tensors whose storage this kernel may write.
 
     ⭐⭐ THIS IS THE STORE-ALIAS PROOF THE ``registers`` RESIDENCY OWES, ANSWERED FROM THE
     DEVICE IR INSTEAD OF FROM THE EMITTED AST.
@@ -1932,42 +1922,314 @@ def _cute_tv_stored_tensors(
     from ...language import memory_ops as _memory_ops
     from ..host_function import HostFunction
 
-    cached = strategy._cute_tv_stored_cache  # pyrefly: ignore [missing-attribute]
+    cached = getattr(strategy, cache_attr)
     if cached is not None:
         return cast("frozenset[str]", cached)
     # Every op that WRITES memory: the plain store plus the atomics.  ``_MEMORY_OPS``
     # includes ``load``, so it cannot be used as the write set directly.
     write_targets = {op for op in _MEMORY_OPS if op is not _memory_ops.load}
     names: set[str] = set()
+    argument_read_names: set[str] = set()
+    read_names_by_storage: dict[int, set[str]] = {}
+    written_storage_ids: set[int] = set()
+    has_argument_write = False
     hf = HostFunction.current()
+    argument_storage_ids = {
+        id(value.untyped_storage())
+        for value in torch.utils._pytree.tree_leaves(hf.params.arguments)
+        if isinstance(value, torch.Tensor)
+    }
     if hf._device_ir is not None:
         for graph_info in hf.device_ir.graphs:
             for node in graph_info.graph.nodes:
-                if node.target not in write_targets:
+                if node.target is _memory_ops.load:
+                    if len(node.args) < 2:
+                        continue
+                    tensor_node, subscript = node.args[0], node.args[1]
+                    if not isinstance(subscript, (list, tuple)) or not any(
+                        _cute_tv_indexes_copy_axis(strategy, idx) for idx in subscript
+                    ):
+                        continue
+                    val = (
+                        tensor_node.meta.get("val")
+                        if isinstance(tensor_node, torch.fx.Node)
+                        else tensor_node
+                    )
+                    if not isinstance(val, torch.Tensor):
+                        continue
+                    origin = hf.tensor_to_origin.get(val)
+                    if (
+                        origin is not None
+                        and val.ndim >= 1
+                        and (exact_rank is None or val.ndim == exact_rank)
+                    ):
+                        storage_id = id(val.untyped_storage())
+                        name = state.device_function.tensor_arg(val).name
+                        read_names_by_storage.setdefault(storage_id, set()).add(name)
+                        if storage_id in argument_storage_ids:
+                            argument_read_names.add(name)
                     continue
-                if len(node.args) < 2:
+                if node.target not in write_targets or not node.args:
                     continue
-                tensor_node, subscript = node.args[0], node.args[1]
-                if not isinstance(subscript, (list, tuple)):
-                    continue
-                # ANY entry may name the axis -- same reasoning as the read walk: this is a
-                # question about whether the ROW was written, not about where in the
-                # subscript the axis sits.
-                if not any(
-                    _cute_tv_indexes_copy_axis(strategy, idx) for idx in subscript
-                ):
-                    continue
+                tensor_node = node.args[0]
                 val = (
                     tensor_node.meta.get("val")
                     if isinstance(tensor_node, torch.fx.Node)
                     else tensor_node
                 )
-                if not isinstance(val, torch.Tensor) or val.ndim != 2:
+                if not isinstance(val, torch.Tensor):
                     continue
-                names.add(state.device_function.tensor_arg(val).name)
+                origin = hf.tensor_to_origin.get(val)
+                if origin is None:
+                    continue
+                storage_id = id(val.untyped_storage())
+                written_storage_ids.add(storage_id)
+                # Runtime dispatch specializes tensor metadata, not whether two
+                # arguments share storage. A write through any tensor argument can
+                # therefore invalidate a resident read through another argument.
+                has_argument_write = (
+                    has_argument_write or storage_id in argument_storage_ids
+                )
+    for storage_id in written_storage_ids:
+        names.update(read_names_by_storage.get(storage_id, ()))
+    if has_argument_write:
+        names.update(argument_read_names)
     result = frozenset(names)
-    strategy._cute_tv_stored_cache = result  # pyrefly: ignore [missing-attribute]
+    setattr(strategy, cache_attr, result)
     return result
+
+
+def _cute_tv_stored_tensors(
+    state: CodegenState,
+    strategy: object,
+) -> frozenset[str]:
+    """Stored rank-2 rows that make TV fragment reuse unsafe."""
+    return _cute_axis_stored_tensors(
+        state,
+        strategy,
+        cache_attr="_cute_tv_stored_cache",
+        exact_rank=2,
+    )
+
+
+def _cute_row_stored_tensors(
+    state: CodegenState,
+    strategy: object,
+) -> frozenset[str]:
+    """Stored tensors that make scalar/classic cache reuse unsafe."""
+    return _cute_axis_stored_tensors(
+        state,
+        strategy,
+        cache_attr="_cute_row_stored_cache",
+        exact_rank=None,
+    )
+
+
+def _cute_row_reduction_site(
+    state: CodegenState,
+    subscript: list[object] | tuple[object, ...],
+    slice_block_ids: dict[int, int],
+) -> tuple[object, int] | None:
+    """Return ``(reduction strategy, index_expr position)`` for this row load."""
+    from ..reduction_strategy import ReductionStrategy
+
+    env = CompileEnvironment.current()
+    expr_pos = -1
+    for idx in subscript:
+        if idx is None:
+            continue
+        expr_pos += 1
+        block_id: int | None = None
+        if isinstance(idx, torch.SymInt):
+            block_id = env.get_block_id(idx)
+        elif isinstance(idx, slice) and idx == slice(None):
+            block_id = slice_block_ids.get(expr_pos)
+        if block_id is None:
+            continue
+        loops = state.codegen.active_device_loops.get(block_id)
+        strategy = getattr(loops[-1], "strategy", None) if loops else None
+        if isinstance(strategy, ReductionStrategy) and strategy.block_index == block_id:
+            return strategy, expr_pos
+
+    # A bare reduction slice can be unambiguous even when the indexer did not need
+    # to record a binding (notably a loop-free persistent reduction).
+    full_slice_positions = [
+        pos
+        for pos, idx in enumerate(idx for idx in subscript if idx is not None)
+        if isinstance(idx, slice) and idx == slice(None)
+    ]
+    if len(full_slice_positions) != 1:
+        return None
+    candidates: list[object] = []
+    for loops in state.codegen.active_device_loops.values():
+        strategy = getattr(loops[-1], "strategy", None) if loops else None
+        if isinstance(strategy, ReductionStrategy) and strategy not in candidates:
+            candidates.append(strategy)
+    if len(candidates) != 1:
+        return None
+    return candidates[0], full_slice_positions[0]
+
+
+def _cute_linear_thread_expr(state: CodegenState) -> tuple[str, int]:
+    dims = tuple(
+        int(v) for v in state.device_function.tile_strategy.thread_block_dims()
+    )
+    dim0, dim1, dim2 = dims
+    terms = ["cutlass.Int32(cute.arch.thread_idx()[0])"]
+    if dim1 > 1:
+        terms.append(f"cutlass.Int32(cute.arch.thread_idx()[1]) * {dim0}")
+    if dim2 > 1:
+        terms.append(f"cutlass.Int32(cute.arch.thread_idx()[2]) * {dim0 * dim1}")
+    return " + ".join(terms), dim0 * dim1 * dim2
+
+
+def _cute_row_residence(
+    state: CodegenState,
+    tensor: torch.Tensor,
+    tensor_name: str,
+    subscript: list[object] | tuple[object, ...],
+    index_exprs: list[str],
+    slice_block_ids: dict[int, int],
+    extra_mask: ast.AST | None,
+) -> _RowResidence | None:
+    """Resolve a scalar/classic load through the requested row residency."""
+    if tensor.ndim < 1 or state.fx_node is None:
+        return None
+    site = _cute_row_reduction_site(state, subscript, slice_block_ids)
+    if site is None:
+        return None
+    strategy, reduction_pos = site
+    requested = strategy._cute_row_residency_requested  # pyrefly: ignore
+    if requested not in (ROW_RESIDENCY_REGISTERS, ROW_RESIDENCY_SMEM):
+        return None
+    indexed_dims = [idx for idx in subscript if idx is not None]
+    reduction_index = (
+        indexed_dims[reduction_pos] if 0 <= reduction_pos < len(indexed_dims) else None
+    )
+    if not (isinstance(reduction_index, slice) and reduction_index == slice(None)):
+        strategy._cute_row_residency_decline = (  # pyrefly: ignore
+            "scalar/classic residency requires identical full-row accesses "
+            "on the reduction axis"
+        )
+        return None
+    if tensor.dtype is torch.bool:
+        strategy._cute_row_residency_decline = (  # pyrefly: ignore
+            "Boolean rows do not have a scalar/classic residency backing"
+        )
+        return None
+    if extra_mask is not None:
+        strategy._cute_row_residency_decline = (  # pyrefly: ignore
+            "the two reads carry an extra mask whose equivalence is not proven"
+        )
+        return None
+    if _cute_load_feeds_sort_or_scan(state.fx_node):
+        strategy._cute_row_residency_decline = (  # pyrefly: ignore
+            "sort and scan loads require their sortable load descriptor"
+        )
+        return None
+    if tensor_name not in _cute_row_multi_read_tensors(state, strategy):
+        strategy._cute_row_residency_decline = (  # pyrefly: ignore
+            f"{tensor_name} is not read more than once along the reduction axis"
+        )
+        return None
+    if tensor_name in _cute_row_stored_tensors(state, strategy):
+        strategy._cute_row_residency_decline = (  # pyrefly: ignore
+            f"{tensor_name} is written along the reduction axis, so caching it "
+            "would serve a stale pre-write value"
+        )
+        return None
+
+    ownership = strategy.cute_row_ownership(state)  # pyrefly: ignore
+    if ownership is None or not (0 <= reduction_pos < len(index_exprs)):
+        strategy._cute_row_residency_decline = (  # pyrefly: ignore
+            "the active reduction load did not expose a stable per-thread row ordering"
+        )
+        return None
+    row_coords = tuple(
+        expr for pos, expr in enumerate(index_exprs) if pos != reduction_pos
+    )
+    key = (tensor_name, tensor.dtype, reduction_pos, row_coords)
+    cache = strategy._cute_row_cache_by_key  # pyrefly: ignore
+    if cache is None:
+        return None
+
+    entry = cache.get(key)
+    first_read = entry is None
+    if entry is None:
+        fn = state.device_function
+        # Scalar FP8/FP4 loads carry their raw byte representation until the
+        # consumer converts them. The cache must preserve that physical type.
+        dtype_str = _cute_scalar_storage_dtype(tensor.dtype)
+        slot = len(cache)
+        if requested == ROW_RESIDENCY_REGISTERS:
+            cache_var = fn.new_var(f"_row_rmem_cache_{slot}", dce=False)
+            fn.preamble.append(
+                statement_from_string(
+                    f"{cache_var} = cute.make_rmem_tensor("
+                    f"{ownership.slots_per_thread}, {dtype_str})"
+                )
+            )
+            entry = _RowCacheEntry(
+                cache_var, ROW_RESIDENCY_REGISTERS, ownership.slots_per_thread
+            )
+        else:
+            _, thread_count = _cute_linear_thread_expr(state)
+            total_slots = ownership.slots_per_thread * thread_count
+            want = total_slots * tensor.element_size()
+            charged = fn.cute_state.reduction_stage_smem_bytes
+            charge_key = (strategy, "row-residency", key)
+            if charge_key not in charged:
+                capacity = strategy._cute_stage_smem_capacity_bytes()  # pyrefly: ignore
+                already = sum(charged.values())
+                if already + want > capacity:
+                    strategy._cute_row_residency_decline = (  # pyrefly: ignore
+                        "the scalar/classic staged row exceeds the device's shared "
+                        f"memory (want={want} B + already={already} B > "
+                        f"capacity={capacity} B)"
+                    )
+                    return None
+                charged[charge_key] = want
+            ptr_var = fn.new_var(f"_row_smem_cache_{slot}_ptr", dce=False)
+            cache_var = fn.new_var(f"_row_smem_cache_{slot}", dce=False)
+            fn.preamble.extend(
+                [
+                    statement_from_string(
+                        f"{ptr_var} = cute.arch.alloc_smem({dtype_str}, {total_slots})"
+                    ),
+                    statement_from_string(
+                        f"{cache_var} = cute.make_tensor({ptr_var}, ({total_slots},))"
+                    ),
+                ]
+            )
+            entry = _RowCacheEntry(
+                cache_var, ROW_RESIDENCY_SMEM, ownership.slots_per_thread
+            )
+        cache[key] = entry
+    assert isinstance(entry, _RowCacheEntry)
+    if entry.slots_per_thread != ownership.slots_per_thread:
+        strategy._cute_row_residency_decline = (  # pyrefly: ignore
+            "the row ownership changed between reads "
+            f"({entry.slots_per_thread} slots then "
+            f"{ownership.slots_per_thread})"
+        )
+        return None
+    if not first_read and not entry.reuse_marked:
+        reuse_mark = (
+            _ROW_RMEM_REUSE_MARK
+            if entry.backing == ROW_RESIDENCY_REGISTERS
+            else _ROW_SMEM_REUSE_MARK
+        )
+        state.device_function.preamble.append(statement_from_string(repr(reuse_mark)))
+        entry.reuse_marked = True
+    slot_expr = ownership.slot_expr
+    grid = state.codegen.current_grid_state
+    resident_values = getattr(grid, "resident_lane_values", None)
+    if isinstance(resident_values, set):
+        resident_values.add(entry.cache_var)
+    if entry.backing == ROW_RESIDENCY_SMEM:
+        linear_tid, _ = _cute_linear_thread_expr(state)
+        slot_expr = ownership.smem_slot_expr(linear_tid)
+    return _RowResidence(f"{entry.cache_var}[{slot_expr}]", first_read)
 
 
 def _cute_register_unroll_vec_hoist(
@@ -1979,7 +2241,7 @@ def _cute_register_unroll_vec_hoist(
     index_exprs: list[str],
     vec_width: int,
     subscript: list[object] | tuple[object, ...],
-) -> str:
+) -> _HoistedVectorLoad:
     """Register a Uint16 vec load to be hoisted above the constexpr V-loop
     in the active lane body and return the per-element extract expression.
 
@@ -2032,22 +2294,26 @@ def _cute_register_unroll_vec_hoist(
         hoist_var = state.device_function.new_var(
             f"_unroll_vec_{len(cache)}", dce=False
         )
-        cache[cache_key] = (hoist_var, tensor.dtype)
         hoist_stmt = statement_from_string(
             f"{hoist_var} = cute.arch.load({base_ptr_expr}, "
             f"ir.VectorType.get([{vec_width}], cutlass.Uint16.mlir_type))"
         )
+        cache[cache_key] = (hoist_var, tensor.dtype, hoist_stmt)
         # Insert the hoist just BEFORE the constexpr V-loop (the last entry
         # in lane_body).  ``lane_body[-1]`` is the constexpr loop.
         lane_body.insert(len(lane_body) - 1, hoist_stmt)
     else:
-        hoist_var, _ = cache[cache_key]
+        hoist_var, _, hoist_stmt = cache[cache_key]
     # The constexpr V-loop's target var is the last element's loop var.
     constexpr_loop = lane_body[-1]
     assert isinstance(constexpr_loop, ast.For)
     assert isinstance(constexpr_loop.target, ast.Name)
     vec_lane_var = constexpr_loop.target.id
-    return f"cutlass.Uint16({hoist_var}[{vec_lane_var}]).bitcast({elem_dtype})"
+    return _HoistedVectorLoad(
+        expr=f"cutlass.Uint16({hoist_var}[{vec_lane_var}]).bitcast({elem_dtype})",
+        value_var=hoist_var,
+        producer_stmt=hoist_stmt,
+    )
 
 
 def _cute_stack_tensor_offset_expr(
@@ -4165,7 +4431,22 @@ def _(state: CodegenState) -> object:
     vec_ctx = _cute_vector_load_ctx(
         state, tensor, subscript, index_exprs, extra_mask, slice_block_ids
     )
-    if vec_ctx is not None:
+    row_residence = (
+        None
+        if vec_ctx is not None and vec_ctx[2] == "tv"
+        else _cute_row_residence(
+            state,
+            tensor,
+            tensor_name,
+            subscript,
+            index_exprs,
+            slice_block_ids,
+            extra_mask,
+        )
+    )
+    if row_residence is not None and not row_residence.first_read:
+        load_expr = row_residence.cache_expr
+    elif vec_ctx is not None:
         vec_width, vec_block_id, vec_mode, lane_axis_pos = vec_ctx
         from ..reduction_strategy import ReductionStrategy
 
@@ -4218,7 +4499,7 @@ def _(state: CodegenState) -> object:
             # which is precisely what the hoist dereferences -- so this is a
             # coherence assert between two predicates, not a class filter.
             assert isinstance(strategy, ReductionStrategy)
-            load_expr = _cute_register_unroll_vec_hoist(
+            hoisted = _cute_register_unroll_vec_hoist(
                 state,
                 strategy,
                 vec_block_id,
@@ -4228,6 +4509,21 @@ def _(state: CodegenState) -> object:
                 vec_width,
                 subscript,
             )
+            load_expr = hoisted.expr
+            bindings = strategy._cute_segmented_row_cache_bindings
+            grid = state.codegen.current_grid_state
+            if (
+                row_residence is not None
+                and row_residence.first_read
+                and isinstance(bindings, list)
+                and getattr(grid, "prebuilt_lane_nest_factory", None) is not None
+            ):
+                bindings.append(
+                    SegmentedRowCacheBinding(
+                        producer_stmt=hoisted.producer_stmt,
+                        value_var=hoisted.value_var,
+                    )
+                )
         elif vec_mode == "tile_unroll":
             # Same hoist protocol as ``LoopedReductionStrategy``'s
             # ``unroll`` mode but for ``CuteNDTileStrategy`` lane loops.
@@ -4299,6 +4595,13 @@ def _(state: CodegenState) -> object:
         state.fx_node.meta["cute_sortable_load"] = sortable_load
         return sortable_load.expr
     if mask_expr is None:
-        return expr_from_string(load_expr)
-    zero = _cute_scalar_storage_dtype(tensor.dtype)
-    return expr_from_string(f"({load_expr} if {mask_expr} else {zero}(0))")
+        value_expr = load_expr
+    else:
+        zero = _cute_scalar_storage_dtype(tensor.dtype)
+        value_expr = f"({load_expr} if {mask_expr} else {zero}(0))"
+    if row_residence is not None and row_residence.first_read:
+        state.add_statement(
+            statement_from_string(f"{row_residence.cache_expr} = {value_expr}")
+        )
+        value_expr = row_residence.cache_expr
+    return expr_from_string(value_expr)

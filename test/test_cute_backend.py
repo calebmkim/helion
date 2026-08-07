@@ -4890,37 +4890,30 @@ class TestCuteBackend(TestCase):
         self.assertIn("cutlass.BFloat16, num_bits_per_copy=64", code)
         self.assertIn("cute.copy(_tv_atom", code)
 
-    def test_two_pass_load_fusion_shape_b_wide_chunk(self) -> None:
-        """Shape B: V=1 wide-chunk reduction emits a lane loop inside the
-        outer offset loop, and the fuser caches loaded x values across the
-        reduce and consume sweeps."""
+    def test_scalar_row_residency_shape_b_wide_chunk(self) -> None:
+        """A V=1 wide-chunk reduction parks the row during lowering."""
         args = (torch.randn(2, 16384, device=DEVICE, dtype=torch.float32) + 2.0,)
         code, out = code_and_output(
             cute_normalize_by_sum,
             args,
             block_sizes=[1],
             reduction_loop=8192,
+            cute_vector_widths=[1],
+            cute_row_residency=["registers"],
         )
         (x,) = args
         expected = x / x.sum(-1, keepdim=True)
         torch.testing.assert_close(out, expected, rtol=1e-4, atol=1e-4)
-        # The fuser allocates a fragment and rewrites the consume sweep's
-        # load to read from the cache.
-        self.assertIn("cute.make_rmem_tensor", code)
-        self.assertIn("_fuse_cache_0", code)
+        self.assertIn("_row_rmem_cache_0 = cute.make_rmem_tensor", code)
+        self.assertEqual(code.count(").load()"), 1)
+        self.assertIn("'row residency: registers'", code)
 
-    def test_two_pass_load_fusion_shape_c_vec_unroll(self) -> None:
+    def test_tv_register_residency_shape_c_vec_unroll(self) -> None:
         """Shape C: V>1 caches ``cache_size * V`` scalar slots across both sweeps.
 
-        ⚠ UPDATED (run 3 E047).  The docstring used to say "hoists a Uint16 vec load
-        above the constexpr V-loop"; since ``6d77f873b`` the vec load is a ``cute.copy``
-        through a typed copy atom (see the note in
-        ``test_bf16_unroll_mode_emits_uint16_vec_load_and_bitcast`` for why that path was
-        replaced -- it fixed an ``ln(V)`` correctness bug), and the caching is done by
-        ``fuse_tv_copy_sweeps`` rather than ``fuse_two_pass_loads``, so the fragment is
-        spelled ``_tv_sweep_cache_0``.  ``_fuse_cache_`` is still emitted by
-        ``fuse_two_pass_loads`` on the paths that pass still owns; it simply is not the
-        pass that fires here.
+        The load is a ``cute.copy`` through a typed copy atom (see
+        ``test_bf16_unroll_mode_emits_uint16_vec_load_and_bitcast`` for why), and
+        lowering publishes it to the row's register cache.
 
         ⚠ ``cute_row_residency=["registers"]`` IS REQUIRED, AND NAMING IT IS THE POINT.
         This test pins the REGISTER sweep cache, which is only one of three possible row
@@ -4959,11 +4952,8 @@ class TestCuteBackend(TestCase):
         self.assertIn("cute.make_rmem_tensor", code)
         # ⭐⭐ THE PROPERTY, NOT THE PRODUCER'S VARIABLE NAME.
         #
-        # This used to assert ``_tv_sweep_cache_0`` -- the name ``fuse_tv_copy_sweeps`` (the AST
-        # post-pass) gives its cache.  The register residency is now decided and emitted AT
-        # LOWERING (``memory_ops._cute_tv_partition_hoist``'s rmem branch), which names its
-        # cache ``_tv_rmem_cache_N``, so the old grep failed on a kernel that is *more* correct
-        # than before: same mechanism, one fewer pass, and the AST pass now fuses nothing.
+        # Register residency is decided and emitted at lowering by
+        # ``memory_ops._cute_tv_partition_hoist``.
         #
         # ⇒ asserting the PROPERTY instead: exactly ONE gmem read of the row (the first sweep,
         # which fills the cache) and the second sweep served from registers.  That cannot be

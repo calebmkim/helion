@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from ..runtime.config import Config
+    from .cute.row_residency import SegmentedRowCacheBinding
     from .cute.tv_layout import ChunkTVPlan
     from .inductor_lowering import CodegenState
 
@@ -2301,7 +2302,9 @@ def _lane_loop_extent(loop: ast.For) -> int:
 
 
 def _lane_shared_producer_prelude(
-    produced_inside: list[ast.AST], segment: list[ast.AST]
+    produced_inside: list[ast.AST],
+    segment: list[ast.AST],
+    resident_values: set[str],
 ) -> list[ast.AST]:
     """The statements from earlier lane segments that ``segment`` still needs.
 
@@ -2328,6 +2331,10 @@ def _lane_shared_producer_prelude(
     roots: set[str] = set()
     for stmt in segment:
         roots |= set(ReadWrites.from_ast(stmt).reads)
+    # A residency cache is intentionally written in an earlier segment and read
+    # in this sibling. Its storage crosses the lane-loop boundary, so cloning the
+    # producer would repeat the original global load and defeat residency.
+    roots -= resident_values
     return [produced_inside[i] for i in _tv_backward_slice(produced_inside, roots)]
 
 
@@ -2976,6 +2983,10 @@ class DeviceLoopOrGridState:
     def block_ids(self) -> list[int]:
         return self.strategy.block_ids
 
+    def cross_sweep_prefix(self) -> list[ast.AST] | None:
+        """A list emitted above every sweep owned by this state, if one exists."""
+        return None
+
 
 @dataclasses.dataclass
 class DeviceLoopState(DeviceLoopOrGridState):
@@ -2987,6 +2998,9 @@ class DeviceLoopState(DeviceLoopOrGridState):
     # loop (CuTe only). A reduction over one of these blocks needs the
     # two-pass lane structure (see ``split_lane_loop_reductions``).
     lane_loop_blocks: set[int] = dataclasses.field(default_factory=set)
+
+    def cross_sweep_prefix(self) -> list[ast.AST] | None:
+        return self.outer_prefix
 
 
 @dataclasses.dataclass
@@ -3031,6 +3045,11 @@ class DeviceGridState(DeviceLoopOrGridState):
     lane_setup_statements: list[ast.AST] = dataclasses.field(default_factory=list)
     outer_prefix: list[ast.AST] = dataclasses.field(default_factory=list)
     outer_suffix: list[ast.AST] = dataclasses.field(default_factory=list)
+    resident_lane_values: set[str] = dataclasses.field(default_factory=set)
+
+    def cross_sweep_prefix(self) -> list[ast.AST] | None:
+        return self.outer_prefix
+
     # ⭐ A lane nest BUILT BY THE STRATEGY, not by :meth:`wrap_body`.
     #
     # ``(emit, sink)``: ``emit`` is what ``wrap_body`` returns verbatim, and ``sink``
@@ -3351,7 +3370,13 @@ class DeviceGridState(DeviceLoopOrGridState):
         # sealed one, which is exactly the required scope.
         from .ast_read_writes import ReadWrites
 
-        setup_varying = _lane_varying_names(list(self.lane_setup_statements), lane_var)
+        setup_analysis: list[ast.AST] = []
+        if (nest := self.prebuilt_lane_nest) is not None:
+            emit, _sink = nest
+            for stmt in emit:
+                setup_analysis.extend(_flatten_lane_nest_stmts(stmt))
+        setup_analysis.extend(self.lane_setup_statements)
+        setup_varying = _lane_varying_names(setup_analysis, lane_var)
         outer_setup: list[ast.AST] = []
         inner_setup: list[ast.AST] = []
         for stmt in self.lane_setup_statements:
@@ -3436,7 +3461,9 @@ class DeviceGridState(DeviceLoopOrGridState):
         # analyse -- the two are one question.  A statement whose producer is invisible
         # reads as lane-invariant and would be hoisted out of the loop, which is the
         # silent half of the failure this fixes.
-        prelude = _lane_shared_producer_prelude(produced_inside, segment)
+        prelude = _lane_shared_producer_prelude(
+            produced_inside, segment, self.resident_lane_values
+        )
         # ⭐⭐ A1: THE NEST'S OWN STATEMENTS JOIN THE ANALYSIS, for exactly the reason the
         # docstring gives for ``lane_setup_statements`` -- and omitting them hoists the
         # WHOLE body out of the loop.
@@ -3649,6 +3676,10 @@ class TileStrategy:
     # CLONED by the split pass rather than lowered.  ``None`` is the inert answer and means
     # "rewrite nothing"; a two-lowering-site strategy never populates it.
     _cute_tv_stage_read_by_frag: dict[str, str] | None = None
+    # Structured first-load/replay bindings are only needed when a reduction
+    # rebuilds one lowered lane nest into sibling dependency segments. Other TV
+    # strategies use the inert ``None`` capability.
+    _cute_segmented_row_cache_bindings: list[SegmentedRowCacheBinding] | None = None
     # ``cute_cluster_n`` as EMITTED.  ``1`` == no cluster, which is the inert answer and the
     # only one a strategy without capability ② can honestly give: ``_cute_stage_num_chunks``
     # divides the extent by this, so a value the emission does not implement would size the

@@ -89,9 +89,8 @@ class CuteReductionTileHeuristic(AutotunerHeuristic):
     N<=max_threads (single-pass persistent reduction) or
     reduction_loops=[max_threads] for N>max_threads (one element per
     thread per iter, no lane loop). This config keeps the M-axis at one
-    row per block so the reduction recruits all available threads, and
-    the two-pass load fusion (helion/_compiler/cute/fuse_two_pass_loads.py)
-    eliminates the redundant gmem reload of x in the post-reduction sweep.
+    row per block so the reduction recruits all available threads. Row
+    residency is selected independently and emitted by lowering.
     """
 
     name = "cute_reduction_tile"

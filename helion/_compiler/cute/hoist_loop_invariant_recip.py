@@ -1007,9 +1007,7 @@ def _dce_pure_assigns(body: list[ast.stmt]) -> list[ast.stmt]:
         # This conservatively avoids DCE'ing user-defined names that
         # may be load-bearing for the renamer.
         name = target.id
-        if not name.startswith(
-            ("v_", "_helion_", "_tile_unroll_", "_mask_to", "_fuse_cache_")
-        ):
+        if not name.startswith(("v_", "_helion_", "_tile_unroll_", "_mask_to")):
             return None
         # Skip names that will be renamed by ``ast_rename`` to a name
         # other than themselves (e.g. ``v_8 -> di``).  Such names ARE
