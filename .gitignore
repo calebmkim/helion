@@ -115,3 +115,22 @@ cute_sweep_results.jsonl
 # this file lives alongside it and is per-session local state.
 .claude/settings.local.json
 .claude/worktrees/*
+
+# Scratch working directories used by the CuTe reduction work: run logs, gate
+# harnesses, probe corpora and measurement evidence.  They are the audit trail behind
+# the numbers in these PRs and are kept on disk, but they are not library code and are
+# deliberately NOT tracked -- ~1500 files / 43 MB of them.
+#
+# ⚠ Listing them here is what keeps ``git status`` clean for anyone who has such a
+# directory locally.  Without these entries the working tree shows them as untracked,
+# and the pressure to make ``git status`` quiet is what got them committed once before
+# (along with a ``pyproject.toml`` hunk adding Ruff per-file exemptions for exactly
+# these paths, which is the tell that scratch was being treated as shippable).
+_notes/
+_notes2/
+_notes_overnight/
+_notes_codereview/
+_notes_codereview2/
+_redfix/
+_redfix2/
+_redfix3/
