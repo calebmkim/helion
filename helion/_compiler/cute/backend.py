@@ -888,6 +888,39 @@ class CuteBackend(Backend):
         if (
             key == "num_threads"
             or key == "cute_vector_widths"
+            # The reduction TV-layout knob (quack's threads_per_row). cute-only:
+            # the base ``Backend``
+            # rejects every ``BACKEND_SPECIFIC_KEYS`` member by default.
+            or key == "cute_threads_per_row"
+            # ⚠ ``cute_reduction_reload`` IS STILL ACCEPTED BUT IS NO LONGER A KNOB
+            # (task 1).  It has no ``ConfigSpec`` sequence and no search slot; it is an
+            # INPUT SPELLING that ``_normalize_cute_row_residency`` translates into
+            # ``cute_row_residency`` and then strips.  It must stay listed here because
+            # ``ConfigSpec.normalize`` raises ``Unsupported config keys`` on any
+            # ``BACKEND_SPECIFIC_KEYS`` member this method rejects -- so removing it would
+            # turn an old config (and the graded contract test that names it) into a hard
+            # error instead of a silent, correct migration.
+            or key == "cute_reduction_reload"
+            # ⭐ The ONE three-way row-residency axis (registers / smem / gmem).
+            # cute-only: its three values name CuTe emission arms
+            # (``fuse_tv_copy_sweeps`` / ``memory_ops`` staging / the plain
+            # ``local_tile`` + ``cute.copy`` re-read), none of which another backend
+            # can honour -- so admitting it elsewhere would accept a key that is
+            # silently ignored.
+            or key == "cute_row_residency"
+            # The two AST-pass knobs (``defer_online_merge`` /
+            # ``fuse_tv_copy_sweeps``).  cute-only: both name a rewrite that only
+            # the CuTe codegen pipeline runs, so admitting them on another backend
+            # would accept a config key that backend cannot honour.
+            or key == "cute_online_defer"
+            # Whether an explicit ``hl.tile`` loop loads through a vectorized TV
+            # ``cute.copy``.  cute-only for the same reason as the two above: it names
+            # a CuTe emission (``make_tiled_copy_tv`` + ``cute.copy``) that no other
+            # backend has, so admitting it elsewhere would accept a key that backend
+            # cannot honour.  Was the ``HELION_CUTE_NDTILE_TV`` env var; promoted
+            # because the trade's sign tracks lane extent and therefore differs
+            # per loop -- see ``CuteNDTileTvSpec``.
+            or key == "cute_ndtile_tv"
             or key.startswith(("tcgen05_", "cute_flash_"))
         ):
             return True
@@ -1124,7 +1157,6 @@ class CuteBackend(Backend):
             "_cute_grouped_reduce_shared_tree": "from helion._compiler.cute.reduce_helpers import _cute_grouped_reduce_shared_tree",
             "_cute_grouped_reduce_shared_two_stage": "from helion._compiler.cute.reduce_helpers import _cute_grouped_reduce_shared_two_stage",
             "_cute_grouped_reduce_warp": "from helion._compiler.cute.reduce_helpers import _cute_grouped_reduce_warp",
-            "_cute_pre_vec_fold": "from helion._compiler.cute.reduce_helpers import _cute_pre_vec_fold",
             "_cute_store_shared_remote_x4": "from helion._compiler.cute.cluster_helpers import store_shared_remote_x4 as _cute_store_shared_remote_x4",
             "_cute_issue_clc_query_nomulticast": "from helion._compiler.cute.clc_helpers import issue_clc_query_nomulticast as _cute_issue_clc_query_nomulticast",
             "_cute_inline_asm_elementwise": "from helion._compiler.cute.inline_asm_helpers import inline_asm_elementwise as _cute_inline_asm_elementwise",

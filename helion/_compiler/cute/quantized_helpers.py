@@ -8,6 +8,7 @@ from cutlass import Float16
 from cutlass import Float32
 from cutlass import Int8
 from cutlass import Int16
+from cutlass._mlir.dialects import arith
 from cutlass._mlir.dialects import llvm
 from cutlass.cutlass_dsl import dsl_user_op
 
@@ -30,7 +31,21 @@ def _as_i16(
     if ir_type == "i8":
         return llvm.zext(Int16.mlir_type, ir_value, loc=loc, ip=ip)
     if ir_type.startswith("f8"):
-        as_i8 = llvm.bitcast(Int8.mlir_type, ir_value, loc=loc, ip=ip)
+        # ⛔⛔ ``arith.bitcast``, NOT ``llvm.bitcast`` -- THIS IS A FIXED ICE.
+        #
+        # ``llvm.bitcast(i8, <f8 value>)`` does not legalise: the DSL inserts a
+        # ``builtin.unrealized_conversion_cast (i8) -> f8E4M3FN`` that survives to LLVM
+        # translation and the compile dies with
+        # ``LLVM Translation failed for operation: builtin.unrealized_conversion_cast``.
+        # MEASURED, and it is why an fp8 TV fragment could not be decoded: the fragment read
+        # hands this helper a TYPED ``f8`` value (the ``tile_unroll`` path hands it a raw
+        # ``i8``, which takes the branch above and was therefore always fine).
+        # ``arith.bitcast`` is the dialect that legalises an f8<->i8 reinterpret.
+        #
+        # REVERT-VERIFIED with an ISOLATED ``CUTE_DSL_CACHE_DIR`` -- and that isolation is
+        # load-bearing: the shared CuTe disk cache returns the previous arm's SUCCESS for both
+        # arms, so an A/B run without it reads as a false OK.
+        as_i8 = arith.bitcast(Int8.mlir_type, ir_value, loc=loc, ip=ip)
         return llvm.zext(Int16.mlir_type, as_i8, loc=loc, ip=ip)
     if ir_type == "i16":
         return ir_value

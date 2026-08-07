@@ -34,6 +34,8 @@ from .. import language as hl
 from ..autotuner.config_spec import FULL_EXTENT_CATEGORIES
 from ..autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
 from ..autotuner.config_spec import CoResidencyGroup
+from ..autotuner.config_spec import CuteRowResidencySpec
+from ..autotuner.config_spec import CuteThreadsPerRowSpec
 from ..autotuner.config_spec import CuteVectorWidthSpec
 from ..autotuner.config_spec import MatmulWithReductionEpilogueFact
 from ..autotuner.config_spec import ReductionCategory
@@ -90,6 +92,7 @@ if TYPE_CHECKING:
     from ..autotuner.config_spec import AccumulatorFact
     from ..autotuner.config_spec import ConfigSpec
     from ..autotuner.config_spec import MemoryOpFact
+    from .compile_environment import BlockSizeInfo
     from .cute.layout import CuTeGridExecutionPlan
 
     class _TLS(Protocol):
@@ -1007,6 +1010,15 @@ class DeviceIR:
                     )
             graphs_with_rolled_rdim |= used_graphs
 
+        # TV-layout slots, one per reduction dim.  Registered for EVERY rdim,
+        # not only the rollable ones: the row layout (threads_per_row /
+        # cluster_n / reload source) describes how one row is partitioned across
+        # a CTA, which is independent of whether an outer chunking loop exists.
+        # quack has no outer reduction loop at all, and its small-N shape is
+        # exactly helion's persistent shape.
+        if env.backend_name == "cute":
+            self._register_cute_tv_layout_slots(env, rdims)
+
         # Track which rdims appear as the reduction axis of an indexed
         # reduction (argmin/argmax). On CuTe these can only be combined
         # via cute.arch.warp_reduction (32 threads max), so the autotuner
@@ -1048,6 +1060,52 @@ class DeviceIR:
         # non-reduction tile slots after them (keeps the rdim slot at index 0).
         if env.backend_name == "cute":
             self._register_cute_tile_vec_slots(env)
+
+    def _register_cute_tv_layout_slots(
+        self, env: CompileEnvironment, rdims: list[BlockSizeInfo]
+    ) -> None:
+        """Register the reduction TV-layout slots (one per reduction dim).
+
+        ``cute_threads_per_row`` and ``cute_row_residency`` describe how one row
+        of the reduction axis is partitioned and retained in a CTA. Their defaults
+        are pure functions of the reduction extent, so
+        ``default_config()`` reports the layout each shape wants without the
+        autotuner having to find it.
+
+        Registered eagerly, like ``cute_vector_widths``, so the config spec has a
+        fixed width before ``ConfigGeneration`` snapshots the flat layout.
+        """
+        already = set(env.config_spec.cute_threads_per_row.valid_block_ids())
+        for rdim in rdims:
+            if rdim.block_id in already:
+                continue
+            if not isinstance(rdim.size, (int, torch.SymInt)):
+                continue
+            try:
+                size_hint_val = int(rdim.size_hint())
+            except (TypeError, ValueError, AttributeError, AssertionError):
+                continue
+            env.config_spec.cute_threads_per_row.append(
+                CuteThreadsPerRowSpec(
+                    block_id=rdim.block_id,
+                    size_hint=size_hint_val,
+                )
+            )
+            # ⭐ The ONE three-way residency axis, registered HERE and not with the
+            # per-device-loop pass knobs.  Residency describes a ROW, and a row only
+            # exists where a reduction block does -- so this is the same domain as the
+            # key it supersedes, one slot per reduction block.  MEASURED on a kernel
+            # with two reduction blocks in one device loop, that distinction is
+            # observable: the per-block keys have length 2 there while
+            # ``cute_tv_sweep_cache`` has length 1, so registering the axis on the
+            # per-loop domain would collapse the two reductions onto one residency.
+            env.config_spec.cute_row_residency.append(
+                CuteRowResidencySpec(
+                    block_id=rdim.block_id,
+                    size_hint=size_hint_val,
+                )
+            )
+            already.add(rdim.block_id)
 
     def _register_cute_tile_vec_slots(self, env: CompileEnvironment) -> None:
         """Eagerly register cute_vector_widths slots for non-reduction tile blocks.
@@ -3580,6 +3638,85 @@ def _register_cute_lane_vector_width_specs(config_spec: ConfigSpec) -> None:
         existing.add(block_id)
 
 
+def _register_cute_ast_pass_specs(config_spec: ConfigSpec) -> None:
+    """Register the two CuTe AST-pass knobs, one slot per DEVICE LOOP.
+
+    ``cute_online_defer`` (``cute/defer_online_merge.py``) and
+    ``cute_tv_sweep_cache`` (``cute/fuse_tv_copy_sweeps.py``) each decide the shape
+    of a rewrite applied to one device loop's body, so their slot inventory is the
+    set of device loops -- the loops that exist inside the kernel, as opposed to
+    the grid axes the launch iterates.
+
+    ⭐ WHY *NOT* THE PER-REDUCTION-BLOCK DOMAIN THE THREE TV-LAYOUT KNOBS USE.
+    MEASURED on the four reduction kernels of the perf table:
+
+        rms_norm / layer_norm / cross_entropy   reduction_loops=[1]  block_sizes=[0]
+        cross_entropy_online                    reduction_loops=[]   block_sizes=[0, 1]
+
+    ``cross_entropy_online`` -- the ONLY one of the four that
+    ``defer_online_merge`` fires on -- expresses its reduction as an inner
+    ``hl.tile`` because the recurrence is loop-carried, so it owns no reduction
+    block at all.  A per-reduction-block registration would have created zero
+    slots there: a knob that looks registered, passes every structural test, and
+    controls nothing.  Taking ``block_sizes`` minus the grid axes covers both
+    shapes with exactly one slot each (block 1 in both cases).
+
+    ⚠ WHY HERE AND NOT IN ``register_rollable_reductions`` (where the TV-layout
+    slots are registered): that method returns early when ``rdims`` is empty, which
+    is precisely ``cross_entropy_online``.  Registering from ``lower_to_device_ir``
+    also matches ``_register_cute_lane_vector_width_specs`` above -- both run once,
+    config independently, before ``ConfigGeneration`` snapshots the flat layout, so
+    the spec width is fixed for the lifetime of autotuning.
+    """
+    from ..autotuner.config_spec import CuteNDTileTvSpec
+    from ..autotuner.config_spec import CuteOnlineDeferSpec
+
+    grid_block_ids = set(config_spec.grid_block_ids)
+    # ``dict`` rather than ``set`` so the slot ORDER is deterministic: the flat
+    # config layout is positional, and a set's iteration order is not a contract.
+    candidates: dict[int, int] = {}
+    for spec in config_spec.reduction_loops:
+        candidates.setdefault(spec.block_id, spec.size_hint)
+    for spec in config_spec.block_sizes:
+        if spec.block_id in grid_block_ids:
+            continue
+        candidates.setdefault(spec.block_id, spec.size_hint)
+
+    existing = set(config_spec.cute_online_defer.valid_block_ids())
+    for block_id in sorted(candidates):
+        if block_id in existing:
+            continue
+        size_hint = candidates[block_id]
+        config_spec.cute_online_defer.append(
+            CuteOnlineDeferSpec(block_id=block_id, size_hint=size_hint)
+        )
+        existing.add(block_id)
+
+    # ── ``cute_ndtile_tv``: THE SAME CANDIDATES AS ``cute_online_defer`` ──────────────
+    #
+    # ⚠ GRID AXES ARE DELIBERATELY EXCLUDED.  A7a briefly appended them so a root-grid
+    # pointwise kernel (whose only blocks ARE grid blocks) could carry the knob, but the
+    # root-grid vectorisation it enabled was deleted as broken and classic-vec-only (see
+    # ``CuteNDTileStrategy.codegen_grid``).  With no consumer, a grid slot is a knob that
+    # controls nothing, so the domain is back to the device-loop blocks.
+    #
+    # ⛔ IF YOU RE-ADD THEM, APPEND **LAST**.  A ``BlockIdSequence`` config value is
+    # POSITIONAL: ``cute_ndtile_tv=[True]`` means "the first registered slot".  Registering
+    # grid block 0 ahead of device-loop block 1 silently REBINDS every stored config --
+    # MEASURED, all 10 ``cross_entropy_online`` frozen cells normalized ``[True]`` ->
+    # ``[True, False]``, the flag moved to the wrong axis, and every one fell from a 128-bit
+    # ``cute.copy`` back to ``cute.arch.load``.  A widening that reinterprets stored configs
+    # is not a widening.
+    ndtile_tv_existing = set(config_spec.cute_ndtile_tv.valid_block_ids())
+    for block_id in sorted(candidates):
+        if block_id in ndtile_tv_existing:
+            continue
+        config_spec.cute_ndtile_tv.append(
+            CuteNDTileTvSpec(block_id=block_id, size_hint=candidates[block_id])
+        )
+        ndtile_tv_existing.add(block_id)
+
+
 def lower_to_device_ir(func: HostFunction) -> DeviceIR:
     device_ir = DeviceIR()
     device_ir.host_function = func
@@ -3644,6 +3781,12 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
         device_ir.register_rollable_reductions()
         if CompileEnvironment.current().backend.name == "cute":
             _register_cute_lane_vector_width_specs(config_spec)
+            # ⚠ ORDER MATTERS, and only in one direction: this must run AFTER
+            # ``_register_cute_lane_vector_width_specs`` so the new slots land at
+            # the END of the flat layout.  Inserting a key ahead of
+            # ``cute_vector_widths`` would renumber every later flat slot and
+            # invalidate any flat config recorded by an earlier run.
+            _register_cute_ast_pass_specs(config_spec)
             # Enable the flash-attention autotune surface (Tasks #25 + #28) when
             # the dense flash dataflow is detected, analogous to how a matmul
             # detection sets ``cute_tcgen05_search_enabled``. Default-off

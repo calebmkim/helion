@@ -68,6 +68,7 @@ from typing import TYPE_CHECKING
 
 from ..ast_extension import ExtendedAST
 from ..ast_extension import create
+from ._ast_pass_utils import ext_deepcopy
 
 if TYPE_CHECKING:
     from ..host_function import HostFunction
@@ -143,36 +144,13 @@ def _ensure_for_extended(stmt: ast.AST) -> ast.For | None:
 
 
 def _ext_copy(node: ast.AST) -> ast.AST:
-    """Deepcopy an AST node, preserving ExtendedAST mixin attributes when
-    present so source locations / loop type tags survive the rewrite.
+    """Deepcopy an AST node, preserving ExtendedAST mixin attributes.
 
-    Standard ``copy.deepcopy`` does not work on ``ExtendedAST`` because
-    its ``__init__`` requires the keyword-only ``_location`` argument
-    (the default deepcopy reconstructor uses positional args).  Walk the
-    tree manually instead, recreating each ExtendedAST node via its
-    ``copy()`` helper.
+    Thin alias for the shared ``_ast_pass_utils.ext_deepcopy`` -- see there for why
+    ``copy.deepcopy`` cannot be used on these nodes.
     """
-    if isinstance(node, list):
-        # pyrefly: ignore [bad-return]
-        return [_ext_copy(x) for x in node]  # type: ignore[return-value]
-    if not isinstance(node, ast.AST):
-        return node
-    if isinstance(node, ExtendedAST):
-        new_fields = {field: _ext_copy(getattr(node, field)) for field in node._fields}
-        # pyrefly: ignore [bad-return]
-        return node.copy(**new_fields)
-    # Plain ast.AST (no ExtendedAST mixin) — recreate via class.
-    cls = type(node)
-    new_fields = {
-        field: _ext_copy(getattr(node, field))
-        for field in node._fields
-        if hasattr(node, field)
-    }
-    new_node = cls(**new_fields)
-    for attr in getattr(node, "_attributes", ()):
-        if hasattr(node, attr):
-            setattr(new_node, attr, getattr(node, attr))
-    return new_node
+    # pyrefly: ignore [bad-return]
+    return ext_deepcopy(node)  # type: ignore[return-value]
 
 
 def _make_for_loop(template_loop: ast.For, body: list[ast.stmt]) -> ast.For:

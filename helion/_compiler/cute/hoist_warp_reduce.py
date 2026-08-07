@@ -65,23 +65,80 @@ _REDUCE_COMBINE: dict[str, str] = {
 }
 
 
+# The GROUPED reduce helpers carry their op in a STRING ARGUMENT rather than in the
+# function name: ``_cute_grouped_reduce_warp(acc, 'sum', identity, lane, ...)`` and
+# ``_cute_grouped_reduce_shared_two_stage(acc, 'max', ...)``.  Map those op strings onto
+# the same ``warp_reduction_<op>`` keys the tables above use, so one matcher covers all
+# three emitted forms.
+#
+# WHY THIS MATTERS (MEASURED, LEDGER E018).  This pass used to match ONLY
+# ``cute.arch.warp_reduction_*``, so whenever ``_finalize_lane_reduce_marker``
+# (``tile_strategy.py:365-416``) chose a grouped or two-stage combine instead of the raw
+# warp form, the hoist silently did not fire, the whole online-merge body stayed inside
+# ``range_constexpr(V)``, and BOTH exponentials of the online recurrence ran V times per V
+# elements -- 2.0 exp/element instead of 1 + 1/V.  On ``cross_entropy_online`` at
+# M=32768 N=4096 that boundary is worth 3.6x: configs where the hoist fires measure
+# 1.125 exp/element and 0.820x of quack, configs where it does not measure 2.0 and 0.230x.
+# ``03_FINDINGS.md`` section 3 measured exp2 issue rate as this kernel's limiter and
+# concluded the online recurrence "needs a SECOND exp per element" -- true of the
+# algorithm, but NOT of the emitted code once this pass fires.
+_GROUPED_REDUCE_FUNCS: frozenset[str] = frozenset(
+    {"_cute_grouped_reduce_warp", "_cute_grouped_reduce_shared_two_stage"}
+)
+
+_GROUPED_OP_TO_KEY: dict[str, str] = {
+    "sum": "warp_reduction_sum",
+    "max": "warp_reduction_max",
+    "min": "warp_reduction_min",
+}
+
+
 def _looks_like_warp_reduce_call(node: ast.AST) -> tuple[str, ast.expr] | None:
-    """If ``node`` is ``cute.arch.warp_reduction_<op>(INPUT, threads_in_group=T)``,
-    return ``("warp_reduction_<op>", INPUT)``.  Otherwise None.
+    """Recognise any of helion's three emitted warp/group reduce forms.
+
+    Returns ``("warp_reduction_<op>", INPUT)``, where ``INPUT`` is the value being
+    reduced, or None.  The three forms:
+
+    * ``cute.arch.warp_reduction_<op>(INPUT, threads_in_group=T)`` -- the raw single-warp
+      primitive, op in the function name (``tile_strategy.py:419-429``);
+    * ``_cute_grouped_reduce_warp(INPUT, '<op>', identity, lane, ...)`` -- strided groups
+      within one warp, op in argument 1 (``tile_strategy.py:296-316``);
+    * ``_cute_grouped_reduce_shared_two_stage(INPUT, '<op>', ...)`` -- cross-warp via
+      SMEM, op in argument 1 (``tile_strategy.py:319-362``).
+
+    All three are V-fold-hoistable for the same reason: the fold is over the SAME
+    associative op that the reduce itself applies, so folding V values into a per-thread
+    accumulator first and reducing once is equivalent to reducing V times.  The pass is
+    unchanged downstream -- only the set of recognised shapes grows.
     """
     if not isinstance(node, ast.Call):
         return None
     func = node.func
-    if not isinstance(func, ast.Attribute):
-        return None
-    if func.attr not in _REDUCE_IDENTITY:
-        return None
-    val = func.value
-    if not (isinstance(val, ast.Attribute) and val.attr == "arch"):
-        return None
-    if not node.args:
-        return None
-    return func.attr, node.args[0]
+    # Form 1: op in the attribute name, under a ``.arch`` namespace.
+    if isinstance(func, ast.Attribute):
+        if func.attr not in _REDUCE_IDENTITY:
+            return None
+        val = func.value
+        if not (isinstance(val, ast.Attribute) and val.attr == "arch"):
+            return None
+        if not node.args:
+            return None
+        return func.attr, node.args[0]
+    # Forms 2 and 3: a bare helper name, op in the second positional argument.
+    if isinstance(func, ast.Name) and func.id in _GROUPED_REDUCE_FUNCS:
+        if len(node.args) < 2:
+            return None
+        op_arg = node.args[1]
+        if not (isinstance(op_arg, ast.Constant) and isinstance(op_arg.value, str)):
+            return None
+        key = _GROUPED_OP_TO_KEY.get(op_arg.value)
+        if key is None:
+            # ``prod`` has a grouped helper but no entry in ``_REDUCE_IDENTITY`` /
+            # ``_REDUCE_COMBINE``, so it is not hoistable by this pass.  Decline rather
+            # than fold it with the wrong identity.
+            return None
+        return key, node.args[0]
+    return None
 
 
 def _find_warp_reduce_in_expr(
@@ -264,9 +321,7 @@ def _try_hoist_one_vloop(
         if i in v_dependent:
             return None
 
-    # Stmts BEFORE first reduce that are V-dependent but not in any reduce's
-    # closure: bail (we'd lose them).  Compute closure for each reduce's
-    # input.
+    # Compute closure for each reduce's input.
     closures: list[set[int]] = []
     for idx, _op, input_name in reduce_validate:
         input_def_idx = -1
@@ -279,8 +334,63 @@ def _try_hoist_one_vloop(
     all_closures: set[int] = set()
     for c in closures:
         all_closures |= c
-    for i in range(reduce_validate[0][0]):
-        if i in v_dependent and i not in all_closures:
+
+    # V-dependent stmts that no reduce's closure reaches ("orphans").  These
+    # used to be an unconditional BAIL, on the reasoning that hoisting would
+    # lose them -- but they are not lost if they are carried into a V-loop,
+    # which is exactly where they already live.
+    #
+    # ⚠ WHY THIS MATTERS (LEDGER E065): a bounds mask that the tile strategy
+    # proves vacuous takes the lane-index stmt out of every closure with it.
+    # The masked form is
+    #
+    #     indices_2 = lane_base + Int32(vec_lane)      # V-dep
+    #     mask_1    = indices_2 < N                    # reads indices_2
+    #     values    = <load> if mask_0 and mask_1 else <identity>
+    #
+    # so ``indices_2`` reaches the reduce input THROUGH the mask and lands in
+    # the closure.  Elide the (provably true) mask and the chain breaks:
+    # ``values`` no longer reads ``indices_2``, the lane-index stmt becomes an
+    # orphan, and this pass declined on the SIMPLER of the two shapes.  Three
+    # passes keyed on that wrapper (this one, ``merge_sibling_v_loops``, and
+    # the FMA-scale hoist) went inert at once.
+    #
+    # Assigning each orphan to the V-loop of the first reduce that FOLLOWS it
+    # preserves both its trip count (V, unchanged) and its order relative to
+    # the other V-loop stmts, since the body is emitted in original index
+    # order.  A trailing orphan is impossible: the check above already bails on
+    # any V-dep stmt after the last reduce.
+    #
+    # Only a PURE ``name = expr`` orphan is carried.  A bare-expression orphan
+    # is a gmem store (``(ptr).store(v)``) or another side effect, and moving
+    # one across a reduce would reorder it against the reduce -- decline, as
+    # before.
+    #
+    # A pure orphan whose LHS NOTHING in the body reads is simply DROPPED, not
+    # carried.  That is not an optimisation for its own sake: it keeps the two
+    # sweeps' V-loop bodies TEXTUALLY IDENTICAL in their prefix, which is the
+    # precondition ``merge_sibling_v_loops`` matches on
+    # (``common_prefix_len == 0`` -> no merge).  The mask elision leaves the
+    # lane-index stmt live in the REDUCE sweep and dead in the CONSUME sweep,
+    # so carrying a dead one would fix this pass and keep the next one inert.
+    body_reads: set[str] = set()
+    for s in body:
+        body_reads |= _names_read(s)
+
+    orphan_v_members: list[set[int]] = [set() for _ in reduce_validate]
+    for i in sorted(v_dependent - all_closures - reduce_stmt_indices):
+        lhs_name = _assignment_lhs_name(body[i])
+        if lhs_name is None:
+            return None
+        if lhs_name not in body_reads:
+            continue  # dead in this V-loop -- drop it
+        for reduce_pos, (r_idx, _op, _name) in enumerate(reduce_validate):
+            if i < r_idx:
+                orphan_v_members[reduce_pos].add(i)
+                break
+        else:
+            # Unreachable given the trailing-V-dep bail above; keep the
+            # conservative decline rather than silently dropping a statement.
             return None
 
     # ---- COMMIT PHASE: build new statements. ----
@@ -304,7 +414,15 @@ def _try_hoist_one_vloop(
         if found is None:
             continue
         op, input_expr, call_node = found
-        assert isinstance(input_expr, ast.Name)
+        # DECLINE rather than assert.  This used to be
+        # ``assert isinstance(input_expr, ast.Name)``, which was safe while the matcher
+        # only accepted ``cute.arch.warp_reduction_*`` (whose input is always a hoisted
+        # temp name).  Now that the grouped/two-stage forms are matched too, the reduced
+        # value can be an arbitrary expression, and an assert would turn a
+        # missed-optimisation into a compiler crash.  The V-fold accumulator has to name
+        # the input to combine it, so a non-Name input is simply not hoistable here.
+        if not isinstance(input_expr, ast.Name):
+            continue
         reduce_info_copy.append((idx, lhs, op, input_expr.id, call_node, stmt))
 
     # Build a schedule:
@@ -326,8 +444,11 @@ def _try_hoist_one_vloop(
         r_idx for r_idx, _l, _o, _n, _c, _s in reduce_info_copy
     }
     v_loop_members: list[set[int]] = []
-    for c in closures:
+    for reduce_pos, c in enumerate(closures):
         members = (c & v_dependent) - reduce_stmt_indices_in_body
+        # Carry this reduce's orphan V-dep stmts (see the note above) into its
+        # V-loop so eliding a provably-vacuous mask cannot make the pass inert.
+        members |= orphan_v_members[reduce_pos] - reduce_stmt_indices_in_body
         v_loop_members.append(members)
 
     # Compute "scalar emission position" for each scalar stmt: emit after
@@ -477,6 +598,11 @@ def _rewrite_cast_wrapper(rhs: ast.expr, new_dtype: str) -> ast.expr:
     if (
         isinstance(rhs, ast.Call)
         and isinstance(rhs.func, ast.Attribute)
+        # Same structural test as ``_infer_input_dtype``: a dtype CONSTRUCTOR
+        # is ``<Name>.<dtype>(x)``.  ``cutlass.Uint16(x).bitcast(...)`` shares
+        # the text prefix but replacing it would DROP the bitcast and reduce
+        # the raw storage bits (LEDGER E065).
+        and isinstance(rhs.func.value, ast.Name)
         and ast.unparse(rhs.func).startswith("cutlass.Float")
     ):
         # Rewrite the cast wrapper to use new_dtype.
@@ -500,7 +626,35 @@ def _infer_input_dtype(rhs: ast.expr) -> str | None:
     if isinstance(rhs, ast.IfExp):
         # Assume body and orelse share the same outer wrapper.
         return _infer_input_dtype(rhs.body)
-    if isinstance(rhs, ast.Call) and isinstance(rhs.func, ast.Attribute):
+    # ``cutlass.Uint16(<vec>[vi]).bitcast(cutlass.Float16)`` -- the vec-hoist
+    # load.  Its VALUE dtype is the bitcast TARGET, not the storage type the
+    # chain starts from, so read the argument.
+    #
+    # ⚠ Reachable only in the UNMASKED form (LEDGER E065).  With a mask, the
+    # reduce consumed a ``_mask_to = cutlass.Float16(values) if mask else ...``
+    # temp whose wrapper is a plain dtype call, so this function never saw the
+    # bitcast chain.  Elide the mask and the chain becomes the reduce input
+    # directly -- at which point the ``startswith("cutlass.Uint")`` test below
+    # matched the unparse of the whole ``cutlass.Uint16(...).bitcast``
+    # ATTRIBUTE and returned it as if it were a dtype name, so the emitted
+    # combine was ``max(acc, cutlass.Uint16(v).bitcast(cutlass.Uint16(v).bitcast(
+    # cutlass.Float16)))``.  Latent nonsense, not a decline.
+    if (
+        isinstance(rhs, ast.Call)
+        and isinstance(rhs.func, ast.Attribute)
+        and rhs.func.attr == "bitcast"
+        and len(rhs.args) == 1
+    ):
+        return _infer_input_dtype_from_dtype_expr(rhs.args[0])
+    if (
+        isinstance(rhs, ast.Call)
+        and isinstance(rhs.func, ast.Attribute)
+        # A DTYPE CONSTRUCTOR only: ``cutlass.Float16(x)``, whose callee is
+        # ``<Name>.<attr>``.  A chained method call such as
+        # ``cutlass.Uint16(x).bitcast`` unparses with the same prefix but is
+        # not a dtype, so match on structure rather than on the text.
+        and isinstance(rhs.func.value, ast.Name)
+    ):
         func_text = ast.unparse(rhs.func)
         # Promote fp16/bf16 accumulators to fp32 for better perf and accuracy:
         # the downstream uses convert to fp32 anyway, and fp16 max is no
@@ -515,6 +669,19 @@ def _infer_input_dtype(rhs: ast.expr) -> str | None:
         if func_text.startswith("cutlass.Uint"):
             return func_text
     # Conservative default — sufficient for sum/max in fp32 accumulators.
+    return "cutlass.Float32"
+
+
+def _infer_input_dtype_from_dtype_expr(node: ast.expr) -> str:
+    """Map a bare dtype expression (``cutlass.Float16``) to the accumulator
+    dtype, applying the same fp16/bf16 -> fp32 promotion as
+    ``_infer_input_dtype``.
+    """
+    text = ast.unparse(node)
+    if text in ("cutlass.Float16", "cutlass.BFloat16"):
+        return "cutlass.Float32"
+    if text.startswith(("cutlass.Float", "cutlass.Int", "cutlass.Uint")):
+        return text
     return "cutlass.Float32"
 
 

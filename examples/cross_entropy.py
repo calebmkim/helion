@@ -46,7 +46,9 @@ def cross_entropy(
         A scalar tensor containing the mean cross entropy loss
     """
     n, v = logits.shape
-    losses = torch.zeros([n], dtype=logits.dtype, device=logits.device)
+    # fp32 accumulation: the loss is a log-sum-exp, so every intermediate is
+    # kept in fp32 rather than round-tripped through the input dtype.
+    losses = torch.zeros([n], dtype=torch.float32, device=logits.device)
 
     # Flatten logits once at the beginning
     logits_flat = logits.view(-1)
@@ -60,13 +62,24 @@ def cross_entropy(
         flat_indices = base_indices_tile + labels_tile
 
         # Load the logits at the target indices
-        logits_at_target = hl.load(logits_flat, [flat_indices])
+        logits_at_target = hl.load(logits_flat, [flat_indices]).to(torch.float32)
 
-        # Compute log_softmax for numerical stability
-        # Load the full rows for this tile
-        logits_rows = logits[tile_n, :]  # [tile_size, V]
+        # Compute log_softmax for numerical stability.
+        # Load the full rows for this tile, upcasting ONCE.  Every intermediate
+        # below then stays fp32; the previous version left the row in the input
+        # dtype and round-tripped ``exp``'s fp32 result back through bf16 before
+        # accumulating, which costs both accuracy and ~13% of the instructions.
+        logits_rows = logits[tile_n, :].to(torch.float32)  # [tile_size, V]
 
-        # Compute log-sum-exp
+        # Compute log-sum-exp, shifted by the row max.  The shift is what makes
+        # this unconditionally stable -- the largest summand is exp(0) == 1, so
+        # no logit magnitude can overflow -- and it is also why there are TWO
+        # sweeps over ``logits``: the summand depends on the max, so the max must
+        # be fully reduced before the sum can start.  A single-sweep form needs
+        # either a fixed shift (which is NOT stable: measured Inf at logit scale
+        # 1e2 when shifting by the target logit) or the online (max, sum)
+        # recurrence, whose per-element rescale costs a second exp -- measured
+        # more expensive than the second sweep on this backend.
         max_logits = torch.amax(logits_rows, dim=-1, keepdim=True)
         shifted = logits_rows - max_logits
         exp_shifted = torch.exp(shifted)

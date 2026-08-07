@@ -326,6 +326,35 @@ class CuteBackendUnavailable(BaseError):
     )
 
 
+class CuteRowResidencyUnavailable(BaseError):
+    """An EXPLICIT ``cute_row_residency`` request that codegen could not honour.
+
+    ⭐ WHY THIS IS A RAISE AND NOT A DECLINE.  ``cute_row_residency`` names WHERE the
+    second read of a reduction row comes from.  It used to be a *hint*: two performance
+    budgets could overrule it, so a config could name one memory and emit another --
+    MEASURED on the frozen table, 13 of 40 cells recorded a residency the kernel did not
+    use.  A knob whose value the artifact contradicts makes every recorded config
+    unverifiable, which is this branch's signature failure mode.
+
+    ⇒ if the caller WROTE the key, they get that residency or this error.  A residency the
+    per-shape ladder supplied still declines silently, because the ladder cannot predict
+    the decline (it has only ``block_ids`` + ``size_hint``, while the outcome depends on
+    the emitted geometry) -- so raising there would fail a kernel over a default the user
+    never saw.  See ``cute/memory_ops.py::cute_emit_row_residency_marker``.
+    """
+
+    message = (
+        "cute_row_residency={requested!r} was requested explicitly but the emitted "
+        "kernel reads the row from {effective!r}.\n"
+        "Reason: {why}\n"
+        "Either drop the key (the per-shape ladder will pick, and may decline), or "
+        "name cute_row_residency={effective!r} to record what this shape can actually do."
+    )
+
+    def __init__(self, requested: str, effective: str, why: str) -> None:
+        super().__init__(requested=requested, effective=effective, why=why)
+
+
 class UndefinedVariable(BaseError):
     message = "{} is not defined."
 

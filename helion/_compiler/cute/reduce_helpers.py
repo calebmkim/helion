@@ -1,4 +1,24 @@
 # pyrefly: ignore-errors
+"""Device-side combine helpers for CuTe reductions.
+
+ABI note (see ``_redfix/01_BUGS.md`` class 5): every grouped-combine helper here
+takes its working dtype as an **explicit** ``acc_dtype`` constexpr argument.  The
+accumulator is not a memory object -- it must not inherit a copy atom's dtype,
+and it must not be inferred from ``type(identity)`` either.  Inference was the
+channel that silently pinned an ``int32`` sum's accumulator to ``int32`` (so a
+large sum wrapped), because the identity for an integer reduction is an integer
+of the *input* width.  ``acc_dtype`` is required, positional-only-by-keyword, and
+is the single source of truth for
+
+* the dtype the values are combined in (both the incoming value and the identity
+  are coerced to it, which also keeps the CUTLASS DSL's strict ternary type
+  check happy when a caller hands in a narrower value), and
+* the dtype (hence the byte size) of the staging shared memory.
+
+Callers pick the accumulator dtype with
+``helion._compiler.reduction_strategy.reduction_acc_dtype``.
+"""
+
 from __future__ import annotations
 
 import operator
@@ -19,6 +39,47 @@ def _warp_reduce_max(value: cute.Numeric, *, threads_in_group: int) -> cute.Nume
 
 @cute.jit
 def _warp_reduce_min(value: cute.Numeric, *, threads_in_group: int) -> cute.Numeric:
+    """Cross-lane ``min``.  ⚠ NOTE THE OPERAND ORDER IN THE LAMBDA -- IT IS NOT A TYPO.
+
+    ⭐ WHY THIS ONE IS NOT AN INTRINSIC LIKE ITS THREE SIBLINGS.  ``sum`` and ``max`` call
+    ``cute.arch.warp_reduction_sum`` / ``_max``; there is **no ``warp_reduction_min``** in the
+    DSL (VERIFIED against the installed cutlass: ``hasattr(cute.arch,
+    "warp_reduction_max")`` is True, ``..._min`` is False).  So ``min`` -- like ``prod`` --
+    must go through the generic ``cute.arch.warp_reduction(val, op)``.  That asymmetry is the
+    DSL's, not ours.
+
+    ⭐⭐ WHY THE OPERANDS ARE SWAPPED, which is the thing a reader stops on.  The generic
+    reduction's loop body is, verbatim from the DSL source::
+
+        val = op(val, shuffle_sync_bfly(val, offset=offset, ...))
+
+    so the accumulator is ALWAYS the first argument and the shuffled peer the second.  Now
+    ``min(a, b)`` is Python's builtin, and its contract is *"return ``a`` unless ``b < a``"* --
+    it is not symmetric in which operand it RETURNS, only in which value.  Inside a
+    ``cute.jit`` trace ``b < a`` is ``Numeric.__lt__``, which traces to an IR comparison
+    (``_binary_op(operator.lt)``), so the two spellings emit the comparison with its operands
+    the other way round:
+
+        lambda a, b: min(a, b)   ->  select(peer < acc,  peer, acc)   # prefers the ACC on a tie
+        lambda a, b: min(b, a)   ->  select(acc  < peer, acc,  peer)  # prefers the PEER on a tie
+
+    For every totally-ordered value those agree, which is why the kernel is correct either
+    way.  They differ only where ``<`` is not a total order -- IEEE ties (``+0.0`` vs
+    ``-0.0``) and NaN, where a comparison is false in BOTH directions and ``min`` therefore
+    returns whichever operand it was given first.  ⇒ the swap chooses **which lane wins a
+    non-ordered comparison**, and with the accumulator second the peer wins, so a NaN
+    entering from a peer lane propagates instead of being swallowed by the accumulator.
+
+    ⚠ WHETHER THAT WAS THE AUTHOR'S INTENT IS UNRECORDED.  It arrived in
+    ``a137a7614`` "[cutedsl] Refactor reductions to use helper methods (#2008)" with no
+    comment, alongside ``prod``'s ``operator.mul`` (symmetric, so the order there is
+    genuinely arbitrary).  ⇒ treat this as **load-bearing-by-accident**: it is the NaN
+    polarity the shipped kernels have been tested at, so a refactor must PRESERVE the order
+    rather than tidy it -- and that is exactly why the FIXLIST asks for this to be explained
+    before the four bodies are abstracted behind one ``combine`` callable.  An abstraction
+    that normalises the operand order is a silent change to NaN behaviour in a cross-lane
+    reduction, which is the hardest class of thing to notice.
+    """
     return cute.arch.warp_reduction(
         value,
         lambda a, b: min(b, a),
@@ -41,18 +102,21 @@ def _cute_grouped_reduce_warp_sum(
     identity: cute.Numeric,
     lane_expr: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
 ) -> cute.Numeric:
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     lane_in_group = lane_expr % group_span
     lane_mod_pre = lane_in_group % pre
     selected = _warp_reduce_sum(
-        input_value if lane_mod_pre == 0 else identity,
+        value if lane_mod_pre == 0 else ident,
         threads_in_group=group_span,
     )
     for p in cutlass.range_constexpr(1, pre):
         reduced = _warp_reduce_sum(
-            input_value if lane_mod_pre == p else identity,
+            value if lane_mod_pre == p else ident,
             threads_in_group=group_span,
         )
         selected = reduced if lane_mod_pre == p else selected
@@ -65,18 +129,21 @@ def _cute_grouped_reduce_warp_max(
     identity: cute.Numeric,
     lane_expr: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
 ) -> cute.Numeric:
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     lane_in_group = lane_expr % group_span
     lane_mod_pre = lane_in_group % pre
     selected = _warp_reduce_max(
-        input_value if lane_mod_pre == 0 else identity,
+        value if lane_mod_pre == 0 else ident,
         threads_in_group=group_span,
     )
     for p in cutlass.range_constexpr(1, pre):
         reduced = _warp_reduce_max(
-            input_value if lane_mod_pre == p else identity,
+            value if lane_mod_pre == p else ident,
             threads_in_group=group_span,
         )
         selected = reduced if lane_mod_pre == p else selected
@@ -89,18 +156,21 @@ def _cute_grouped_reduce_warp_min(
     identity: cute.Numeric,
     lane_expr: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
 ) -> cute.Numeric:
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     lane_in_group = lane_expr % group_span
     lane_mod_pre = lane_in_group % pre
     selected = _warp_reduce_min(
-        input_value if lane_mod_pre == 0 else identity,
+        value if lane_mod_pre == 0 else ident,
         threads_in_group=group_span,
     )
     for p in cutlass.range_constexpr(1, pre):
         reduced = _warp_reduce_min(
-            input_value if lane_mod_pre == p else identity,
+            value if lane_mod_pre == p else ident,
             threads_in_group=group_span,
         )
         selected = reduced if lane_mod_pre == p else selected
@@ -113,18 +183,21 @@ def _cute_grouped_reduce_warp_prod(
     identity: cute.Numeric,
     lane_expr: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
 ) -> cute.Numeric:
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     lane_in_group = lane_expr % group_span
     lane_mod_pre = lane_in_group % pre
     selected = _warp_reduce_prod(
-        input_value if lane_mod_pre == 0 else identity,
+        value if lane_mod_pre == 0 else ident,
         threads_in_group=group_span,
     )
     for p in cutlass.range_constexpr(1, pre):
         reduced = _warp_reduce_prod(
-            input_value if lane_mod_pre == p else identity,
+            value if lane_mod_pre == p else ident,
             threads_in_group=group_span,
         )
         selected = reduced if lane_mod_pre == p else selected
@@ -145,13 +218,21 @@ def _cute_grouped_reduce_warp(
     identity: cute.Numeric,
     lane_expr: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: int,
     group_span: int,
 ) -> cute.Numeric:
     impl = _WARP_DISPATCH.get(reduction_type)
     if impl is None:
         raise ValueError(f"unsupported CuTe reduction type: {reduction_type!r}")
-    return impl(input_value, identity, lane_expr, pre=pre, group_span=group_span)
+    return impl(
+        input_value,
+        identity,
+        lane_expr,
+        acc_dtype=acc_dtype,
+        pre=pre,
+        group_span=group_span,
+    )
 
 
 @cute.jit
@@ -162,16 +243,18 @@ def _cute_grouped_reduce_shared_two_stage_sum(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
     group_count: cutlass.Constexpr[int],
 ) -> cute.Numeric:
-    dtype = type(identity)
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     warps_per_group = group_span // 32
     partials_size = group_count * pre * warps_per_group
     results_size = group_count * pre
     smem_size = partials_size + results_size
-    smem_ptr = cute.arch.alloc_smem(dtype, smem_size)
+    smem_ptr = cute.arch.alloc_smem(acc_dtype, smem_size)
     smem = cute.make_tensor(smem_ptr, (smem_size,))
     group_id = lane_var // group_span
     lane_in_warp = lane_var % 32
@@ -180,7 +263,7 @@ def _cute_grouped_reduce_shared_two_stage_sum(
     results_base = partials_size + group_id * pre
 
     for p in cutlass.range_constexpr(pre):
-        masked_input = input_value if lane_mod_pre_var == p else identity
+        masked_input = value if lane_mod_pre_var == p else ident
         warp_partial = _warp_reduce_sum(masked_input, threads_in_group=32)
         partial_idx = partials_base + p * warps_per_group + warp_in_group
         if lane_in_warp == 0:
@@ -191,7 +274,7 @@ def _cute_grouped_reduce_shared_two_stage_sum(
             stage2_input = (
                 smem[partials_base + p * warps_per_group + lane_in_warp]
                 if lane_in_warp < warps_per_group
-                else identity
+                else ident
             )
             group_result = _warp_reduce_sum(stage2_input, threads_in_group=32)
             if lane_in_warp == 0:
@@ -209,16 +292,18 @@ def _cute_grouped_reduce_shared_two_stage_max(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
     group_count: cutlass.Constexpr[int],
 ) -> cute.Numeric:
-    dtype = type(identity)
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     warps_per_group = group_span // 32
     partials_size = group_count * pre * warps_per_group
     results_size = group_count * pre
     smem_size = partials_size + results_size
-    smem_ptr = cute.arch.alloc_smem(dtype, smem_size)
+    smem_ptr = cute.arch.alloc_smem(acc_dtype, smem_size)
     smem = cute.make_tensor(smem_ptr, (smem_size,))
     group_id = lane_var // group_span
     lane_in_warp = lane_var % 32
@@ -227,7 +312,7 @@ def _cute_grouped_reduce_shared_two_stage_max(
     results_base = partials_size + group_id * pre
 
     for p in cutlass.range_constexpr(pre):
-        masked_input = input_value if lane_mod_pre_var == p else identity
+        masked_input = value if lane_mod_pre_var == p else ident
         warp_partial = _warp_reduce_max(masked_input, threads_in_group=32)
         partial_idx = partials_base + p * warps_per_group + warp_in_group
         if lane_in_warp == 0:
@@ -238,7 +323,7 @@ def _cute_grouped_reduce_shared_two_stage_max(
             stage2_input = (
                 smem[partials_base + p * warps_per_group + lane_in_warp]
                 if lane_in_warp < warps_per_group
-                else identity
+                else ident
             )
             group_result = _warp_reduce_max(stage2_input, threads_in_group=32)
             if lane_in_warp == 0:
@@ -256,16 +341,18 @@ def _cute_grouped_reduce_shared_two_stage_min(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
     group_count: cutlass.Constexpr[int],
 ) -> cute.Numeric:
-    dtype = type(identity)
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     warps_per_group = group_span // 32
     partials_size = group_count * pre * warps_per_group
     results_size = group_count * pre
     smem_size = partials_size + results_size
-    smem_ptr = cute.arch.alloc_smem(dtype, smem_size)
+    smem_ptr = cute.arch.alloc_smem(acc_dtype, smem_size)
     smem = cute.make_tensor(smem_ptr, (smem_size,))
     group_id = lane_var // group_span
     lane_in_warp = lane_var % 32
@@ -274,7 +361,7 @@ def _cute_grouped_reduce_shared_two_stage_min(
     results_base = partials_size + group_id * pre
 
     for p in cutlass.range_constexpr(pre):
-        masked_input = input_value if lane_mod_pre_var == p else identity
+        masked_input = value if lane_mod_pre_var == p else ident
         warp_partial = _warp_reduce_min(masked_input, threads_in_group=32)
         partial_idx = partials_base + p * warps_per_group + warp_in_group
         if lane_in_warp == 0:
@@ -285,7 +372,7 @@ def _cute_grouped_reduce_shared_two_stage_min(
             stage2_input = (
                 smem[partials_base + p * warps_per_group + lane_in_warp]
                 if lane_in_warp < warps_per_group
-                else identity
+                else ident
             )
             group_result = _warp_reduce_min(stage2_input, threads_in_group=32)
             if lane_in_warp == 0:
@@ -303,16 +390,18 @@ def _cute_grouped_reduce_shared_two_stage_prod(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
     group_count: cutlass.Constexpr[int],
 ) -> cute.Numeric:
-    dtype = type(identity)
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     warps_per_group = group_span // 32
     partials_size = group_count * pre * warps_per_group
     results_size = group_count * pre
     smem_size = partials_size + results_size
-    smem_ptr = cute.arch.alloc_smem(dtype, smem_size)
+    smem_ptr = cute.arch.alloc_smem(acc_dtype, smem_size)
     smem = cute.make_tensor(smem_ptr, (smem_size,))
     group_id = lane_var // group_span
     lane_in_warp = lane_var % 32
@@ -321,7 +410,7 @@ def _cute_grouped_reduce_shared_two_stage_prod(
     results_base = partials_size + group_id * pre
 
     for p in cutlass.range_constexpr(pre):
-        masked_input = input_value if lane_mod_pre_var == p else identity
+        masked_input = value if lane_mod_pre_var == p else ident
         warp_partial = _warp_reduce_prod(masked_input, threads_in_group=32)
         partial_idx = partials_base + p * warps_per_group + warp_in_group
         if lane_in_warp == 0:
@@ -332,7 +421,7 @@ def _cute_grouped_reduce_shared_two_stage_prod(
             stage2_input = (
                 smem[partials_base + p * warps_per_group + lane_in_warp]
                 if lane_in_warp < warps_per_group
-                else identity
+                else ident
             )
             group_result = _warp_reduce_prod(stage2_input, threads_in_group=32)
             if lane_in_warp == 0:
@@ -358,6 +447,7 @@ def _cute_grouped_reduce_shared_two_stage(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: int,
     group_span: int,
     group_count: int,
@@ -371,6 +461,7 @@ def _cute_grouped_reduce_shared_two_stage(
         lane_var,
         lane_in_group_var,
         lane_mod_pre_var,
+        acc_dtype=acc_dtype,
         pre=pre,
         group_span=group_span,
         group_count=group_count,
@@ -385,21 +476,23 @@ def _cute_grouped_reduce_shared_tree_sum(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
     num_threads: cutlass.Constexpr[int],
     group_count: cutlass.Constexpr[int],
 ) -> cute.Numeric:
-    dtype = type(identity)
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     smem_size = num_threads + group_count * pre
-    smem_ptr = cute.arch.alloc_smem(dtype, smem_size)
+    smem_ptr = cute.arch.alloc_smem(acc_dtype, smem_size)
     smem = cute.make_tensor(smem_ptr, (smem_size,))
     group_base = lane_var - lane_in_group_var
     group_id = lane_var // group_span
     result_base = num_threads + group_id * pre
 
     for p in cutlass.range_constexpr(pre):
-        smem[lane_var] = input_value if lane_mod_pre_var == p else identity
+        smem[lane_var] = value if lane_mod_pre_var == p else ident
         cute.arch.sync_threads()
         stride = 1
         while stride < group_span:
@@ -428,21 +521,23 @@ def _cute_grouped_reduce_shared_tree_max(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
     num_threads: cutlass.Constexpr[int],
     group_count: cutlass.Constexpr[int],
 ) -> cute.Numeric:
-    dtype = type(identity)
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     smem_size = num_threads + group_count * pre
-    smem_ptr = cute.arch.alloc_smem(dtype, smem_size)
+    smem_ptr = cute.arch.alloc_smem(acc_dtype, smem_size)
     smem = cute.make_tensor(smem_ptr, (smem_size,))
     group_base = lane_var - lane_in_group_var
     group_id = lane_var // group_span
     result_base = num_threads + group_id * pre
 
     for p in cutlass.range_constexpr(pre):
-        smem[lane_var] = input_value if lane_mod_pre_var == p else identity
+        smem[lane_var] = value if lane_mod_pre_var == p else ident
         cute.arch.sync_threads()
         stride = 1
         while stride < group_span:
@@ -471,21 +566,23 @@ def _cute_grouped_reduce_shared_tree_min(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
     num_threads: cutlass.Constexpr[int],
     group_count: cutlass.Constexpr[int],
 ) -> cute.Numeric:
-    dtype = type(identity)
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     smem_size = num_threads + group_count * pre
-    smem_ptr = cute.arch.alloc_smem(dtype, smem_size)
+    smem_ptr = cute.arch.alloc_smem(acc_dtype, smem_size)
     smem = cute.make_tensor(smem_ptr, (smem_size,))
     group_base = lane_var - lane_in_group_var
     group_id = lane_var // group_span
     result_base = num_threads + group_id * pre
 
     for p in cutlass.range_constexpr(pre):
-        smem[lane_var] = input_value if lane_mod_pre_var == p else identity
+        smem[lane_var] = value if lane_mod_pre_var == p else ident
         cute.arch.sync_threads()
         stride = 1
         while stride < group_span:
@@ -514,21 +611,23 @@ def _cute_grouped_reduce_shared_tree_prod(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: cutlass.Constexpr[int],
     group_span: cutlass.Constexpr[int],
     num_threads: cutlass.Constexpr[int],
     group_count: cutlass.Constexpr[int],
 ) -> cute.Numeric:
-    dtype = type(identity)
+    value = acc_dtype(input_value)
+    ident = acc_dtype(identity)
     smem_size = num_threads + group_count * pre
-    smem_ptr = cute.arch.alloc_smem(dtype, smem_size)
+    smem_ptr = cute.arch.alloc_smem(acc_dtype, smem_size)
     smem = cute.make_tensor(smem_ptr, (smem_size,))
     group_base = lane_var - lane_in_group_var
     group_id = lane_var // group_span
     result_base = num_threads + group_id * pre
 
     for p in cutlass.range_constexpr(pre):
-        smem[lane_var] = input_value if lane_mod_pre_var == p else identity
+        smem[lane_var] = value if lane_mod_pre_var == p else ident
         cute.arch.sync_threads()
         stride = 1
         while stride < group_span:
@@ -565,6 +664,7 @@ def _cute_grouped_reduce_shared_tree(
     lane_in_group_var: cutlass.Int32,
     lane_mod_pre_var: cutlass.Int32,
     *,
+    acc_dtype: cutlass.Constexpr,
     pre: int,
     group_span: int,
     num_threads: int,
@@ -579,6 +679,7 @@ def _cute_grouped_reduce_shared_tree(
         lane_var,
         lane_in_group_var,
         lane_mod_pre_var,
+        acc_dtype=acc_dtype,
         pre=pre,
         group_span=group_span,
         num_threads=num_threads,
@@ -677,54 +778,3 @@ def _cute_argreduce_index(
     if impl is None:
         raise ValueError(f"unsupported CuTe argreduce type: {reduction_type!r}")
     return impl(smem, valid_smem, start_idx, stride, extent=extent)
-
-
-# Per-thread V-fold helpers for vectorized loads.  Used by the looped
-# reduction strategy to collapse a length-V vector load into a scalar
-# before the warp-level reduction.
-
-
-@cute.jit
-def _cute_pre_vec_fold_sum(vec: object, *, V: cutlass.Constexpr[int]) -> object:
-    acc = vec[0]
-    for i in cutlass.range_constexpr(1, V):
-        acc = acc + vec[i]
-    return acc
-
-
-@cute.jit
-def _cute_pre_vec_fold_max(vec: object, *, V: cutlass.Constexpr[int]) -> object:
-    acc = vec[0]
-    for i in cutlass.range_constexpr(1, V):
-        candidate = vec[i]
-        acc = max(acc, candidate)
-    return acc
-
-
-@cute.jit
-def _cute_pre_vec_fold_min(vec: object, *, V: cutlass.Constexpr[int]) -> object:
-    acc = vec[0]
-    for i in cutlass.range_constexpr(1, V):
-        candidate = vec[i]
-        acc = min(acc, candidate)
-    return acc
-
-
-@cute.jit
-def _cute_pre_vec_fold_prod(vec: object, *, V: cutlass.Constexpr[int]) -> object:
-    acc = vec[0]
-    for i in cutlass.range_constexpr(1, V):
-        acc = acc * vec[i]
-    return acc
-
-
-def _cute_pre_vec_fold(vec: object, reduction_type: str, *, V: int) -> object:
-    if reduction_type == "sum":
-        return _cute_pre_vec_fold_sum(vec, V=V)
-    if reduction_type == "max":
-        return _cute_pre_vec_fold_max(vec, V=V)
-    if reduction_type == "min":
-        return _cute_pre_vec_fold_min(vec, V=V)
-    if reduction_type == "prod":
-        return _cute_pre_vec_fold_prod(vec, V=V)
-    raise ValueError(f"unsupported CuTe pre-vec-fold type: {reduction_type!r}")

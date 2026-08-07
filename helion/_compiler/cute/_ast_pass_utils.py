@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import ast
 
+from ..ast_extension import ExtendedAST
+
 
 class _NameRefCollector(ast.NodeVisitor):
     """Collect all ``ast.Name`` ids that appear as Load contexts in ``node``."""
@@ -35,3 +37,38 @@ def _assignment_lhs_name(stmt: ast.stmt) -> str | None:
         if isinstance(target, ast.Name):
             return target.id
     return None
+
+
+def ext_deepcopy(node: object) -> object:
+    """Deepcopy an AST subtree, preserving ``ExtendedAST`` mixin attributes.
+
+    ⚠ ``copy.deepcopy`` does NOT work on these nodes: ``ExtendedAST.__init__`` requires a
+    keyword-only ``_location`` and the default deepcopy reconstructor passes positional
+    args, so it raises ``TypeError``.  Walk the tree and recreate each node through its own
+    ``copy()`` helper instead, which carries ``_location`` / ``_type_info`` /
+    ``_loop_type`` / ``_root_id`` across.
+
+    Lifted verbatim from ``online_to_3pass._ext_copy``, which is now a thin alias -- two
+    passes need it and a third copy would be the fourth byte-identical clone this module
+    exists to prevent.
+    """
+    if isinstance(node, list):
+        return [ext_deepcopy(x) for x in node]
+    if not isinstance(node, ast.AST):
+        return node
+    if isinstance(node, ExtendedAST):
+        return node.copy(
+            **{field: ext_deepcopy(getattr(node, field)) for field in node._fields}
+        )
+    cls = type(node)
+    new_node = cls(
+        **{
+            field: ext_deepcopy(getattr(node, field))
+            for field in node._fields
+            if hasattr(node, field)
+        }
+    )
+    for attr in getattr(node, "_attributes", ()):
+        if hasattr(node, attr):
+            setattr(new_node, attr, getattr(node, attr))
+    return new_node

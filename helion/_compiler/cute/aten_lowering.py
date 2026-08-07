@@ -728,6 +728,25 @@ def _maybe_codegen_cute_baddbmm_n_collapse(
             )
         return rematerialized
 
+    # ⭐ RECORD THAT THIS BLOCK'S REDUCTION IS NOW ALREADY PERFORMED.
+    #
+    # The fold below reduces ``n_block_id`` inside the matmul, so the downstream
+    # ``.sum(-1)`` over that block is a no-op (see ``_emit_cute_matmul_n_collapse``'s
+    # docstring).  A reduction strategy that later emits a ``_helion_lane_reduce``
+    # marker for the SAME block is therefore emitting a redundant fold, and
+    # ``_decline_structural_lane_split`` needs to know that to decide whether
+    # deleting it is legal -- it cannot recover the fact from the AST (see
+    # ``CuteDeviceFunctionState.matmul_folded_reduction_block_ids``).
+    #
+    # ⚠ Recorded HERE, after both gates have passed and immediately before the
+    # emission, so the record means "a fold was emitted" and not "a fold looked
+    # possible".  ``_cute_baddbmm_result_reduced_over_block`` above is what makes it
+    # sound: it has already established that this block IS genuinely reduced
+    # downstream and that the matmul result does not escape to another consumer.
+    ctx.cg.device_function.cute_state.matmul_folded_reduction_block_ids.add(
+        getattr(env, "canonical_block_id", lambda block_id: block_id)(n_block_id)
+    )
+
     return _emit_cute_matmul_n_collapse(
         ctx.cg,
         lhs,

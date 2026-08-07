@@ -159,9 +159,19 @@ def _(state: CodegenState) -> ast.AST:
     mask_exprs: list[str] = []
     input_sizes = [*tensor.size()]
     for dim, size in enumerate(input_sizes):
+        # ``load_mask_var``: ``_mask_to`` is a pure VALUE select -- it rewrites a register
+        # to ``other`` on out-of-range lanes and has no memory effect of its own -- so it
+        # can never be the predicate that decides whether a store happens.  (A stored
+        # ``_mask_to`` result is still gated by the store's own ``mask_var``.)  Its only
+        # job is to install a reduction's identity on lanes that hold no real element, so
+        # when the strategy proves every lane of this axis holds a real in-range element
+        # there is nothing to install.  This is the class that carries the win: MEASURED
+        # (``_redfix2/repro/r3_a1_useclass_probe.py``, ``cross_entropy_online`` 32768x4096)
+        # these per-element selects are worth 0.335 of the cell's 0.386 total, against
+        # 0.048 for the load pointers and 0.000 for the store guard.
         if (
             index := CompileEnvironment.current().resolve_block_id(size)
-        ) is not None and (mask_var := state.codegen.mask_var(index)) is not None:
+        ) is not None and (mask_var := state.codegen.load_mask_var(index)) is not None:
             expand = state.tile_strategy.expand_str(input_sizes, dim)
             expr = f"({mask_var}{expand})"
             if expr not in mask_exprs:

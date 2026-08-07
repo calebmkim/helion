@@ -33,10 +33,36 @@ runs::
             _pipe_load = cute.arch.load(<addr using _pipe_lane_base>, VEC_TY)
             # ... compute body uses LOAD_VAR + LANE_BASE (unchanged) ...
 
-The masked-load form (``... if lane_base < N else ... idx 0``) already
-guards against the speculative next-iter load reading out of bounds on
-the final iteration: the mask falls through to a safe in-bounds index
-0 read.
+SAFETY INVARIANT — read this before touching the rewrite.
+
+    **The prefetch is safe iff the load it re-emits was already guarded on
+    every axis.  This pass does not add guards; it preserves them.  The
+    EMITTER is responsible for the guard.**
+
+The pass advances the address by one full chunk, so it *converts* a latent
+over-read in an unguarded load into an executed one — on the last iteration the
+prefetch addresses ``roffset + STEP + ...``, past the end of the row.  It relies
+entirely on the load's pointer already being an ``ast.IfExp`` that falls back to
+an in-bounds anchor; ``_NameRenamer`` visits the whole subtree, so an ``IfExp``
+pointer round-trips through both the prologue and the per-iteration prefetch with
+``_pipe_lane_base_N`` correctly substituted *inside* the condition.
+
+That guard is produced inline by the vec hoists (main's lane-axis anchor form)
+(``helion/language/memory_ops.py``), which bounds every axis the load indexes.
+``_is_vec_load_call`` is **fail-closed**: a load whose pointer is not an
+``IfExp`` is refused, so this pass declines to pipeline rather than turning a
+guardless emitter into an illegal read.  Declining is always safe — this is a
+perf pass.
+
+    HISTORICAL NOTE.  This block used to claim the prefetch was safe because
+    "the masked-load form ... falls through to a safe in-bounds index 0."  That
+    was wrong twice over and is why two GPU-measurable out-of-bounds reads
+    survived here: (a) only 2 of the 4 vec emitters produced that form at all --
+    the one this pass actually fires on for bf16 (``unroll``) emitted a bare
+    ``cute.arch.load``; and (b) even the two that had a guard clamped the
+    *column* only, so their fallback pointer was still out of bounds whenever
+    the row was invalid.  Do not restore a safety argument that rests on a
+    property of one emitter.
 
 Correctness:
   * Prologue load is identical to the iter-0 load that the original
@@ -45,10 +71,10 @@ Correctness:
     issued in the prior iter's prefetch (or the prologue for iter 0).
   * The next-iter prefetch updates ``_pipe_*`` AFTER the snapshot, so
     the body reads the CORRECT (current iter's) values.
-  * For the LAST iteration, the speculative prefetch reads beyond the
-    end of the bounds-checked region — the masked-load form returns a
-    safe in-bounds value which we never use (the loop ends after this
-    iter).
+  * For the LAST iteration, the speculative prefetch addresses one chunk
+    beyond the reduction extent.  The emitter's guard redirects that
+    pointer to an in-bounds anchor, and the fetched value is never used
+    (the loop ends after this iter).
 
 The pass is conservative.  It only triggers when:
 
@@ -61,7 +87,8 @@ The pass is conservative.  It only triggers when:
      assignment (``LANE_BASE = tile_offset + ...``) followed by a
      vector load assignment (``LOAD_VAR = cute.arch.load(..., VecType)``).
   3. The load's address expression mentions LANE_BASE.
-  4. The outer-loop trip count must be > 1 (otherwise there's no second
+  4. The load's address expression is bounds-guarded (an ``IfExp``).
+  5. The outer-loop trip count must be > 1 (otherwise there's no second
      iter to pipeline) and the loop must not be empty.
 
 P19 (optional gate): an opt-in heuristic restricts pipelining to
@@ -196,11 +223,20 @@ def _const_int_value(
 
 
 def _is_vec_load_call(node: ast.expr) -> bool:
-    """True if ``node`` is ``cute.arch.load(<ptr>, ir.VectorType.get([V], ...))``.
+    """True if ``node`` is a **bounds-guarded**
+    ``cute.arch.load(<ptr>, ir.VectorType.get([V], ...))``.
 
-    Matches both the raw call and the wrapped masked form used in some
-    backends.  We also accept any 2-arg ``cute.arch.load(...)`` to keep
-    the pattern flexible.
+    FAIL-CLOSED, and deliberately so.  Pipelining shifts the address one full
+    chunk ahead, so it is what converts a latent over-read in an unguarded load
+    into an executed illegal read.  A pointer that is not an ``ast.IfExp`` is
+    therefore not pipelineable: we refuse and the loop keeps its original,
+    non-speculative load.  Refusing is always safe (this is a perf pass, already
+    switchable off via ``HELION_DISABLE_LOAD_PIPELINE=1``), so this turns any
+    future guardless emitter into a caught perf regression instead of an
+    uncaught out-of-bounds read.
+
+    The guard is emitted inline by the vec hoists (main's lane-axis anchor form)
+    (``helion/language/memory_ops.py``), which bounds every axis of the load.
     """
     if not isinstance(node, ast.Call):
         return False
@@ -217,7 +253,12 @@ def _is_vec_load_call(node: ast.expr) -> bool:
         return False
     # Second arg must be a VectorType / VectorType.get expression.  Be
     # lax: just require it's a Call so we don't match scalar loads.
-    return isinstance(node.args[1], ast.Call)
+    if not isinstance(node.args[1], ast.Call):
+        return False
+    # First arg must be the guarded pointer form
+    # ``(<ptr> if <bounds> else <anchor ptr>)``.  An unguarded pointer is
+    # refused; see the docstring.
+    return isinstance(node.args[0], ast.IfExp)
 
 
 class _NameRenamer(ast.NodeTransformer):

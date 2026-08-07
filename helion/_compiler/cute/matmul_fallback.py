@@ -342,6 +342,7 @@ def _emit_cute_grouped_sum_reduction_shared_two_stage(
     cg: CodegenInterface,
     input_name: str,
     *,
+    acc_dtype_str: str,
     identity_expr: str,
     lane_var: str,
     lane_in_group_var: str,
@@ -355,6 +356,7 @@ def _emit_cute_grouped_sum_reduction_shared_two_stage(
         f"{result_var} = _cute_grouped_reduce_shared_two_stage("
         f"{input_name}, 'sum', {identity_expr}, "
         f"{lane_var}, {lane_in_group_var}, {lane_mod_pre_var}, "
+        f"acc_dtype={acc_dtype_str}, "
         f"pre={pre}, group_span={group_span}, group_count={group_count})"
     )
     return result_var
@@ -364,6 +366,7 @@ def _emit_cute_grouped_sum_reduction_shared_tree(
     cg: CodegenInterface,
     input_name: str,
     *,
+    acc_dtype_str: str,
     identity_expr: str,
     lane_var: str,
     lane_in_group_var: str,
@@ -378,6 +381,7 @@ def _emit_cute_grouped_sum_reduction_shared_tree(
         f"{result_var} = _cute_grouped_reduce_shared_tree("
         f"{input_name}, 'sum', {identity_expr}, "
         f"{lane_var}, {lane_in_group_var}, {lane_mod_pre_var}, "
+        f"acc_dtype={acc_dtype_str}, "
         f"pre={pre}, group_span={group_span}, "
         f"num_threads={num_threads}, group_count={group_count})"
     )
@@ -453,12 +457,19 @@ def _emit_cute_grouped_sum_reduction(
             "when the planned thread count exceeds the launch block",
         )
 
-    identity_expr = f"{backend.dtype_str(value_dtype)}(0)"
+    # A matmul contraction accumulates in the MMA accumulator dtype, which is
+    # ``value_dtype`` -- deliberately NOT widened for integers.  Measured:
+    # ``torch.matmul`` on int32 keeps int32 and wraps in eager too, so widening
+    # here would diverge from the reference rather than match it (unlike
+    # ``torch.sum``, which does promote to int64).  The dtype is still passed
+    # EXPLICITLY so the helpers never infer it from the identity.
+    acc_dtype_str = backend.dtype_str(value_dtype)
+    identity_expr = f"{acc_dtype_str}(0)"
     if group_span <= 32:
         return (
             "_cute_grouped_reduce_warp("
             f"{input_name}, 'sum', {identity_expr}, {lane_expr}, "
-            f"pre={pre}, group_span={group_span})"
+            f"acc_dtype={acc_dtype_str}, pre={pre}, group_span={group_span})"
         )
 
     assert num_threads % group_span == 0, (
@@ -474,6 +485,7 @@ def _emit_cute_grouped_sum_reduction(
         return _emit_cute_grouped_sum_reduction_shared_two_stage(
             cg,
             input_name,
+            acc_dtype_str=acc_dtype_str,
             identity_expr=identity_expr,
             lane_var=lane_var,
             lane_in_group_var=lane_in_group_var,
@@ -485,6 +497,7 @@ def _emit_cute_grouped_sum_reduction(
     return _emit_cute_grouped_sum_reduction_shared_tree(
         cg,
         input_name,
+        acc_dtype_str=acc_dtype_str,
         identity_expr=identity_expr,
         lane_var=lane_var,
         lane_in_group_var=lane_in_group_var,

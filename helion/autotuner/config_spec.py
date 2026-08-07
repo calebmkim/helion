@@ -58,6 +58,17 @@ from .._compiler.cute.tcgen05_config import CuteTcgen05Config
 from .._compiler.cute.tcgen05_config import Tcgen05AbStagesThreeSearchConstraints
 from .._compiler.cute.tcgen05_config import Tcgen05ClusterM2SearchConstraints
 from .._compiler.cute.tcgen05_constants import TCGEN05_TWO_CTA_MAX_K_TILES
+from .._compiler.cute.tv_layout import NDTILE_TV_CHOICES
+from .._compiler.cute.tv_layout import ONLINE_DEFER_CHOICES
+from .._compiler.cute.tv_layout import REDUCTION_RELOAD_CHOICES
+from .._compiler.cute.tv_layout import ROW_RESIDENCY_CHOICES
+from .._compiler.cute.tv_layout import ROW_RESIDENCY_GMEM
+from .._compiler.cute.tv_layout import THREADS_PER_ROW_CHOICES
+from .._compiler.cute.tv_layout import ndtile_tv_for
+from .._compiler.cute.tv_layout import online_defer_for
+from .._compiler.cute.tv_layout import row_residency_for
+from .._compiler.cute.tv_layout import row_residency_from_legacy
+from .._compiler.cute.tv_layout import threads_per_row_for
 from ..exc import InvalidConfig
 from ..runtime.triton.launcher import get_num_xcd
 from .block_id_sequence import BlockIdSequence
@@ -425,6 +436,25 @@ BACKEND_SPECIFIC_KEYS: frozenset[str] = (
     | {
         "num_threads",
         "cute_vector_widths",
+        "cute_threads_per_row",
+        # ⚠ ACCEPTED BUT NOT A KNOB (task 1): an input spelling with no spec sequence and
+        # no search slot, translated into ``cute_row_residency`` and stripped by
+        # ``_normalize_cute_row_residency``.  Listed here so an old config migrates
+        # silently instead of raising ``Unsupported config keys``.
+        "cute_reduction_reload",
+        # ⭐ The ONE three-way row-residency axis (registers / smem / gmem) that
+        # SUPERSEDED the ``cute_reduction_reload`` + ``cute_tv_sweep_cache``
+        # conjunction as the SELECTOR.  cute-only for the same reason as the four
+        # above: it names CuTe emission arms.
+        "cute_row_residency",
+        # Bounds the ``smem`` arm of ``cute_row_residency``: the whole-kernel SMEM budget
+        # its staging tiles may occupy.  cute-only for the same reason as the four above.
+        # The two AST-pass knobs.  cute-only, so they MUST be listed here: the
+        # base ``Backend.supports_config_key`` rejects every member of this set,
+        # which is what makes ``ConfigSpec._normalize`` raise on a config that
+        # names them for triton/pallas/metal instead of silently ignoring them.
+        "cute_ndtile_tv",
+        "cute_online_defer",
         "load_cache_modifiers",
         "store_cache_modifiers",
         "pallas_loop_type",
@@ -461,6 +491,11 @@ VALID_KEYS: frozenset[str] = frozenset(
         "pallas_load_buffer_count",
         "pallas_pre_broadcast",
         "cute_vector_widths",
+        "cute_threads_per_row",
+        "cute_reduction_reload",
+        "cute_row_residency",
+        "cute_ndtile_tv",
+        "cute_online_defer",
         *BACKEND_TUNABLE_KEYS,
         "advanced_controls_file",
         "epilogue_subtile",
@@ -536,6 +571,21 @@ def get_valid_store_cache_modifiers(backend_name: str) -> tuple[str, ...]:
     return ("",)
 
 
+def _config_fingerprint(config: Mapping[str, object]) -> str:
+    """A content key for a config dict, stable across copies of it.
+
+    Used only by the ``cute_row_residency`` provenance sets (see
+    ``ConfigSpec._record_cute_row_residency_provenance``).  ⚠ CONTENT AND NOT ``id()``,
+    because ``BoundKernel.to_code`` deliberately COPIES the config before normalizing it,
+    so the object codegen sees is never the object that was recorded.
+
+    ⚠ NOT ``hash()``: ``Config.__hash__`` exists but this is handed plain dicts as well,
+    and a repr-based key keeps the sets debuggable when a provenance answer is surprising.
+    Sorted so key order cannot change the answer.
+    """
+    return repr(sorted((k, repr(v)) for k, v in config.items()))
+
+
 class ConfigSpec:
     def __init__(
         self,
@@ -588,6 +638,60 @@ class ConfigSpec:
         self.cute_vector_widths: BlockIdSequence[CuteVectorWidthSpec] = (
             BlockIdSequence()
         )
+        # The TV-layout knobs are registered together (one slot per reduction
+        # block) so a reduction's layout is fully described by block size,
+        # threads per row, vector width, and row residency.
+        self.cute_threads_per_row: BlockIdSequence[CuteThreadsPerRowSpec] = (
+            BlockIdSequence()
+        )
+        # ⭐ The ONE three-way residency axis (registers / smem / gmem) -- and after
+        # task 1 it is the ONLY key carrying that decision.  ``cute_reduction_reload``
+        # used to be declared right here on the same domain, which is what let one
+        # decision wear two keys; it is now an accepted INPUT spelling only, translated
+        # and stripped by ``_normalize_cute_row_residency``.  It is deliberately NOT
+        # grouped with
+        # ``cute_tv_sweep_cache`` below: that key's per-device-loop domain is right
+        # for a pass's register budget and wrong for a row's residency, and having
+        # one decision live on two domains is what this axis removes.
+        self.cute_row_residency: BlockIdSequence[CuteRowResidencySpec] = (
+            BlockIdSequence()
+        )
+        # The two AST-pass knobs, one slot per DEVICE LOOP (see
+        # ``CuteOnlineDeferSpec`` for why that domain differs from the three
+        # TV-layout knobs above, which are per reduction block).  Registered from
+        # ``lower_to_device_ir`` rather than from ``register_rollable_reductions``,
+        # because the latter early-returns when a kernel has no reduction block --
+        # and ``cross_entropy_online``, the kernel ``cute_online_defer`` controls,
+        # is exactly that kernel.
+        self.cute_ndtile_tv: BlockIdSequence[CuteNDTileTvSpec] = BlockIdSequence()
+        self.cute_online_defer: BlockIdSequence[CuteOnlineDeferSpec] = BlockIdSequence()
+        # ⭐ USER-PROVENANCE for ``cute_row_residency``, as two sets of config
+        # FINGERPRINTS (see ``_config_fingerprint`` for why content and not ``id()``):
+        #
+        #   _cute_row_residency_explicit     the caller WROTE the key in a config handed
+        #                                    to ``normalize`` (written there, the only
+        #                                    place the answer is still knowable).
+        #                                    ⚠ Keyed by ``id()`` of the config DICT, and
+        #                                    content would be WRONG -- an explicit request,
+        #                                    a ladder fill and the legacy spelling all
+        #                                    normalize to the SAME bytes, which is exactly
+        #                                    the collision this carrier exists to see
+        #                                    through.  Sound because ``to_code`` normalizes
+        #                                    the very copy it then hands to codegen.
+        #   _cute_row_residency_synthesised  the config was MINTED by ``flat_config`` --
+        #                                    a default or an autotuner draw -- so its keys
+        #                                    were never typed by a human.  ⚠ Keyed by
+        #                                    CONTENT, because this one MUST survive
+        #                                    ``to_code``'s defensive copy.  Wins over the
+        #                                    set above; ``cute_row_residency_is_explicit``
+        #                                    documents why the order matters.
+        #
+        # ⚠ NEITHER IS the question ``TileStrategy._cute_row_residency_requested_by_block``
+        # answers.  That dict records "a strategy resolved a residency for this block", off
+        # the POST-normalize config, so it cannot see the distinction these sets exist for
+        # -- the measurement is in ``_record_cute_row_residency_provenance``'s docstring.
+        self._cute_row_residency_explicit: set[int] = set()
+        self._cute_row_residency_synthesised: set[str] = set()
         self.range_unroll_factors: BlockIdSequence[RangeUnrollFactorSpec] = (
             BlockIdSequence()
         )
@@ -1418,6 +1522,345 @@ class ConfigSpec:
             ab_stages_three_device=ab_stages_three_device,
         )
 
+    def _record_cute_row_residency_provenance(
+        self,
+        config: dict[str, object],
+        provided_keys: set[str],
+        fix_invalid: bool,
+    ) -> None:
+        """⭐ DID THE CALLER *WRITE* ``cute_row_residency``, or did the ladder fill it?
+
+        Records the answer on ``self`` so codegen can ask it.  This is the carrier that
+        makes "a named residency is honoured or raises" implementable at all, and it did
+        not exist before -- which is worth stating plainly, because the task statement
+        said it did:
+
+            "⭐ The provenance machinery already exists -- item 4 built
+             ``_cute_row_residency_requested_by_block`` for exactly this 'explicit vs
+             default' distinction.  Reuse it; do not re-derive from the value."
+
+        ⛔ MEASURED FALSE.  That dict stores whatever ``_cute_row_residency_config``
+        returned, and THAT reads the POST-normalize config (``tile_strategy`` ~:3834
+        ``config_get``), i.e. after ``_fill_missing`` has already run.  A ladder-filled
+        ``smem`` and a user-written ``smem`` are the same bytes by then, so the dict
+        cannot tell them apart.  What it actually distinguishes is "did a STRATEGY
+        resolve a residency for this block" vs "the base-class sentinel" -- compiler-side
+        provenance, which is strictly weaker.
+
+        The only true user-provenance in the tree is ``provided_keys`` (``normalize``'s
+        own local, snapshotted before the ``_fill_missing`` loop), and it used to die at
+        the end of that call.  This method is what makes it outlive it.
+
+        ⚠ WHY IT IS KEYED ON ``id(config)`` AND CLEARED, RATHER THAN STORED ON THE
+        CONFIG.  Two constraints, both load-bearing:
+
+        * A reserved key inside the config dict (``_cute_row_residency_explicit``) is not
+          available: the config is hashed, compared, JSON-round-tripped, cached and
+          recorded into ``frozen_configs.json``, so an extra key would change every
+          recorded artifact and every cache key, and ``Config.__eq__`` would call two
+          equal configs different.
+        * An attribute on ``ConfigSpec`` alone is not enough either, because ONE spec
+          normalizes MANY configs (the autotuner normalizes thousands against the same
+          spec), so a single flag would leak one draw's provenance into the next.
+
+        ⇒ per-config, on the spec, keyed by identity, and ``BoundKernel.to_code`` hands
+        codegen the very object it normalized (``kernel.py`` ~:820 copies FIRST and then
+        normalizes the copy), so the identity is still valid at codegen.
+
+        ⚠ ``fix_invalid=True`` MEANS "THE AUTOTUNER BUILT THIS", AND IT IS RECORDED AS
+        *NOT EXPLICIT* REGARDLESS OF WHICH KEYS ARE PRESENT.  That is the whole reason
+        the raise is safe.  ``ConfigGeneration.unflatten`` -> ``flat_config`` writes EVERY
+        key and then normalizes with ``_fix_invalid=True``, so a searched config always
+        "names" the residency and a provenance test over ``provided_keys`` alone would
+        read every draw as explicit -- which is exactly how an earlier attempt at this
+        (recorded at ``_reconcile_cute_residency_budget``) came to fire a raise inside the
+        autotuner and had to be replaced by a reconcile.  ``_fix_invalid`` is already the
+        tree's own "this config was synthesised, silently fix it" signal, so keying on it
+        reuses an existing distinction instead of inventing a parallel one.
+        """
+        if self.backend_name != "cute":
+            return
+        if fix_invalid or "cute_row_residency" not in provided_keys:
+            # ⭐⭐ A LADDER FILL IS RECORDED **CONTENT-KEYED**, SO IT SURVIVES A COPY.
+            #
+            # ⛔ THE DEFECT THIS CLOSES, AND IT IS NOT HYPOTHETICAL.
+            # ``BoundKernel.compile_config`` calls ``_normalized_config_copy``, which does
+            # ``Config(**normalized.config)`` and then normalizes AGAIN.  By that second
+            # call ``_fill_missing`` has already written ``cute_row_residency``, so it IS
+            # in ``provided_keys`` -- and the ``id()``-keyed ``explicit`` set below records
+            # the copy as an explicit user request.  The comment further down explains why
+            # ``id()`` is right for a config the caller really did write every key of; what
+            # it assumed is that ``to_code`` "copies FIRST and then normalizes the copy".
+            # ``compile_config`` now normalizes, copies, and normalizes again, so the
+            # assumption no longer holds and the carrier reports a LADDER FILL AS EXPLICIT.
+            #
+            # MEASURED on ``Config(block_sizes=[1, 128, 128])`` (a biased-attention kernel
+            # naming no residency at all):
+            #
+            #     after ONE normalize                  cute_row_residency=['registers']
+            #                                          is_explicit = False   ✅
+            #     after a COPY + a SECOND normalize    cute_row_residency=['registers']
+            #                                          is_explicit = True    ⛔
+            #
+            # Downstream, any honour-or-error rule that trusts that answer fails a kernel
+            # over a default the user never saw.  MEASURED: recording a decline for a
+            # no-plan loop-free reduction without this took the cute suite from 13 failures
+            # to 84, including EVERY flash-attention test -- the third time an
+            # unconditional raise at a decline site has broken the attention examples.
+            #
+            # ⇒ mark the fill in ``synthesised``, which is CONTENT-keyed precisely so it
+            # survives a copy, and which ``cute_row_residency_is_explicit`` already checks
+            # FIRST and lets win over ``explicit``.  So the second normalize's (correct,
+            # from its own point of view) "the caller passed every key" is overruled by the
+            # older, stronger fact: no human ever typed this value.
+            #
+            # ⛔⛔ KNOWN LIMITATION, MEASURED, AND STATED HERE BECAUSE IT IS EASY TO GET
+            # WRONG: THE CONTENT-COLLISION ARGUMENT BELOW **DOES** REACH THIS DIRECTION.
+            #
+            # An earlier version of this comment claimed it did not, reasoning that a later
+            # same-bytes call must be "a request for the value the ladder would have chosen
+            # anyway, so the two are indistinguishable in effect".  ⛔ THAT REASONING IS
+            # WRONG.  Whether the ladder AGREES with a request has no bearing on whether the
+            # EMISSION HONOURED it, which is the entire point of the honour-or-error
+            # contract: a ``registers`` request that lands on a ``gmem`` kernel must be
+            # refused however the value was arrived at.
+            #
+            # MEASURED consequence, ``N=512 tpr=128 cute_vector_widths=[2,1]
+            # reduction_loops=[None] cute_row_residency=["registers"]`` -- the ladder's own
+            # value at N=512 -- in ONE process:
+            #
+            #     the EXPLICIT config normalized FIRST     -> refused    ✅
+            #     a NO-KEY config of the same shape first  -> compiled   ⛔ silently
+            #
+            # i.e. an explicit request for the ladder's own value is swallowed if a default
+            # config for the same shape was normalized earlier in the process.
+            #
+            # ⚠ WHY IT IS ACCEPTED RATHER THAN FIXED.  The alternative is worse and it is
+            # also measured: WITHOUT this record, a config that names NO residency at all
+            # hard-raises ``CuteRowResidencyUnavailable`` through ``compile_config`` -- seven
+            # tests, including every flash-attention one.  A user who wrote nothing getting
+            # an exception is worse than a user who wrote something losing a diagnostic.
+            #
+            # ⚠ FOUR CARRIERS WERE BUILT AND MEASURED; ALL FAIL, so this is a structural
+            # limit rather than an unfinished thought:
+            #   * last-writer-wins (also write ``False`` from the explicit branch below) --
+            #     breaks the config COPY this record exists to survive, because the copy's
+            #     own normalize sees the key present;
+            #   * check the ``id()``-keyed set FIRST -- same failure, the copy's own id lands
+            #     in it;
+            #   * key on the residency LIST's identity -- the copy DOES pass the list object
+            #     through, but ``BlockIdSequence._normalize`` does ``values = [*(values or
+            #     ())]``, rebuilding the list on EVERY normalize, so no list identity
+            #     survives one;
+            #   * stop ``compile_config`` re-normalizing (``_normalized_config_copy``) -- this
+            #     is the correct upstream fix and it works, but it also stops the
+            #     pre-existing LOOPED-path decline from firing, i.e. a behaviour change in
+            #     ``runtime/kernel.py`` far outside this change's scope.
+            #
+            # ⇒ a real fix belongs upstream: either ``compile_config`` not re-normalizing an
+            # already-normalized config, or provenance travelling ON the ``Config`` object
+            # instead of in a side table beside it.
+            if "cute_row_residency" not in provided_keys:
+                self._cute_row_residency_synthesised.add(_config_fingerprint(config))
+                if len(self._cute_row_residency_synthesised) > 8192:
+                    self._cute_row_residency_synthesised.clear()
+                    self._cute_row_residency_synthesised.add(
+                        _config_fingerprint(config)
+                    )
+            return
+        # ⚠ RECORD ONLY THE POSITIVE.  The reader's default is False, so an absent entry
+        # already means "not explicit"; writing False entries would only grow the set and
+        # would let a stale entry flip a real request to silent.
+        #
+        # ⚠⚠ KEYED BY ``id()`` OF THE CONFIG DICT, AND CONTENT WOULD BE **WRONG** HERE --
+        # not merely slower.  MEASURED: normalizing three configs that differ only in what
+        # the CALLER wrote --
+        #     (a) cute_row_residency=["smem"]      explicit
+        #     (b) nothing                          ladder fills "smem"
+        #     (c) cute_reduction_reload=["smem"]   legacy spelling, translated
+        # -- yields three FULLY-NORMALIZED configs that are byte-for-byte identical, so one
+        # content fingerprint names all three and the answer for (a) leaks onto (b) and (c).
+        # That collision is the very thing this carrier exists to see through: the whole
+        # point is that the VALUE cannot distinguish these and the PROVENANCE can.
+        #
+        # ⭐ And ``id()`` is exactly right for this half: ``BoundKernel.to_code`` copies the
+        # config and then normalizes THE COPY (``kernel.py`` ~:820-821), and it is that copy
+        # which reaches ``generate_ast`` -- so the dict recorded here IS the dict codegen
+        # reads back.  The synthesised set below is the one that has to survive a copy, and
+        # it is content-keyed for that reason.
+        self._cute_row_residency_explicit.add(id(config))
+        if len(self._cute_row_residency_explicit) > 8192:
+            # ⚠ ``id()`` IS REUSED AFTER A DICT IS FREED, so this set can hold a stale key
+            # that a future unrelated config lands on -- which would read as EXPLICIT and
+            # could raise.  Clearing bounds the exposure; the residual risk is accepted
+            # because the alternative (holding the dicts alive to keep ids unique) leaks
+            # every config in a search.  A false EXPLICIT can only ever fire when the
+            # residency ALSO could not be honoured, i.e. on a config that was already
+            # emitting the wrong residency silently.
+            self._cute_row_residency_explicit.clear()
+
+    def cute_row_residency_is_explicit(self, config: dict[str, object]) -> bool:
+        """Did the CALLER write ``cute_row_residency`` in this config?  See above.
+
+        ⚠⚠ FALSE IS THE FAIL-SAFE ANSWER, AND THE TWO CHECKS ARE ORDERED ACCORDINGLY.
+        A config that never went through this spec's ``normalize`` has no provenance, and
+        reading "no record" as EXPLICIT would turn every such path into a raise -- so the
+        polarity is chosen such that LOSING the record degrades to today's behaviour (a
+        silent decline), never to a new failure.
+
+        ⭐ ``synthesised`` WINS OVER ``explicit``, and the order is load-bearing.  A
+        machine-built config is re-normalized on the user path (``BoundKernel.to_code``
+        calls ``normalize`` a second time with ``_fix_invalid=False``), which records it as
+        explicit -- correctly, from that call's point of view, since the caller really did
+        pass every key.  The ``synthesised`` set is the older, stronger fact: it says the
+        keys were never typed by a human in the first place.  MEASURED: with the checks in
+        the other order, ``HELION_AUTOTUNE_EFFORT=none`` raises on two phase-A gate tests.
+        """
+        if _config_fingerprint(config) in self._cute_row_residency_synthesised:
+            return False
+        return id(config) in self._cute_row_residency_explicit
+
+    def _normalize_cute_row_residency(
+        self, config: dict[str, object], provided_keys: set[str]
+    ) -> None:
+        """⭐ Reconcile ``cute_row_residency`` with the two knobs it supersedes.
+
+        THE COMPATIBILITY RULE, and it is the thing that keeps the 40 frozen cells
+        byte-identical: whichever key the CALLER actually wrote is authoritative.
+
+        * the caller named ``cute_row_residency``     -> honour it, untouched;
+        * the caller named only the OLD keys          -> derive the axis from them via
+          ``row_residency_from_legacy``, so an existing config keeps meaning exactly
+          what it meant (and ``.expected`` goldens do not move);
+        * the caller named NEITHER                    -> ``_fill_missing`` already put
+          the per-shape ladder in, which reproduces the two old ladders composed.
+
+        ⚠ WHY ``provided_keys`` AND NOT "is the value falsy".  By the time this runs
+        every one of the three keys is present and filled, because ``_normalize``
+        above ran on all of them -- so "did the caller ask for this?" is no longer
+        readable off the values.  ``provided_keys`` is snapshotted BEFORE that loop
+        for exactly this reason.  Reading the filled values instead would make an
+        explicit ``cute_row_residency=["gmem"]`` indistinguishable from a ladder fill
+        and silently overwrite it from the old keys.
+
+        ⚠ ``cute_tv_sweep_cache`` IS NOT REWRITTEN OR REMOVED.  It stays in the config as
+        the caller left it, because it still has a real job -- a per-thread register BUDGET
+        that can make ``"registers"`` DECLINE.  It is no longer a selector, which is the
+        whole content of FIXLIST item 2.
+
+        ⭐⭐ ``cute_reduction_reload`` IS STRIPPED (task 1), AND THE STRIP IS THE FIX.
+        Before task 1 this method filled the new key and left the old one in place, so the
+        config that reached codegen carried the decision TWICE and
+        ``TileStrategy._cute_row_residency_config`` still read the old pair as a live
+        fallback -- i.e. the two-encodings bug the axis exists to remove was still
+        expressible.  Now the translation happens exactly once, here, at the door:
+
+            in :  cute_reduction_reload=[...]  (+ optional cute_tv_sweep_cache)
+            out:  cute_row_residency=[...]     and NO cute_reduction_reload
+
+        so after ``normalize()`` there is exactly ONE key carrying the residency, no
+        recorded artifact can spell it the old way, and nothing downstream reads the old
+        name.  What survives is an accepted INPUT spelling, which is what FIXLIST item 1
+        asks for ("``row_residency_from_legacy()`` a one-shot config migration rather than
+        a live translation").
+
+        ⚠ WHY AN ACCEPTED INPUT AT ALL, RATHER THAN A HARD REMOVAL.  Two reasons, one of
+        them a hard constraint: (a) ``_notes/tests/test_staging_on_persistent.py`` is a
+        GRADED contract test (level 8 forbids editing it) and it passes
+        ``cute_reduction_reload=["smem"]`` to ``helion.Config`` directly, so a hard removal
+        turns a green contract test red; (b) a translation-at-the-door is where a
+        compatibility shim belongs, and it costs nothing downstream because the key is
+        gone from the config by the time anything reads it.
+        """
+        # ⭐⭐ THE DEMOTION (task 2, FIXLIST item 2): ``cute_tv_sweep_cache`` IS NOT IN
+        # THIS SET.  It used to be, and that made the BUDGET a SELECTOR of the residency
+        # axis -- the exact defect item 2 names ("``sweep_cache`` re-decides the rmem arm
+        # from a second place ... nothing rejects the pair and the budget wins, so the
+        # emitted kernel contradicts the config").
+        #
+        # MEASURED before this edit, on ``rms_norm`` M=2048 N=8192 bf16, normalizing a
+        # config that names ONLY the budget:
+        #
+        #     cute_tv_sweep_cache=[0]    ->  cute_row_residency=['gmem']       ⬅ THE BUG
+        #     cute_tv_sweep_cache=[16]   ->  cute_row_residency=['registers']
+        #     cute_tv_sweep_cache=[128]  ->  cute_row_residency=['registers']
+        #     (nothing named)            ->  cute_row_residency=['smem']  (the ladder)
+        #
+        # i.e. an integer whose documented job is "how many registers may the cache spend"
+        # was choosing WHICH OF THREE KERNELS to emit, through
+        # ``row_residency_from_legacy``'s ``cache_slots > 0`` test -- a mode switch wearing
+        # a budget's name.  After this edit the axis is decided by ``cute_row_residency``
+        # (explicit) or by its own per-shape ladder (absent), and the budget only ever
+        # CAPS the ``registers`` arm at the pass.
+        #
+        # ⚠⚠ THIS IS A BEHAVIOUR CHANGE, NOT A REACHABILITY CHANGE, AND IT IS THE ONLY
+        # ONE IN TASKS 1-3.  A config that names ONLY ``cute_tv_sweep_cache=[0]`` used to
+        # compile to a ``gmem`` kernel and now compiles to whatever the ladder asks for.
+        # That is the intended content of the demotion -- "0 registers" and "do not use
+        # the register mechanism" are different statements and only one of them is this
+        # key's job -- but it must be said out loud rather than discovered.
+        #
+        # ⭐ IT MOVES NO FROZEN CELL, and that is a dividend of doing task 1 first: all 25
+        # cells that used to lean on the legacy encoding now name ``cute_row_residency``
+        # explicitly, so the two cells that DO name a budget
+        # (``layer_norm/8192x100000`` cache=[32] -> residency=['registers'],
+        #  ``rms_norm/8192x100000`` cache=[0] -> residency=['smem']) take their residency
+        # from the axis and not from the budget.  VERIFIED: level 1, 40/40 byte-identical.
+        #
+        # ``cute_reduction_reload`` stays in the set because it genuinely IS a residency
+        # spelling (task 1 keeps it as a translated-and-stripped input alias).
+        legacy_named = provided_keys & {"cute_reduction_reload"}
+        if "cute_row_residency" in provided_keys or not legacy_named:
+            # ⚠ STILL STRIP, even on the path that does not translate.  A caller who
+            # names BOTH keys gets the new one honoured (it is authoritative) and the old
+            # one removed, so the two cannot disagree on the emitted artifact.
+            config.pop("cute_reduction_reload", None)
+            return
+        reload_values = config.get("cute_reduction_reload")
+        residency = list(cast("list[str]", config.get("cute_row_residency") or []))
+        # ⭐ VALIDATE THE LEGACY INPUT LOUDLY, because deleting ``CuteReductionReloadSpec``
+        # deleted the ``_normalize`` that used to do it.  Without this an illegal value
+        # would be silently COERCED: ``row_residency_from_legacy`` tests ``== "smem"``, so
+        # ``cute_reduction_reload=["banana"]`` would quietly mean ``registers``.  A typo
+        # that compiles to a plausible kernel makes every recorded config unverifiable --
+        # this repo's enumeration antipattern, and exactly what ``CuteRowResidencySpec
+        # ._normalize`` refuses to do for the new key.  The message keeps the old spec's
+        # wording so an existing config's error is unchanged.
+        if isinstance(reload_values, (list, tuple)):
+            for i, value in enumerate(reload_values):
+                if value not in REDUCTION_RELOAD_CHOICES:
+                    raise InvalidConfig(
+                        f"config[cute_reduction_reload][{i}] must be one of "
+                        f"{REDUCTION_RELOAD_CHOICES}, got {value!r}"
+                    )
+        for index, spec in enumerate(self.cute_row_residency):
+            if index >= len(residency):
+                break
+            block_id = spec.block_id
+            # ⚠ READ THROUGH ``cute_row_residency``'s OWN INDEX MAP, not through a
+            # ``cute_reduction_reload`` sequence -- that sequence no longer exists (task 1).
+            # This is sound rather than a coincidence: both keys were registered from the
+            # SAME loop over the same ``rdims`` in ``DeviceIR._register_cute_tv_layout_slots``,
+            # one slot per reduction block, so their block_id -> index maps were identical by
+            # construction.  ⇒ the legacy list is positionally interchangeable with this one.
+            reload_from = self.cute_row_residency.config_get(
+                cast("list[str | None]", reload_values or []), block_id, None
+            )
+            # ⚠ ``cache_slots=None`` ALWAYS, because ``cute_tv_sweep_cache`` no longer
+            # exists (task 1 steps 2-3 deleted it).  ``None`` means "no budget stated",
+            # which ``row_residency_from_legacy`` maps to ``registers`` for
+            # ``reload=None`` -- the same answer the old positive default gave.  ⇒ the
+            # legacy spelling keeps meaning exactly what it meant; what is gone is the
+            # ability of a budget to turn that into ``gmem``.
+            residency[index] = row_residency_from_legacy(
+                cast("str | None", reload_from), None
+            )
+        config["cute_row_residency"] = residency
+        # ⭐ THE ONE-SHOT MIGRATION, COMPLETED: the old spelling has been read, translated
+        # and is now removed.  Popping it here rather than leaving it is what makes this a
+        # migration instead of a second encoding -- see the docstring.
+        config.pop("cute_reduction_reload", None)
+
     def supports_config_key(self, key: str) -> bool:
         return self.backend.supports_config_key(key)
 
@@ -1564,6 +2007,10 @@ class ConfigSpec:
             ("loop_orders", self.loop_orders, False),
             ("reduction_loops", self.reduction_loops, True),
             ("cute_vector_widths", self.cute_vector_widths, True),
+            ("cute_threads_per_row", self.cute_threads_per_row, True),
+            ("cute_row_residency", self.cute_row_residency, True),
+            ("cute_ndtile_tv", self.cute_ndtile_tv, True),
+            ("cute_online_defer", self.cute_online_defer, True),
             ("range_unroll_factors", self.range_unroll_factors, True),
             ("range_warp_specializes", self.range_warp_specialize, True),
             ("range_num_stages", self.range_num_stages, True),
@@ -1581,6 +2028,15 @@ class ConfigSpec:
             config[name] = mapping._normalize(
                 name, config.get(name, ()), flatten=flatten
             )
+
+        if self.supports_config_key("cute_row_residency") and len(
+            self.cute_row_residency
+        ):
+            self._normalize_cute_row_residency(config, provided_keys)
+            # ⭐ Task 2's reconciliation, AFTER the translation above so it sees the one
+            # authoritative residency rather than an old spelling.  ⚠ It reads the
+            # POST-translation residency deliberately -- an explicit request is explicit
+            # however it was spelled -- so it needs no ``provided_keys``.
 
         # Clamp inner block sizes that are bounded by an outer block
         # (e.g. ``hl.tile(outer.begin, outer.end)``): at this point the
@@ -1665,10 +2121,26 @@ class ConfigSpec:
                         and spec.block_id in self.cute_indexed_reduction_block_ids
                     ):
                         block_threshold = min(block_threshold, 32)
-                    if new_loops[i] is None and spec.size_hint > block_threshold:
-                        new_loops[i] = min(spec.size_hint, block_threshold)
-                        changed = True
-                    elif (
+                    # ⭐⭐ THE ``[None]`` ARM IS GONE (A1, site 1).  It used to read
+                    # ``if new_loops[i] is None and per_cta_hint > block_threshold:
+                    # new_loops[i] = min(spec.size_hint, block_threshold)`` -- i.e. a
+                    # PERSISTENT request whose per-CTA extent exceeded the thread budget was
+                    # silently answered with a LOOPED reduction.
+                    #
+                    # It existed to dodge a real correctness bug, not a hardware limit: with
+                    # the thread count capped at ``max_reduction_threads`` the synthetic lane
+                    # loop was never created above 1024, so the reduction visited only the
+                    # first 1024 elements (fixed in ``de0267822`` -- ``needs_synthetic`` now
+                    # compares against the REAL extent).  With that fixed, persistent is
+                    # bit-exact at every N measured up to 32768, so the substitution is no
+                    # longer buying anything and a ``[None]`` request is honoured.
+                    #
+                    # ⚠ The ``elif`` below is UNTOUCHED and still load-bearing: it caps an
+                    # EXPLICIT chunk at ``max_reduction_loop`` (and at 32 for an indexed
+                    # reduction, where ``warp_reduction`` only supports
+                    # ``threads_in_group <= 32``).  That is a cap on a value the caller
+                    # actually named, not a substitution for one they did not.
+                    if (
                         new_loops[i] is not None
                         and max_loop is not None
                         and (
@@ -1689,58 +2161,71 @@ class ConfigSpec:
                 if changed:
                     config["reduction_loops"] = new_loops
 
-        # CuTe-specific: persistent reduction whose thread count is shrunk
-        # below the reduction extent by adjust_reduction_thread_count would
-        # wrap the kernel body in a synthetic lane loop. The lane loop
-        # carries the body-level reduction's accumulator across iterations,
-        # so the reduction result would only reflect the last lane iter.
-        # Force a looped reduction whenever the available reduction threads
-        # (max_reduction_threads // product_of_non_reduction_thread_axes)
-        # cannot cover the full reduction extent.
-        if (
-            self.backend_name == "cute"
-            and self.max_reduction_threads is not None
-            and self.reduction_loops
-        ):
-            nt_list = cast("list[int]", config.get("num_threads", []) or [])
-            bs_list = cast("list[int]", config.get("block_sizes", []) or [])
-            other_threads = 1
-            for i, _ in enumerate(self.num_threads):
-                nt = nt_list[i] if i < len(nt_list) else 0
-                if not isinstance(nt, int) or nt <= 0:
-                    bs = bs_list[i] if i < len(bs_list) else 1
-                    nt = bs if isinstance(bs, int) and bs > 1 else 1
-                if nt > 1:
-                    other_threads *= nt
-            available = max(1, self.max_reduction_threads // other_threads)
-            reduction_loops = config.get("reduction_loops", [])
-            if isinstance(reduction_loops, list):
-                new_loops = list(reduction_loops)
-                changed = False
-                for i, spec in enumerate(self.reduction_loops):
-                    if i >= len(new_loops):
-                        break
-                    if new_loops[i] is None and spec.size_hint > available:
-                        # When other_threads consumes the entire CuTe 1024 thread
-                        # budget there is no thread budget left for the reduction
-                        # axis. A chunk of 1 is invalid (LoopedReductionStrategy
-                        # requires block_size > 1) and a persistent reduction
-                        # would hit the synthetic-lane-loop bug described above.
-                        # Reject the config so the autotuner skips it.
-                        if available < 2:
-                            raise InvalidConfig(
-                                f"cute backend: reduction axis {i} has no thread "
-                                f"budget left (non-reduction axes use "
-                                f"{other_threads} of {self.max_reduction_threads} "
-                                f"threads)."
-                            )
-                        chunk = min(spec.size_hint, available)
-                        if self.max_reduction_loop is not None:
-                            chunk = min(chunk, self.max_reduction_loop)
-                        new_loops[i] = chunk
-                        changed = True
-                if changed:
-                    config["reduction_loops"] = new_loops
+        # ⭐⭐ A1 (site 2): THE ``available``-BASED FORCE-ROLL AND ITS RAISE ARE DELETED.
+        #
+        # This block asked "do the non-reduction thread axes leave room for the reduction
+        # axis?" -- by multiplying every ``num_threads`` slot's thread count (falling back to
+        # that axis's block size for the ``0`` = "auto" sentinel) -- and if not, either
+        # rewrote a PERSISTENT ``reduction_loops=[None]`` request into a looped chunk or
+        # raised ``InvalidConfig``.  Both halves are obsolete:
+        #
+        # 1. The ROLL dodged a real bug (above ``max_reduction_threads`` the synthetic lane
+        #    loop was never built, so the reduction visited only the first 1024 elements),
+        #    fixed in ``de0267822``.  With that fixed the substitution buys nothing.
+        #
+        # 2. The RAISE was kept at first as the honouring-compatible half, then MEASURED to
+        #    protect nothing: ``sum(x[tm,:])`` at ``block_sizes=[1024] num_threads=[1024]``
+        #    (so ``available == 1``) with ``reduction_loops=[None]`` is **bit-exact** at
+        #    ``cute_vector_widths`` 1 and 8 once the raise is removed ({-1,+1} integer data,
+        #    so a correct kernel MUST be bit-exact), and ``InvalidConfig`` with it in place.
+        #    ⇒ it was rejecting working configs.
+        #
+        # ⛔ AND THE ARITHMETIC WAS WRONG ON MULTI-NEST KERNELS, which is how this was found.
+        # A kernel's loop nests are not simultaneously live.  MEASURED on
+        # ``examples/split_k_barrier`` at ``block_sizes=[16, 8, 16, 16, 16]``: block_ids
+        # 0/1/3 belong to the split-K matmul and 4/5 to the epilogue that sums the partials,
+        # separated by ``hl.barrier()`` -- yet the product was ``16*8*16*16*16 = 524288``
+        # against a 1024-thread budget, so ``available`` collapsed to 1 and this raised
+        # ``InvalidConfig: reduction axis 0 has no thread budget left (non-reduction axes use
+        # 524288 of 1024 threads)`` on a kernel that launches fine.  (The reduction there is
+        # the epilogue's ``tmp[tm,tn,:].sum(-1)`` over ``split_k=64`` -- an ordinary
+        # reduction needing 64 threads, not the K axis; split-K itself is a plain tiled
+        # matmul.)  It was LATENT before A1: the roll consumed the nonsense value and still
+        # compiled, so the bad arithmetic never became visible.
+        #
+        # ⇒ DELETED rather than repaired.  Repairing it would mean making the thread
+        # accounting nest-aware in order to serve a rule that no longer has a job.
+        # ``adjust_reduction_thread_count`` already shrinks the reduction thread count to fit
+        # the real launch budget at codegen time, where the nest structure is known -- that is
+        # the right place for the question, and it is already answered there.
+
+        # ⭐⭐ A1: THE PERSISTENT FORCE-ROLL IS GONE.  It used to live here.
+        #
+        # It rewrote ``reduction_loops[i] = size_hint // 2`` whenever the caller asked for
+        # ``None`` (persistent) with ``cute_vector_widths[bid] > 1``, i.e. it answered a
+        # persistent request with a LOOPED reduction and said nothing.  Its justification was
+        # real at the time: ``codegen_preamble`` built exactly ONE lane nest, so a second
+        # dependent reduction had nowhere to open its own, and persistent + TV raised
+        # ``BackendUnsupported: a lane reduction ... still owing its lane fold and its
+        # cross-thread combine``.  Rolling dodged that by routing the shape to the path whose
+        # ``ReductionRoller`` already gives one subgraph per dependency layer.
+        #
+        # ⇒ FIXED AT LOWERING INSTEAD, which is where the missing capability was:
+        # ``DeviceGridState.prebuilt_lane_nest_factory`` makes the TV nest REBUILDABLE, so
+        # ``_wrap_segmented_body`` mints one nest per sealed segment and the existing seals
+        # mechanism covers dependent reductions on the TV path too.  A ``[None]`` request now
+        # yields a persistent reduction, or a loud error -- never a silent substitution.
+        #
+        # MEASURED after the change: the 108-config loop-free grid goes from
+        # ``{0: 9, 32: 45, 64: 36, 128: 18}`` back to ``{32: 36, 64: 36, 128: 36}`` (the
+        # as-received widths, 0 at the scalar floor, 0 configs narrower), 81 of 108 configs
+        # are now genuinely ``PersistentReductionStrategy``, the dependent ``amax`` ->
+        # ``sum(exp(v - amax))`` pair compiles and is correct, and all 40 frozen cells are
+        # byte-identical.
+        #
+        # ⚠ Sites 1 and 2 above still roll when the extent exceeds the available reduction
+        # threads; that is a SEPARATE limit (the synthetic-lane accumulator, see their own
+        # comments) and is why N > 1024 still rolls.  Only this TV-width roll is deleted.
 
         # Disable range_* configs for static ranges
         static_range_block_ids = [
@@ -1769,6 +2254,17 @@ class ConfigSpec:
             "flatten_loops",
             "reduction_loops",
             "cute_vector_widths",
+            "cute_threads_per_row",
+            "cute_row_residency",
+            # Stripped only when the LIST is empty (no slot registered at all,
+            # e.g. a kernel with no device loop, or a non-cute backend).  A
+            # registered slot holding ``False`` / ``0`` survives, because
+            # ``[False]`` and ``[0]`` are non-empty lists and therefore truthy --
+            # which matters here as those are exactly the values that turn a pass
+            # OFF, and a key that vanished would be re-filled with the ladder's
+            # ``True`` / ``128`` and silently turn it back on.
+            "cute_ndtile_tv",
+            "cute_online_defer",
             "range_unroll_factors",
             "range_warp_specializes",
             "range_num_stages",
@@ -2120,6 +2616,15 @@ class ConfigSpec:
         if invalid_keys := ({*config} - allowed_keys):
             raise InvalidConfig(f"Invalid config keys {sorted(invalid_keys)!r}")
 
+        # ⭐ LAST, because the fingerprint must key the config AS CODEGEN WILL SEE IT.
+        # ``normalize`` mutates in place (it fills every missing slot), so a fingerprint
+        # taken at the top -- where ``provided_keys`` is snapshotted -- names a dict that no
+        # longer exists by the time anything reads it back.  MEASURED: recorded at the top,
+        # the key went from 6 entries to 11 across this method and the lookup missed 100%
+        # of the time, silently reverting the whole feature to "never explicit".
+        # ``provided_keys`` is still the ANSWER; only the KEY is taken here.
+        self._record_cute_row_residency_provenance(config, provided_keys, _fix_invalid)
+
     def raise_grid_block_minimums(self) -> None:
         """Raise min_size for grid block dimensions based on problem size.
 
@@ -2284,6 +2789,42 @@ class ConfigSpec:
                     and len(self.cute_vector_widths) > 0
                 ):
                     fields["cute_vector_widths"] = self.cute_vector_widths
+                # The CuTe reduction knobs: the TV-layout ones (per reduction
+                # block, now including ``cute_row_residency``) and two AST-pass
+                # ones (per device loop).
+                #
+                # ⭐ ONE BLOCK, NOT TWO.  These used to be registered separately
+                # because the TV-layout three were routed through
+                # ``_tv_search_choices`` -- a helper that pinned their *search* to
+                # their own default while codegen did not yet read them, so varying
+                # them would only have spent autotuner population on identical
+                # kernels.  All five are read by codegen now (see the note above
+                # ``CuteThreadsPerRowSpec``), so every one of them reaches a
+                # genuinely different kernel and the search must be able to vary all
+                # five.  With the distinction gone the two loops were textually the
+                # same loop, and keeping them apart would have preserved a
+                # difference that no longer exists.
+                # ⛔ ``cute_reduction_reload`` IS DELIBERATELY ABSENT (task 1).  It is no
+                # longer a searchable axis: ``cute_row_residency`` below is the one key
+                # carrying that decision, and offering both would make the autotuner move
+                # TWO keys on TWO block-id domains to walk ONE one-dimensional choice --
+                # complaint 3 in ``CuteRowResidencySpec``'s docstring, and the reason the
+                # axis was introduced.  The old key survives only as an accepted INPUT
+                # spelling that ``_normalize_cute_row_residency`` folds in and strips, so
+                # a search that could set it would be setting a key that no longer exists
+                # by the time codegen runs.
+                fields.update(
+                    {
+                        cute_key: cute_seq
+                        for cute_key, cute_seq in (
+                            ("cute_threads_per_row", self.cute_threads_per_row),
+                            ("cute_row_residency", self.cute_row_residency),
+                            ("cute_ndtile_tv", self.cute_ndtile_tv),
+                            ("cute_online_defer", self.cute_online_defer),
+                        )
+                        if self.supports_config_key(cute_key) and len(cute_seq) > 0
+                    }
+                )
             if (
                 not self.cute_flash_search_enabled
                 and self.epilogue_subtile_autotune_choices is not None
@@ -2498,7 +3039,43 @@ class ConfigSpec:
         if acf_fragment is not None:
             config["advanced_controls_file"] = fn(acf_fragment)
         self.normalize(config, _fix_invalid=True)
-        return helion.Config(**config)
+        out = helion.Config(**config)
+        # ⭐ EVERY CONFIG BUILT HERE IS MACHINE-SYNTHESISED, AND MUST STAY THAT WAY WHEN IT
+        # IS RE-NORMALIZED LATER.  This is the ONE construction site for both
+        # ``default_config()`` (via ``_base_default_config``) and the autotuner's
+        # ``ConfigGeneration.unflatten``, and it writes EVERY key from the fragments -- so
+        # the result "names" ``cute_row_residency`` even though no human did.
+        #
+        # ⛔ MEASURED: without this, ``HELION_AUTOTUNE_EFFORT=none`` (which routes through
+        # ``BoundKernel._user_provided_config`` -> ``default_config()`` -> ``to_code``,
+        # i.e. a SECOND ``normalize`` on the USER path with ``_fix_invalid=False``) made
+        # two phase-A gate tests raise ``CuteRowResidencyUnavailable`` --
+        # ``class5_int32_no_wrap`` and ``class7a_store_between_reductions_survives``.  The
+        # ``_fix_invalid`` flag alone cannot see it: on that second pass it is False, and
+        # correctly so -- the caller really did hand in a fully-populated config.
+        #
+        # ⚠⚠ FINGERPRINTED BY CONTENT, NOT BY ``id()``, AND THAT IS FORCED.
+        # ``BoundKernel.to_code`` makes a DEFENSIVE COPY before it normalizes
+        # (``kernel.py`` ~:820, ``config = Config(**config.config)``, with its own comment
+        # explaining why), so the object codegen sees is NOT the object minted here and an
+        # identity key misses every time.  A content fingerprint survives that copy, and
+        # also survives ``flatten -> unflatten``.
+        #
+        # ⭐ AND THE COLLISION IS BENIGN, WHICH IS WHY CONTENT IS SOUND HERE: two configs
+        # with the same fingerprint have the same keys and the same values, so a
+        # hand-written config that is byte-for-byte a machine default is treated as
+        # synthesised.  That is the RIGHT answer -- it names exactly what the ladder would
+        # have chosen, so "honour it or decline" is the same question the ladder faces, and
+        # the ladder is explicitly allowed to decline (it cannot predict the decline).
+        self._cute_row_residency_synthesised.add(_config_fingerprint(config))
+        if len(self._cute_row_residency_synthesised) > 8192:
+            # Bounded.  ⚠ Dropping an entry degrades toward RAISING, which is the unsafe
+            # direction, so the cap is set far above any real search population (a
+            # generation is O(100) configs) and clearing is a last resort rather than a
+            # routine eviction.
+            self._cute_row_residency_synthesised.clear()
+            self._cute_row_residency_synthesised.add(_config_fingerprint(config))
+        return out
 
 
 class LoopOrderSpec(_BlockIdItem):
@@ -2797,6 +3374,422 @@ class CuteVectorWidthSpec(_BlockIdItem):
 
     def _fill_missing(self) -> int:
         return 1
+
+
+# ⭐ ``_tv_search_choices`` USED TO LIVE HERE, together with the module flag
+# ``tv_layout.TV_LAYOUT_KNOBS_SEARCHABLE`` that drove it.  Both are DELETED, and the
+# deletion is the finding.
+#
+# The flag existed to pin TV-layout knobs' *search* to their own defaults
+# while codegen did not yet read them: varying an unread knob only spends autotuner
+# population on identical kernels.  It was then flipped to True for
+# ``cute_reduction_reload`` while its comment continued to say that
+# ``cute_threads_per_row`` was still unread by codegen.
+#
+# The remaining knobs are read by codegen today:
+#
+#   cute_threads_per_row  -> ``LoopedReductionStrategy.__init__``  (lowers the row's
+#                            thread count when a wider copy is on the table)
+#   cute_reduction_reload -> ``LoopedReductionStrategy._cute_reload_from_config``
+#
+# With the flag True, ``_tv_search_choices`` returned ``None`` unconditionally, which is
+# ``EnumFragment``'s own default for ``search_choices`` — so it was a function that
+# could only ever return the default, guarded by a flag with no reachable second value.
+# Deleting both leaves the three fragments plain ``EnumFragment(choices=...)``, which is
+# what the two knobs landed in ``fa9358c27`` already do, so the five TV/pass knobs now
+# have ONE shape between them instead of two.
+
+
+class CuteThreadsPerRowSpec(_PowerOfTwoBlockIdItem):
+    """Per-reduction-block count of threads cooperating on one row (CuTe).
+
+    This is the inner mode of the TV layout's thread layout
+    (``make_ordered_layout((num_threads // threads_per_row, threads_per_row),
+    order=(1, 0))``), i.e. quack's ``threads_per_row``
+    (``quack/reduction_base.py:44``).  The CTA size is *derived* as
+    ``rows_per_cta * threads_per_row`` rather than configured separately, so
+    illegal (num_threads, threads_per_row) pairs are unrepresentable.
+
+    The default is quack's threshold ladder as a pure function of the reduction
+    extent (``quack/rmsnorm_config.py:52-56``), which makes ``default_config()``
+    reproduce quack's verified layout table.
+    """
+
+    def __init__(
+        self,
+        *,
+        block_id: int,
+        size_hint: int,
+    ) -> None:
+        super().__init__([block_id])
+        self.size_hint = size_hint
+
+    def _default(self) -> int:
+        return threads_per_row_for(self.size_hint)
+
+    def _fragment(self, base: ConfigSpec) -> EnumFragment:
+        default = self._default()
+        # The fragment's first choice is its default (``EnumFragment.default``),
+        # so rotate the ladder's answer to the front while keeping the full
+        # menu representable.
+        choices = (default, *(c for c in THREADS_PER_ROW_CHOICES if c != default))
+        return EnumFragment(choices=choices)
+
+    def _normalize(self, name: str, value: object) -> int:
+        normalized = super()._normalize(name, value)
+        if normalized not in THREADS_PER_ROW_CHOICES:
+            raise InvalidConfig(
+                f"{name} must be one of {THREADS_PER_ROW_CHOICES}, got {value!r}"
+            )
+        return normalized
+
+    def _fill_missing(self) -> int:
+        return self._default()
+
+
+# ⛔ ``CuteReductionReloadSpec`` WAS DELETED HERE (task 1, FIXLIST item 1).
+#
+# It was a per-reduction-block enum over ``(None, "smem")`` naming where the second read
+# of the reduced row came from.  ``CuteRowResidencySpec`` below is a strict SUPERSET of it
+# -- ``("registers", "smem", "gmem")`` -- and the old key's ``None`` meant *registers* or
+# *gmem* depending on a SECOND knob's budget, i.e. one enum value standing for two
+# kernels.  Keeping both let the old encoding go on expressing the ambiguity the new axis
+# exists to remove, and gave the autotuner two keys on two block-id domains to walk one
+# one-dimensional choice.
+#
+# ``cute_reduction_reload`` survives ONLY as an accepted INPUT spelling:
+# ``ConfigSpec._normalize_cute_row_residency`` translates it through
+# ``tv_layout.row_residency_from_legacy`` and then STRIPS it, so no config that reaches
+# codegen carries it and nothing downstream reads the name.  That is FIXLIST item 1's
+# stated fix -- "a one-shot config migration rather than a live translation".
+#
+# ⚠ THE VALUE VALIDATION MOVED WITH IT, deliberately and not incidentally: this class's
+# ``_normalize`` was the only thing rejecting an illegal value, and
+# ``row_residency_from_legacy`` tests ``== "smem"``, so without a replacement
+# ``cute_reduction_reload=["banana"]`` would have been silently COERCED to ``registers``.
+# The check now lives at the translation site with the same message.
+#
+# ⚠ AND THE 40 FROZEN CELLS WERE MIGRATED FIRST, which is what made this deletion inert:
+# ``_notes_codereview/migrate_frozen_task1.py`` rewrote all 25 cells that named the old key
+# into ``cute_row_residency``, PROVEN byte-identical on 40/40 before any code moved.
+# Deleting the codegen-side fallback first would have silently re-read those 25 as ``gmem``.
+
+
+class CuteRowResidencySpec(_BlockIdItem):
+    """⭐ Per-reduction-block: WHERE THE SECOND READ OF THE ROW COMES FROM (CuTe).
+
+    ONE three-valued axis over ``("registers", "smem", "gmem")``
+    (``cute/tv_layout.py::ROW_RESIDENCY_CHOICES``), mirroring quack's
+    ``reload_from_vals = (None, "smem", "gmem")`` (``quack/rmsnorm_config.py``).
+
+        ``registers``  the row's fragment lanes are cached across the sweeps, so
+                       sweep 2 reads REGISTERS (``cute/fuse_tv_copy_sweeps.py``);
+        ``smem``       sweep 1 publishes the row into a per-CTA staged tile and
+                       sweep 2 reads SMEM (``cute/memory_ops.py``);
+        ``gmem``       no cache at all -- sweep 2 issues a second
+                       ``local_tile`` + ``cute.copy`` and re-reads GLOBAL.  This is
+                       the BASELINE any residency claim must be measured against.
+
+    ⭐ WHY IT IS ONE KEY AND NOT THE TWO IT SUPERSEDES.  Before this axis the choice
+    was split across ``cute_reduction_reload`` (an enum, per reduction block) and
+    ``cute_tv_sweep_cache`` (an int slot budget, per DEVICE LOOP), and the third
+    value had no name -- ``gmem`` was reachable only as the CONJUNCTION
+    ``cute_reduction_reload=None AND cute_tv_sweep_cache=0``.  Three consequences,
+    all measured:
+
+    1. ``cute_reduction_reload=None`` meant *registers* when the budget was positive
+       and *gmem* when it was 0.  The key that reads like the residency selector was
+       not one.
+    2. "Exactly one mechanism is in effect" was not representable, so nothing
+       enforced it -- and MEASURED, ``reload="smem"`` with ``cache=128`` emits the
+       SMEM signature while the register cache never fires.  The 2x2 grid had only
+       three reachable kernels, i.e. it was a three-valued axis wearing two keys.
+    3. The autotuner had to move TWO keys on TWO block-id domains in concert to walk
+       a one-dimensional choice, and could not name one third of it at all.
+
+    ⭐⭐ AND IT IS NOW THE **ONLY** THING THAT DECIDES (task 1).  The two budget knobs
+    that could overrule it -- ``cute_stage_smem_kb`` (a per-kernel SMEM ceiling) and
+    ``cute_tv_sweep_cache`` (a per-thread register-slot ceiling) -- are DELETED.  They
+    were *performance policy*, and a performance policy that silently changes which
+    memory a row lives in makes every recorded config unverifiable: MEASURED on the
+    frozen table, 13 of 40 cells named a residency the kernel did not use.
+
+    ⇒ the only refusals left are the two a hardware compiler is entitled to:
+      * **CAPACITY** -- the staged tile exceeds the device's shared memory, or the row's
+        register footprint exceeds what a thread can hold;
+      * **GEOMETRY** -- there is no usable row axis, a third thread axis is in play, or
+        no TV plan was built at all.
+    Both are honest reasons to refuse a named residency.  An *explicit* request that hits
+    one of them RAISES (``exc.CuteRowResidencyUnavailable``); a request the per-shape
+    ladder supplied still declines silently, because the ladder cannot predict the
+    decline -- see ``cute/memory_ops.py::cute_emit_row_residency_marker``.
+
+    ⚠ PER REDUCTION BLOCK, and the domain is not a detail.  Residency describes a
+    ROW, which only exists where a reduction block does -- so this registers in
+    ``DeviceIR._register_cute_tv_layout_slots`` rather than in the per-DEVICE-LOOP group
+    beside ``cute_online_defer``.  MEASURED on a kernel with two reduction blocks in one
+    device loop, the two domains genuinely differ: the per-block keys have length 2 there
+    and the per-loop keys length 1.  A per-device-loop registration would collapse the two
+    reductions onto one residency.
+    """
+
+    def __init__(
+        self,
+        *,
+        block_id: int,
+        size_hint: int,
+        ladder_default: bool = True,
+    ) -> None:
+        super().__init__([block_id])
+        self.size_hint = size_hint
+        # ⛔⛔ ``ladder_default=False`` MEANS "DEFAULT TO ``gmem``", AND IT IS A CORRECTNESS
+        # REQUIREMENT FOR ANY SLOT ON A PATH THAT CANNOT STAGE.
+        #
+        # ``row_residency_for`` is quack's per-extent ladder: ``smem`` at ``size_hint >= 4096``,
+        # else ``registers`` -- it NEVER returns ``gmem``.  That is right for a reduction row,
+        # where staging between the two sweeps is the whole point.  It is WRONG for a slot on a
+        # path with no between-passes gap, because ``_fill_missing`` then requests staging on
+        # every kernel that names no residency key at all.
+        #
+        # MEASURED when the ND-tile slot was first registered with the ladder default: a
+        # DIFFERENT kernel on 48/48 (shape x block-size x dtype) cells with no residency key
+        # anywhere -- a dead WRITE-ONLY SMEM buffer up to 128 KiB at n >= 4096 (both consumer
+        # reads still read the rmem fragment), or at n <= 2048 a ``registers`` path that LOSES
+        # the vectorised fold (``_helion_vfold_acc`` 6 -> 0).  Numerics stayed bit-exact, so
+        # nothing failed; it was pure dead work, and invisible to 1051 tests.
+        #
+        # ⇒ a newly registered slot MUST default to the identity.  ``gmem`` -- "do not park the
+        # row, re-read it" -- is that identity: it is the one value nothing can refuse.
+        self.ladder_default = ladder_default
+
+    def _default(self) -> str:
+        if not self.ladder_default:
+            return ROW_RESIDENCY_GMEM
+        return row_residency_for(self.size_hint)
+
+    def _fragment(self, base: ConfigSpec) -> EnumFragment:
+        default = self._default()
+        # The fragment's first choice IS its default (``EnumFragment.default``), so
+        # rotate the ladder's answer to the front while keeping all three values
+        # representable.  Same shape as the four ladders beside it -- and the reason
+        # ``ROW_RESIDENCY_CHOICES`` must never be handed to a fragment unrotated.
+        choices = (default, *(c for c in ROW_RESIDENCY_CHOICES if c != default))
+        return EnumFragment(choices=choices)
+
+    def _normalize(self, name: str, value: object) -> str:
+        # Membership, not a coercion.  A typo MUST raise and MUST name the offending
+        # value: silently mapping an unknown string onto some residency would make
+        # every recorded config unverifiable, which is the exact failure this axis
+        # exists to remove.  ``ROW_RESIDENCY_CHOICES`` is the legal set AND the
+        # search menu here -- unlike the two byte/slot budgets beside it, a residency
+        # has no off-menu values because it names a code path, not a quantity.
+        if value not in ROW_RESIDENCY_CHOICES:
+            raise InvalidConfig(
+                f"{name} must be one of {ROW_RESIDENCY_CHOICES}, got {value!r}"
+            )
+        return cast("str", value)
+
+    def _fill_missing(self) -> str:
+        # ⭐ "USE THE LADDER" -- and here that is the only implementable answer, not
+        # merely the conservative one.
+        #
+        # ``row_residency_for`` reproduces what the two old ladders jointly produce
+        # (``reload_from_for(n)`` composed with ``tv_sweep_cache_for(n)``), so a
+        # config that names no residency -- every one of the 40 frozen cells --
+        # compiles to the byte-identical kernel it did before this key existed.  That
+        # is what makes promoting the two knobs to one axis a REACHABILITY change.
+        #
+        # ⚠ AND IT IS THE *REQUESTED* LADDER, NOT "today's effective choice".  The
+        # latter is impossible HERE, not just inconvenient: ``_fill_missing(self)``
+        # takes no arguments and this spec holds only ``block_ids`` and
+        # ``size_hint``, while the effective residency depends on
+        # ``ChunkTVPlan.lane_extent``, ``_loop_block_size``,
+        # ``thread_block_dims()``, the emitted ``cluster_n`` and the running
+        # whole-kernel SMEM charge -- none of which exist at normalize time (the
+        # strategies are not even constructed yet).  A ladder that guessed the
+        # decline would be wrong in both directions and would move the frozen table.
+        # The DECLINE is reported where it happens, on the emitted artifact.
+        return self._default()
+
+
+class CuteOnlineDeferSpec(_BlockIdItem):
+    """Per-device-loop: WHERE an online ``(max, sum-of-exp)`` recurrence combines
+    across lanes (CuTe).
+
+    ``True`` = after the loop, one cross-lane merge per row; ``False`` = inside the
+    loop, ``2 * N/(nt*V)`` merges per row with each one a serial dependency between
+    consecutive iterations.  Consumed by
+    ``helion/_compiler/cute/defer_online_merge.py``.
+
+    ⭐ WHY THIS IS A KNOB AND NOT A FIXED REWRITE.  The deferral is not free: it buys
+    ``2 * N/(nt*V) - 1`` cross-lane merges at the price of ONE extra ``exp`` per
+    thread (the final rescale onto the merged max).  ``examples/cross_entropy.py``
+    states the consequence directly -- "whether that trade wins is a property of the
+    backend, not of the algorithm: on a machine where the special-function pipe is
+    the limiter the extra ``exp`` can cost more than the saved memory pass".  A
+    decision with that shape belongs in the config, where the autotuner can settle
+    it per shape, not in a module-level ``if``.
+
+    It also PARTICIPATES in the search rather than sitting above it: enabling the
+    deferral changed which ``num_threads`` wins (LEDGER E047 retired), because the
+    cost of a cross-lane merge is what made a wide CTA expensive.  So the two knobs
+    interact and must be searched jointly.
+
+    ⚠ WHY THE DOMAIN IS AN ``EnumFragment`` OVER ``(True, False)`` AND NOT A
+    ``BooleanFragment``.  ``BooleanFragment.default()`` is a hardcoded ``False``, so
+    a boolean fragment would make the DEFAULT config the in-loop form -- a
+    behaviour change on every cell the pass fires on, and exactly the regression
+    the byte-identical-hash gate exists to catch.  ``EnumFragment.default()`` is
+    ``choices[0]``, so ``ONLINE_DEFER_CHOICES = (True, False)`` is what preserves
+    today's kernel while still offering both values to the search.
+
+    ⚠ PER-DEVICE-LOOP, NOT PER-REDUCTION-BLOCK, and that distinction is load-bearing
+    rather than stylistic.  ``CuteReductionReloadSpec`` above is registered once per
+    *reduction* block, which is right for it -- it describes a row layout.  This pass
+    fires on an ``hl.tile`` loop carrying a recurrence, and MEASURED on
+    ``cross_entropy_online`` (the only kernel in the reduction table it fires on)
+    that loop's block is a plain TILE block: the kernel has
+    ``reduction_loops == []`` and ``block_sizes == [0, 1]``.  A per-reduction-block
+    registration would therefore have created ZERO slots on the one kernel the knob
+    controls, i.e. an unreachable knob that looks registered.
+    """
+
+    def __init__(
+        self,
+        *,
+        block_id: int,
+        size_hint: int,
+    ) -> None:
+        super().__init__([block_id])
+        self.size_hint = size_hint
+
+    def _default(self) -> bool:
+        return online_defer_for(self.size_hint)
+
+    def _fragment(self, base: ConfigSpec) -> EnumFragment:
+        default = self._default()
+        choices = (default, *(c for c in ONLINE_DEFER_CHOICES if c != default))
+        return EnumFragment(choices=choices)
+
+    def _normalize(self, name: str, value: object) -> bool:
+        # ``type(...) is not bool`` rather than ``isinstance``: ``bool`` is a
+        # subclass of ``int``, so ``isinstance(1, bool)`` is False but
+        # ``isinstance(True, int)`` is True, and a config written as ``[1]``
+        # instead of ``[True]`` must be told so rather than silently coerced.
+        if type(value) is not bool:
+            raise InvalidConfig(f"{name} must be a boolean, got {value!r}")
+        return value
+
+    def _fill_missing(self) -> bool:
+        # The ladder value is what every config in the tree already compiles to,
+        # because the pass ran unconditionally before this knob existed.  Filling
+        # ``False`` would mean every frozen config -- all of which omit this key --
+        # silently switched to the slower in-loop form.  So "omitted" means "use
+        # the ladder", and that is precisely what makes the promotion a pure
+        # reachability change.
+        return self._default()
+
+
+class CuteNDTileTvSpec(_BlockIdItem):
+    """Per-device-loop: does an explicit ``hl.tile`` loop load through a vectorized
+    TV ``cute.copy`` (CuTe)?
+
+    ``True`` = one 128-bit ``cute.copy`` per outer lane iteration; ``False`` = today's
+    form, two ``cute.arch.load`` of ``vector<4 x Uint16>`` (two 64-bit LDGs) plus a
+    per-element ``if vec_lane < 4 else ...`` select-and-bitcast on every consume.
+    Read by ``tile_strategy.cute_ndtile_tv_enabled``.
+
+    ⭐ WHY THIS IS A KNOB AND NOT A DEFAULT, and the argument is a MEASUREMENT.  This
+    began as the ``HELION_CUTE_NDTILE_TV`` env var, which was the right instrument for
+    one question ("is the trade a win?") and the wrong one for the answer, because the
+    answer is *sometimes*.  MEASURED on all 8 ``cross_entropy_online`` cells the gate
+    moves -- one gate arm per process, position-balanced, judged on the mean because
+    ``cuda.Event.elapsed_time`` is quantized to ~2.04us on this box:
+
+        lane extent 2      -> WINS up to -4.46% at the incumbent chunk
+        lane extent 4      -> WINS ~4-7%   (the best rung on the narrow-chunk cells)
+        lane extent 8-16   -> WINS -0.5% to -6.9%, and LOSES to extent 4 on 3 of the
+                              4 cells measured in both arms
+
+    ⛔ THIS TABLE WAS INVERTED UNTIL 2026-08-01 (run 2 T0).  It read "extent 2 loses
+    ~2%; extent 8-16 WINS +81% to +110%".  The +81..110% magnitudes are the gate-**OFF**
+    LOSSES from raising ``chunk`` (32768x8192 tv_OFF chunk2048 ext8: +80.084%), i.e. how
+    much the TV arm rescues a wide chunk -- not a speedup over the incumbent.  Anyone
+    tuning toward +81% pushes ``chunk`` to the extent-16 rung, which is measured the
+    WORSE arm on most cells.  ⇒ the rule is "extent 4 on the narrow-chunk cells, 8-16
+    only on the already-wide ones".
+
+    The mechanism claim survives and explains the inversion: the legacy path hoists
+    exactly TWO ``arch.load``s regardless of extent, so it cliffs ~1.8x between extent 4
+    and 8 while the TV path stays flat -- that cliff IS the gate-OFF loss above.
+    ⇒ three of the eight cells prefer ``False`` at their current geometry and ``True``
+    once chunk/threads are re-tuned for it.  A global default forces one answer on all
+    eight; this lets each loop record its own.  (8 cells were then re-frozen onto
+    ``True`` with re-tuned chunk, -0.5%..-5.4%, confirmed at 7 rounds x 60 reps.)
+
+    ⚠ AND THE KNOB CANNOT BE REPLACED BY A LADDER, which is the second reason it is a
+    knob.  The carrier is lane extent = ``chunk / (num_threads * vec)`` -- i.e. a
+    function of ``block_sizes`` and ``num_threads``, which are themselves being
+    searched.  A ladder here would have to predict the outcome of the search it is
+    part of.
+
+    ⚠ WHY ``EnumFragment`` OVER ``(False, True)`` AND NOT ``BooleanFragment`` -- the
+    same reason ``CuteOnlineDeferSpec`` gives, with the opposite polarity.
+    ``EnumFragment.default()`` is ``choices[0]``, and this knob's inert value is
+    ``False`` (the env gate defaults off), so ``NDTILE_TV_CHOICES = (False, True)``
+    is what keeps every existing config byte-identical while still offering ``True``
+    to the search.  ``BooleanFragment.default()`` is a hardcoded ``False`` and would
+    coincidentally give the right default here -- but it cannot express the *ordered*
+    domain, and relying on that coincidence would break the moment the polarity of
+    some future knob differed.
+
+    ⚠ PER-DEVICE-LOOP, NOT PER-REDUCTION-BLOCK, and this is load-bearing.  The gate is
+    read at plan construction for a ``CuteNDTileStrategy``, whose loop is a plain TILE
+    block: MEASURED, ``cross_entropy_online`` -- the only kernel in the reduction table
+    on this path -- has ``reduction_loops == []`` and ``block_sizes == [0, 1]``.  A
+    per-reduction-block registration would have created ZERO slots on the one kernel
+    the knob controls, i.e. a knob that looks registered and controls nothing.  That is
+    exactly why it shares ``_register_cute_ast_pass_specs``' domain with
+    ``cute_online_defer``, which learned the same lesson.
+    """
+
+    def __init__(
+        self,
+        *,
+        block_id: int,
+        size_hint: int,
+    ) -> None:
+        super().__init__([block_id])
+        self.size_hint = size_hint
+
+    def _default(self) -> bool:
+        return ndtile_tv_for(self.size_hint)
+
+    def _fragment(self, base: ConfigSpec) -> EnumFragment:
+        default = self._default()
+        choices = (default, *(c for c in NDTILE_TV_CHOICES if c != default))
+        return EnumFragment(choices=choices)
+
+    def _normalize(self, name: str, value: object) -> bool:
+        # ``type(...) is not bool`` rather than ``isinstance``, for the reason
+        # ``CuteOnlineDeferSpec`` records: ``bool`` subclasses ``int``, so a config
+        # written ``[1]`` instead of ``[True]`` must be told so, not coerced.
+        if type(value) is not bool:
+            raise InvalidConfig(f"{name} must be a boolean, got {value!r}")
+        return value
+
+    def _fill_missing(self) -> bool:
+        # "USE THE LADDER", which here means ``False`` -- and unlike
+        # ``CuteOnlineDeferSpec`` the ladder and the inert value coincide, so this is
+        # the safe direction by construction rather than by argument.
+        #
+        # ⭐ THIS IS THE LINE THAT MAKES THE PROMOTION A PURE REACHABILITY CHANGE.
+        # Every config in the tree -- all 40 frozen cells, every ``.expected`` golden,
+        # every hand-written config -- omits this key, and the env gate they were
+        # measured under was OFF.  Filling ``True`` would silently switch all of them
+        # to the TV emission: 8 frozen cells move and 3 tests that pin the
+        # ``cute.arch.load`` form go red.  Filling ``False`` keeps them byte-identical.
+        return self._default()
 
 
 class _OptionalIntSpec(_BlockIdItem):

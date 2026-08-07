@@ -230,7 +230,52 @@ def _(state: CodegenState) -> ast.Name:
     rhs = state.ast_arg(1)
     assert isinstance(rhs, ast.Name), rhs
     state.device_function.merge_variable_names(lhs.id, rhs.id)
+    _record_cute_lane_carried_phi(state)
     return lhs
+
+
+def _record_cute_lane_carried_phi(state: CodegenState) -> None:
+    """⭐ A loop-carried value ANNOUNCES ITSELF HERE (cute task 2 step 2).
+
+    ``_phi`` is how helion spells "these two names are one loop-carried value", and it is
+    not IR-only -- this handler runs during codegen and already calls
+    ``merge_variable_names``.  The ``X_copy = X`` text that
+    ``tile_strategy._markers_feed_cross_lane_carry`` used to scan for is the OUTPUT of that
+    call, so the fact was available one phase earlier all along.
+
+    ⇒ when a lane loop is open, record that this carried value crosses it.  The consumer
+    then ASKS instead of re-deriving from emitted text.
+
+    ⚠ WHY THIS IS STRICTLY BETTER THAN THE SCAN, not a rephrasing.  The scan's measured bug
+    was a NESTED matmul K loop's temporaries scoring as lane-carried, because
+    ``ReadWrites.from_ast`` flattens nested bodies -- relerr 7.685 on ``matmul_layernorm``
+    at N=512, on a kernel that compiled.  A record written at the phi is keyed to the loop
+    that is actually open, so a K-loop phi names the K loop and cannot be mistaken for a
+    lane carry.
+
+    ⚠ RECORDS THE FX NODE, NOT THE NAME, because the consumer's question is transitive
+    (``l_ij`` -> ``l_i * alpha + l_ij`` -> ``l_i``): a name supports only an equality test.
+    ``state.fx_node`` is in hand here.
+
+    ⚠ NO-OP OFF THE CUTE BACKEND and when no lane loop is open, so this cannot perturb any
+    other path.  Guarded rather than asserted because ``_phi`` is a ``"common"`` handler --
+    it runs for every backend and for every loop nest, most of which have no lane loop.
+    """
+    node = state.fx_node
+    if node is None:
+        return
+    grid_state = state.codegen.current_grid_state
+    if grid_state is None or not grid_state.lane_loops:
+        return
+    fn = state.device_function
+    cute_state = getattr(fn, "_cute_state", None)
+    if cute_state is None:
+        return
+    # The INNERMOST open lane loop is the one this phi crosses.  ``lane_loops`` is built
+    # outermost-first by ``add_lane_loop`` and ``wrap_body`` wraps it in reverse, so the
+    # last entry is the innermost -- the same convention that file relies on.
+    lane_var = grid_state.lane_loops[-1][0]
+    cute_state.lane_carried_fx_nodes.setdefault(lane_var, set()).add(id(node))
 
 
 @_decorators.get_masked_value(_phi)

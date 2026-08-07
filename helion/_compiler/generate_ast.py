@@ -96,6 +96,14 @@ class GenerateAST(NodeVisitor, CodegenInterface):
             collections.defaultdict(list)
         )
         self.current_grid_state: DeviceGridState | None = None
+        # ⭐ THE EXACT LIST OBJECT ``DeviceGridState.wrap_body`` WILL WRAP, or ``None``
+        # outside a grid body.  Published because a lane-segment seal is recorded as an
+        # INDEX into it: a reduction lowered into a NESTED sink (a serial device loop's
+        # body, an ``if`` arm) must not record an index against a list it is not in, or
+        # the cross-thread combine is spliced at an unrelated position -- i.e. inside a
+        # lane loop, which is a silent wrong answer.  ⇒ the seal site compares by
+        # IDENTITY (``is``) against this, never by "am I inside a grid".
+        self.active_grid_body_statements: list[ast.AST] | None = None
         self.current_root_graph_info: GraphInfo | None = None
         self.max_thread_block_dims = [1, 1, 1]
         self.root_thread_block_dims = [1, 1, 1]
@@ -213,6 +221,16 @@ class GenerateAST(NodeVisitor, CodegenInterface):
     def mask_var(self, block_idx: int) -> str | None:
         if loops := self.active_device_loops[block_idx]:
             return loops[-1].strategy.mask_var(block_idx)
+        return None
+
+    def load_mask_var(self, block_idx: int) -> str | None:
+        """``mask_var`` for a consumer that only ever reads a VALUE.
+
+        See ``TileStrategy.load_mask_var``.  Callers must have no memory effect of their
+        own, so the only thing an elision can change is which in-range value is used.
+        """
+        if loops := self.active_device_loops[block_idx]:
+            return loops[-1].strategy.load_mask_var(block_idx)
         return None
 
     def _phase_checker(self, root_id: int) -> LoopDependencyChecker:
@@ -1108,8 +1126,16 @@ class GenerateAST(NodeVisitor, CodegenInterface):
                             # lane loops registered *during* body lowering (CuTe
                             # over-budget chunking) are visible to the wrap below.
                             wrapped_body: list[ast.AST] = []
-                            with self.set_statements(wrapped_body):
-                                codegen_call_with_graph(self, root, [])
+                            # Publish the body list a lane-segment seal may index into;
+                            # see ``active_grid_body_statements``.  Restored rather than
+                            # cleared, so a nested root does not blank an enclosing one.
+                            prev_grid_body = self.active_grid_body_statements
+                            self.active_grid_body_statements = wrapped_body
+                            try:
+                                with self.set_statements(wrapped_body):
+                                    codegen_call_with_graph(self, root, [])
+                            finally:
+                                self.active_grid_body_statements = prev_grid_body
                             if grid_state.has_lane_loops():
                                 self.statements_stack[-1].extend(
                                     grid_state.outer_prefix

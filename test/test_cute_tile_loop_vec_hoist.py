@@ -78,6 +78,24 @@ def _reduction_kernel(x: torch.Tensor) -> torch.Tensor:
 
 
 @helion.kernel(backend="cute", static_shapes=True)
+def _rowsum_kernel(x: torch.Tensor) -> torch.Tensor:
+    """A row sum with an INNER ``hl.tile`` reduction over the lane axis.
+
+    This is the shape that reaches ``CuteNDTileStrategy``'s vec dispatcher: a
+    plain elementwise ``hl.tile([m, n])`` copy emits zero ``cute.arch.load``
+    and would pass the stride assertions below vacuously.
+    """
+    m, n = x.size()
+    out = torch.zeros([m], dtype=torch.float32, device=x.device)
+    for tile_m in hl.tile(m):
+        acc = hl.zeros([tile_m], dtype=torch.float32)
+        for tile_n in hl.tile(n):
+            acc += x[tile_m, tile_n].to(torch.float32).sum(dim=-1)
+        out[tile_m] = acc
+    return out
+
+
+@helion.kernel(backend="cute", static_shapes=True)
 def _fp8_matmul_kernel(
     x: torch.Tensor,
     y: torch.Tensor,
@@ -342,6 +360,72 @@ class TestCuteTileLoopVecHoist(TestCase):
         self.assertIn("cutlass.range_constexpr(4)", code)
         # The scalar 1-byte decode must be gone from the fused loop.
         self.assertNotIn("_cute_fp8e4m3fn_to_float32(load)", code)
+
+    def test_sliced_odd_row_stride_declines_to_scalar(self) -> None:
+        """⭐ A vec load must DECLINE when the row stride is not a multiple of
+        the issue width -- and it must decline in CODEGEN, not fault at runtime.
+
+        The tile-path dispatcher used to read only the config's
+        ``cute_vector_widths`` and the block numel, never the tensor's non-lane
+        stride.  A ``V``-wide load moves ``V * dtype_bits / 8`` bytes from
+        ``base + row * row_stride``, so on ``base[:, :512]`` of a ``(64, 513)``
+        base it read from an address the hardware cannot service and the kernel
+        died with ``CUDA error: misaligned address``.  MEASURED before the fix:
+        5 of 12 ``(pad, V)`` cells faulted, exactly the set where
+        ``gcd(row_stride, issue_width) < issue_width``.
+
+        ⚠ BOTH halves are load-bearing.  Correctness alone is a proxy -- the
+        pre-fix tree was correct at ``pad=0`` too -- so this asserts the
+        ABSENCE of ``cute.arch.load``, which is what stops a later
+        "optimization" from silently re-widening the load and reintroducing the
+        fault.  Its companion ``test_sliced_legal_row_stride_still_vectorises``
+        is the anti-sledgehammer half.
+        """
+        m, n, pad = 64, 512, 1
+        base = torch.randn(m, n + pad, device=DEVICE, dtype=torch.bfloat16)
+        x = base[:, :n]
+        self.assertEqual(x.stride(0), n + pad)  # the slice really is odd-strided
+        code, out = code_and_output(
+            _rowsum_kernel,
+            (x,),
+            block_sizes=[1, n],
+            num_threads=[0, 32],
+            cute_vector_widths=[1, 4],
+        )
+        torch.testing.assert_close(
+            out, x.to(torch.float32).sum(dim=-1), atol=1e-2, rtol=1e-2
+        )
+        self.assertNotIn("cute.arch.load(", code)
+        self.assertIn(").load()", code)  # it fell back to the scalar path
+
+    def test_sliced_legal_row_stride_still_vectorises(self) -> None:
+        """⭐ THE ANTI-SLEDGEHAMMER HALF: a LEGAL stride must keep vectorising.
+
+        ``gcd(516, 8) == 4 < 8``, yet bf16 ``V=8`` is emitted as
+        ``tile_unroll_split2`` -- TWO 4-element ``cute.arch.load`` calls, because
+        the CuTe DSL ICEs on an 8-wide bf16 ``VectorType`` -- so its real
+        alignment requirement is 4 elements, not 8.  A clamp computed against
+        the logical ``V`` instead of the issue width would decline this shape,
+        satisfying the test above while destroying vectorisation on every
+        4-element-aligned slice.
+        """
+        m, n, pad = 64, 512, 4
+        base = torch.randn(m, n + pad, device=DEVICE, dtype=torch.bfloat16)
+        x = base[:, :n]
+        code, out = code_and_output(
+            _rowsum_kernel,
+            (x,),
+            block_sizes=[1, n],
+            num_threads=[0, 32],
+            cute_vector_widths=[1, 8],
+        )
+        torch.testing.assert_close(
+            out, x.to(torch.float32).sum(dim=-1), atol=1e-2, rtol=1e-2
+        )
+        # Two 4-wide loads, not one 8-wide one, and not zero.
+        self.assertEqual(code.count("cute.arch.load("), 2)
+        self.assertIn("ir.VectorType.get([4]", code)
+        self.assertNotIn("ir.VectorType.get([8]", code)
 
     def test_scalar_load_when_vec_width_is_one(self) -> None:
         """When V=1 the vec hoist must NOT fire — the codegen falls back to

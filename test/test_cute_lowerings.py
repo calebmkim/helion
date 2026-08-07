@@ -12973,6 +12973,17 @@ class TestCuteLowerings(unittest.TestCase):
             _thread_count=256,
             _synthetic_cute_lane_var="synthetic_lane_0",
             _synthetic_cute_lane_extent=4,
+            # No TV plan: this test pins the SCALAR synthetic-lane registration, which
+            # is the path a reduction without a plan takes.  ``ReductionStrategy``
+            # declares ``_cute_tv_plan = None`` as a class default precisely so a
+            # planless strategy reads a sentinel instead of raising -- but a
+            # ``SimpleNamespace`` is not a subclass, so it inherits nothing and has to
+            # state the sentinel itself.  Spelled out rather than worked around with a
+            # ``getattr`` at the call site: the class-default sentinel IS the design
+            # (see the capability-state block on ``ReductionStrategy``), and reaching
+            # for ``getattr`` there would reintroduce the "does this attribute exist"
+            # question the sentinels exist to answer.
+            _cute_tv_plan=None,
             block_size_var=lambda block_idx: "_RDIM_SIZE_0",
             index_var=lambda block_idx: "indices_0",
             _get_thread_axis=lambda: 0,
@@ -13278,7 +13289,18 @@ class TestCuteLowerings(unittest.TestCase):
             ast_arg=lambda index: (
                 expr_from_string("load + 1") if index == 0 else expr_from_string("0")
             ),
-            codegen=SimpleNamespace(mask_var=lambda block_id: f"mask_{block_id}"),
+            # ``_mask_to`` is a pure VALUE select, so its cute lowering reads
+            # ``load_mask_var`` -- the read-only hook -- rather than ``mask_var``.
+            # This double must offer BOTH: ``mask_var`` because other lowerings use
+            # it, and ``load_mask_var`` because this one does.  It previously
+            # defined only ``mask_var``, which made this test the FIFTH failure in
+            # the cute suite and went unnoticed because the documented gate command
+            # selects ``test_cute_backend.py`` and four pass-specific files, and
+            # this file is in none of them.
+            codegen=SimpleNamespace(
+                mask_var=lambda block_id: f"mask_{block_id}",
+                load_mask_var=lambda block_id: f"mask_{block_id}",
+            ),
             tile_strategy=SimpleNamespace(expand_str=lambda sizes, dim: ""),
         )
         env = SimpleNamespace(

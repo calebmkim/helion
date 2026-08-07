@@ -449,7 +449,30 @@ def _cute_index_exprs(
     *,
     inactive_slice_expr: str | None = None,
     inactive_singleton_slice_expr: str | None = None,
+    slice_block_ids: dict[int, int] | None = None,
 ) -> list[str]:
+    """Index expressions for one access, one entry per non-``None`` subscript.
+
+    ``slice_block_ids`` is an OUT parameter: when a caller passes a dict, this
+    function records ``{position in the returned list: block_id}`` for every
+    slice axis it resolved through ``resolve_active_slice_block_id``.
+
+    ⭐ WHY IT IS CARRIED RATHER THAN RE-DERIVED.  ``resolve_active_slice_block_id``
+    is the strongest slice resolver in the tree: it filters candidates by
+    *activeness*, then by ``used_block_ids`` (which grows as earlier positions of
+    the same subscript are resolved, so it subsumes the "pinned by a sibling"
+    guard), and breaks a remaining tie on the ``reduction`` flag.  Downstream
+    consumers -- ``_cute_vector_load_ctx`` above all -- used to re-derive the same
+    binding from an index-var string match plus a first-match size scan, which is
+    strictly weaker: MEASURED over 23 slice sites in 11 kernels the size scan
+    alone mis-binds at 3.  A mis-bound axis picks the wrong strategy, and the
+    strategy is what decides whether (and how wide) a vector load is emitted.
+
+    ⚠ An OUT parameter, not a module global: this function is called TWICE for
+    some loads (e.g. a matmul operand re-lowered under
+    ``matmul_operand_index_override``), so a global would carry one call's
+    binding into the other's read.  A caller-owned dict cannot.
+    """
     env = CompileEnvironment.current()
 
     def symint_index_expr(idx: torch.SymInt, used_block_ids: set[int]) -> str:
@@ -687,6 +710,8 @@ def _cute_index_exprs(
                 idx_var = active_index_var(block_id)
                 assert idx_var is not None
                 used_block_ids.add(block_id)
+                if slice_block_ids is not None:
+                    slice_block_ids[len(result)] = block_id
                 result.append(idx_var)
                 tensor_dim += 1
                 continue
@@ -720,6 +745,8 @@ def _cute_index_exprs(
                 idx_var = active_index_var(block_id)
                 assert idx_var is not None
                 used_block_ids.add(block_id)
+                if slice_block_ids is not None:
+                    slice_block_ids[len(result)] = block_id
                 if start == 0:
                     result.append(idx_var)
                 else:
@@ -777,10 +804,15 @@ def _cute_scalar_load_expr(
 # Maximum bytes per vector load/store transaction (LDG.128/STG.128).
 _CUTE_VECTOR_MAX_BYTES = 16
 
-# Dtype -> (cutlass scalar type name, max vector width).  Used for the
-# ``vec`` mode that issues an explicit
-# ``cute.arch.load(ptr, ir.VectorType.get([V], elem.mlir_type))`` and folds
-# the result via ``_cute_pre_vec_fold``.
+# Dtype -> (cutlass scalar type name, max vector width).
+#
+# ⚠ ONLY THE KEYS ARE LIVE.  This described the deleted ``vec`` mode, which issued an
+# explicit ``cute.arch.load(ptr, ir.VectorType.get([V], elem.mlir_type))`` and folded the
+# result through ``_cute_pre_vec_fold`` -- both gone (the mode with the branch's OOB-guard
+# layer, the fold helpers with A5).  What remains reads this as a MEMBERSHIP TEST only
+# (``cute/memory_ops.py``'s dtype-eligibility predicate); the tuple payload -- the cutlass
+# type name and the max width -- is unpacked nowhere.  Kept as a dict rather than a set
+# because the payload still documents the per-dtype width ceiling for a reader.
 _CUTE_VECTOR_DTYPES: dict[torch.dtype, tuple[str, int]] = {
     torch.float32: ("cutlass.Float32", _CUTE_VECTOR_MAX_BYTES // 4),
     torch.float16: ("cutlass.Float16", _CUTE_VECTOR_MAX_BYTES // 2),
@@ -856,6 +888,55 @@ def _cute_lane_axis_pos(strategy: object, block_id: int, index_exprs: list[str])
     return len(index_exprs) - 1
 
 
+def _cute_row_safe_index_expr(index_expr: str, mask_var: str) -> str:
+    """``<index> if <mask> else 0`` — an always-in-bounds coordinate.
+
+    Emitted INLINE rather than lifted to a named statement on purpose.  The vec
+    emitters splice their load into a lane body captured by the tile strategy,
+    which is not the statement list ``state.add_statement`` appends to, so a
+    lifted clamp can land *after* the load that uses it.  Inline is
+    placement-proof; the DSL folds the repeated select in codegen (the emitted
+    SASS is one predicated move).
+    """
+    index_dtype = CompileEnvironment.current().index_type()
+    return f"({index_expr} if {mask_var} else {index_dtype}(0))"
+
+
+def _cute_axis_mask_var(
+    state: CodegenState, block_id: int, *, for_load: bool = False
+) -> str | None:
+    """The active mask var for *block_id*, or None when the axis needs no mask.
+
+    Mirrors ``_cute_combined_mask``'s ``mask_var_for_block_id`` but also consults
+    the grid state, because the row axis of a rolled reduction lives on the grid
+    strategy, not on a device loop.
+
+    ``for_load=True`` has the same meaning and the same default as in
+    ``_cute_combined_mask``: read-only accesses may use the strategy's proved-vacuous
+    read mask, and an unaudited caller keeps the full mask.
+    """
+    if _cute_index_override(state, block_id) is not None:
+        return None
+    block_id = _cute_remap_block_id(state, block_id)
+    loops = state.codegen.active_device_loops.get(block_id)
+    if loops:
+        strategy = loops[-1].strategy
+        return (
+            strategy.load_mask_var(block_id)
+            if for_load
+            else strategy.mask_var(block_id)
+        )
+    grid_state = state.codegen.current_grid_state
+    if grid_state is not None and block_id in grid_state.block_ids:
+        strategy = grid_state.strategy
+        return (
+            strategy.load_mask_var(block_id)
+            if for_load
+            else strategy.mask_var(block_id)
+        )
+    return None
+
+
 def _cute_unroll_vec_load_expr(
     ptr_expr: str, dtype: torch.dtype, vec_width: int
 ) -> str:
@@ -891,6 +972,7 @@ def _cute_register_tile_unroll_vec_hoist(
     tensor_name: str,
     index_exprs: list[str],
     vec_width: int,
+    subscript: list[object] | tuple[object, ...],
 ) -> str:
     """Tile-loop variant of ``_cute_register_unroll_vec_hoist`` for
     ``CuteNDTileStrategy`` lane loops.
@@ -900,6 +982,11 @@ def _cute_register_tile_unroll_vec_hoist(
     per-element extract expression so the existing scalar pipeline keeps
     working.  bf16/fp16 load as ``Uint16`` and bitcast; fp8 loads ``vec_width``
     bytes as one packed integer that the matmul fallback decodes downstream.
+
+    The address is main's ``_cute_scalar_pointer_expr`` plus main's inline lane-axis
+    anchor guard; the branch's row-axis clamp is deleted (T6).  This emitter used to guard the lane
+    axis only, leaving the row index unbounded in *both* branches of its own
+    guard -- the ``else`` pointer was "safe" in the column alone.
     """
     base_var_by_block = getattr(strategy, "_cute_lane_base_index_var_by_block", {})
     lane_body_by_block = getattr(strategy, "_cute_lane_body_by_block", {})
@@ -930,24 +1017,31 @@ def _cute_register_tile_unroll_vec_hoist(
             f"_tile_unroll_vec_{block_id}_{len(cache)}", dce=False
         )
         cache[cache_key] = (hoist_var, tensor.dtype)
-        # Guard the LDG against per-thread OOB: on the very last grid
-        # block + tail outer-tile iter, a thread whose vec base equals
-        # ``numel`` would otherwise read past the end of the underlying
-        # allocation (the next row doesn't exist for the last grid
-        # block).  Use an "anchor pointer" fallback for the unsafe
-        # threads: it points inside the tensor (specifically at the
-        # per-thread base of the FIRST outer-tile iter, which is the
-        # ``base_ptr_expr`` with the outer-lane index folded to 0).  The
-        # fetched bytes are then ignored downstream by the per-lane
-        # mask gate that wraps the bitcast result.
+        # ⭐ MAIN'S INLINE LANE-AXIS ANCHOR GUARD, RESTORED VERBATIM (T6).
+        #
+        # ⚠ T6 deletes the BRANCH'S guard additions; it must not leave this path guarded
+        # LESS than main.  Main's guard is inline and covers the LANE axis: on the last grid
+        # block plus the tail outer-tile iter, a thread whose vec base equals ``numel`` would
+        # read past the end of the allocation (the next row does not exist for the last
+        # block).  The fallback "anchor" pointer is the per-thread base of the FIRST
+        # outer-tile iter -- ``base_ptr_expr`` with the lane index folded to 0 -- which is in
+        # bounds for any grid block, and the fetched bytes are discarded downstream by the
+        # per-lane mask that wraps the bitcast.
+        #
+        # ⛔ WHAT THE BRANCH ADDED AND WHAT WENT WITH IT: a ``CuteVecLoadDesc`` descriptor
+        # (~260 lines with ``_cute_guarded_pointer_expr`` / ``_cute_vec_load_desc`` /
+        # ``_cute_axis_bound_expr``) that additionally clamped the ROW axis, keyed by
+        # ``index_exprs`` position.  ⭐ It reads as correctness and is not: it guards a
+        # **vec** address, i.e. correctness CONDITIONAL ON AN OPTIMISATION.  The scalar floor
+        # it degrades to has no address to guard, and the TV path carries its own bounds
+        # argument (a per-element mask inside ``range_constexpr`` plus the copy's own
+        # ``pred``).  ⇒ it only ever protected the classic vec path, which is what T6 removes.
+        #
+        # ⚠ AND THE SHAPES IT GUARDED NO LONGER REACH A CLASSIC VEC LOAD, MEASURED: all 40
+        # frozen cells emit ``make_tiled_copy_tv`` (38/40 before the tile path learned the
+        # ragged round-up) and ZERO reach these hoists.
         env_local = CompileEnvironment.current()
-        numel = env_local.block_sizes[block_id].numel
-        numel_expr = state.sympy_expr(numel)
-        # Build the "anchor" pointer: same index_exprs but with the
-        # inner reduction-axis index forced to 0.  This is the
-        # ``tile_offset == 0, lane_var == 0, vec_lane_var == 0`` base
-        # for the very first outer-tile iter, which is always in-bounds
-        # for any grid block.
+        numel_expr = state.sympy_expr(env_local.block_sizes[block_id].numel)
         anchor_exprs = list(index_exprs)
         anchor_exprs[lane_pos] = "0"
         anchor_ptr_expr = _cute_scalar_pointer_expr(tensor_name, anchor_exprs)
@@ -974,6 +1068,7 @@ def _cute_register_tile_unroll_vec_hoist_split2(
     tensor_name: str,
     index_exprs: list[str],
     vec_width: int,
+    subscript: list[object] | tuple[object, ...],
 ) -> str:
     """Split-2 variant of ``_cute_register_tile_unroll_vec_hoist`` for V=8
     on fp16/bf16.
@@ -1014,11 +1109,14 @@ def _cute_register_tile_unroll_vec_hoist_split2(
     assert isinstance(lane_body, list)
     assert isinstance(vec_lane_var, str)
     lane_pos = _cute_lane_axis_pos(strategy, block_id, index_exprs)
+    # One descriptor, two pointers: the second half is the same load advanced by
+    # ``half`` elements, so ``with_lane_offset`` regenerates its lane guard from
+    # the SAME bound instead of hand-writing a second condition.  Both halves
+    # therefore carry the row clamp too.
     base_exprs = list(index_exprs)
     base_exprs[lane_pos] = base_index_var
     base_ptr_expr_a = _cute_scalar_pointer_expr(tensor_name, base_exprs)
-    # The second-half pointer points 4 elements past the first.  Build
-    # it by substituting ``base_index_var + half`` for the inner index.
+    # The second-half pointer points ``half`` elements past the first.
     base_exprs_b = list(index_exprs)
     base_exprs_b[lane_pos] = f"({base_index_var} + {half})"
     base_ptr_expr_b = _cute_scalar_pointer_expr(tensor_name, base_exprs_b)
@@ -1041,17 +1139,36 @@ def _cute_register_tile_unroll_vec_hoist_split2(
         # collide with the V=4 cache_key shape.  Downstream readers
         # don't introspect this tuple — it's just a sentinel.
         cache[cache_key] = ((hoist_var_a, hoist_var_b), tensor.dtype)
+        # ⭐ MAIN'S INLINE LANE-AXIS ANCHOR GUARD, RESTORED VERBATIM (T6).
+        #
+        # ⚠ T6 deletes the BRANCH'S guard additions; it must not leave this path guarded
+        # LESS than main.  Main's guard is inline and covers the LANE axis: on the last grid
+        # block plus the tail outer-tile iter, a thread whose vec base equals ``numel`` would
+        # read past the end of the allocation (the next row does not exist for the last
+        # block).  The fallback "anchor" pointer is the per-thread base of the FIRST
+        # outer-tile iter -- ``base_ptr_expr`` with the lane index folded to 0 -- which is in
+        # bounds for any grid block, and the fetched bytes are discarded downstream by the
+        # per-lane mask that wraps the bitcast.
+        #
+        # ⛔ WHAT THE BRANCH ADDED AND WHAT WENT WITH IT: a ``CuteVecLoadDesc`` descriptor
+        # (~260 lines with ``_cute_guarded_pointer_expr`` / ``_cute_vec_load_desc`` /
+        # ``_cute_axis_bound_expr``) that additionally clamped the ROW axis, keyed by
+        # ``index_exprs`` position.  ⭐ It reads as correctness and is not: it guards a
+        # **vec** address, i.e. correctness CONDITIONAL ON AN OPTIMISATION.  The scalar floor
+        # it degrades to has no address to guard, and the TV path carries its own bounds
+        # argument (a per-element mask inside ``range_constexpr`` plus the copy's own
+        # ``pred``).  ⇒ it only ever protected the classic vec path, which is what T6 removes.
+        #
+        # ⚠ AND THE SHAPES IT GUARDED NO LONGER REACH A CLASSIC VEC LOAD, MEASURED: all 40
+        # frozen cells emit ``make_tiled_copy_tv`` (38/40 before the tile path learned the
+        # ragged round-up) and ZERO reach these hoists.
+        # ⚠ ONE anchor serves BOTH fallbacks -- the per-element mask downstream drops any
+        # anchor-fetched bytes either way, so a second anchor buys nothing.  Main's form.
         env_local = CompileEnvironment.current()
-        numel = env_local.block_sizes[block_id].numel
-        numel_expr = state.sympy_expr(numel)
+        numel_expr = state.sympy_expr(env_local.block_sizes[block_id].numel)
         anchor_exprs = list(index_exprs)
         anchor_exprs[lane_pos] = "0"
         anchor_ptr_expr = _cute_scalar_pointer_expr(tensor_name, anchor_exprs)
-        # The first-half OOB guard checks the same V-aligned base used by
-        # the V=4 path; the second-half pointer is ``base + 4`` and only
-        # needs guarding when ``base + 4 < numel``.  Reuse the same
-        # anchor pointer for both halves' fallbacks (the per-element
-        # mask gate downstream drops any anchor-fetched bytes anyway).
         guarded_ptr_a = (
             f"({base_ptr_expr_a} if {base_index_var} < {numel_expr} "
             f"else {anchor_ptr_expr})"
@@ -1089,7 +1206,16 @@ def _cute_combined_mask(
     tensor: torch.Tensor | None = None,
     *,
     include_tensor_index_masks: bool = True,
+    for_load: bool = False,
 ) -> str | None:
+    """The mask expression for one access.
+
+    ``for_load=True`` says this access only ever READS, and licenses the strategy to drop a
+    bounds term it can prove vacuous for every launched thread (``load_mask_var``).  It
+    **defaults to False**, so a call site that has not been audited keeps the full mask:
+    the read-side elision is opt-in per site, which makes "I missed a store" fail closed.
+    See ``TileStrategy.load_mask_var`` for the asymmetry's justification.
+    """
     env = CompileEnvironment.current()
     terms: list[str] = []
 
@@ -1099,7 +1225,10 @@ def _cute_combined_mask(
         block_id = _cute_remap_block_id(state, block_id)
         loops = state.codegen.active_device_loops.get(block_id)
         if loops:
-            return loops[-1].strategy.mask_var(block_id)
+            strategy = loops[-1].strategy
+            if for_load:
+                return strategy.load_mask_var(block_id)
+            return strategy.mask_var(block_id)
         return None
 
     def active_index_var(block_id: int) -> str | None:

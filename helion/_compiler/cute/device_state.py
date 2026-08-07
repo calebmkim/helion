@@ -431,6 +431,18 @@ class CuteDeviceFunctionState:
         self.cluster_shape: tuple[int, int, int] | None = None
         self.block_shape: tuple[int, int, int] | None = None
         self.suppress_root_lane_loops = False
+        # ``reload_from="smem"`` staging: reduction strategy -> bytes it has been
+        # charged for its staged row tile.
+        #
+        # ⚠ This lives on the DeviceFunction, not on the strategy, precisely
+        # because class-9 item S1 says ``alloc_smem`` SUMS across inlined call
+        # sites while helion's reduction SMEM check is PER reduction.  A kernel
+        # with two reductions (layer_norm, cross_entropy) must not have each pass
+        # its own budget check and then jointly blow the cap -- MEASURED, the
+        # doubled size is exactly where staging becomes a 24-28% regression.  The
+        # key is the strategy object so the many load sites of one reduction all
+        # get the same answer and only the first is charged.
+        self.reduction_stage_smem_bytes: dict[object, int] = {}
         # Active block-id remapping for matmul operand re-materialization.
         # Maps a source block_id (e.g. the rhs operand's loop-invariant
         # contraction index) to the active contraction block_id so a
@@ -447,6 +459,78 @@ class CuteDeviceFunctionState:
         # masking for that axis (the serial loop already covers exactly [0, C)).
         # Empty except while re-materializing such an operand load.
         self.matmul_operand_index_override: dict[int, str] = {}
+        # ⭐ CANONICAL BLOCK IDS WHOSE REDUCTION A MATMUL LOWERING ALREADY PERFORMED.
+        #
+        # Recorded by ``_emit_cute_matmul_n_collapse`` (the static-M==N-collapse
+        # baddbmm path), which turns the shared M/N axis into a SERIAL fold inside
+        # the matmul -- so, as that function's own docstring says, "folding the N
+        # reduction here makes ``result`` already the N-summed value and the
+        # downstream ``.sum(-1)`` a no-op."
+        #
+        # ⭐⭐ WHY THIS IS RECORDED RATHER THAN RE-DERIVED, and it is a soundness
+        # matter, not tidiness.  ``_decline_structural_lane_split`` has to decide
+        # whether deleting a lane-reduce marker's fold is CORRECT.  It is correct
+        # exactly when some other mechanism already folded that axis -- and the only
+        # component that knows it emitted such a fold is the one that emitted it.
+        # An AST scan at the decline site CANNOT recover this: MEASURED, the
+        # ``baddbmm(...).sum(-1)`` kernel (fold already done, restore correct) and an
+        # ``addmm`` + ``sum(-1, keepdim=True)`` broadcast store (no fold, restore
+        # WRONG at rel 1.04-1.05) are INDISTINGUISHABLE by store signature, by lane
+        # block id, and by "does a grouped reduce exist" -- all three were tried and
+        # refuted.  So the producer records, and the consumer asks.
+        #
+        # Keyed by ``CompileEnvironment.canonical_block_id`` so the decline site's
+        # block id and the matmul's resolve to the same key.
+        self.matmul_folded_reduction_block_ids: set[int] = set()
+        # ⭐ TILE IDENTITY PER FRAGMENT VARIABLE (task 4).
+        #
+        # ``fragment_var -> (tensor_name, chunk, row_coord, col_coord)`` -- the identity of
+        # the tile a ``cute.copy`` reads, recorded BY THE PLAN THAT EMITS THE COPY.
+        #
+        # ⭐⭐ WHY: ``fuse_tv_copy_sweeps`` is load CSE, and to delete a later sweep's copy
+        # it must prove two copies address the SAME tile.  ``ChunkTVPlan``'s
+        # ``emit_local_tile`` / ``emit_partition_source`` / ``emit_copy`` generate BOTH
+        # sweeps' texts from ONE plan object, so the identity is known at emission -- and it
+        # was thrown away into a variable name.  Each sweep mints its own ``_tv_chunk_N`` /
+        # ``_tv_part_N``, so the pass had to unparse, re-parse, expand single-assignment
+        # temporaries in place, and **string-compare** to recover it.  That proof plus the
+        # re-derived shape/dtype is roughly half the pass's 744 lines.
+        #
+        # ⚠ KEYED ON THE FRAGMENT VARIABLE NAME because the pass already extracts that, so
+        # the consumer stays a LOOKUP and adds no new AST analysis.
+        #
+        # ⛔ THE PASS MUST STAY CONFIG-FREE.  This is data threaded through the artifact,
+        # never a config read -- that is what keeps the pass unit-testable on a hand-written
+        # body, and FIXLIST item 4 warns against breaking it explicitly.  A pass given a
+        # hand-written body simply finds no ids and falls back to its text comparison.
+        self.tv_tile_ids: dict[str, tuple[str, int, str, str]] = {}
+        # ⭐ LANE-CARRIED VALUES, RECORDED AT THE PHI (task 2 step 2).
+        #
+        # ``lane_var -> {fx node ids of values carried ACROSS that lane loop}``.  Written
+        # by ``_phi``'s codegen handler (``language/_tracing_ops.py``) whenever a
+        # loop-carried value is merged while a lane loop is open, and read by
+        # ``tile_strategy._markers_feed_cross_lane_carry``.
+        #
+        # ⭐⭐ WHY RECORDED AND NOT SCANNED, same shape as the matmul record above and for
+        # a sharper reason.  The consumer's question is *"is something else already folding
+        # my lane axis?"* -- if yes, deleting a marker's fold is correct; if no, deleting it
+        # is a silent wrong answer.  It used to be answered by TEXT-MATCHING the ``X_copy =
+        # X`` phi in the emitted lane body, and that scan was MEASURED WRONG: on
+        # ``matmul_layernorm`` it returned True for ten hits that all came from a NESTED
+        # matmul K loop, because ``ReadWrites.from_ast`` flattens nested bodies -- so K-loop
+        # temporaries scored as lane-carried, giving relerr **7.685** at N=512 on a kernel
+        # that compiled and looked plausible.
+        #
+        # ⇒ a record written AT THE PHI cannot make that mistake: the phi is handled while
+        # exactly one loop is open, so a K-loop phi is keyed to the K loop's variable and a
+        # lane phi to the lane loop's.  The flow-insensitive scan answering a flow-sensitive
+        # question is replaced by the producer stating which loop it crossed.
+        #
+        # ⚠ THE FX NODE, NOT THE NAME.  "Does a marker's result FEED the carried value" is
+        # TRANSITIVE (``l_ij`` -> ``l_i * alpha + l_ij`` -> ``l_i``), so the consumer needs
+        # to walk the graph from what was recorded; a name only supports an equality test
+        # and would miss every indirect carry.
+        self.lane_carried_fx_nodes: dict[str, set[int]] = {}
         # Set by the backend's flash-attention detector when the fused
         # tcgen05 QK->softmax->PV path is active (HELION_CUTE_FLASH). Holds the
         # tile_n device-loop block ids. The dedicated flash codegen emits the

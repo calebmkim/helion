@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 import sympy
 import torch
 
-from .._compat import shape_env_size_hint
 from .compile_environment import CompileEnvironment
 from .compile_environment import _symint_sympy_expr
 from .cute.layout import CuTeGridExecutionPlan
@@ -15,7 +14,6 @@ from .device_ir import ReductionLoopGraphInfo
 from .device_ir import RootGraphInfo
 from .host_function import HostFunction
 from .reduction_strategy import ReductionStrategy
-from .reduction_strategy import cute_looped_reduction_block_size
 from .tile_strategy import CompactedShape
 from .tile_strategy import DeviceLoopState
 from .tile_strategy import TileStrategy
@@ -104,36 +102,34 @@ class TileStrategyDispatch:
         # threads would otherwise exceed the per-block limit.
         fn.tile_strategy = self
         env = CompileEnvironment.current()
-        max_threads = env.backend.max_reduction_threads()
         rdims = [bs.block_id for bs in env.block_sizes if bs.reduction]
-        reduction_loop_block_ids = set(
-            env.config_spec.reduction_loops.valid_block_ids()
-        )
         for block_id in rdims:
             reduction_loop = env.config_spec.reduction_loops.config_get(
                 config.reduction_loops, block_id, None
             )
-            # Only rolled reduction dimensions can use LoopedReductionStrategy.
-            # Non-rolled dimensions must stay persistent so graph selection and
-            # strategy selection remain consistent.
-            if max_threads is not None and block_id in reduction_loop_block_ids:
-                numel = env.block_sizes[block_id].numel
-                if isinstance(numel, sympy.Integer):
-                    size_hint = int(numel)
-                elif isinstance(numel, sympy.Expr):
-                    size_hint = shape_env_size_hint(env.shape_env, numel)
-                else:
-                    size_hint = env.size_hint(numel)
-                if reduction_loop is None:
-                    if size_hint > max_threads:
-                        # Too many elements for a single warp; force a looped
-                        # reduction. CuTe can cover a wider chunk with either
-                        # more live lanes or per-thread scalar lanes.
-                        reduction_loop = (
-                            cute_looped_reduction_block_size(size_hint, max_threads)
-                            if env.backend.name == "cute"
-                            else max_threads
-                        )
+            # ⭐⭐ NO FORCE-ROLL HERE ANY MORE (A1, site 4).
+            #
+            # This used to compute the per-CTA extent and, when it exceeded
+            # ``max_threads``, replace a ``reduction_loop is None`` (PERSISTENT) request with
+            # ``cute_looped_reduction_block_size(...)`` -- selecting
+            # ``LoopedReductionStrategy`` for a graph the config asked to keep persistent.
+            # It was the third of three sites enforcing that policy redundantly
+            # (``ConfigSpec.normalize`` held the other two).
+            #
+            # All three existed to dodge ONE real bug: above ``max_reduction_threads`` the
+            # synthetic lane loop was never created, so a persistent reduction visited only
+            # the first ``max_reduction_threads`` elements (fixed in ``de0267822`` --
+            # ``needs_synthetic`` now compares against the REAL extent, not a thread-capped
+            # one).  With that fixed, ``adjust_reduction_thread_count`` shrinks the thread
+            # count and the synthetic lane loop covers the remainder, so a ``[None]`` request
+            # is honoured.
+            #
+            # ⚠ THE CONSISTENCY INVARIANT the old comment named ("graph selection and
+            # strategy selection must remain consistent") is still real, and is now satisfied
+            # TRIVIALLY: ``reduction_loop`` is passed through exactly as the config states it,
+            # so the GRAPH (split from ``config.reduction_loops`` in
+            # ``DeviceIR.build_codegen_graphs``) and the STRATEGY read the same value and
+            # cannot disagree. Any future rewrite here must be mirrored there.
             strategy = env.backend.create_reduction_strategy(
                 fn, block_id, reduction_loop
             )

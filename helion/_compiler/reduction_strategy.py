@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import logging
 import operator
+import os
 from typing import TYPE_CHECKING
 from typing import cast
 
@@ -21,6 +22,14 @@ from .ast_extension import statement_from_string
 from .compile_environment import CompileEnvironment
 from .cute.layout import LayoutTag as _CuteLayoutTag
 from .cute.layout_propagation import META_KEY as _CUTE_LAYOUT_META_KEY
+from .cute.ragged_tail import assert_vec_divides_extent
+from .cute.ragged_tail import ragged_tile_admissible
+from .cute.ragged_tail import rounded_extent
+from .cute.tv_layout import ROW_RESIDENCY_GMEM
+from .cute.tv_layout import ChunkTVPlan
+from .cute.tv_layout import TVParticipants
+from .cute.tv_layout import build_tv_plan
+from .cute.tv_layout import emit_lane_base_for
 from .device_function import find_block_size_symbols
 from .host_function import HostFunction
 from .inductor_lowering import ReductionLowering
@@ -43,6 +52,64 @@ log = logging.getLogger(__name__)
 
 def _dtype_str(dtype: torch.dtype) -> str:
     return CompileEnvironment.current().backend.dtype_str(dtype)
+
+
+# Reduction ops whose combine ACCUMULATES, i.e. repeatedly folds many elements
+# into one running value, so the running value can exceed the range of the input
+# dtype even when the mathematically-correct answer fits.  These are the ops that
+# need a widened integer accumulator.  ``max``/``min`` are deliberately absent:
+# they only ever SELECT one of their inputs, so the running value is always an
+# element of the input and can never leave the input's range -- widening them
+# would cost registers/SMEM and buy nothing.  Indexed reductions (``argmin`` /
+# ``argmax``) are also absent: their *index* is already ``int64``, and the *value*
+# they compare is a select, not an accumulation.
+_ACCUMULATING_REDUCTION_TYPES = frozenset({"sum", "prod"})
+
+
+def widen_integer_acc_dtype(
+    reduction_type: str, base_dtype: torch.dtype
+) -> torch.dtype:
+    """Widen ``base_dtype`` to ``int64`` when it is an integral accumulator of an
+    ACCUMULATING reduction.
+
+    ``torch.sum`` / ``torch.prod`` promote every integral (and ``bool``) input to
+    ``int64`` internally, so a reduction that accumulates in the input's own
+    integer width diverges from the reference by silently wrapping
+    (``_redfix/01_BUGS.md`` class 5).  Measured with torch: ``sum``/``prod`` over
+    ``bool``/``int8``/``uint8``/``int16``/``int32``/``int64`` all give ``int64``,
+    while ``amax``/``amin`` keep the input dtype.
+
+    A no-op for float bases (their widening is ``get_computation_dtype``'s job)
+    and for selecting ops, whose running value is always one of their inputs and
+    therefore cannot leave the input's range.
+    """
+    if (
+        reduction_type in _ACCUMULATING_REDUCTION_TYPES
+        and not base_dtype.is_floating_point
+        and not base_dtype.is_complex
+        and base_dtype != torch.int64
+    ):
+        return torch.int64
+    return base_dtype
+
+
+def reduction_acc_dtype(reduction_type: str, input_dtype: torch.dtype) -> torch.dtype:
+    """The dtype a reduction's accumulator must use.
+
+    The accumulator is **not** a memory object: it does not inherit the input
+    tensor's (or a copy atom's) dtype.  It is chosen to match torch's reference
+    semantics for ``reduction_type`` over ``input_dtype``:
+
+    * float inputs -> ``get_computation_dtype``, i.e. fp16/bf16 accumulate in
+      fp32 (the pre-existing, already-correct behaviour);
+    * integral inputs of ``sum``/``prod`` -> ``int64`` (see
+      :func:`widen_integer_acc_dtype`);
+    * integral inputs of ``max``/``min``/``argmax``/``argmin`` -> unchanged.
+
+    ``get_computation_dtype`` alone is not enough: it is the identity on
+    integers (``int32 -> int32``), which is exactly the class-5 bug.
+    """
+    return widen_integer_acc_dtype(reduction_type, get_computation_dtype(input_dtype))
 
 
 def _cute_shared_memory_budget_bytes() -> int:
@@ -96,6 +163,47 @@ def _cute_reduction_smem_bytes(num_elements: int, dtype: torch.dtype) -> int:
 
 _CUTE_LOOPED_REDUCTION_MAX_ELEMENTS_PER_THREAD = 256
 _CUTE_WARP_REDUCTION_THREADS = 32
+
+# ⭐ ``_CUTE_STAGE_SMEM_MAX_BYTES = 64 * 1024`` USED TO LIVE HERE.  It is now the
+# ``cute_stage_smem_kb`` CONFIG KNOB (``CuteStageSmemKbSpec``), whose default ladder
+# ``tv_layout.stage_smem_kb_for`` returns the same 64 for every ``n`` -- so the emitted
+# kernel is unchanged and the promotion is a pure reachability change.
+#
+# THE MEASUREMENT THE CONSTANT CARRIED, kept because it is the knob's whole
+# justification.  rms_norm bf16, cold-L2 CUDA-graph, ratio = quack_ms/helion_ms, one
+# process per arm (the same process serves a cached kernel and hides the effect
+# entirely -- that cost one round):
+#
+#   staged tile | cell                  | reload=None | reload="smem"
+#   ------------|-----------------------|-------------|---------------
+#      32 KB    | N=4096  bs=4  rl=1024 |    0.867    |  0.917   WIN
+#      64 KB    | N=4096  bs=8  rl=1024 |    0.999    |  1.067   WIN
+#      64 KB    | N=8192  bs=4  rl=1024 |    0.960    |  1.033   WIN
+#      64 KB    | N=8192  bs=4  rl=2048 |    1.016    |  1.077   WIN
+#      64 KB    | N=16384 bs=2  rl=2048 |    0.931    |  1.005   WIN
+#     128 KB    | N=8192  bs=8  rl=1024 |    0.987    |  0.743   LOSS
+#     128 KB    | N=16384 bs=4  rl=1024 |    0.912    |  0.707   LOSS
+#     128 KB    | N=16384 bs=4  rl=2048 |    1.002    |  0.722   LOSS
+#
+# Every tile <= 64 KB wins (by 2-8%); every tile at 128 KB loses (by 24-28%).  The
+# mechanism is occupancy: ncu ``launch__occupancy_limit_shared_mem`` is 6 blocks/SM
+# without staging and **1** with a 128 KB tile, on a 232 KB/CTA device.  64 KB admits 3
+# blocks, which is enough to keep the DRAM pipe fed.
+#
+# ⚠ AND THAT IS AN EXCHANGE RATE, WHICH IS WHY IT IS A KNOB.  "Enough resident CTAs to
+# keep the DRAM pipe fed" depends on how much work each CTA does, so the winning budget
+# is a function of the row width -- and the table above was measured at N=4096..16384
+# only, i.e. exactly the band where the frozen table stages.  MEASURED at the wide end,
+# the constant is refusing requests rather than sizing them: ``cross_entropy``
+# 8192x100000 asks for 196 KB and is declined, ``cross_entropy`` 32768x32768 is admitted
+# at EXACTLY 64 KB.
+#
+# Why the budget is still ABSOLUTE and not a fraction of
+# ``_cute_shared_memory_budget_bytes()``: class-9 item S1 records that helion's reduction
+# SMEM check is PER reduction while ``alloc_smem`` SUMS across inlined call sites.  A
+# kernel with two reductions (layer_norm, cross_entropy) allocates two tiles against one
+# budget, so 64 KB each is already 128 KB total -- exactly the losing size.  See
+# ``cute_stage_feasible``, which charges the budget per *kernel* for that reason.
 
 
 def cute_looped_reduction_block_size(size_hint: int, max_threads: int) -> int:
@@ -208,6 +316,394 @@ def _block_has_indexed_reduction(fn: DeviceFunction, block_index: int) -> bool:
     return block_index in env.config_spec.cute_indexed_reduction_block_ids
 
 
+def _cute_tv_alias_key(host: HostFunction, val: torch.Tensor) -> object:
+    """A comparable identity for the memory ``val`` names.
+
+    Prefers the host buffer name, so two fx nodes that reach the same host
+    tensor compare equal even if they are distinct ``_host_tensor`` nodes in
+    different graphs (which they are: the rolled reduction body is a *copy* of
+    the root's nodes).  Falls back to object identity for device-internal
+    temporaries, which have no host name but are the same fake tensor object
+    everywhere they appear.
+    """
+    origin = host.tensor_to_origin.get(val)
+    name = origin.root_rw_name() if origin is not None else None
+    return name if name is not None else id(val)
+
+
+def _cute_tv_subscript_key(subscript: object) -> object:
+    """A comparable identity for a load/store subscript.
+
+    Two accesses with equal keys address the SAME elements of the same tensor:
+    same row (or the same broadcast row), same trailing extent.  That is the
+    predicate store-to-load forwarding needs, and it is what separates the three
+    shapes that must keep declining (a different row, a column sub-slice, a
+    scalar element) from the one that can forward.
+
+    A ``SymInt`` is canonicalised through its block id where it has one, so the
+    key does not depend on the ``SymInt`` object's identity -- the rolled
+    reduction body is a *copy* of the root graph's nodes, so the same access can
+    appear as distinct objects in different graphs.
+    """
+    if not isinstance(subscript, (list, tuple)):
+        return None
+    env = CompileEnvironment.current()
+    parts: list[object] = []
+    for idx in subscript:
+        if idx is None:
+            parts.append(("none",))
+        elif isinstance(idx, slice):
+            parts.append(("slice", str(idx.start), str(idx.stop), str(idx.step)))
+        elif isinstance(idx, torch.SymInt):
+            block_id = env.get_block_id(idx)
+            parts.append(
+                ("blk", block_id) if block_id is not None else ("sym", str(idx))
+            )
+        else:
+            parts.append(("other", str(idx)))
+    return tuple(parts)
+
+
+def _cute_tv_store_node_forwardable(node: torch.fx.Node) -> bool:
+    """Can a TV ``cute.copy`` store be emitted for this ``hl.store`` node?
+
+    ⭐ Condition 4 of :func:`_cute_tv_forwardable_raw_keys`, and the reason it is a
+    separate function: forwarding makes the LOAD read the STORE's fragment, so it
+    is only sound when the store actually emits one.  Conditions 1-3 are decided
+    from the IR; this is decided by the emitter, and the gap between the two was a
+    silent wrong answer (see that function's docstring for the measurement).
+
+    ⚠ **This is deliberately a conservative POSITIVE check, not a list of known
+    bad spellings.**  It vouches for the shapes the TV store path provably
+    handles, and everything else is refused -- so a store-leg decline added to
+    ``_maybe_codegen_cute_tv_store`` or ``_cute_tv_site_eligible`` in future
+    degrades this to "do not forward" (i.e. the pre-B3 blanket decline, which is
+    correct but unvectorised) rather than to a stale read.  Enumerating the bad
+    cases instead would be correct only for the cases enumerated today.
+
+    ⚠ The emitter's own eligibility test needs a live ``strategy`` and a
+    ``CodegenState``, neither of which exists during this IR walk, so it cannot be
+    called here.  What is checkable at IR time is the store's ARGUMENT shape, and
+    that is where the reachable declines live: ``extra_mask`` (``args[3]`` /
+    ``kwargs``, which ``_maybe_codegen_cute_tv_store`` refuses outright) and a
+    subscript naming fewer axes than the tensor has.
+    """
+    if len(node.args) > 3 and node.args[3] is not None:
+        return False  # extra_mask positionally
+    if node.kwargs.get("extra_mask") is not None:
+        return False  # extra_mask by keyword
+    val = (
+        node.args[0].meta.get("val")
+        if isinstance(node.args[0], torch.fx.Node)
+        else None
+    )
+    subscript = node.args[1]
+    if not isinstance(val, torch.Tensor) or not isinstance(subscript, (list, tuple)):
+        return False
+    # Mirrors ``_cute_tv_site_eligible``'s rank and subscript-arity conditions,
+    # which are the two it can decide without a strategy.  A store the emitter
+    # would refuse on a stride or copy-axis ground still reaches it, and is then
+    # refused there -- but by then the plan exists, so those must be caught by the
+    # arity/rank test or by the store simply not being the trailing-axis shape.
+    if val.ndim not in (1, 2):
+        return False
+    return len([idx for idx in subscript if idx is not None]) == val.ndim
+
+
+def _cute_tv_forwardable_raw_keys() -> frozenset[object] | None:
+    """Classify every store-then-load RAW: which can FORWARD, or None if any cannot.
+
+    ⭐ This is what replaced B3's blanket decline.  The hazard
+    (:func:`_cute_tv_has_store_then_load_alias`) is real, but declining the whole
+    TV path is far coarser than it: one RAW anywhere in any graph used to kill
+    vectorisation for EVERY tensor in the reduction -- including tensors never
+    stored to -- and took the sweep cache, the SMEM staging and the cluster down
+    with it.
+
+    ⭐ THE VALUE THE LOAD WANTS IS ALREADY IN A REGISTER.  The store leg fills
+    ``_tv_frag_D[vi]`` inside the constexpr V-loop; a load sited after it in
+    program order can read that same element instead of re-reading GMEM.  Both
+    legs partition through the SAME ``get_slice`` (that is the TV plan's core
+    invariant), so ``partition_D``'s fragment and ``partition_S``'s fragment
+    provably address identical elements.  ⭐ No barrier is needed, which is the
+    non-obvious part: the TV slice is per-thread, so the dependence is
+    intra-thread.  The result is one FEWER gmem read per lane than even a
+    correct non-forwarding implementation -- an optimisation the bug concealed.
+
+    Returns
+    -------
+    ``frozenset()``
+        No RAW at all.  The plan is unconstrained; nothing forwards.
+    a non-empty ``frozenset``
+        Every RAW in the IR forwards, and these are the alias keys
+        (:func:`_cute_tv_alias_key`) whose load leg must read the store's
+        fragment.
+    ``None``
+        Some RAW cannot forward.  The caller declines the plan, exactly as
+        before -- so every kernel that declines today still declines.
+
+    THE THREE CONDITIONS A RAW MUST MEET TO FORWARD, and what each rules out:
+
+    1. **Identical coverage.**  Every access of the tensor -- load and store --
+       shares one :func:`_cute_tv_subscript_key`.  A store to ``buf[tile_m, :]``
+       and a load of ``buf[0, :]`` differ in the ROW, so the store's fragment is
+       not the load's data; ``buf[tile_m, 0:N//2]`` and ``buf[tile_m, 0]`` differ
+       in the trailing EXTENT, so the load needs the *merge* of stored and
+       pre-existing data, which one fragment cannot hold.  ⚠ Coverage cannot be
+       decided from the alias key alone: :func:`_cute_tv_alias_key` compares HOST
+       BUFFER NAMES and all four of those shapes share one name.
+    2. **Store-first.**  No load of the tensor may precede its first store.  This
+       is not about the dependence -- it is about *nameability*: the emitted
+       fragments are cached per ``(tensor_name, "S" | "D")``, so a pre-store load
+       and a post-store load of one tensor are indistinguishable at the emission
+       site and the second would silently inherit the first's (stale) fragment.
+       Declining keeps that shape on today's path.  ⇒ ``v = x[t,:]`` ...
+       ``x[t,:] = f(v)`` ... ``sum(x[t,:])`` still declines.
+    3. **No cycle.**  Guaranteed by 2 rather than checked: with no pre-store load
+       of the tensor, the stored value cannot depend on a forwarded read of it.
+       fx node order is program order, so a value cannot flow backwards from the
+       later load into the earlier store.
+    4. ⭐ **The store leg must itself be TV-emittable.**  Forwarding reads the
+       *store's* fragment, so it presupposes the store emits one.  Conditions 1-3
+       are all properties of the IR; this one is a property of EMISSION, and the
+       two are decided in different places -- which is exactly how a wrong answer
+       got in.  MEASURED before this condition existed:
+       ``hl.store(buf, [t, :], 1.0, extra_mask=...)`` followed by
+       ``sum(buf[t, :])`` returned every row wrong (a 4x2048 bf16 case gave
+       ``[0, 0, 0, 0]`` where the correct answer is ``[2048, 0, 2048, 0]``),
+       because ``_maybe_codegen_cute_tv_store`` declines on ``extra_mask`` while
+       conditions 1-3 saw only the subscript and let the plan proceed.  The load
+       leg then got a ``partition_S`` with its ``cute.copy`` hoisted ABOVE the
+       loop and the store degraded to an in-loop scalar pointer store, so the
+       reduction summed STALE PRE-STORE GMEM: B3's original bug, reached through a
+       spelling the coverage key cannot see.
+
+       ⚠ **NOT enumerated as "extra_mask, and the others".**  ``extra_mask`` is
+       the cheapest instance, not the only one: ``_cute_tv_site_eligible``
+       independently declines a store on tensor rank, a non-unit trailing stride,
+       a subscript that does not name the copy axis, and a 2-D both-axes-sliced
+       access.  Any of them reproduces the same stale read.  So the predicate asks
+       the store-side question *positively* -- "can a TV store be emitted for this
+       node at all?" -- via :func:`_cute_tv_store_node_forwardable`, and anything
+       it cannot vouch for is disqualified.  A new store-leg decline added later
+       is therefore safe by default (it disqualifies, i.e. falls back to the
+       blanket decline) instead of silently becoming a wrong answer.
+
+    Scanned per graph, and a key must satisfy the conditions in EVERY graph that
+    touches it (the rolled body duplicates the root's nodes, so one access is
+    seen more than once and a per-graph verdict would be ambiguous at emission).
+    """
+    from ..language import memory_ops as _memory_ops
+
+    host = HostFunction.current()
+    if host._device_ir is None:
+        return frozenset()
+    raw_keys: set[object] = set()
+    # alias key -> the one subscript key every access of it uses, or None once a
+    # second, different subscript key has been seen.
+    coverage: dict[object, object] = {}
+    disqualified: set[object] = set()
+    for graph_info in host.device_ir.graphs:
+        stored: set[object] = set()
+        for node in graph_info.graph.nodes:
+            if node.target not in (_memory_ops.load, _memory_ops.store):
+                continue
+            if len(node.args) < 2:
+                continue
+            tensor_node, subscript = node.args[0], node.args[1]
+            if not isinstance(subscript, (list, tuple)):
+                continue
+            val = (
+                tensor_node.meta.get("val")
+                if isinstance(tensor_node, torch.fx.Node)
+                else tensor_node
+            )
+            if not isinstance(val, torch.Tensor):
+                continue
+            key = _cute_tv_alias_key(host, val)
+            sub_key = _cute_tv_subscript_key(subscript)
+            if key in coverage:
+                if coverage[key] != sub_key:
+                    disqualified.add(key)  # condition 1: coverage differs
+            else:
+                coverage[key] = sub_key
+            if node.target is _memory_ops.store:
+                # Condition 4: a store the TV path cannot emit has no fragment for
+                # a later load to forward from.  Disqualify rather than decline
+                # here, so the verdict is per-KEY: an unrelated tensor's RAW in
+                # the same graph can still forward.
+                if not _cute_tv_store_node_forwardable(node):
+                    disqualified.add(key)
+                stored.add(key)
+            else:
+                if key in stored:
+                    raw_keys.add(key)
+                else:
+                    # A load with no preceding store, in this graph: condition 2.
+                    disqualified.add(key)
+    if raw_keys & disqualified:
+        return None
+    return frozenset(raw_keys)
+
+
+def _cute_unduplicatable_producer_in_graph(state: CodegenState) -> bool:
+    """True when this reduction's graph contains a producer that must run EXACTLY ONCE.
+
+    ⭐⭐ THE SAME QUESTION ``_contains_unduplicatable_op`` ANSWERS, ASKED AT LOWERING AND BY
+    IDENTITY.  A lane-reduce lowering that re-materialises a shared producer into each
+    sibling lane loop is sound for a pure ``gmem -> rmem`` load and UNSOUND for a matmul or a
+    cross-thread collective: re-running one duplicates a barrier.  So the emitter has to know
+    whether such a producer is present.
+
+    ⛔ WHAT IT REPLACES, AND WHY THAT IS A CORRECTNESS IMPROVEMENT RATHER THAN A REFACTOR.
+    The AST-side predicate does ``ast.unparse(stmt)`` and then a SUBSTRING match against five
+    hard-coded names -- i.e. a fact known perfectly here (the FX node *is* an ``addmm``) is
+    discarded into source text and recovered with ``str.__contains__``.  Its measured false
+    positives, every one of which this function rejects::
+
+        x = my_warp_reduction_helper()  # a helper whose NAME contains a call name
+        x = warp_reduction_count  # a bare NAME, no call at all
+        z = foo.cute.gemm2(a)  # a substring of a longer attribute
+        w = "warp_reduction"  # a STRING LITERAL
+
+    Each of those declines the inline emission and falls back to a marker for no reason,
+    which is the "known at emission and discarded into text" antipattern this tree records
+    elsewhere.
+
+    ⚠ THE TARGET SET IS SHARED WITH ``roll_reduction.has_matmul_with_rdim``, deliberately
+    imported rather than restated: two lists of matmul targets would drift, and the roller's
+    is the one already trusted to decide whether a reduction is rollable at all.
+
+    ⚠ AND IT IS DELIBERATELY *NOT* rdim-SCOPED, unlike the roller's version.  The roller asks
+    "is there a matmul over THIS reduction axis" (a question about slicing); the emitter asks
+    "is there a matmul anywhere in the producer chain I would re-run" -- and re-running a
+    matmul over a *different* axis duplicates its barrier just as badly.  Narrowing to the
+    rdim here would silently re-admit exactly the ``matmul_rowsum`` shape this gate exists
+    for, whose ``addmm`` is over the K axis, not the reduced N axis.
+
+    Returns False when there is no FX graph to inspect, so a caller outside a graph context
+    falls through to the text scan rather than being wrongly cleared.
+    """
+    fx_node = state.fx_node
+    if fx_node is None:
+        return False
+    graph = getattr(fx_node, "graph", None)
+    if graph is None:
+        return False
+    from ..language._tracing_ops import _for_loop
+    from ..language._tracing_ops import _for_loop_step
+    from ..language._tracing_ops import _if
+    from ..language.matmul_ops import dot as hl_dot
+    from ..language.matmul_ops import dot_scaled as hl_dot_scaled
+
+    targets = {
+        torch.ops.aten.mm.default,
+        torch.ops.aten.addmm.default,
+        torch.ops.aten.bmm.default,
+        torch.ops.aten.baddbmm.default,
+        hl_dot,
+        hl_dot_scaled,
+    }
+    # ⚠⚠ THE WALK MUST FOLLOW SUBGRAPH EDGES, AND FINDING THAT OUT IS THE WHOLE REASON THIS
+    # FUNCTION IS NOT A ONE-LINER.  MEASURED on ``matmul_rowsum`` (the shape this gate exists
+    # for): the reduction's OWN graph has 10 nodes and NO matmul among them --
+    #     ['_get_symnode', 'full', '_for_loop', 'getitem', '_phi', '_mask_to',
+    #      'dim_IntList', '_host_tensor', 'store']
+    # -- because the ``addmm`` sits inside the K loop, which FX represents as a
+    # ``_for_loop(graph_id, ...)`` node referring to a SEPARATE graph.  A single-graph walk
+    # therefore returned False on the one kernel it had to catch, while the AST scan found it
+    # trivially (it sees the *flattened emitted body*, where the K loop is inlined).
+    #
+    # ⇒ that asymmetry is the real content of "the information is available at lowering": it
+    # is available, but one level of indirection away, and a port that skips the indirection
+    # is silently weaker than the text scan it replaces.  Control-flow ops carry their
+    # subgraph as ``args[0]`` (a graph id into ``HostFunction.device_ir.graphs``), so the walk
+    # resolves those and recurses, with a ``seen`` set because a graph id may appear twice.
+    control_flow = {_for_loop, _for_loop_step, _if}
+    try:
+        all_graphs = HostFunction.current().device_ir.graphs
+    except Exception:
+        all_graphs = []
+
+    def walk(g: torch.fx.Graph, seen: set[int]) -> bool:
+        for node in g.nodes:
+            if node.op != "call_function":
+                continue
+            if node.target in targets:
+                return True
+            if node.target in control_flow and node.args:
+                gid = node.args[0]
+                if isinstance(gid, int) and gid not in seen and gid < len(all_graphs):
+                    seen.add(gid)
+                    if walk(all_graphs[gid].graph, seen):
+                        return True
+        return False
+
+    return walk(graph, set())
+
+
+def _cute_tv_has_store_then_load_alias() -> bool:
+    """True when some graph has a store-then-load RAW that cannot be FORWARDED.
+
+    ⚠ SEMANTICS CHANGED BY B3, and the name is kept deliberately: this is the
+    plan-level gate, so "make it True" is still the way to force the blanket
+    decline.  The RAW *detection* now lives in
+    :func:`_cute_tv_forwardable_raw_keys`, which classifies each hazard instead
+    of declining on the first one; this function reports only the residue that
+    classification could not resolve.
+
+    ⚠ This is a MEMORY-DEPENDENCE (RAW) check, and it is a prerequisite for the
+    TV path because the TV path's emission order is FROZEN relative to the
+    reduction's per-element loop.  Read off the emitted code for
+    ``buf[tile_m, :] = 1.0`` followed by ``sum(buf[tile_m, :])``::
+
+        _tv_part_0 = _tv_thr.partition_D(_tv_tile_0)   # the store's leg
+        _tv_part_1 = _tv_thr.partition_S(_tv_tile_1)   # the load's leg
+        for lane ...:
+            cute.copy(_tv_atom, _tv_part_1[..., lane], _tv_frag_1)  # LOAD, pre-loop
+            for vi in cutlass.range_constexpr(4):
+                _tv_frag_0[vi] = 1.0                   # the store fills its frag
+                acc += _tv_frag_1[vi]                  # ... reads the OLD gmem
+            cute.copy(_tv_atom, _tv_frag_0, _tv_part_0[..., lane])  # FLUSH, post-loop
+
+    The two legs get their own partition and their own fragment (so this is not
+    one shared fragment), but ``_cute_tv_partition_hoist`` anchors a load copy
+    BEFORE the constexpr loop and a store flush AFTER it -- which is exactly
+    right when the load precedes the store in program order, and exactly wrong
+    when it follows one.  MEASURED: N=2048 sums to 4096.0 (the pre-store 2.0s)
+    instead of 2048.0, at every ``vec > 1``.
+
+    There is a SECOND instance of the same mistake one layer down:
+    ``_cute_tv_partitions`` caches a fragment per ``(tensor, S|D)``, so a second
+    load of a stored tensor re-reads the first load's fragment
+    (``load_1 = _tv_frag_0[vi]`` in the two-load variant).  Invalidating that
+    cache alone would NOT fix this: a re-emitted load copy lands at the same
+    frozen position, still ahead of the flush.  Declining the plan is what makes
+    both unrepresentable -- with no plan, ``_cute_reduction_vec_width`` stays 1,
+    every vec mode in ``_cute_vector_load_ctx`` is unreachable, and the scalar
+    path emits an in-place ``(buf.iterator + ...).load()`` per access, which
+    observes the store.  MEASURED correct at ``vec == 1`` on this very repro.
+
+    Deliberately ORDER-SENSITIVE, and deliberately asymmetric:
+
+    * store-then-load is the hazard, so it declines;
+    * load-then-store is FINE and must stay fast -- an in-place normalisation
+      (``v = x[tile, :]`` ... ``x[tile, :] = v * k``) wants the pre-store values,
+      which is precisely what the frozen order delivers.  A symmetric "T is both
+      read and written" test would decline it and cost throughput for nothing.
+
+    Any store to the tensor counts, not only a row store through the TV leg: a
+    scalar store's write is emitted inside the lane body too, so a later row load
+    whose copy is hoisted above it is stale for the same reason.
+
+    Scanned PER GRAPH, in node order (fx preserves tracing order, so node order
+    is program order).  The root graph already contains every access of a
+    single-tile-loop kernel, so this also covers a store and a load that end up
+    in different rolled bodies.
+    """
+    return _cute_tv_forwardable_raw_keys() is None
+
+
 class ReductionStrategy(TileStrategy):
     def __init__(
         self,
@@ -223,6 +719,179 @@ class ReductionStrategy(TileStrategy):
         self._mask_var = mask_var
         if block_size_var is not None:
             fn.block_size_var_cache[(block_index,)] = block_size_var
+        # Per-INSTANCE, for the reason spelled out at the class-level declaration: a
+        # shared dict would carry one kernel's fragment->partition rewrites into the
+        # next, and the emitted fragment names repeat across kernels.
+        self._cute_tv_stage_read_by_frag: dict[str, str] = {}
+
+    # ── CuTe capability STATE, on the base class ──────────────────────────────
+    #
+    # ⭐ CLASS-DEFAULT SENTINELS, NOT ``hasattr``.  Every field below is declared
+    # here with the value that means "this capability is not in play", so a
+    # consumer never has to test the CLASS to find out whether the ATTRIBUTE
+    # exists.  That distinction is the whole point of the rework: a class test
+    # standing in for "this field exists" is what turned ten call sites into
+    # ``isinstance(..., LoopedReductionStrategy)`` and four of them into bare
+    # ``assert``s -- i.e. a missed optimisation became a compiler CRASH.
+    #
+    # ⚠ These are CLASS attributes, deliberately, so a subclass that never runs
+    # ``ReductionStrategy.__init__``'s capability block (or that is constructed
+    # by a test double) still reads the sentinel rather than raising
+    # ``AttributeError``.  A subclass that DOES use a capability rebinds the
+    # field on the instance in its own ``__init__``.
+
+    # The TV layout that owns this reduction's access width, or None when the
+    # reduction is not on the TV path.  See ``_build_cute_tv_plan``.
+    _cute_tv_plan: ChunkTVPlan | None = None
+    # The ONE access width, read back off the plan.  ``1`` == scalar, which is
+    # what every consumer already treats as "no vector path".
+    _cute_reduction_vec_width: int = 1
+    # ``"vec"`` (fp32 fast path) or ``"unroll"`` (bf16/fp16 fallback).
+    _cute_reduction_vec_mode: str = "vec"
+    # Lane-loop trip count, also read back off the plan.
+    _cute_reduction_lane_extent: int = 1
+    # The extent one "chunk" covers along the reduction axis: the looped path's
+    # ``_loop_block_size``, or a loop-free strategy's whole padded extent.
+    # ``0`` means "no chunk geometry", which every capability reads as a decline.
+    _cute_tv_chunk: int = 0
+    # The per-thread column base var, read by ``cute_tv_tail_predicate``.
+    _cute_lane_base_index_var: str | None = None
+    # The lane var the copies are sliced by (``plan.emit_lane_slice``).
+    _cute_reduction_lane_var: str | None = None
+    # The chunk body list whose LAST element is the lane loop; per-chunk
+    # declarations insert at ``len - 1``.
+    _cute_tv_chunk_prefix: list[ast.AST] | None = None
+    # The list of statements INSIDE the lane loop, ending in the constexpr
+    # V-loop.  ``memory_ops._cute_tv_partition_hoist`` inserts into it.
+    _cute_lane_body: list[ast.AST] | None = None
+    # The emitted ``for vi in range_constexpr(vec)`` node, held by reference.
+    _cute_tv_constexpr_loop: ast.For | None = None
+    # The chunk's tile coordinate along N, and its CTA-LOCAL twin.
+    _cute_tv_chunk_index_var: str | None = None
+    # The EXPRESSION ``_cute_tv_chunk_index_var`` is assigned, e.g.
+    # ``roffset_1 // _REDUCTION_BLOCK_1``.  ⚠ Declared beside the var because the two are
+    # NOT interchangeable for identity: every sweep of one row mints a fresh var holding
+    # the SAME expression, so only the expression identifies the tile.  Read by the
+    # tile-id channel (``cute/memory_ops.py``, task 4); ``None`` where no chunk loop
+    # exists (the persistent path sets the var to a literal "0").
+    _cute_tv_chunk_index_expr: str | None = None
+    _cute_tv_stage_chunk_index_var: str | None = None
+    # (atom_var, thr_var) for THE one layout, once emitted.
+    _cute_tv_shared: tuple[str, str] | None = None
+    # ``cute_reduction_reload``: where the SECOND read of the row comes from.
+    _cute_tv_reload_from: str | None = None
+    # ⭐ ``cute_row_residency``: the REQUESTED residency of the reduction row, one of
+    # ``("registers", "smem", "gmem")``.  Declared on the BASE for the same reason as
+    # the rest of this block -- ``memory_ops`` reads it at every load site, and a
+    # strategy that never set it must read as a decline rather than crash.  The base
+    # value is ``gmem``: no mechanism, i.e. the second read comes from global, which is
+    # exactly what a strategy with no TV plan does.
+    _cute_row_residency_requested: str = ROW_RESIDENCY_GMEM
+    # The CAUSE of a residency decline, set by whichever site refused, so the canonical
+    # marker names the real reason instead of a generic string.  ``None`` = not refused.
+    _cute_row_residency_decline: str | None = None
+    # B3: alias keys whose store-then-load RAW is resolved by FORWARDING.
+    # (``cute_row_residency_forbids_sweep_cache`` is defined below, next to
+    # ``cute_stage_feasible``, so the two residency capabilities read together.)
+    _cute_tv_forwarded_raw_keys: frozenset[object] = frozenset()
+    # ``reload_from="smem"`` staging state (capability ③).  Declared here for the
+    # same reason as the rest: ``memory_ops._cute_tv_stage_slice`` reads them, and
+    # a missing attribute there would be a crash rather than "no staging".
+    _cute_tv_stage_smem_var: str | None = None
+    _cute_tv_staged_tensors: frozenset[str] | set[str] = frozenset()
+    _cute_tv_multi_read_cache: frozenset[str] | None = None
+    # ⭐ ``fragment var -> staged READER partition var``, for a strategy whose second
+    # sweep is CLONED by the split pass rather than lowered (see
+    # ``cute_stage_restages_cloned_sweeps``).  Written by
+    # ``memory_ops._cute_tv_stage_slice`` at the ONE load site; read by
+    # ``tile_strategy._tv_restage_cloned_loads``, which rewrites the CLONED gmem copy
+    # of each fragment into an ``autovec_copy`` off the recorded partition.
+    #
+    # ⚠ EMPTY IS THE INERT ANSWER, and every consumer must treat it as "rewrite
+    # nothing".  Keyed on the FRAGMENT because that is the symbol the cloned copy
+    # statement actually names -- keying on the tensor would force the pass to
+    # re-derive eligibility from the IR, which is exactly the drift the residency
+    # marker exists to prevent.
+    #
+    # ⚠ ``None``, NOT ``{}``: a mutable class-level default is ONE dict shared by every
+    # strategy instance in the process, so a rewrite recorded by one kernel's reduction
+    # would be visible to the next -- a cross-kernel leak, and the emitted symbol names
+    # (``_tv_frag_0``) repeat across kernels, so it would silently HIT.  The real dict
+    # is minted per instance in :meth:`__init__`; this default only guarantees the
+    # attribute exists for a strategy that never reaches that code.
+    _cute_tv_stage_read_by_frag: dict[str, str] | None = None
+    # ⭐⭐ ``reload_from="registers"`` state -- the RMEM analogue of
+    # ``_cute_tv_staged_tensors``, and G2's `registers` arm at LOWERING.
+    #
+    # ``tile id -> the fragment var already holding it``.  The FIRST read of a tile emits
+    # its gmem copy as usual and records the fragment here; a LATER read of the SAME tile
+    # emits **no copy at all** and reuses that fragment.  ⇒ the "second read comes from
+    # registers" decision is a lookup at the site that owns the fragment, instead of an AST
+    # post-pass re-discovering it.
+    #
+    # ⚠ KEYED ON THE TILE ID, NOT THE TENSOR NAME, and that is strictly better than the
+    # ``smem`` arm's key.  ``tv_tile_ids`` records
+    # ``(tensor, chunk, row_coord, chunk_index_EXPRESSION)`` at the hoist, so two reads
+    # match only when they address the SAME tile of the same row -- which is the question.
+    # A tensor-name key cannot distinguish two chunks of one tensor, which is the
+    # documented one-staged-tensor-per-reduction aliasing gate the ``smem`` arm carries.
+    #
+    # ⚠ AND IT MUST PERSIST ACROSS SWEEPS, exactly like ``_cute_tv_staged_tensors``:
+    # ``_cute_tv_partitions`` is reset per chunk body (its partitions are ``local_tile``s
+    # of THAT body and would be out of scope later), but "this tile is already in a
+    # fragment" is precisely a cross-sweep fact.  Resetting it would make every sweep
+    # re-read gmem, i.e. silently disable the mechanism while still reporting ``registers``.
+    #
+    # ⚠ ``None``, NOT ``{}`` -- a mutable class default is ONE dict shared by every strategy
+    # instance in the process, and the emitted fragment names (``_tv_frag_0``) repeat across
+    # kernels, so a leak would silently HIT rather than fail.  Same reasoning as
+    # ``_cute_tv_stage_read_by_frag`` above.
+    _cute_tv_rmem_frag_by_tile: dict[tuple[object, ...], str] | None = None
+
+    def cute_tv_capable(self) -> bool:
+        """Does THIS strategy carry a live TV plan whose emission scaffolding
+        exists?
+
+        ⭐ THE COMPUTED PROPERTY THAT REPLACED ``isinstance(strategy,
+        LoopedReductionStrategy)``.  A consumer wants to know whether a
+        CAPABILITY is present, and the class is the wrong question: it was only
+        ever a proxy for "these fields exist", and the proxy is what made
+        widening the path a crash instead of a decline.
+
+        Every conjunct is a field the emission protocol actually dereferences:
+
+        * ``_cute_tv_plan`` -- the width, without which there is nothing to emit;
+        * ``_cute_lane_body`` -- the mutable list the hoist inserts into;
+        * ``_cute_tv_constexpr_loop`` -- the node the insert position is
+          anchored to (a list POSITION would move, because the store leg appends
+          after it);
+        * ``_cute_tv_chunk_prefix`` -- where per-chunk declarations go;
+        * ``_cute_tv_chunk_index_var`` -- ``local_tile``'s column coordinate;
+        * ``_cute_reduction_lane_var`` -- the copy's lane slice.
+
+        So a False here means "an insert would have gone somewhere that does not
+        exist", and the caller declines.  Any strategy that provides all six is
+        served, whatever its class -- which is the goal.
+        """
+        return (
+            self._cute_tv_plan is not None
+            and self._cute_lane_body is not None
+            and self._cute_tv_constexpr_loop is not None
+            and self._cute_tv_chunk_prefix is not None
+            and self._cute_tv_chunk_index_var is not None
+            and self._cute_reduction_lane_var is not None
+        )
+
+    def cute_tv_lane_block_id(self) -> int | None:
+        """This reduction's own axis, when it carries a plan.
+
+        A reduction owns exactly ONE axis, so there is nothing to select -- but the
+        question still has to be ANSWERED, because ``memory_ops`` now asks it of
+        whichever strategy answered ``cute_tv_capable()`` in order to decide which
+        subscript entry names the copy axis.  Gated on the plan so a scalar reduction
+        reports ``None`` (a decline) rather than naming an axis it does not address.
+        """
+        return None if self._cute_tv_plan is None else self.block_index
 
     def mask_var(self, block_idx: int) -> str | None:
         assert block_idx == self.block_index
@@ -231,6 +900,17 @@ class ReductionStrategy(TileStrategy):
     @property
     def block_index(self) -> int:
         return self.block_ids[0]
+
+    def cute_stage_block_id(self) -> int:
+        """A reduction's staged row is its ONE axis, so this is ``block_index``.
+
+        The override that keeps the nine staging methods (now on ``TileStrategy``) emitting
+        byte-identical text on this path: they read ``cute_stage_block_id()`` where they
+        used to read ``self.block_index``, and here the two are the same number by
+        definition.  ⚠ The base default is ``None`` -- a decline -- so this override is
+        what makes the methods FUNCTIONAL for a reduction rather than merely present.
+        """
+        return self.block_index
 
     def user_size(self, block_index: int) -> sympy.Expr:
         return CompileEnvironment.current().block_sizes[block_index].numel
@@ -417,6 +1097,295 @@ class ReductionStrategy(TileStrategy):
         if lane_expr is None:
             return None
         return pre, group_span, lane_expr
+
+    def _emit_inline_lane_reduce(
+        self,
+        state: CodegenState,
+        input_name: str,
+        reduction_type: str,
+        identity_expr: str,
+        threads: int,
+        *,
+        acc_dtype_str: str,
+        group_pre: int = 1,
+        group_span: int = 0,
+        group_lane_expr: str = "",
+        group_count: int = 1,
+        result_hint: str = "lane_reduce",
+    ) -> str | None:
+        """⭐⭐ G1: emit a lane-distributed reduction's BOTH combines HERE, at lowering.
+
+        Returns the name of the finished reduced scalar, or ``None`` when this site
+        cannot do it inline (the caller then falls back to emitting a marker).
+
+        The two combines a lane-distributed reduction owes are emitted as:
+
+        * ``acc = identity`` into the grid state's **segment prefix** -- above every lane
+          loop, so it is initialised once rather than per lane;
+        * ``acc = combine(acc, v)`` into the **currently open segment**, i.e. right here,
+          which is inside the lane loop :meth:`DeviceGridState.wrap_body` will mint;
+        * the **cross-thread combine** into this segment's **seal**, which
+          :meth:`DeviceGridState._wrap_segmented_body` emits *between* the sibling lane
+          loops -- outside every one of them, by construction.
+
+        ⇒ the reduction is COMPLETE where it appears.  No marker, no deferred structure,
+        and no AST pass that could discharge the obligation by deleting it.
+
+        ⛔ WHY THIS IS NOT MERELY TIDIER THAN THE MARKER.  Read as IR,
+        ``MARKER(v,'max')`` is a valid ONE-element reduction, so ``mx = v`` was a
+        *faithful* lowering of it -- which is how the deferred design produced kernels
+        that compiled, looked plausible, and were WRONG (``exp(v-v) == 1.0``: softmax rows
+        summing to 128.0 instead of 1.0; ``got[0]=1.0`` against ``ref[0]=59.4``; relerr
+        7.685 on ``matmul_layernorm`` at N=512).  Emitting the structure at the site where
+        the obligation is KNOWN removes the window in which it can be lost.
+
+        ⚠ THE CROSS-THREAD COMBINE IS BUILT BY THE SAME HELPER THE AST PASS USED
+        (``_finalize_lane_reduce_marker``), through a ``_LaneReduceMarker`` used as a
+        plain parameter record rather than as an emitted call.  That helper picks between
+        four cross-thread forms -- two-stage cross-warp, strided grouped single-warp,
+        plain consecutive-lane, and none -- and getting that choice wrong
+        cross-contaminates rows.  ⭐ Reusing it means the inline path and the (still
+        reachable) marker path cannot DISAGREE about the combine for the same layout,
+        which is the property that makes this replacement safe to land incrementally.
+        """
+        from .tile_strategy import _combine_expr
+        from .tile_strategy import _contains_unduplicatable_op
+        from .tile_strategy import _finalize_lane_reduce_marker
+        from .tile_strategy import _LaneReduceMarker
+
+        grid = state.codegen.current_grid_state
+        # ⚠ EVERY CONDITION HERE IS A REQUIREMENT OF THE MECHANISM, NOT A PREFERENCE:
+        #  * a ``DeviceGridState`` is what owns the segments and mints the lane loops;
+        #  * ``lane_loops`` must be non-empty, because the seal is emitted BETWEEN loops
+        #    that ``wrap_body`` builds from that list -- with no registered lane loop
+        #    there is nothing to seal and the fold would run once instead of per lane;
+        #  * a prebuilt nest (the TV protocol) holds ONE ``(emit, sink)`` pair and is
+        #    structurally unable to express two sibling lane loops, so that path keeps the
+        #    marker.  ⇒ each of these is a decline, never a silent best effort.
+        # ⭐⭐ THE WITHHOLDING SWITCH -- THE FAIL-CAPABILITY ARM'S ONLY INSTRUMENT.
+        # ``HELION_INLINE_LANE_REDUCE=0`` withholds the inline emission, restoring the
+        # marker path.  Required rather than convenient: G1's success criterion is "markers
+        # go to ZERO", and zero is ALSO what a dead hook, a kernel that stopped compiling,
+        # and a shape that never emitted all report.  Without a way to turn the new
+        # emission off in the same process, "the markers came back when it is withheld" --
+        # the arm that distinguishes those cases -- has no instrument at all.  Four
+        # investigations in this tree were fooled by an unfalsifiable zero.
+        if os.environ.get("HELION_INLINE_LANE_REDUCE", "1").strip() == "0":
+            return None
+        if not isinstance(grid, DeviceGridState):
+            return None
+        if not grid.lane_loops:
+            return None
+        # ⭐⭐ A1: A PREBUILT NEST NO LONGER DECLINES *IF IT CAN BE REBUILT*.
+        #
+        # This used to read ``or grid.prebuilt_lane_nest is not None``, whose stated reason
+        # was that a prebuilt nest "holds ONE ``(emit, sink)`` pair and is structurally
+        # unable to express two sibling lane loops".  That is true of a nest that can only
+        # be SPLICED, and false once its owner also registers
+        # ``prebuilt_lane_nest_factory``, which mints a fresh nest per segment.
+        #
+        # ⛔ WHY THE DECLINE WAS EXPENSIVE.  Declining here falls back to the AST marker,
+        # and the marker path cannot restructure this shape: the marker lands inside a
+        # ``range_constexpr(vec)`` loop, which ``split_lane_loop_reductions`` only
+        # recognises as a DIRECT child of a lane loop, so it survives to
+        # ``restore_unprocessed_lane_reduce_markers`` and -- having declared
+        # ``partial_fold`` -- correctly RAISES rather than silently dropping both combines.
+        # MEASURED with the force-roll bypassed: ``reduction_loops=[None]`` +
+        # ``cute_vector_widths=[8,1]`` raised ``BackendUnsupported: a lane reduction ('sum'
+        # over 'v_1') reached the end of codegen still owing its lane fold and its
+        # cross-thread combine`` at N=256 and N=1024.  ⇒ persistent + TV was UNEMITTABLE,
+        # and ``ConfigSpec.normalize``'s force-roll existed only to dodge that.
+        #
+        # ⚠ A nest with no factory still declines: segmenting it would have to alias one
+        # ``sink`` across sibling loops, so the marker fallback stays the honest answer.
+        if grid.prebuilt_lane_nest is not None and (
+            grid.prebuilt_lane_nest_factory is None
+        ):
+            return None
+        # ⛔⛔ THIS DECLINE MUST HAPPEN BEFORE THE EMISSIONS BELOW, AND IT USED TO HAPPEN
+        # AFTER THEM -- WHICH TURNED A CLEAN FALLBACK INTO A COMPILE FAILURE.
+        #
+        # The condition is the one stated further down (a reduction with no synthetic axis
+        # of its own can only seal against the single registered lane loop; with two it
+        # cannot know which is its own).  It was tested at the SEAL, i.e. after
+        # ``lane_segment_prefix.append(acc = identity)`` and after
+        # ``state.add_statement(acc = combine(acc, v))`` had already been emitted.  So the
+        # decline left BOTH halves of a half-built reduction in the body and returned
+        # before ``seal_lane_segment``: no seal ⇒ ``lane_segment_seals`` stays ``None`` ⇒
+        # ``wrap_body`` takes its unsegmented path ⇒ the seed and the cross-thread combine
+        # are never emitted, leaving an accumulator read-and-written with no initialiser.
+        # ``_has_extra_cross_lane_carry`` then correctly reports an independent carry and
+        # raises ``BackendUnsupported``.  ⇒ THE RAISE WAS THIS DECLINE'S OWN DEBRIS: the
+        # diagnostic described what it saw accurately and blamed the wrong thing.
+        #
+        # MEASURED on ``out[tm,tn] = v - sum(v,-1)`` at ``block_sizes=[32,32]``,
+        # ``num_threads=[8,8]``, ``cute_vector_widths=[1,1]`` -- a kernel that COMPILES ON
+        # ``origin/main`` and raised here; reported at ~19% of ``random_config()`` draws.
+        # Declining early instead restores the marker path, which handles two lane loops
+        # correctly (verified bit-exact at every ``num_threads`` tried).
+        #
+        # ⭐ Reachable because of a THIRD ``lane_loops`` producer that
+        # ``grep 'add_lane_loop('`` misses: ``CuteNDTileStrategy.codegen_grid`` builds
+        # ``DeviceGridState`` with ``lane_loops`` PRE-POPULATED via the constructor, one
+        # entry per tile block whose ``block_size > num_threads``.  So a 2-D ``hl.tile``
+        # arrives here with ``len(lane_loops) == 2`` before the grid body lowers at all --
+        # MEASURED ``[('lane_0', 4), ('lane_1', 4)]``, no registration-order race.
+        # ⚠ That REFUTES the "this test never fires" note below, which is right for its own
+        # shape (a free ``hl.arange`` registering after the seals) and generalises from a
+        # census that missed the constructor producer.
+        #
+        # ⚠ ORDER MATTERS WITH THE ``group_span`` FIX: the marker path this restores was
+        # itself silently wrong for strided single-warp groups until
+        # ``_lane_loop_cross_warp_group_params`` stopped declining them, so moving this
+        # decline up ALONE would have traded a loud raise for a quiet wrong answer at
+        # ``num_threads`` products <= 32.  Both changes land together, deliberately.
+        if (
+            getattr(self, "_synthetic_cute_lane_var", None) is None
+            and len(grid.lane_loops) != 1
+        ):
+            return None
+        # ⛔⛔ EXACTLY ONE REGISTERED LANE LOOP, AND THIS GUARD IS A MEASURED FIX, NOT CAUTION.
+        #
+        # ``_wrap_segmented_body`` segments ``lane_loops[-1]`` and wraps the rest around the
+        # whole run.  Its docstring used to justify that with "a reduction seals against the
+        # lane axis it is distributed over, which is the innermost one" -- **which is false**.
+        # ``lane_loops`` is ONE FLAT LIST fed by two unrelated producers (this strategy's
+        # synthetic reduction lane, and ``generate_ast``'s free-``hl.arange`` lane), so
+        # ``[-1]`` is *the last registered*, not *this reduction's*.
+        #
+        # MEASURED, on a lane-distributed reduction pair followed by a free
+        # ``hl.arange(0, 2048)`` (which registers its own lane loop AFTER the reduction's):
+        # the seals segmented the arange's axis, so both accumulator seeds AND both
+        # ``warp_reduction_*`` landed INSIDE the reduction's own lane loop -- the accumulator
+        # re-initialised and the cross-thread combine run on an unfinished partial, once per
+        # lane.  ⚠ On the marker path the same shape is a SILENT WRONG ANSWER
+        # (``maxerr 211.6``, got 6.11 against ref 103.19); on this path it emitted invalid
+        # code (a free ``indices_1``), because ``lane_setup_statements`` is flat across axes
+        # too and the wrong axis's index got cloned into the wrong loop.
+        #
+        # ⇒ FIXED by keying each seal to its OWN axis (``seal_lane_segment``'s ``lane_var``),
+        # so the wrap segments the reduction's loop and nests the others around it.  ⚠ The
+        # guard that used to stand here (``len(grid.lane_loops) != 1 -> decline``) could not
+        # work: MEASURED, the second axis registers AFTER both seals, so at this point there is
+        # always exactly one lane loop and the test never fired.  That is why the axis is
+        # carried as data instead of being inferred from a count.
+        # ⚠ The sink must be the list ``wrap_body`` will wrap, or the recorded seal index
+        # refers to a different list than the one it is later applied to -- a
+        # cross-thread combine emitted inside a lane loop, i.e. a wrong answer.  The grid
+        # body is the sink at the BOTTOM of the stack under the host statements; a
+        # reduction lowered inside a nested sink (a serial device loop's body, an ``if``)
+        # is not on that list, so it declines and keeps the marker.
+        sink = state.codegen.statements_stack[-1]
+        if sink is not state.codegen.active_grid_body_statements:
+            return None
+        # ⛔⛔ THE INPUT'S PRODUCER MUST BE RE-RUNNABLE, AND THIS DECLINE IS MEASURED, NOT
+        # DEFENSIVE.  The segment mechanism re-materialises a shared producer into each
+        # sibling lane loop that needs it (that is what makes two dependent reductions
+        # expressible at all).  A pure ``gmem -> rmem`` load is safe to re-run; a matmul or
+        # a cross-thread collective is NOT -- re-running it duplicates a barrier.
+        #
+        # MEASURED on ``matmul_rowsum`` (``addmm`` in a K loop, then ``acc.sum(-1)`` over
+        # the lane-distributed N axis) with this gate absent: the fold read ``acc`` BEFORE
+        # the K loop that computes it -- ``sum_1_lane_acc + acc`` was emitted above the
+        # loop, with ``acc`` still 0.0 -- giving **rel 1.0** and ``got[0] = 0.000``.  The
+        # producer is ``_cute_grouped_reduce_shared_two_stage``, i.e. exactly an
+        # unduplicatable collective, and the statement carrying it is a nested serial
+        # ``for`` this segment analysis treats as one opaque unit.
+        #
+        # ⭐ Declining here is not a fallback to something wrong: the marker path this
+        # returns to routes such a shape to ``_split_lane_loop_with_register_stash``, which
+        # runs the collective ONCE and re-derives the reduction from a per-thread fragment
+        # -- a genuine cross-lane fold rather than a duplicated barrier.  ⇒ this is the
+        # boundary between the two mechanisms, and the existing predicate draws it.
+        #
+        # ⭐⭐ ASKED AT LOWERING, BY FX NODE-TARGET IDENTITY, WITH THE TEXT SCAN AS A
+        # FALLBACK.  ``_cute_unduplicatable_producer_in_graph`` walks this reduction's own FX
+        # graph and tests ``node.target in {aten.mm, aten.addmm, aten.bmm, aten.baddbmm,
+        # hl.dot, hl.dot_scaled}`` -- the same identity test ``roll_reduction`` already uses.
+        #
+        # ⛔ WHY IDENTITY BEATS THE SCAN, and it is a correctness argument rather than a
+        # taste one.  ``_contains_unduplicatable_op`` does ``ast.unparse(stmt)`` and then
+        # ``str.__contains__`` against five hard-coded names, so a fact known PERFECTLY at
+        # lowering (the FX node IS an ``addmm``) is thrown away into source text and
+        # recovered with grep.  MEASURED false positives, all of which the identity test
+        # rejects: ``x = my_warp_reduction_helper()``, a bare name ``warp_reduction_count``,
+        # ``foo.cute.gemm2(a)``, and even the STRING LITERAL ``w = 'warp_reduction'``.  Each
+        # of those declines the inline emission and falls back to a marker for no reason.
+        #
+        # ⚠ THE SCAN IS KEPT AS AN ``or`` EVEN THOUGH IT IS MEASURABLY REDUNDANT HERE, and
+        # the reason is a coverage gap I could not close by measurement.  MEASURED over 27
+        # configs x 3 matmul-reduction shapes (row-sum, row-max, broadcast-store), with the
+        # scan NEUTERED and only the FX identity test live: **identical results in every
+        # cell** (6 OK / 3 BackendUnsupported per shape, both arms).  So at THIS call site the
+        # identity test subsumes it.
+        #
+        # ⛔ BUT ``_UNDUPLICATABLE_CALLS`` also names the three ``_cute_grouped_reduce_*``
+        # collectives, which are NOT matmuls and are emitted as helper CALLS with no FX node
+        # of their own -- so no node-target test can see them.  I could not construct a
+        # kernel that reaches this gate needing only that half, which means I cannot prove
+        # the half is dead; and the failure it would allow is a DUPLICATED CROSS-THREAD
+        # BARRIER, i.e. a wrong answer rather than a missed optimisation.  ⇒ identity FIRST,
+        # so its precision decides every case it can see; text second, so an unproven gap
+        # fails closed.
+        if _cute_unduplicatable_producer_in_graph(state) or any(
+            _contains_unduplicatable_op(stmt) for stmt in sink
+        ):
+            return None
+        acc_var = self.fn.new_var(f"{result_hint}_lane_acc", dce=False)
+        result_var = self.fn.new_var(f"{result_hint}_lane_result", dce=False)
+        record = _LaneReduceMarker(
+            result_var=result_var,
+            input_name=input_name,
+            reduction_type=reduction_type,
+            identity_expr=identity_expr,
+            threads_in_group=threads,
+            wrap_template="__HELION_FINALIZED__",
+            group_pre=group_pre,
+            group_span=group_span,
+            group_lane_expr=group_lane_expr,
+            group_count=group_count,
+            acc_dtype_str=acc_dtype_str,
+            # ⭐ The obligation is DISCHARGED HERE, so the record is not partial: this
+            # object never becomes an emitted marker and nothing downstream may revert it.
+            partial_fold=False,
+        )
+        grid.lane_segment_prefix.append(
+            statement_from_string(f"{acc_var} = {identity_expr}")
+        )
+        # Cast to the accumulator dtype before combining, for the same reason the AST
+        # split did: the CUTLASS DSL's ternary type check is strict (max/min emit
+        # ``a if a > b else b``), and an int32 sum must accumulate in int64 rather
+        # than wrap.
+        combine_val = f"{acc_dtype_str}({input_name})" if acc_dtype_str else input_name
+        state.add_statement(
+            f"{acc_var} = {_combine_expr(reduction_type, acc_var, combine_val)}"
+        )
+        # Seal AFTER the fold: ``len(sink)`` is now one past it, so the fold is the last
+        # statement inside the loop being closed and the combine lands just outside.
+        # ⭐ THE AXIS THIS REDUCTION IS DISTRIBUTED OVER, stated rather than inferred.  A
+        # ``PersistentReductionStrategy`` carries it as ``_synthetic_cute_lane_var``; a
+        # ``BlockReductionStrategy`` has none of its own and is distributed over whichever lane
+        # loop the grid registered for its block, so fall back to the single registered var.
+        # ⚠ The wrap CANNOT recover this later -- registration order interleaves the axes -- so
+        # passing it here is what makes multi-axis kernels safe (see ``seal_lane_segment``).
+        # ⚠ NO DECLINE HERE.  The ``seal_lane_var is None and len(lane_loops) != 1`` case
+        # is rejected by the early predicate at the top of this method, so by this point
+        # the fallback below is always well defined.  It must NOT be re-tested here: this
+        # point is past two side-effecting emissions, and declining after them is exactly
+        # the leak that made a compilable kernel raise (see that predicate's note).
+        # An assert rather than a branch, so a future edit that weakens the early check
+        # fails loudly here instead of silently reintroducing the half-built reduction.
+        seal_lane_var = getattr(self, "_synthetic_cute_lane_var", None)
+        if seal_lane_var is None:
+            assert len(grid.lane_loops) == 1, (
+                "unreachable: the early predicate declines a non-synthetic reduction "
+                f"with {len(grid.lane_loops)} lane loops before any emission"
+            )
+            seal_lane_var = grid.lane_loops[0][0]
+        grid.seal_lane_segment(
+            len(sink), _finalize_lane_reduce_marker(record, acc_var), seal_lane_var
+        )
+        return result_var
 
     def _lane_reduce_marker_unsupported(self, state: CodegenState) -> bool:
         """Return True when the two-pass lane-reduction marker cannot be
@@ -633,6 +1602,183 @@ class ReductionStrategy(TileStrategy):
             index_dtype=env.index_dtype,
         )
 
+    def _indexed_lane_reduce_expr(
+        self,
+        state: CodegenState,
+        input_name: str,
+        reduction_type: str,
+        dim: int,
+        fake_input: torch.Tensor,
+        fake_output: torch.Tensor,
+        threads: int,
+        *,
+        group_pre: int = 1,
+        group_span: int = 0,
+        group_lane_expr: str = "",
+        group_count: int = 1,
+    ) -> str:
+        """Lower ``argmin``/``argmax`` over a lane-distributed axis into TWO
+        plain (non-indexed) lane-reduce markers.
+
+        The two-pass lane machinery has no *paired* (value, index) accumulator:
+        ``_combine_expr``/``_warp_reduce_expr`` only know scalar ``sum``/
+        ``prod``/``max``/``min``.  Rather than teach them a second, tie-breaking
+        accumulator shape, decompose the indexed reduction the same way
+        :meth:`CuteBackend.argreduce_result_expr` already does for the
+        non-lane path — into a value reduction followed by a ``min`` over the
+        candidate indices of the winners:
+
+        1. ``value = max(input)`` — marker 1;
+        2. ``cand = index if input == value else INDEX_MAX`` — a per-lane select;
+        3. ``result = min(cand)`` — marker 2.
+
+        The second marker's input reads the first marker's reduced scalar, so
+        this is exactly the sequentially-dependent marker shape that
+        ``_split_lane_loop_multi_stage`` emits one accumulate/finalize pass per
+        dependency layer for.  Nothing new is needed in the marker vocabulary.
+
+        Semantics, matching ``argreduce_result_expr`` (and therefore the rolled
+        and non-lane CuTe paths) exactly:
+
+        * **ties** resolve to the LOWEST index, because the second reduction is a
+          ``min`` over the indices whose value equals the winner — the same rule
+          ``torch.argmax``/``torch.argmin`` use;
+        * **dtypes stay distinct**: the value half accumulates in
+          ``reduction_acc_dtype`` (fp32 for a bf16/fp16 input) while the index
+          half accumulates in ``env.index_dtype``, each carried through its own
+          marker's explicit ``acc_dtype`` (class 5's ABI).  The per-lane input is
+          cast to the value accumulator dtype before the comparison so the
+          CUTLASS DSL's strict ternary type check never sees mixed widths;
+        * **identities**: ``-inf``/``+inf`` (``default_accumulator``) for the
+          value half and ``iinfo(index_dtype).max`` for the index half — the
+          latter is the identity of a ``min``, and is also what
+          ``reduction_index_init_expr`` seeds the rolled path's index
+          accumulator with.
+        """
+        from .tile_strategy import _lane_reduce_marker_expr
+
+        env = CompileEnvironment.current()
+        backend = env.backend
+        name_hint = state.fx_node.name if state.fx_node is not None else reduction_type
+
+        # --- marker 1: reduce the VALUES -------------------------------------
+        value_reduction = "min" if reduction_type == "argmin" else "max"
+        value_acc_dtype = reduction_acc_dtype(value_reduction, fake_input.dtype)
+        value_acc_dtype_str = _dtype_str(value_acc_dtype)
+        value_identity = ir.Reduction.default_accumulator(
+            value_reduction, value_acc_dtype
+        )
+        assert isinstance(value_identity, (float, int, bool))
+        value_identity_expr = backend.cast_expr(
+            constant_repr(value_identity), value_acc_dtype_str
+        )
+        # ⭐⭐ G1 ON THE ARGMAX PAIR, AND IT NEEDS NO NEW VOCABULARY -- which is the point.
+        #
+        # ``argmax`` is ONE FX node that lowers to TWO dependent reductions (reduce the
+        # values; then ``min`` over the indices of the winners, which needs the value
+        # FINALIZED).  Any design that decides "how many lane loops" by counting FX
+        # reduction nodes sees **1** and builds one loop where two are required.  The
+        # segment mechanism does no counting: each reduction seals its own segment where it
+        # appears, so the two loops fall out of the sequence.
+        #
+        # ⚠ BOTH HALVES MUST TAKE THE SAME ROUTE.  A mixed pair -- value inline, index as a
+        # marker -- would leave the AST pass looking at a lane loop holding one marker whose
+        # dependency layer was already cut out from under it.  So the value half's result
+        # decides, and the index half below follows it.
+        inline_value = self._emit_inline_lane_reduce(
+            state,
+            input_name,
+            value_reduction,
+            value_identity_expr,
+            threads,
+            acc_dtype_str=value_acc_dtype_str,
+            group_pre=group_pre,
+            group_span=group_span,
+            group_lane_expr=group_lane_expr,
+            group_count=group_count,
+            result_hint=f"{name_hint}_value",
+        )
+        if inline_value is not None:
+            value_var = inline_value
+        else:
+            value_var = self.fn.new_var(f"{name_hint}_lane_value", dce=True)
+            state.add_statement(
+                f"{value_var} = "
+                + _lane_reduce_marker_expr(
+                    input_name,
+                    value_reduction,
+                    value_identity_expr,
+                    threads,
+                    acc_dtype_str=value_acc_dtype_str,
+                    group_pre=group_pre,
+                    group_span=group_span,
+                    group_lane_expr=group_lane_expr,
+                    group_count=group_count,
+                )
+            )
+
+        # --- the per-lane candidate index ------------------------------------
+        index_dtype = env.index_dtype
+        index_dtype_str = backend.index_type_str(index_dtype)
+        index_identity_expr = backend.cast_expr(
+            repr(torch.iinfo(index_dtype).max), index_dtype_str
+        )
+        index_value = self.broadcast_str(
+            self.index_var(self.block_index), fake_input, dim
+        )
+        candidate_var = self.fn.new_var(f"{name_hint}_lane_index", dce=True)
+        state.add_statement(
+            f"{candidate_var} = "
+            + backend.where_expr(
+                f"({backend.cast_expr(input_name, value_acc_dtype_str)}) "
+                f"== ({value_var})",
+                f"{index_value}",
+                index_identity_expr,
+            )
+        )
+
+        # --- reduction 2: reduce the candidate INDICES ------------------------
+        # ⚠ The candidate select above lowered into the segment the value half REOPENED, so
+        # it is inside the second lane loop and reads the FINALIZED value scalar -- which is
+        # exactly the dependency that made this pair need two loops.  Sealing here closes
+        # that loop and puts the index combine after it.
+        if inline_value is not None:
+            inline_index = self._emit_inline_lane_reduce(
+                state,
+                candidate_var,
+                "min",
+                index_identity_expr,
+                threads,
+                acc_dtype_str=index_dtype_str,
+                group_pre=group_pre,
+                group_span=group_span,
+                group_lane_expr=group_lane_expr,
+                group_count=group_count,
+                result_hint=f"{name_hint}_index",
+            )
+            # ⛔ The value half already sealed a segment, so falling back to a marker HERE
+            # would strand the index reduction in a body whose layering has been cut.
+            # Nothing can produce that state -- both halves see the same grid state and the
+            # same sink -- so assert it rather than inventing a repair for an unreachable
+            # case.
+            assert inline_index is not None, (
+                "the argmax value half emitted inline but the index half declined; "
+                "both see the same grid state, so this should be unreachable"
+            )
+            return backend.cast_expr(inline_index, _dtype_str(fake_output.dtype))
+        index_marker = _lane_reduce_marker_expr(
+            candidate_var,
+            "min",
+            index_identity_expr,
+            threads,
+            acc_dtype_str=index_dtype_str,
+            group_pre=group_pre,
+            group_span=group_span,
+            group_lane_expr=group_lane_expr,
+            group_count=group_count,
+        )
+        return backend.cast_expr(index_marker, _dtype_str(fake_output.dtype))
+
     def maybe_reshape(
         self,
         expr: str,
@@ -660,6 +1806,371 @@ class ReductionStrategy(TileStrategy):
         return CompileEnvironment.current().backend.broadcast_to_expr(
             f"{base}{expand}", shape
         )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # CuTe reduction CAPABILITIES.  On the BASE class deliberately: these four
+    # blocks (the TV plan, SMEM staging, the ragged tail, and mask elision) used
+    # to live inside ``LoopedReductionStrategy``, so a
+    # consumer had to test the CLASS to discover whether a CAPABILITY existed.
+    #
+    # ⭐ THE COUPLING WAS ONE FIELD.  ``_build_cute_tv_plan``'s only
+    # loop-specific input was ``self._loop_block_size`` ("the extent one
+    # iteration covers"), so it is now a ``chunk`` PARAMETER: the looped path
+    # passes ``self._loop_block_size``, and a strategy with no outer loop passes
+    # its own padded extent.  ``_cute_layout_participants`` reads no ``self``
+    # state at all (it walks ``HostFunction.current().device_ir``).
+    #
+    # ⚠ ``cute_tv_capable()`` -- NOT ``isinstance`` -- is what a consumer asks.
+    # See its docstring for why (this repo's own enumeration antipattern).
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def cute_tv_rounded_extent(self) -> int | None:
+        """``N'`` when this reduction covers a ROUNDED-UP tile, else ``None``.
+
+        ``None`` means "the tile is exactly ``N``" -- either there is no TV plan
+        (scalar path) or ``N`` already divides the tile granularity.  Every caller
+        therefore reads ``None`` as "nothing to predicate", and the divisible path
+        stays byte-identical because ``None`` is what it saw before this existed.
+
+        The tile granularity is one ``chunk``.
+        """
+        if self._cute_tv_plan is None:
+            return None
+        env = CompileEnvironment.current()
+        numel = env.block_sizes[self.block_index].numel
+        if not isinstance(numel, (int, sympy.Integer)):
+            return None
+        rounded = rounded_extent(int(numel), self._cute_tv_chunk)
+        if rounded == int(numel):
+            return None
+        # A rounded tile is only sound if the identity gate exists at the combine
+        # (invariant I4), and that gate is ``self._mask_var``.  If it is absent the
+        # phantom columns would reach the accumulator ungated.  ``__init__`` creates
+        # the mask against the chunk granularity, so this assert should be unreachable;
+        # it is here because the alternative to crashing is a silent wrong answer.
+        assert self._mask_var is not None, (
+            f"rounded tile {int(numel)} -> {rounded} without a reduction-axis mask: "
+            "the out-of-range lanes would reach the combine ungated.  See "
+            "ragged_tail invariant I4."
+        )
+        return rounded
+
+    def cute_tv_tail_predicate(self) -> str | None:
+        """``base < N`` for the current lane, or ``None`` when no tail exists.
+
+        Returned as source text because it is spliced around a ``cute.copy``
+        statement by ``memory_ops._cute_tv_partition_hoist``.  The variable it
+        compares is the emitted per-thread column base
+        (``reduction_lane_base_*``), which is a multiple of ``vec`` -- which is
+        what makes one scalar compare exact for the whole fragment
+        (``ragged_tail`` invariant I2).
+        """
+        if self.cute_tv_rounded_extent() is None:
+            return None
+        base_var = self._cute_lane_base_index_var
+        if base_var is None:
+            return None
+        env = CompileEnvironment.current()
+        numel = env.block_sizes[self.block_index].numel
+        plan = self._cute_tv_plan
+        assert plan is not None
+        # I2's precondition, asserted at the point of emission: no vector block
+        # may straddle the row end, because ``cute.copy``'s ``pred`` granularity
+        # is one whole block.
+        assert_vec_divides_extent(plan.vec, int(numel))
+        return f"{base_var} < {int(numel)}"
+
+    def _build_cute_tv_plan(
+        self,
+        *,
+        chunk: int,
+        state_free: bool,
+        vec_cap: int | None,
+        block_index: int,
+    ) -> ChunkTVPlan | None:
+        """The ONE place a reduction's access width is decided.
+
+        Returns ``None`` when this reduction is not a candidate for the TV path
+        at all, in which case the caller keeps ``vec == 1`` -- i.e. today's
+        scalar codegen.  Returning a plan with ``vec == 1`` and returning
+        ``None`` are deliberately equivalent in effect: neither can produce a
+        strided index without a matching width.
+
+        ``state_free`` marks that this runs from ``__init__``, before any
+        ``CodegenState`` exists, so only the device IR and the config may be
+        consulted (that is the *point*: the width must be known before any
+        address is emitted).  ``block_index`` is passed explicitly because this
+        runs BEFORE ``super().__init__``, so ``self.block_ids`` does not exist yet.
+
+        ⭐ ``chunk`` IS A PARAMETER, NOT ``self._loop_block_size``.  That single
+        field was this method's ONLY loop-specific input -- "the reduction-axis
+        extent one iteration covers".  ``LoopedReductionStrategy`` passes its
+        ``_loop_block_size``; a strategy with no outer reduction loop passes its
+        own padded extent.  Everything else here is ``env``, the config, and
+        ``_cute_layout_participants`` (a device-IR walk that reads no ``self``
+        state), which is what makes the whole capability class-independent.
+
+        Per ``PORT_SPEC_layout.md`` §2a / E010 trap 3 the width is bounded by
+        the WIDEST dtype partitioned through the layout, and per §6c / E010
+        trap 1 by each tensor's REAL row stride -- not by ``N``.  A sliced input
+        whose row stride is not a multiple of ``vec`` is an IR-verification
+        failure at compile time, so the clamp is what turns "ICE" into
+        "narrower copy".
+        """
+        assert state_free
+        env = CompileEnvironment.current()
+        if env.backend.name != "cute":
+            return None
+        if chunk <= 0 or self._reduction_thread_count() <= 0:
+            return None
+        # ── RAGGED N: round the TILE up, predicate the TAIL ────────────────────
+        #
+        # ``numel`` need NOT be an exact multiple of the chunk.  When it is not,
+        # the loop walks the rounded-up extent ``N' = ceil(N/G)*G`` and every
+        # ``cute.copy`` on a chunk that can exceed ``N`` is guarded by
+        # ``if base < N:``.  ``ragged_tail`` carries the whole argument, including
+        # why one scalar compare per lane is exact (a fragment is wholly in or
+        # wholly out of bounds) and why no per-op identity fill is needed here
+        # (helion's ``_mask_to`` already supplies it, per op, AT THE COMBINE --
+        # which is also what makes ``layer_norm``'s post-centering case correct).
+        #
+        # The historical comment here claimed "the per-element mask would have to
+        # gate a whole fragment".  That was FALSE: on the TV path the per-element
+        # index ``rindex = base + vi`` IS the element fragment slot ``vi`` holds,
+        # so the existing per-element mask is already per-element.
+        #
+        # ``block_index`` is passed explicitly: this runs BEFORE
+        # ``super().__init__``, so ``self.block_ids`` does not exist yet.
+        numel = env.block_sizes[block_index].numel
+        if not ragged_tile_admissible(env, numel, chunk, vec=1):
+            return None
+        # A read-after-write on the SAME tensor is a hazard: the TV path's load
+        # copy is anchored ABOVE the per-element loop and its store flush BELOW
+        # it, so a load that follows a store in program order reads the pre-store
+        # gmem -- see ``_cute_tv_has_store_then_load_alias`` for the emitted code.
+        #
+        # ⭐ B3: it is resolved by FORWARDING where that is provably sound, and
+        # only declined where it is not.  Both decisions are made HERE, in the ONE
+        # place the width is decided, and never per-site: a per-site decline would
+        # leave the trip count derived from ``plan.vec`` while an individual access
+        # narrowed, which is class 1 exactly (see this method's docstring).  The
+        # forwardable set is recorded on the strategy so the emission site cannot
+        # re-derive it and drift.
+        # ⚠ The VETO is asked through ``_cute_tv_has_store_then_load_alias`` rather
+        # than by testing the classifier's ``None`` directly, even though the two
+        # are the same predicate by construction.  That keeps ONE monkeypatchable
+        # gate for "force the blanket decline", which is how the fail-capability
+        # controls force this path off (``_notes/tests/test_b3_store_load_forward.py``
+        # patches exactly this symbol, and so does the level-5 wiring).  The extra
+        # IR walk is compile-time only and runs once per reduction.
+        if _cute_tv_has_store_then_load_alias():
+            return None
+        # ``or frozenset()``, not an assert: the line above normally guarantees a
+        # non-None result here, but a caller that patched the gate to False must get
+        # today's un-forwarded emission rather than a compiler crash.
+        self._cute_tv_forwarded_raw_keys = (
+            _cute_tv_forwardable_raw_keys() or frozenset()
+        )
+        # ── THE WIDTH DECISION ITSELF IS NOT HERE ──────────────────────────────
+        #
+        # ⭐ Everything above this line is what makes THIS strategy's inputs; the
+        # decision is :func:`tv_layout.build_tv_plan`, which every CuTe strategy
+        # wanting a TV copy calls.  There used to be a second copy of the decision
+        # on ``CuteNDTileStrategy``, and the two carried gates that differed by
+        # accident of coverage rather than by design -- see that function's
+        # docstring for the list.
+        #
+        # ``tail_predicated`` is the ragged-N policy: this path rounds the tile up
+        # and predicates the tail, so ``vec`` must additionally divide ``numel``.
+        # It is asked ONLY in the non-divisible case so the divisible path's width
+        # bound is untouched, byte for byte.
+        ragged = not env.known_multiple(numel, chunk) and isinstance(
+            numel, (int, sympy.Integer)
+        )
+        return build_tv_plan(
+            chunk=chunk,
+            threads_per_row=self._reduction_thread_count(),
+            participants=self._cute_layout_participants(),
+            vec_cap=vec_cap,
+            # ⭐ A7c: MIXED DTYPES ARE ADMITTED.  The emission site mints one copy atom per
+            # distinct dtype (``_cute_tv_shared_for_dtype`` + ``ChunkTVPlan.for_dtype``), which
+            # is what this flag's docstring said a caller must be able to do before passing it.
+            # The GEOMETRY stays single-sourced: ``for_dtype`` changes only the element type and
+            # ``emit_tiled_copy``'s layouts do not mention it, so every atom tiles the chunk
+            # identically.  ``vec`` is still bounded by the WIDEST participant, so one width
+            # serves the group -- which is the invariant, not the single-dtype restriction.
+            #
+            # ⚠ Unblocks fp8, and not as a special case: ANY realistic fp8 kernel is mixed-dtype
+            # because its output is fp32/bf16 (measured: even ``out_f32[t] = x_fp8[t] * 2.0`` has
+            # participants ``{fp8, f32}``), which is why the fp8 decline lower down was never
+            # what actually stopped fp8.
+            allow_mixed_dtypes=True,
+            numel=int(numel) if ragged else None,
+            tail_predicated=ragged,
+            # ⚠ NOT ``require_exact_vec_cap``.  This caller reads ``lane_extent``
+            # back OFF the returned plan (``self._cute_reduction_lane_extent =
+            # plan.lane_extent``), so a narrowing re-derives the trip count with
+            # the width and cannot skew.  A caller that fixed its trip count from
+            # ``vec_cap`` BEFORE asking must pass it; this one must not.
+        )
+
+    def cute_stage_widest_dtype_bits(self) -> int:
+        """This reduction's participants -- see the base for why the SMEM charge needs this."""
+        return max(
+            (b for b in self._cute_layout_participants().dtype_bits if b > 0), default=0
+        )
+
+    def _cute_layout_participants(self) -> TVParticipants:
+        """The tensors partitioned through the layout, for :func:`build_tv_plan`.
+
+        Walks the device IR for ``hl.load``/``hl.store`` sites whose subscript
+        reaches this reduction's axis.  Rank-1 side outputs indexed only on the
+        row (``inv_rms[tile_m]``) are excluded: they are not partitioned through
+        the row layout, and including their (often fp32) width would silently
+        halve ``vec`` on a mixed-dtype kernel (E010 trap 3).
+
+        The *stride* recorded for each tensor is the stride of its stride-1-most
+        non-contiguous dim -- i.e. the row stride for a 2-D row-major tensor,
+        which is the quantity ``legal_vec`` clamps on.
+
+        ⭐ THE RETURN TYPE IS SHARED (:class:`tv_layout.TVParticipants`) WHILE THE
+        WALK IS NOT, and that split is the whole point.  This walk recognises its
+        axis by the subscript's *syntax* (the bare ``slice(None)``);
+        ``CuteNDTileStrategy._cute_ndtile_layout_participants`` recognises its
+        axis by ``block_id`` *identity*.  Those are genuinely different questions
+        and one walk answering both is what made this path hard to widen.  What
+        was duplicated was never the walk -- it was the *interpretation* of what
+        the walk returned (one dtype? which stride fold? which width bound?), and
+        that now lives once, in :func:`tv_layout.build_tv_plan`.
+
+        ⚠ IT SELECTS ON ``slice(None)``, WHICH IS WHY MOVING IT TO THE BASE CLASS
+        DOES NOT BY ITSELF MAKE THE TV PLAN AVAILABLE TO A **TILED** REDUCTION
+        AXIS.  The predicate below is ``any(isinstance(idx, slice) and idx ==
+        slice(None) for idx in subscript)``: it recognises ``x[tile_m, :]`` and
+        rejects ``x[tile_m, tile_n]``, because an explicit inner tile index is a
+        ``SymInt``, not a slice.
+
+        MEASURED (2026-07-29), calling this method on a live
+        ``CuteNDTileStrategy`` from inside its own ``codegen_device_loop``, for
+        ``for tile_m: for tile_n: acc += x[tile_m, tile_n].sum(-1)`` at
+        ``block_sizes=[1, 512] num_threads=[0, 32] cute_vector_widths[n]=8``:
+
+            participants -> ([], [])          # <- EMPTY
+            lane-body scaffolding present     # _cute_lane_body_by_block={1},
+                                              # _cute_vec_lane_var_by_block={1},
+                                              # vec width 8
+            emitted: cute.copy=0  make_tiled_copy_tv=0  cute.arch.load=2
+
+        vs the looped reference at ``x[tile_m, :]``, same probe:
+
+            site eligible -> True for subscript ('u0', 'slice(None, ...)')
+            emitted: cute.copy=1  make_tiled_copy_tv=1  cute.arch.load=0
+
+        ⇒ ``_build_cute_tv_plan`` returns ``None`` at its ``if not dtypes`` guard
+        for an NDTile axis EVEN THOUGH the lane-body owner, the constexpr-V-loop
+        var and the coverage bijection are all already in place -- i.e. "the only
+        missing piece is a plan-construction site" is FALSE for that strategy.
+        ``memory_ops._cute_tv_site_eligible`` carries the same restriction
+        independently (it requires the last non-``None`` subscript to be
+        ``slice(None)``), so both the plan and every emission site would have to
+        learn the tiled-axis shape together -- and they must learn it TOGETHER,
+        because a plan built for a width no site can honour is class 1 exactly.
+        """
+        from ..language import memory_ops as _memory_ops
+
+        try:
+            hf = HostFunction.current()
+        except Exception:
+            return TVParticipants.empty()
+        if hf._device_ir is None:
+            return TVParticipants.empty()
+        # ``(dtype_str, dtype_bits, strides)`` per participating access.  The
+        # row-stride reduction and the width folds are ``TVParticipants``'; this
+        # walk's only job is deciding WHICH accesses participate.
+        accesses: list[tuple[str, int, tuple[int, ...], object]] = []
+        for graph_info in hf.device_ir.graphs:
+            for node in graph_info.graph.nodes:
+                if node.target not in (_memory_ops.load, _memory_ops.store):
+                    continue
+                if len(node.args) < 2:
+                    continue
+                tensor_node = node.args[0]
+                subscript = node.args[1]
+                if not isinstance(subscript, (list, tuple)):
+                    continue
+                # Only tensors indexed along the reduction axis participate.  A
+                # subscript that never mentions that axis (``inv_rms[tile_m]``) is a
+                # rank-1 side output and must NOT contribute its (often fp32) width,
+                # which would silently halve ``vec`` on a mixed-dtype kernel.
+                #
+                # ⭐ TWO SPELLINGS OF "THIS AXIS", AND BOTH ARE THE AXIS:
+                #
+                #  * ``slice(None)`` -- the ROLLED spelling, ``x[tile_m, :]``, where the
+                #    reduction owns the whole trailing dim and no inner tile index exists;
+                #  * an explicit ``SymInt`` tile index whose block id IS this reduction's
+                #    axis -- the TILED spelling, ``x[tile_m, tile_n]``.
+                #
+                # Accepting only the first is what made this method return ``([], [])``
+                # for a tiled axis, so ``_build_cute_tv_plan`` bailed at its
+                # ``if not dtypes`` guard and no TV plan was ever built for
+                # ``CuteNDTileStrategy`` -- even though its lane-body owner, its
+                # constexpr-V-loop var and the coverage bijection were all already in
+                # place.  MEASURED before this change, on a live ``CuteNDTileStrategy``
+                # at ``block_sizes=[1, 512] num_threads=[0, 32] vw=8``:
+                #     participants -> ([], []) ; emitted cute.copy=0 tiled_copy_tv=0
+                # against the rolled reference at ``x[tile_m, :]``: cute.copy=1, tv=1.
+                #
+                # ⚠ THE BLOCK-ID TEST IS LOAD-BEARING, not a formality.  Matching any
+                # ``SymInt`` would admit the ROW index (``tile_m``) and every unrelated
+                # tile axis, so a rank-1 side output would start contributing its width
+                # -- E010 trap 3, the mixed-dtype ``vec`` halving. Only the id equal to
+                # this reduction's own axis counts.
+                #
+                # ⚠ AND ``memory_ops._cute_tv_site_eligible`` CARRIES THE SAME
+                # RESTRICTION INDEPENDENTLY.  The two must agree: a plan built at a width
+                # no emission site honours is bug class 1 exactly (the trip count would
+                # assume a width the access does not use), so that predicate is widened
+                # in the same change.
+                # ⚠ THIS SELECTOR IS DELIBERATELY SYNTAX-BASED AND ROLLED-ONLY.  It
+                # recognises its axis as "the bare ``slice(None)``", which is unambiguous
+                # for a rolled reduction because the axis is the only bare slice in play.
+                #
+                # ⛔ DO NOT WIDEN IT TO ACCEPT A TILED (``SymInt``) AXIS.  I tried, and it
+                # was wrong twice over: (a) in the DEVICE IR a subscript entry is an
+                # ``fx.Node`` whose ``meta["val"]`` holds the SymInt -- entries arrive as
+                # ``[Node:sym_size_int, Node:block_size_1]`` -- so a bare
+                # ``isinstance(idx, torch.SymInt)`` test matches NOTHING and the widening
+                # is a SILENT NO-OP indistinguishable from an honest decline; and (b) even
+                # unwrapped correctly it is the wrong home, because a tiled axis must be
+                # recognised by IDENTITY (``block_id`` equality) while this one recognises
+                # by FORM, and one walk answering both gives it two notions of "its axis"
+                # with one caller for each -- exactly the coupling that made this path hard
+                # to widen in the first place.
+                #
+                # ⇒ The tiled analogue is a SEPARATE walk,
+                # ``CuteNDTileStrategy._cute_ndtile_layout_participants``, which shares only
+                # the ``_tiled_axis_block_id`` unwrapping with the codegen-time gate so that
+                # neither can be silently vacuous.  See its docstring.
+                if not any(
+                    isinstance(idx, slice) and idx == slice(None) for idx in subscript
+                ):
+                    continue
+                val = None
+                if isinstance(tensor_node, torch.fx.Node):
+                    val = tensor_node.meta.get("val")
+                elif isinstance(tensor_node, torch.Tensor):
+                    val = tensor_node
+                if not isinstance(val, torch.Tensor):
+                    continue
+                accesses.append(
+                    (
+                        _dtype_str(val.dtype),
+                        val.element_size() * 8,
+                        tuple(val.stride()),
+                        val.dtype,
+                    )
+                )
+        return TVParticipants.from_accesses(accesses)
 
 
 class PersistentReductionStrategy(ReductionStrategy):
@@ -731,6 +2242,88 @@ class PersistentReductionStrategy(ReductionStrategy):
             self._thread_count = env.backend.adjust_reduction_thread_count(
                 self._thread_count, concurrent
             )
+        # ⛔⛔ DO NOT ADD A ``cute_threads_per_row`` CLAMP HERE.  IT WAS TRIED, AND IT
+        # PRODUCES SILENT WRONG ANSWERS.  Written out in full because the brief that asked
+        # for it presents the opposite as VERIFIED, so the next reader will be tempted too.
+        #
+        # THE ASK ("step 0" of the capability rework): make
+        # ``PersistentReductionStrategy`` read ``cute_threads_per_row`` and lower
+        # ``_thread_count``, on the stated grounds that ``_thread_count`` is the whole
+        # padded reduction extent, hence ``lane_extent == 1``, hence ``ChunkTVPlan``'s
+        # coverage bijection admits only ``vec == 1`` and any TV-plan hoist is inert.
+        #
+        # ⭐ THE PREMISE IS FALSE, but ⚠ SO IS THE REBUTTAL THAT REPLACED IT.  Both
+        # earlier claims here generalized from ONE kernel to "always", in opposite
+        # directions.  RE-MEASURED (2026-07-29) by reading THIS OBJECT's
+        # ``_thread_count`` / ``_synthetic_cute_lane_extent`` right after
+        # ``__init__``, over a grid of (kernel, N, block_sizes, cute_vector_widths)
+        # -- see ``_notes/tests/test_capability_matrix.py`` for the arm this pins:
+        #
+        #   kernel   N     bs  | thread_count  synthetic_lane_extent  emitted lane loop
+        #   row_sum  256   1   |    256              1                    none
+        #   row_sum  512   1   |    512              1                    none
+        #   row_sum  768   1   |   1024              1                    none
+        #   row_sum  1024  1   |   1024              1                    none
+        #   rms      256   1/4 |    256              1                    none
+        #   rms      1024  1   |   1024              1                    none
+        #   (bs >= 4 at N >= 512, or bs=8 at N=256: PERSISTENT IS NOT USED AT ALL --
+        #    ``normalize()`` rolls the reduction and the emitted kernel has
+        #    ``for roffset``, i.e. ``LoopedReductionStrategy``.)
+        #
+        # ⇒ ON EVERY SHAPE WHERE PERSISTENT IS ACTUALLY THE STRATEGY,
+        # ``_thread_count == next_power_of_2(N)`` and ``lane_extent == 1``, exactly
+        # as the ORIGINAL brief said -- ``create_synthetic_reduction_lanes`` returns
+        # ``None`` when ``padded_size <= thread_count``, so the warp cap 60 lines
+        # above never fires (it is guarded by ``lane_extent is not None``).  The
+        # "8/16/32" table above this was measured on a config that had been ROLLED
+        # into the looped strategy, so it was reporting the looped path's lane
+        # extent, not persistent's.  ``lane_extent > 1`` on persistent requires a
+        # LOWER ``_thread_count``, and there is no shape at which it comes for free.
+        #
+        # ⛔ AND THAT DOES NOT MAKE THE CLAMP RIGHT -- the wrongness below is
+        # independently measured and still stands.  What it means is that capability
+        # ① on ``PersistentReductionStrategy`` is blocked on a CORRECTNESS story for
+        # the warp reduction at a lowered thread count (see the ⇒ at the end), which
+        # is a bigger piece of work than a config read, and NOT on the plan
+        # construction site (that now exists on the base class:
+        # ``ReductionStrategy._build_cute_tv_plan``, parameterized by ``chunk``).
+        #
+        # The two OTHER blockers are real and independent of the thread count:
+        # (a) a lane-body owner -- ``_cute_lane_body`` /
+        # ``_cute_tv_constexpr_loop`` / ``_cute_tv_chunk_prefix``, which
+        # ``memory_ops._cute_tv_partition_hoist`` mutates DURING load lowering,
+        # whereas persistent's lane loop is built at the END of codegen by
+        # ``DeviceGridState.wrap_body``; and (b) ⭐ NEWLY FOUND, not in any
+        # document: ``split_lane_loop_reductions`` finds ``_helion_lane_reduce``
+        # markers only among the lane loop's DIRECT children
+        # (``_split_one_lane_loop`` enumerates ``loop.body``), and the TV protocol
+        # nests the marker inside ``for vi in cutlass.range_constexpr(vec)``.  A
+        # nested marker is not rewritten; it is reverted to the raw per-lane input
+        # by ``restore_unprocessed_lane_reduce_markers``, which DROPS the cross-lane
+        # accumulator -- a silent wrong answer of exactly the class that comment
+        # calls "bug class 8 P1".  So giving persistent a TV plan requires teaching
+        # that pass the nested shape FIRST.
+        #
+        # ⭐ AND THE CLAMP IS ACTIVELY WRONG.  MEASURED with it in place:
+        # ``test_attention_block_pointer`` returns 683292 of 4194304 elements wrong (max
+        # abs err 0.923 vs SDPA), and 16 of 118 ``test_examples.py`` tests fail -- 7 of the
+        # 8 attention examples.  Bisected to this clamp ALONE: reverting only it restores
+        # ``mismatched=0/4194304`` with every other change of that session still in place.
+        # MECHANISM: attention's reduction arrives with ``cute_threads_per_row=[8]``, so
+        # the clamp cut its thread count 32 -> 8 and the warp reduction then covered a
+        # fraction of the axis -- exactly the #2643 hazard the cap above exists to prevent.
+        #
+        # ⚠ AND THE OBVIOUS SAFEGUARD DOES NOT WORK EITHER.  Gating on "the caller asked
+        # explicitly", i.e. ``"cute_threads_per_row" in fn.config.config``, looks like it
+        # confines the change to opt-in callers.  It does not: ``fn.config.config`` is the
+        # NORMALIZED config, not the caller's.  MEASURED -- the attention test passes only
+        # ``block_sizes`` / ``num_stages`` / ``indexing``, yet inside this ``__init__`` the
+        # key is present with the ladder value ``[8]``.  ⇒ there is no cheap way to tell
+        # "requested" from "filled in" here; that is the same trap LEDGER E067 records on
+        # the looped path, which is why the looped clamp also gates on ``requested_vec > 1``.
+        #
+        # ⇒ The prerequisite for persistent honouring this knob is a correctness story for
+        # the warp reduction at a lowered thread count -- NOT a config read.
         self._synthetic_cute_lane_var: str | None = None
         self._synthetic_cute_lane_extent = 1
         is_graph_reduction_dim = any(
@@ -754,8 +2347,98 @@ class PersistentReductionStrategy(ReductionStrategy):
             # graph-reduction dim only addresses the first ``thread_count``
             # elements (e.g. layer_norm_bwd's feature axis), leaving the
             # remaining columns/partial sums uncomputed.
+            # ⚠ NOTE THE POSITION: this must NOT be nested under the ``#2643`` cap's
+            # ``lane_extent is not None`` guard.  ``create_synthetic_reduction_lanes``
+            # returns ``None`` when ``padded <= thread_count`` -- which is precisely
+            # persistent's own case (``thread_count == padded``), so at N=1024
+            # ``lane_extent`` is ``None``, the cap above never fires, and a clamp placed
+            # inside that branch is unreachable.  MEASURED on the first attempt at this
+            # edit: ``thread_count=1024 synthLE=1 plan=None``, i.e. it silently did
+            # nothing.  Applied here it runs unconditionally, then re-derives the loop.
+            requested_tpr = env.config_spec.cute_threads_per_row.config_get(
+                cast(
+                    "list[int]",
+                    fn.config.config.get("cute_threads_per_row", []) or [],
+                ),
+                block_index,
+                None,
+            )
+            requested_vec = env.config_spec.cute_vector_widths.config_get(
+                cast(
+                    "list[int]",
+                    fn.config.config.get("cute_vector_widths", []) or [],
+                ),
+                block_index,
+                1,
+            )
+            if (
+                env.backend.name == "cute"
+                and isinstance(requested_tpr, int)
+                and isinstance(requested_vec, int)
+                and requested_vec > 1
+                and 0 < requested_tpr < self._thread_count
+                # A power of two, so ``padded // tpr`` is exact and the lane
+                # arithmetic stays integral.  ``_normalize`` already enforces
+                # membership in ``THREADS_PER_ROW_CHOICES`` (all powers of two);
+                # this is belt-and-braces for a hand-written config.
+                and requested_tpr & (requested_tpr - 1) == 0
+            ):
+                self._thread_count = requested_tpr
+                # ⭐ THE COVERAGE ARGUMENT, and it is why this is sound where the
+                # earlier attempt was not: ``create_synthetic_reduction_lanes`` returns
+                # ``padded // thread_count``, so the loop grows by exactly the factor
+                # the count shrank and ``thread_count * lane_extent == padded`` still
+                # holds.  Every element of the axis is still visited, and the warp
+                # reduction now spans ``requested_tpr <= 32``-style groups it can
+                # actually cover rather than the whole padded extent.
+                lane_extent = env.backend.create_synthetic_reduction_lanes(
+                    self._thread_count, size_hint
+                )
+                assert lane_extent is not None and (
+                    self._thread_count * lane_extent
+                    >= next_power_of_2(max(1, size_hint))
+                ), (
+                    "lowered thread count does not cover the padded axis: "
+                    f"tpr={self._thread_count} lane_extent={lane_extent} "
+                    f"padded={next_power_of_2(max(1, size_hint))}"
+                )
+            # ⛔⛔ COMPARE AGAINST THE **REAL** EXTENT, NOT THE THREAD-CAPPED ONE.
+            #
+            # This used to read ``next_power_of_2(min(size_hint, max_threads))``, and the
+            # ``min`` made the test unable to notice the very case it exists to catch.
+            # ``_thread_count`` is itself capped at ``max_threads`` (1024 for cute), so at
+            # any ``size_hint > 1024`` both sides collapse to 1024, the test is
+            # ``1024 < 1024`` == False, NO synthetic lane loop is created, and the
+            # reduction silently visits only the first 1024 elements.
+            #
+            # ⛔ MEASURED as a SILENT WRONG ANSWER, with {-1,+1} integer data so a correct
+            # kernel must be bit-exact: an inner ``sum(x[tm, :])`` at
+            # ``reduction_loops=[None]``, ``cute_vector_widths=[1,1]`` returned
+            # **exactly the sum of the first 1024 columns** -- ``torch.equal(got,
+            # x[:, :1024].sum(-1))`` was True at N=2048 and N=4096 (``got[0]=10`` vs
+            # ``ref[0]=46``). N<=1024 was correct, so the defect begins exactly where the
+            # cap binds. 31744 of 32768 elements were dropped at N=32768.
+            #
+            # ⚠ WHY NOBODY SAW IT: the four ``reduction_loops=[None]`` clamp sites
+            # (``config_spec`` x3, ``tile_dispatch`` x1) roll any config whose per-CTA
+            # extent exceeds the thread budget, so this branch is unreachable on
+            # ``origin/main`` and on this branch -- VERIFIED, both are correct here. It is
+            # reachable only once those clamps are removed, which is why it is fixed FIRST:
+            # the comment at ``config_spec.py``'s site 2 cites exactly this hazard
+            # ("a persistent reduction would hit the synthetic-lane-loop bug") as the
+            # reason those sites must roll.
+            #
+            # ⭐ ``create_synthetic_reduction_lanes`` was always right -- ``(1024, 2048) ->
+            # 2``, ``(1024, 4096) -> 4``. Only this caller declined to ask it. With the
+            # ``min`` gone the lane loop fires (``tc=32 lane_ext=64/128/1024`` at
+            # N=2048/4096/32768) and every N tested is bit-exact.
+            #
+            # INERT on everything currently reachable: 0 of the 40 frozen cells change
+            # emission (0 errors), the cute suites give an identical failure set, and
+            # ``test_examples.py`` is 101 passed / 0 failed -- including all 8 attention
+            # examples, which are the historically fragile consumer of this block.
             needs_synthetic = not is_graph_reduction_dim or (
-                self._thread_count < next_power_of_2(min(size_hint, max_threads))
+                self._thread_count < next_power_of_2(size_hint)
                 if max_threads is not None
                 else False
             )
@@ -777,12 +2460,167 @@ class PersistentReductionStrategy(ReductionStrategy):
                     lane_extent = env.backend.create_synthetic_reduction_lanes(
                         self._thread_count, size_hint
                     )
+                # ⭐ CAPABILITY ① PREREQUISITE: HONOUR ``cute_threads_per_row`` **HERE**,
+                # INSIDE THIS BLOCK, SO THE LANE LOOP IS RE-DERIVED TO COVER THE REMAINDER.
+                #
+                # Why persistent needs this at all: ``_thread_count`` above is the whole
+                # padded extent, so ``chunk == threads_per_row`` and
+                # ``lane_extent = chunk // (tpr * vec)`` collapses to 1 -- and
+                # ``ChunkTVPlan.__post_init__``'s coverage bijection
+                # (``chunk % (threads_per_row * vec) == 0``) then admits only ``vec == 1``,
+                # i.e. a scalar load.  A TV plan of width 1 is indistinguishable from no
+                # plan, so ① is unreachable until ``lane_extent > 1``.
+                #
+                # ⛔ AND THIS IS WHERE AN EARLIER ATTEMPT WENT WRONG -- read before editing.
+                # Lowering ``_thread_count`` *outside* this block (before the
+                # ``needs_synthetic`` computation, as a standalone config read) produced
+                # SILENT WRONG ANSWERS: ``test_attention_block_pointer`` returned
+                # 683292/4194304 elements wrong, and 16 of 118 ``test_examples.py`` tests
+                # failed (7 of the 8 attention examples), bisected to that change alone.
+                # The cause is exactly the invariant the ``#2643`` cap above maintains:
+                # the warp reduction covers ``_thread_count`` CONSECUTIVE lanes, so cutting
+                # the count without regrowing the lane loop leaves the remaining
+                # ``padded/new_count - padded/old_count`` lanes' worth of the axis
+                # **never reduced**.
+                #
+                # ⇒ THE FIX IS NOT A DIFFERENT GATE, IT IS A DIFFERENT PLACE.  Applied here,
+                # ``create_synthetic_reduction_lanes(new_count, size_hint)`` re-derives
+                # ``lane_extent = padded // new_count`` immediately below, so the loop grows
+                # by exactly the factor the count shrank and total coverage
+                # (``thread_count * lane_extent == padded``) is preserved by construction --
+                # which is the same argument that makes the ``#2643`` cap itself sound.
+                #
+                # ⚠ ``requested_vec > 1`` IS REQUIRED, and not for symmetry with the looped
+                # clamp.  ``CuteThreadsPerRowSpec._fill_missing`` returns a real ladder value
+                # (``threads_per_row_for(n)``), and ``fn.config.config`` is the NORMALIZED
+                # config -- MEASURED, attention passes only ``block_sizes``/``num_stages``/
+                # ``indexing`` yet the key is present here as ``[8]``.  So "is the key
+                # present" cannot distinguish requested from filled-in, and honouring it
+                # unconditionally would re-geometry every persistent kernel in the tree
+                # (LEDGER E067's trap).  Gating on ``vec > 1`` keeps the lever where a TV
+                # plan is actually wanted: at ``vec == 1`` there is nothing to enable, so
+                # the ladder default stays inert and every existing kernel is untouched.
                 if lane_extent is not None:
                     self._synthetic_cute_lane_var = fn.new_var(
                         f"synthetic_lane_{block_index}",
                         dce=False,
                     )
                     self._synthetic_cute_lane_extent = lane_extent
+        # ── CAPABILITY GEOMETRY: what "one chunk" means with no outer loop ─────
+        #
+        # ``_cute_tv_chunk`` is the base class's single loop-specific input (see
+        # ``ReductionStrategy._build_cute_tv_plan``).  Persistent covers the whole
+        # padded extent in ONE pass, so its chunk IS that extent -- which is also
+        # what ``_index_init_expr`` and the launch block dim are built from.
+        #
+        # Recorded even when no capability engages, because it is the number every
+        # base-class capability would read and it must not be inferred at two sites.
+        if env.backend.name == "cute" and self._thread_count > 0:
+            padded = self._thread_count * self._synthetic_cute_lane_extent
+            self._cute_tv_chunk = padded
+            # ── CAPABILITY ①: BUILD THE TV PLAN, HERE, FROM ``_cute_tv_chunk`` ─────
+            #
+            # The chunk is read from the shared capability field rather than
+            # re-derived so every consumer uses one geometry value.
+            #
+            # ⚠ ``requested_vec`` GATES THIS, for the SAME reason it gates the thread-count
+            # clamp above and the looped path's (LEDGER E067): ``fn.config.config`` is the
+            # NORMALIZED config, so "the key is present" cannot distinguish a caller's
+            # request from a ladder default.  At ``vec == 1`` a plan is indistinguishable
+            # from no plan, so the ladder default stays inert and every existing
+            # persistent kernel is untouched.
+            requested_vec_plan = env.config_spec.cute_vector_widths.config_get(
+                cast(
+                    "list[int]",
+                    fn.config.config.get("cute_vector_widths", []) or [],
+                ),
+                block_index,
+                1,
+            )
+            # ⭐⭐ NO GATE HERE, AND THAT IS THE POINT.  A loop-free reduction that takes a
+            # TV plan emits its reduction inside ``for vi in cutlass.range_constexpr(vec)``
+            # and therefore owes a lane-reduce MARKER, which used to need ~670 lines of AST
+            # rewrite to discharge.  An earlier version of this work gated the plan OFF to
+            # retire that rewrite -- which retired the CAPABILITY too, on 144 measured
+            # configs.  ⛔ That was the wrong trade and it is undone.
+            #
+            # ⭐ The marker is now avoided at a HIGHER level: ``ConfigSpec.normalize`` rolls
+            # a persistent reduction that would take a TV plan (see its "A PERSISTENT
+            # REDUCTION THAT WOULD TAKE A TV PLAN IS ROLLED INSTEAD" block), so the shape
+            # reaches ``LoopedReductionStrategy`` -- which gets one subgraph per dependency
+            # layer from the reduction roller and needs no marker at all.  MEASURED over 216
+            # loop-free configs: ZERO raises, ZERO markers, 198 carrying a TV layout.
+            #
+            # ⇒ this branch is still reachable (a persistent reduction whose extent cannot
+            # be rolled below itself -- ``numel <= 3`` -- stays persistent), and it must be:
+            # such a reduction has one dependency layer by construction, so the single nest
+            # ``codegen_preamble`` builds is sufficient and no marker is owed.
+            if isinstance(requested_vec_plan, int) and requested_vec_plan > 1:
+                plan = self._build_cute_tv_plan(
+                    chunk=self._cute_tv_chunk,
+                    state_free=True,
+                    vec_cap=requested_vec_plan,
+                    block_index=block_index,
+                )
+                if plan is not None and plan.vec > 1:
+                    # ⭐ THE COVERAGE POST-CONDITION, ASSERTED.  ``lane_extent`` is
+                    # derived by the plan (``chunk // (tpr * vec)``) and the emitted lane
+                    # loop's trip count is read back OFF the plan in ``codegen_preamble``,
+                    # so these are two readings of one number rather than two numbers that
+                    # must agree.  Asserting it here makes a future edit that breaks the
+                    # identity a compile error instead of a wrong answer.
+                    assert plan.covers_chunk(), (
+                        f"persistent TV plan does not cover its chunk: {plan.describe()}"
+                    )
+                    self._cute_tv_plan = plan
+                    self._cute_reduction_vec_width = plan.vec
+                    self._cute_reduction_vec_mode = "unroll"
+                    self._cute_reduction_lane_extent = plan.lane_extent
+                    # ── CAPABILITY ③ (SMEM STAGING): THE REQUEST HALF ──────────
+                    #
+                    # Read HERE, next to the plan, for the same reason the looped
+                    # path reads it next to its own: the request is only meaningful
+                    # when the TV layout owns the access, and ``cute_stage_feasible``
+                    # (the DECISION half) needs the plan to size anything.
+                    #
+                    # ⚠ E013 trap 6: this runs BEFORE ``super().__init__``, so
+                    # ``self.fn`` / ``self.block_ids`` / ``self.block_index`` do not
+                    # exist yet.  ``fn`` and ``block_index`` are passed explicitly for
+                    # exactly that reason -- do not "simplify" them away.
+                    #
+                    # ⚠ Safe to read unconditionally, unlike ``cute_threads_per_row``:
+                    # ``CuteRowResidencySpec``/``row_residency_from_legacy`` spell
+                    # ``gmem`` -- no mechanism -- for a config that named nothing, so a
+                    # kernel that never asked cannot acquire staging from a ladder
+                    # default.  VERIFIED INERT: 40/40 frozen cells hash identical.
+                    self._cute_tv_reload_from = self._cute_reload_from_config(
+                        fn, plan, block_index
+                    )
+                    # Per-chunk staging state.  A loop-free strategy has exactly ONE
+                    # chunk body, so unlike the looped path (which resets these per
+                    # ``for roffset`` body in ``codegen_device_loop``) these are
+                    # initialised once and never reset.
+                    self._cute_tv_stage_partitions = {}
+                    self._cute_tv_staged_tensors = set()
+                    # ⭐ THE ``registers`` CACHE MAP, and OMITTING IT SILENTLY DISABLED THE
+                    # WHOLE ARM ON THIS STRATEGY.
+                    #
+                    # ``_cute_tv_rmem_slice`` declines when this is ``None`` -- the class-level
+                    # sentinel on ``TileStrategy``, which exists so a strategy that never
+                    # participates reads as "no cache" instead of crashing.  I minted the real
+                    # dict on ``LoopedReductionStrategy`` and ``CuteNDTileStrategy`` and MISSED
+                    # this one, so a loop-free kernel asking for ``registers`` had every
+                    # precondition satisfied (``enabled=True``, ``num_chunks=1``,
+                    # ``lane_extent=4``, ``vec=8``) and still declined on the sentinel -- then
+                    # raised ``CuteRowResidencyUnavailable`` because the request could not be
+                    # honoured.  ⇒ it read like a capability boundary and was a missing line.
+                    #
+                    # ⚠ SAME CLASS OF DEFECT AS THE NDTILE ONE (a sentinel keeps a missing
+                    # attribute from crashing; only a real per-instance dict makes the
+                    # capability WORK), and it is the second time in this run -- so the rule
+                    # is: every strategy that answers ``cute_tv_capable()`` needs the real
+                    # object, not just the inert default.
+                    self._cute_tv_rmem_frag_by_tile = {}
 
     def _reduction_thread_count(self) -> int:
         return self._thread_count
@@ -824,7 +2662,227 @@ class PersistentReductionStrategy(ReductionStrategy):
                     state.codegen.host_statements.append(stmt)
         current_grid = state.codegen.current_grid_state
         synthetic_lane_var = self._synthetic_cute_lane_var
-        if synthetic_lane_var is not None and current_grid is not None:
+        if (
+            synthetic_lane_var is not None
+            and current_grid is not None
+            and self._cute_tv_plan is not None
+            and isinstance(current_grid, DeviceGridState)
+        ):
+            # ── CAPABILITY ①: THE TV LANE NEST, BUILT HERE ─────────────────────────
+            #
+            # ⭐ WHY THE NEST IS BUILT NOW AND NOT BY ``wrap_body``.  The TV emission
+            # protocol mutates two list objects WHILE loads lower -- ``_cute_lane_body``
+            # (the ``cute.copy`` goes next to the constexpr V-loop it must precede) and
+            # ``_cute_tv_chunk_prefix`` (the per-chunk ``local_tile`` /
+            # ``partition_S`` / fragment declarations go just above the lane loop).
+            # ``wrap_body`` runs at the END of codegen, so a nest built there would not
+            # exist yet at the moment the hoist needs to insert into it.  So the nest is
+            # built here, handed to the grid state as a sentinel, and ``wrap_body``
+            # splices the user body into its sink.
+            #
+            # ⚠ THE EMITTED GEOMETRY IS THE **PLAN'S**, NOT THE SCALAR LANE LOOP'S, and
+            # conflating the two is bug class 1.  ``_synthetic_cute_lane_extent`` is the
+            # SCALAR loop's trip count (``padded // thread_count`` == 32 at N=1024,
+            # one element per iteration); ``plan.lane_extent`` is the VECTOR loop's
+            # (``chunk // (tpr * vec)`` == 4, ``vec`` elements per iteration).  Emitting
+            # the scalar extent around a ``vec``-wide copy would read 32 * 8 elements
+            # where the row has 1024 / 32 per thread -- i.e. a trip count assuming a
+            # width the access does not use.  Coverage is asserted below from the plan's
+            # own identity rather than trusted.
+            plan = self._cute_tv_plan
+            lane_extent = plan.lane_extent
+            assert lane_extent * self._thread_count * plan.vec == self._cute_tv_chunk, (
+                "persistent TV nest does not cover its chunk: "
+                f"lane_extent={lane_extent} threads={self._thread_count} "
+                f"vec={plan.vec} chunk={self._cute_tv_chunk}"
+            )
+            axis = self._get_thread_axis()
+            current_grid.thread_axis_sizes[axis] = max(
+                current_grid.thread_axis_sizes.get(axis, 1),
+                self._thread_count,
+            )
+            current_grid.block_thread_axes[block_idx] = axis
+            current_grid.lane_loop_blocks.add(block_idx)
+            # ⭐ THE EXISTING SYNTHETIC LANE VAR IS REUSED, not replaced by a new name.
+            # This IS persistent's synthetic lane loop -- the only thing the TV plan
+            # changes is its EXTENT (the plan's ``lane_extent``, with ``vec`` elements
+            # per iteration instead of one).  Keeping the var also keeps
+            # ``_synthetic_cute_lane_var`` non-None, which is what routes
+            # ``codegen_reduction`` to the marker path that the constexpr-V split then
+            # rewrites -- minting a second name would leave two notions of "this
+            # reduction's lane" for the marker and the copies to disagree about.
+            lane_var = synthetic_lane_var
+            vec_lane_var = self.fn.new_var(f"reduction_vec_lane_{block_idx}", dce=False)
+            base_var = self.fn.new_var(f"reduction_lane_base_{block_idx}", dce=False)
+            self._cute_reduction_lane_var = lane_var
+            self._cute_lane_base_index_var = base_var
+            # ``base = tid * vec + lane * (threads * vec)``, and the per-element index
+            # is ``base + vi`` inside the constexpr loop -- so the existing scalar
+            # pipeline (mask, cast, combine) keeps working per element, unchanged.
+            # This is the persistent analogue of the looped path's ``base_expr``,
+            # without the ``roffset`` term it has no loop to supply.
+            thread_expr = self._index_init_expr(
+                block_size_var, env.index_type(), block_idx
+            )
+            from .tile_strategy import _clone_stmt
+            from .tile_strategy import _constexpr_vec_loop
+            from .tile_strategy import _create_lane_loop
+
+            vec_for = cast(
+                "ast.For",
+                ast.parse(
+                    f"for {vec_lane_var} in cutlass.range_constexpr({plan.vec}):\n"
+                    f"    pass"
+                ).body[0],
+            )
+            # The SINK: the user body is spliced in here by ``wrap_body``. It must be
+            # the very list the emitted loop holds, so the reference is kept, never
+            # rebuilt.
+            sink: list[ast.AST] = []
+            vec_for.body = sink  # type: ignore[assignment]
+            # ⭐ THE PLAN OWNS THE FORMULA (``ChunkTVPlan.emit_lane_base``).  This site
+            # was already correct, but it is routed through the plan anyway: the same
+            # expression hand-written at several sites is how the transposed-stride
+            # wrong answer happened, so being correct today is not a reason to keep a
+            # private copy.
+            #
+            # ``offset_expr=None``: this strategy is persistent -- the chunk IS the row,
+            # so there is no outer chunk offset to add (its own ``offset_var`` returns
+            # ``"0"``), and passing a literal ``"0 + "`` would only add a dead term.
+            # ``scale=1``: the cluster term is in ELEMENT units already, like the two
+            # summands it follows, so it is appended to the base rather than folded
+            # into ``thread_expr``.
+            lane_base_expr = plan.emit_lane_base(
+                None,
+                lane_var,
+                f"({thread_expr})",
+            )
+            lane_body: list[ast.AST] = [
+                statement_from_string(f"{base_var} = {lane_base_expr}"),
+                vec_for,
+            ]
+            self._cute_tv_constexpr_loop = vec_for
+            self._cute_lane_body = lane_body
+            chunk_body: list[ast.AST] = [
+                _create_lane_loop(lane_var, lane_extent, lane_body)
+            ]
+
+            # ⭐⭐ A1: REGISTER THE AXIS, AND MAKE THE NEST REBUILDABLE.
+            #
+            # Two halves of one change, and both are needed:
+            #
+            # 1. ``add_lane_loop`` -- this branch previously registered only
+            #    ``lane_loop_blocks`` (line ~3180) and never the ``(var, extent)`` pair,
+            #    because the prebuilt nest emits the loop itself so ``wrap_body`` must not
+            #    build a second one.  But ``_emit_inline_lane_reduce`` declines outright on
+            #    ``not grid.lane_loops`` (MEASURED: that was the exit taken, not the
+            #    ``prebuilt_lane_nest`` one), and ``_wrap_segmented_body`` reads the axis's
+            #    EXTENT out of the same dict.  So the axis must be visible.  Double-building
+            #    is prevented by ``wrap_body``: with a nest registered it never reaches the
+            #    ``for lane_var, extent in reversed(self.lane_loops)`` path.
+            # 2. The FACTORY -- ``chunk_body`` above can be spliced only once.  When one
+            #    reduction's input needs another's FINISHED scalar (``amax`` then
+            #    ``sum(exp(v - amax))``) the lane axis must be reopened per dependency
+            #    layer, which one splice cannot express.  ``_wrap_segmented_body`` calls
+            #    this once per segment, at the END of codegen -- i.e. after the TV protocol
+            #    inserted the ``cute.copy`` and the ``partition_*`` declarations -- so the
+            #    clone reproduces a COMPLETE nest.
+            #
+            # ⚠ The clone must be deep: two sibling loops holding the same node objects
+            # alias, and a later in-place rewrite of one would edit both.
+            current_grid.add_lane_loop(block_idx, lane_var, lane_extent)
+
+            def _rebuild_nest(
+                segment_body: list[ast.AST],
+                _lane_body: list[ast.AST] = lane_body,
+                _lane_var: str = lane_var,
+                _lane_extent: int = lane_extent,
+                _vec_lane_var: str = vec_lane_var,
+                _vec: int = plan.vec,
+                _chunk_body: list[ast.AST] = chunk_body,
+                _outer_lane_loop: ast.AST = chunk_body[0],
+            ) -> tuple[list[ast.AST], list[ast.AST]]:
+                # ⚠ THE VEC LOOP IS REBUILT FROM ITS RECIPE, NOT CLONED.  ``_clone_stmt``
+                # round-trips through ``ast.unparse``, and an ``ast.For`` whose body list is
+                # the live sink unparses to ``for v in ...:`` with NOTHING under it -- which
+                # re-parses as an ``IndentationError``.  MEASURED as exactly that.  Cloning
+                # is still right for every OTHER statement (the hoisted copies and the base
+                # assignment are complete), so only the loop itself is re-minted.
+                fresh_sink: list[ast.AST] = [*segment_body]
+                fresh_vec_for = cast(
+                    "ast.For",
+                    ast.parse(
+                        f"for {_vec_lane_var} in cutlass.range_constexpr({_vec}):\n"
+                        f"    pass"
+                    ).body[0],
+                )
+                fresh_vec_for.body = fresh_sink  # type: ignore[assignment]
+                fresh: list[ast.AST] = []
+                seen_vec_loop = False
+                for stmt in _lane_body:
+                    if (
+                        isinstance(stmt, ast.For)
+                        and _constexpr_vec_loop(stmt) is not None
+                    ):
+                        fresh.append(fresh_vec_for)
+                        seen_vec_loop = True
+                    else:
+                        fresh.append(_clone_stmt(stmt))
+                assert seen_vec_loop, (
+                    "prebuilt nest rebuild found no constexpr vec loop in the lane body"
+                )
+                # ⛔⛔ THE NEST IS TWO LEVELS, AND REBUILDING ONLY THE INNER ONE LOSES THE
+                # TENSORS.  ``chunk_body`` is ``[<per-chunk declarations>, <lane loop>]``:
+                # ``_cute_tv_partition_hoist`` inserts the ``local_tile`` /
+                # ``partition_S`` / ``make_rmem_tensor_like`` declarations at
+                # ``len(chunk_body) - 1`` (see its docstring -- appending would put them
+                # after the loop that reads them), and THOSE are the only statements that
+                # name ``x`` / ``w`` / ``out``.
+                #
+                # MEASURED when this returned just the lane loop: the declarations were
+                # never emitted, so after DCE the surviving reads were ``_tv_part_*`` with
+                # no tensor names at all, every ``TensorArg`` was dropped as unused, and
+                # codegen failed with ``BackendUnsupported: kernel launch without tensor
+                # args``.  The body was structurally correct and the kernel had no inputs.
+                fresh_chunk: list[ast.AST] = []
+                for stmt in _chunk_body:
+                    if stmt is _outer_lane_loop:
+                        fresh_chunk.append(
+                            _create_lane_loop(_lane_var, _lane_extent, fresh)
+                        )
+                    else:
+                        fresh_chunk.append(_clone_stmt(stmt))
+                return fresh_chunk, fresh_sink
+
+            current_grid.prebuilt_lane_nest_factory = _rebuild_nest
+            # The chunk coordinate is the literal 0: persistent covers the whole
+            # extent in ONE pass, so there is exactly one chunk along N and
+            # ``local_tile``'s column coordinate is its index.  (The looped path emits
+            # ``roffset // block``, which is this same quantity where a loop exists.)
+            self._cute_tv_chunk_index_var = "0"
+            # ⭐ CAPABILITY ③: THE STAGED TILE'S CHUNK COORDINATE, AND IT IS THE SAME
+            # LITERAL ``0`` -- which is the whole of the "loopless body is the
+            # ``num_chunks == 1`` case" argument, at the emission site.
+            #
+            # It is the CTA-local chunk number. Persistent covers one chunk, so its
+            # staged coordinate is the literal ``0`` as well.
+            self._cute_tv_stage_chunk_index_var = "0"
+            self._cute_tv_chunk_prefix = chunk_body
+            self._cute_tv_partitions = {}
+            current_grid.prebuilt_lane_nest = (chunk_body, sink)
+            # The per-element index, in terms of the plan's own vars.
+            current_grid.lane_setup_statements.append(
+                statement_from_string(
+                    f"{index_var} = {base_var} + cutlass.Int32({vec_lane_var})"
+                )
+            )
+            if mask_var is not None:
+                current_grid.lane_setup_statements.append(
+                    statement_from_string(
+                        f"{mask_var} = {index_var} < {self.fn.sympy_expr(numel)}"
+                    )
+                )
+        elif synthetic_lane_var is not None and current_grid is not None:
             axis = self._get_thread_axis()
             current_grid.add_lane_loop(
                 block_idx,
@@ -850,8 +2908,10 @@ class PersistentReductionStrategy(ReductionStrategy):
                     )
                 )
         else:
+            # No lane loop: one thread per column.
             state.add_statement(
-                f"{index_var} = {self._index_init_expr(block_size_var, env.index_type(), block_idx)}"
+                f"{index_var} = "
+                f"{self._index_init_expr(block_size_var, env.index_type(), block_idx)}"
             )
             if mask_var is not None:
                 state.add_statement(
@@ -916,11 +2976,11 @@ class PersistentReductionStrategy(ReductionStrategy):
         identity_expr = backend.cast_expr(
             constant_repr(default_value), _dtype_str(dtype)
         )
-        # The two-stage shared reduce takes ``dtype`` (the accumulation dtype,
-        # ``get_computation_dtype(fake_input.dtype)``) from ``type(identity)``.
-        # Upcast the (possibly fp16/bf16) masked input to that same dtype so the
-        # helper's ``input if mask else identity`` selection unifies cleanly and
-        # the reduction still accumulates in the wider accumulation dtype.
+        # ``dtype`` is the accumulation dtype (``reduction_acc_dtype``), passed to
+        # the two-stage shared reduce EXPLICITLY as ``acc_dtype`` -- it is never
+        # inferred from the identity.  Upcast the (possibly narrower) masked input
+        # to the same dtype so the helper's ``input if mask else identity``
+        # selection unifies cleanly.
         input_expr = backend.cast_expr(input_name, _dtype_str(dtype))
 
         if reduction_axis == 0:
@@ -938,8 +2998,10 @@ class PersistentReductionStrategy(ReductionStrategy):
             # (``blockDim.x == group_span``) this is identical to the
             # single-axis path whenever there is no redundancy; the extra
             # groups simply go unused.
-            from .cute.thread_budget import MAX_THREADS_PER_BLOCK
-
+            #
+            # ⚠ ``MAX_THREADS_PER_BLOCK`` WAS IMPORTED HERE AND IS NO LONGER NEEDED (task 5):
+            # the group count is now derived from the launch geometry rather than from the
+            # hardware maximum.  See the group-count block below.
             index_type = backend.index_type_str(env.index_dtype)
             tid0 = backend.cast_expr("cute.arch.thread_idx()[0]", index_type)
             tid1 = backend.cast_expr("cute.arch.thread_idx()[1]", index_type)
@@ -949,7 +3011,37 @@ class PersistentReductionStrategy(ReductionStrategy):
             lane_expr = (
                 f"{tid0} + ({tid1}) * ({bdim0}) + ({tid2}) * ({bdim0}) * ({bdim1})"
             )
-            group_count = (MAX_THREADS_PER_BLOCK + group_span - 1) // group_span
+            # Derive the group count from the launch geometry. ``axis_sizes`` is
+            # branch-local, so a sibling branch can widen ``blockDim`` and make
+            # redundant rows re-run this reduction. ``max_thread_block_dims`` already
+            # folds in the
+            # synthetic ``hl.arange`` axes** that ``tile_strategy.thread_block_dims()``
+            # cannot see (``generate_ast._current_active_thread_axis_sizes`` merges
+            # ``cute_synthetic_arange_axis_sizes`` explicitly).  So the elementwise
+            # ``max(recorded, planned)`` covers BOTH gaps:
+            #     ``recorded`` alone misses a strategy that has not entered its loop yet;
+            #     ``planned``  alone misses the synthetic arange axes.
+            # Neither is an upper bound; their max is the tightest one available here.
+            #
+            # ⭐ THIS IS NOT A NEW IDIOM IN THIS FILE.  ``BlockReductionStrategy`` already
+            # does exactly this arithmetic for exactly this hazard class -- ``max(recorded,
+            # planned)`` per axis, product, then a soundness decline whose comment reads
+            # "the strided thread-reduction path assumes every participating lane is backed
+            # by a live thread, so using it here would read unwritten SMEM partials".  The
+            # merge applies that established shape to this site.
+            #
+            launch_threads = 1
+            # ⚠ ``state.codegen``, NOT ``self._codegen``.  ``state.codegen`` IS the
+            # ``GenerateAST`` and is already dereferenced ~20 lines above
+            # (``state.codegen.current_grid_state``), so it is guaranteed present here;
+            # ``self._codegen`` is set on some strategies and not others, and reaching for it
+            # would reintroduce exactly the "ask the class, not the capability" coupling this
+            # branch exists to remove.
+            recorded_dims = state.codegen.max_thread_block_dims
+            planned_dims = self.fn.tile_strategy.thread_block_dims()
+            for recorded, planned in zip(recorded_dims, planned_dims, strict=True):
+                launch_threads *= max(int(recorded), int(planned), 1)
+            group_count = max(1, launch_threads // group_span)
         else:
             # The two-stage shared-memory reduction assumes its ``lane_var`` is
             # the linear thread index across ALL of the launch block's threads.
@@ -978,6 +3070,7 @@ class PersistentReductionStrategy(ReductionStrategy):
             f"{result_var} = _cute_grouped_reduce_shared_two_stage("
             f"{input_expr}, {reduction_type!r}, {identity_expr}, "
             f"{lane_var}, {lane_in_group_var}, {lane_mod_pre_var}, "
+            f"acc_dtype={_dtype_str(dtype)}, "
             f"pre=1, group_span={group_span}, group_count={group_count})"
         )
         return result_var
@@ -1008,11 +3101,10 @@ class PersistentReductionStrategy(ReductionStrategy):
             return expr_from_string(
                 backend.full_expr(shape_dims, constant_repr(default), fake_output.dtype)
             )
-        acc_dtype = get_computation_dtype(fake_input.dtype)
+        acc_dtype = reduction_acc_dtype(reduction_type, fake_input.dtype)
         default = ir.Reduction.default_accumulator(reduction_type, acc_dtype)
         if (
             self._synthetic_cute_lane_var is not None
-            and not backend.is_indexed_reduction(reduction_type)
             and isinstance(default, (float, int, bool))
             and not self._lane_reduce_marker_unsupported(state)
             and (threads := self._lane_reduce_threads_in_group()) is not None
@@ -1028,21 +3120,59 @@ class PersistentReductionStrategy(ReductionStrategy):
                 constant_repr(default), _dtype_str(acc_dtype)
             )
             group_params = self._reshape_merged_reduction_group_params()
-            if group_params is not None:
-                group_pre, group_span, group_lane_expr = group_params
-                expr = _lane_reduce_marker_expr(
+            group_pre, group_span, group_lane_expr = group_params or (1, 0, "")
+            if backend.is_indexed_reduction(reduction_type):
+                # An indexed reduction has no single-accumulator marker: lower it
+                # into a value marker + a dependent index marker (see
+                # ``_indexed_lane_reduce_expr``) and let the layered split emit
+                # one accumulate/finalize pass per dependency layer.
+                expr = self._indexed_lane_reduce_expr(
+                    state,
                     input_name,
                     reduction_type,
-                    identity_expr,
+                    dim,
+                    fake_input,
+                    fake_output,
                     threads,
                     group_pre=group_pre,
                     group_span=group_span,
                     group_lane_expr=group_lane_expr,
                 )
             else:
-                expr = _lane_reduce_marker_expr(
-                    input_name, reduction_type, identity_expr, threads
+                # ⭐⭐ G1: TRY TO EMIT BOTH COMBINES HERE, INLINE, and fall back to the
+                # marker only where the mechanism cannot express it (see
+                # ``_emit_inline_lane_reduce`` for the four decline conditions, each of
+                # which is a requirement rather than a preference).  When it succeeds the
+                # reduction is COMPLETE at this point: no marker is created, so nothing
+                # downstream can discharge its obligation by deleting the fold.
+                inline = self._emit_inline_lane_reduce(
+                    state,
+                    input_name,
+                    reduction_type,
+                    identity_expr,
+                    threads,
+                    acc_dtype_str=_dtype_str(acc_dtype),
+                    group_pre=group_pre,
+                    group_span=group_span,
+                    group_lane_expr=group_lane_expr,
+                    result_hint=(
+                        state.fx_node.name
+                        if state.fx_node is not None
+                        else reduction_type
+                    ),
                 )
+                expr = inline
+                if expr is None:
+                    expr = _lane_reduce_marker_expr(
+                        input_name,
+                        reduction_type,
+                        identity_expr,
+                        threads,
+                        acc_dtype_str=_dtype_str(acc_dtype),
+                        group_pre=group_pre,
+                        group_span=group_span,
+                        group_lane_expr=group_lane_expr,
+                    )
             return expr_from_string(
                 self.maybe_reshape(expr, dim, fake_input, fake_output)
             )
@@ -1096,22 +3226,146 @@ class LoopedReductionStrategy(ReductionStrategy):
             thread_count = env.backend.adjust_reduction_thread_count(
                 thread_count, tile_dispatch.strategies
             )
+        # ``cute_threads_per_row``: LOWER the row's thread count so the chunk can be
+        # covered by a WIDER copy.  Until now this knob was registered in five places
+        # (``config_spec.py``, ``device_ir.py:1080``) and read by NOTHING, and
+        # ``02_PERF.md`` §4 item 2 concluded that wiring it "will NOT help" because it is
+        # capped by the same 1024 that forces the chunk loop.  MEASURED, that is exactly
+        # backwards -- the cap is *why* the copy is scalar:
+        #
+        #   ``chunk_plan`` (``cute/tv_layout.py:880``) narrows ``vec`` while
+        #   ``chunk % (threads_per_row * vec)``, and ``ChunkTVPlan.__post_init__``
+        #   requires that identity.  So the widest legal copy is
+        #   ``vec <= chunk // threads_per_row``.  With ``threads_per_row`` pinned to
+        #   ``next_power_of_2(min(reduction_loops, 1024))``, ``rl=1024`` gives
+        #   ``vec <= 1`` -- a 16-bit SCALAR load, whatever ``cute_vector_widths`` asks
+        #   for.  And the ``block_size > thread_count`` guard below is then FALSE, so the
+        #   TV block does not even run.  Both of run 1's 400-config sweeps lived at
+        #   ``rl <= 1024`` and therefore never emitted a vector load at all, which is why
+        #   the time was identical at vw=2/4/8 (LEDGER E012).
+        #
+        # Lowering ``threads_per_row`` is the direct lever on the access width: at
+        # ``tpr=256`` a ``vec=4`` copy is legal at ``rl=1024``, and ``vec=8`` at
+        # ``rl=2048``.  The lane loop makes up the difference -- the row is still fully
+        # covered, because ``lane_extent = chunk // (tpr * vec)`` is re-derived from the
+        # same plan (that is the coverage identity ``ChunkTVPlan`` asserts), so this
+        # cannot under-read.
+        #
+        # Only ever a REDUCTION, never an increase: raising the count past what
+        # ``adjust_reduction_thread_count`` allowed would overflow the block dim, and
+        # raising it past ``block_size`` would give threads with no elements to fold.
+        #
+        # ⚠ ONLY WHEN A WIDER COPY IS ACTUALLY ON THE TABLE (LEDGER E067).  The whole
+        # justification above is "lowering ``threads_per_row`` is the direct lever on the
+        # ACCESS WIDTH" -- so at ``vec_width == 1`` there is no wider copy to enable and
+        # the narrowing is pure loss: it shrinks the reduction thread axis, costs lanes,
+        # and buys nothing.  It also fires UNASKED, because ``config_spec.normalize()``
+        # fills an omitted ``cute_threads_per_row`` from the quack ladder
+        # (``_fill_missing`` -> ``threads_per_row_for(size_hint)``), so a config that
+        # never mentioned the knob still had its thread geometry rewritten.
+        #
+        # MEASURED both ways.  ``test_looped_reduction_uses_per_thread_lanes`` asks for
+        # ``reduction_loop=2048`` with NO TV knobs, normalizes to ``tpr=[64]`` /
+        # ``cute_vector_widths=[1]``, and requires ``group_span=1024`` /
+        # ``block=(1024, 1, 1)`` -- it got 64.  And the alternative fix (make
+        # ``_fill_missing`` return an "auto" sentinel so an omitted key stays unset) was
+        # measured WORSE than this one: layer_norm 32768x1024 went 1.048 -> 0.949, because
+        # the frozen bench configs omit the key too and DO benefit from the ladder at
+        # ``vec > 1``.  Gating on ``vec_width`` keeps the win where the lever is real and
+        # restores the documented geometry where it is not.
+        if env.backend.name == "cute" and thread_count > 1:
+            requested_tpr = env.config_spec.cute_threads_per_row.config_get(
+                cast(
+                    "list[int]", fn.config.config.get("cute_threads_per_row", []) or []
+                ),
+                block_index,
+                None,
+            )
+            requested_vec = env.config_spec.cute_vector_widths.config_get(
+                cast("list[int]", fn.config.config.get("cute_vector_widths", []) or []),
+                block_index,
+                1,
+            )
+            if (
+                isinstance(requested_tpr, int)
+                and 0 < requested_tpr < thread_count
+                and isinstance(requested_vec, int)
+                and requested_vec > 1
+            ):
+                # A power of two, so the lane/vec arithmetic stays exact.  The spec's
+                # ``_normalize`` already enforces membership in ``THREADS_PER_ROW_CHOICES``
+                # (all powers of two), so this is belt-and-braces for a hand-written
+                # config that bypassed normalization.
+                if requested_tpr & (requested_tpr - 1) == 0:
+                    thread_count = requested_tpr
         self._thread_count = thread_count
         self.block_size = block_size
         self._loop_block_size = block_size
         self._cute_reduction_lane_var: str | None = None
         self._cute_reduction_lane_extent = 1
         self._cute_reduction_vec_width = 1
-        # ``"vec"`` (fp32 fast path) or ``"unroll"`` (bf16/fp16 fallback)
-        # — controls how the lane body emits each per-iter load.
-        self._cute_reduction_vec_mode = "vec"
-        # Masks queued by vec loads inside the lane loop; consumed by
-        # codegen_reduction to wrap the V-fold scalar.
-        self._cute_pending_vec_masks: list[str] = []
-        # Set when a vec load was actually emitted for the current
-        # reduction's lane body — codegen_reduction inspects this to
-        # decide whether to emit the V-fold step.
-        self._cute_emitted_vec_load = False
+        # ``"unroll"`` (bf16/fp16 per-element bitcast) -- controls how the lane body
+        # emits each per-iter load.  ⛔ The third value, ``"vec"`` (one explicit
+        # ``cute.arch.load(ptr, V x elem)`` with its mask DEFERRED to a post-fold
+        # scalar), was deleted: measured with the TV arm forced OFF -- so the legacy
+        # modes were visible rather than merely shadowed -- it fired at ZERO sites, and
+        # 0 of the 40 frozen cells reached it.
+        self._cute_reduction_vec_mode = "unroll"
+        # The TV layout that owns this reduction's access width, or None when
+        # the reduction is not on the TV path.  See ``_build_cute_tv_plan``.
+        self._cute_tv_plan: ChunkTVPlan | None = None
+        # (atom_var, thr_var) for THE one layout, once emitted.  One tuple per
+        # strategy is the structural guarantee that both legs share a slice.
+        self._cute_tv_shared: tuple[str, str] | None = None
+        # (tensor_name, "S"|"D") -> fragment var, reset per chunk body.
+        self._cute_tv_partitions: dict[tuple[str, str], str] = {}
+        # ⭐ B3: alias keys whose store-then-load RAW is resolved by FORWARDING the
+        # store's fragment to the load, rather than by declining the plan.  Filled
+        # by ``_build_cute_tv_plan`` from ``_cute_tv_forwardable_raw_keys`` (the ONE
+        # place that classification happens) and read at the emission site by
+        # ``memory_ops._cute_tv_forwards_store_fragment``.  Empty means "no RAW";
+        # the plan is declined outright when some RAW cannot forward, so a
+        # non-empty set here always means every RAW in the IR forwards.
+        self._cute_tv_forwarded_raw_keys: frozenset[object] = frozenset()
+        # The chunk body list (its last element is the lane loop), where
+        # per-chunk ``local_tile``/``partition_*``/fragment declarations go.
+        self._cute_tv_chunk_prefix: list[ast.AST] | None = None
+        # The emitted ``for vi in range_constexpr(vec)`` node.  Held by
+        # reference rather than found via ``lane_body[-1]`` because the store
+        # leg appends its flush copies AFTER it, so the tail moves.
+        self._cute_tv_constexpr_loop: ast.For | None = None
+        # The chunk's tile coordinate along N (``roffset // chunk``).
+        self._cute_tv_chunk_index_var: str | None = None
+        # ``cute_reduction_reload``: where the SECOND read of the row comes from.
+        # ``None`` = wherever it comes from today; ``"smem"`` = a per-CTA staged
+        # tile written during the first sweep.  Set below, next to the plan,
+        # because it is only meaningful when the TV layout owns the access.
+        self._cute_tv_reload_from: str | None = None
+        # ⭐ ``cute_row_residency``: the REQUESTED residency, resolved ONCE by
+        # ``_cute_row_residency_config`` and read by every arm downstream.  Seeded to
+        # ``gmem`` -- the no-mechanism baseline -- so a strategy whose TV plan is
+        # declined below never looks like it asked for a cache it cannot have.
+        self._cute_row_residency_requested: str = ROW_RESIDENCY_GMEM
+        # Per-chunk SMEM staging state, all reset per chunk body by
+        # ``codegen_device_loop``:
+        #   * the ``sX`` tensor var (one per kernel, hoisted to the preamble);
+        #   * tensor_name -> the staging partition var already emitted in THIS
+        #     chunk body, so the writer and the reader share one tile.
+        self._cute_tv_stage_smem_var: str | None = None
+        self._cute_tv_stage_partitions: dict[tuple[str, str], str] = {}
+        # Which tensors have had their row staged into SMEM at least once.  The
+        # reader consults this rather than re-deriving eligibility, so a read can
+        # never be emitted for a tensor whose write was declined.
+        self._cute_tv_staged_tensors: set[str] = set()
+        # ⭐ The ``registers`` analogue: ``tile id -> fragment var already holding it``.
+        # Minted per instance for the same reason as every dict above -- a class-level
+        # mutable default would be shared by every strategy in the process, and the emitted
+        # fragment names repeat across kernels.  See the declaration on the class for why
+        # this is keyed on the tile id and why it must NOT be reset per sweep.
+        self._cute_tv_rmem_frag_by_tile: dict[tuple[object, ...], str] = {}
+        # Memo for the device-IR walk that decides which tensors are read more
+        # than once (``_cute_tv_multi_read_tensors``).
+        self._cute_tv_multi_read_cache: frozenset[str] | None = None
         if (
             env.backend.name == "cute"
             and thread_count > 0
@@ -1137,18 +3391,68 @@ class LoopedReductionStrategy(ReductionStrategy):
                 block_index,
                 1,
             )
-            if (
-                isinstance(vec_width, int)
-                and vec_width > 1
-                and self._cute_reduction_lane_extent % vec_width == 0
-            ):
+            # ── THE TV LAYOUT OWNS V (PORT_SPEC_layout.md §7) ──────────────
+            #
+            # A ``ChunkTVPlan`` is built first and asked what width is legal;
+            # ``vec_width`` from the config is only a CAP.  ``lane_extent`` is
+            # then read back OFF the plan.  Contrast the pre-rework code, which
+            # divided ``_cute_reduction_lane_extent`` in place by a config
+            # value and left every later decline unable to undo it -- that
+            # asymmetry (stride committed early, width decided per load site)
+            # IS class 1.  Here a decline is ``plan.with_vec(smaller)``, which
+            # re-derives the trip count and the atom width together, so index
+            # and access width cannot disagree.
+            # ``chunk=self._loop_block_size``: the extent one ``for roffset``
+            # iteration covers.  It is the ONE loop-specific input the base-class
+            # plan builder takes, and it is read AFTER the round-up above.
+            plan = self._build_cute_tv_plan(
+                chunk=self._loop_block_size,
+                state_free=True,
+                vec_cap=vec_width,
+                block_index=block_index,
+            )
+            if plan is not None and plan.vec > 1:
                 mode = _cute_vec_kernel_mode()
                 if mode in ("vec", "unroll"):
-                    self._cute_reduction_vec_width = vec_width
+                    self._cute_tv_plan = plan
+                    self._cute_reduction_vec_width = plan.vec
                     self._cute_reduction_vec_mode = mode
-                    self._cute_reduction_lane_extent = (
-                        self._cute_reduction_lane_extent // vec_width
+                    # Read back off the plan; do NOT divide in place.
+                    self._cute_reduction_lane_extent = plan.lane_extent
+                    assert plan.covers_chunk(), (
+                        f"TV plan does not cover its chunk: {plan.describe()}"
                     )
+                    # ⚠ E013 trap 6: this runs BEFORE ``super().__init__``, so
+                    # ``self.fn`` / ``self.block_index`` do not exist yet.  Both
+                    # are passed explicitly for exactly that reason -- do not
+                    # "simplify" them away.
+                    self._cute_tv_reload_from = self._cute_reload_from_config(
+                        fn, plan, block_index
+                    )
+        if env.backend.name == "cute" and self._cute_tv_plan is None:
+            # ⚠ NO TV PLAN, so no mechanism can serve the second read -- but the config
+            # may still have ASKED for one, and that request must not vanish silently.
+            # MEASURED before this branch existed: ``cute_vector_widths=[1]`` with
+            # ``cute_row_residency=["smem"]`` emitted NO marker at all while the config
+            # read ``['smem']`` -- i.e. the loudest decline was the only invisible one,
+            # which is the exact defect the marker exists to remove.
+            #
+            # ⚠ AND IT SITS OUTSIDE THE ``block_size > thread_count`` GUARD ABOVE, which
+            # is where I first put it and where it was DEAD: that guard is false whenever
+            # the block exactly fills the thread count (MEASURED: bs=1024, tc=1024 at
+            # ``vw=1``), which is precisely the no-plan shape this branch is for.
+            self._cute_row_residency_requested = self._cute_row_residency_config(
+                fn, block_index
+            )
+            if self._cute_row_residency_requested != ROW_RESIDENCY_GMEM:
+                self._cute_row_residency_decline = (
+                    "no TV plan was built for this reduction (the copy width "
+                    "collapsed to 1), so there is no partitioned row to cache"
+                )
+        # ``_cute_tv_chunk`` is the base class's name for "the extent one chunk
+        # covers". Assigned here, after the round-up, so the codegen-time
+        # ``cute_tv_rounded_extent`` reads the same number as the plan builder.
+        self._cute_tv_chunk = self._loop_block_size
         if env.known_multiple(
             env.block_sizes[block_index].numel, self._loop_block_size
         ):
@@ -1256,6 +3560,7 @@ class LoopedReductionStrategy(ReductionStrategy):
                 f"{result_var} = _cute_grouped_reduce_shared_two_stage("
                 f"{input_name}, {reduction_type!r}, {identity_expr}, "
                 f"{lane_var}, {lane_in_group_var}, {lane_mod_pre_var}, "
+                f"acc_dtype={_dtype_str(dtype)}, "
                 f"pre=1, group_span={group_span}, group_count={group_count})"
             )
         )
@@ -1296,9 +3601,25 @@ class LoopedReductionStrategy(ReductionStrategy):
         # Unroll the lane body via a constexpr V-loop when the consume sweep
         # mixes scalars (no reduction in graph), OR when the reduce sweep is
         # in ``"unroll"`` mode (bf16/fp16 inputs that the CuTe DSL can't
-        # safely subscript as a vector).
+        # safely subscript as a vector), OR -- ALWAYS -- when the TV layout is
+        # driving this reduction.
+        #
+        # The TV clause is ``PORT_SPEC_layout.md`` §8b Rule 1 turned into code.
+        # The layout "is" the vectorization, so a per-element loop looks like
+        # pure overhead; keeping it anyway is what makes under-reading
+        # inexpressible rather than merely absent.  Both the loop's trip count
+        # and the copy's width now come from ``plan.vec``, so they cannot
+        # disagree -- whereas eliding the loop would make coverage depend on
+        # the copy alone, which is the bf16 trap.
+        #
+        # It is also what fixes class 1 on the ``"vec"``-mode kernels
+        # (cross_entropy): those took the ``else`` branch below, which emits
+        # ``rindex = roffset + tid*V + lane*TC*V`` -- a V-scaled stride with a
+        # single scalar read per iteration, i.e. 1 of every V elements.
         consume_unroll = vec > 1 and (
-            not graph_has_reduction or self._cute_reduction_vec_mode == "unroll"
+            not graph_has_reduction
+            or self._cute_reduction_vec_mode == "unroll"
+            or self._cute_tv_plan is not None
         )
         # Map from (tensor_name, base_expr) -> (hoist_var, dtype) so the
         # dispatcher can reuse one hoist per (tensor, base) pair instead of
@@ -1313,11 +3634,37 @@ class LoopedReductionStrategy(ReductionStrategy):
         if reduction_lane_var is not None:
             if vec > 1:
                 # base = offset + thread_idx*V + lane*(THREADS*V)
-                base_expr = (
-                    f"{offset_var} + "
-                    f"{self._index_init_expr(f'({block_size_var})', env.index_type(), block_index)} "
-                    f"* {vec} + "
-                    f"cutlass.Int32({reduction_lane_var}) * {self._thread_count * vec}"
+                #
+                # ⭐ THE PLAN OWNS THE STRIDES AND THE TERM ORDER
+                # (``ChunkTVPlan.emit_lane_base``).  This site was already correct, but
+                # the same formula hand-written at three sites is how the transposed
+                # stride shipped a wrong answer on the tile path, so the private copy
+                # is retired here too.
+                #
+                # ⚠ This branch also runs with NO TV plan (the legacy ``unroll`` mode),
+                # which needs the identical expression -- ``unroll`` reads the elements
+                # one at a time from the same interleaved partition a copy would fetch
+                # in one go.  So rather than keep a second spelling for that arm, both
+                # go through the plan and the no-plan arm builds the plan-shaped object
+                # from the numbers it already has: ``vec`` and ``_thread_count`` are
+                # exactly what a plan here would carry (asserted below when one does).
+                thread_term = self._index_init_expr(
+                    f"({block_size_var})", env.index_type(), block_index
+                )
+                if (plan := self._cute_tv_plan) is not None:
+                    assert (
+                        plan.vec == vec and plan.threads_per_row == self._thread_count
+                    ), (
+                        f"TV plan geometry disagrees with the emitted lane loop: "
+                        f"plan.vec={plan.vec} vec={vec} "
+                        f"plan.tpr={plan.threads_per_row} tc={self._thread_count}"
+                    )
+                base_expr = emit_lane_base_for(
+                    threads_per_row=self._thread_count,
+                    vec=vec,
+                    offset_expr=offset_var,
+                    lane_var=reduction_lane_var,
+                    thread_expr=thread_term,
                 )
                 if consume_unroll:
                     vec_lane_var = self.fn.new_var(
@@ -1350,6 +3697,14 @@ class LoopedReductionStrategy(ReductionStrategy):
 
             if consume_unroll and vec_lane_var is not None:
                 # for vi in cutlass.range_constexpr(V): ...
+                #
+                # ⚠ This loop is NOT elided on the TV path either
+                # (``PORT_SPEC_layout.md`` §8b Rule 1).  On the TV path it is
+                # genuinely redundant with the copy's width, but keeping it
+                # means the ONLY way to under-read is for the copy width and
+                # the loop bound to disagree -- and both now come from
+                # ``plan.vec``.  Eliding it would make correctness depend on
+                # the copy alone, which is exactly the bf16 trap.
                 vec_for = cast(
                     "ast.For",
                     ast.parse(
@@ -1367,6 +3722,7 @@ class LoopedReductionStrategy(ReductionStrategy):
                     base_stmt,
                     vec_for,
                 ]
+                self._cute_tv_constexpr_loop = vec_for
                 body = [
                     _create_lane_loop(
                         reduction_lane_var,
@@ -1377,6 +3733,50 @@ class LoopedReductionStrategy(ReductionStrategy):
                 # Stash the lane body list so the dispatcher can splice
                 # hoists in (BETWEEN base_stmt and vec_for) as it runs.
                 self._cute_lane_body = lane_body
+                # Per-chunk TV declarations live above the lane loop, so one
+                # ``local_tile``/``partition_*`` serves every lane iteration.
+                #
+                # NOTE the mutate-in-place idiom, matching ``_cute_lane_body``:
+                # ``body`` is the SAME list object that becomes the outer
+                # ``for roffset`` loop's body, and the dispatcher inserts into
+                # it while load/store sites are codegen'd.  Rebuilding it with
+                # ``[*prefix, *body]`` would snapshot an empty prefix.
+                if self._cute_tv_plan is not None:
+                    self._cute_tv_partitions = {}
+                    # Per-chunk, like ``_cute_tv_partitions``: the staging
+                    # partitions are ``local_tile``s of THIS chunk body, so a
+                    # partition from the previous sweep must not be reused (it
+                    # would be out of scope).  ``_cute_tv_staged_tensors`` is
+                    # deliberately NOT reset -- it records that a tensor was
+                    # staged in the FIRST sweep, which is what makes the SECOND
+                    # sweep's read legal.
+                    self._cute_tv_stage_partitions = {}
+                    chunk_index_var = self.fn.new_var(
+                        f"_tv_chunk_{block_index}", dce=False
+                    )
+                    self._cute_tv_chunk_index_var = chunk_index_var
+                    # ⭐ AND THE EXPRESSION IT HOLDS, for the tile-id channel (task 4).
+                    #
+                    # ⛔ THE VARIABLE NAME IS NOT AN IDENTITY.  Each sweep of one row mints
+                    # its OWN ``_tv_chunk_N``, and MEASURED on the two-moment norm they all
+                    # hold the SAME value:
+                    #     _tv_chunk_1 = roffset_1 // _REDUCTION_BLOCK_1
+                    #     _tv_chunk_2 = roffset_1 // _REDUCTION_BLOCK_1
+                    #     _tv_chunk_3 = roffset_1 // _REDUCTION_BLOCK_1
+                    # so a tile id keyed on the NAME reports three different tiles where
+                    # there is one, and can never identify a re-read -- which is precisely
+                    # the defect ``fuse_tv_copy_sweeps`` works around by unparsing and
+                    # inlining single-assignment temporaries before comparing text.
+                    # Recording the EXPRESSION is what makes the id an identity.
+                    self._cute_tv_chunk_index_expr = f"{offset_var} // {block_size_var}"
+                    body.insert(
+                        0,
+                        statement_from_string(
+                            f"{chunk_index_var} = {offset_var} // {block_size_var}"
+                        ),
+                    )
+                    self._cute_tv_chunk_prefix = body
+                    self._cute_tv_lane_loop = body[-1]
             else:
                 body = [
                     _create_lane_loop(
@@ -1386,6 +3786,20 @@ class LoopedReductionStrategy(ReductionStrategy):
                     )
                 ]
 
+        loop_begin = "0"
+        loop_end = state.sympy_expr(numel)
+        # ── AND THE RAGGED TAIL IS ALSO A TILER EDIT ────────────────────────────
+        #
+        # quack's ``num_blocks_N`` is a ``ceil_div``, so its tile covers ``N' >= N``.
+        # helion's analogue of ``tiler_n`` is this loop's extent, so the round-up IS
+        # this bound.  ``cute_tv_rounded_extent`` returns ``None`` whenever the tile
+        # already equals ``N``, which is what keeps every divisible cell's emitted
+        # text byte-identical.  The out-of-range iterations it admits are made
+        # harmless by the per-lane guard on each ``cute.copy`` (invariant I3) and
+        # the op identity at each combine (I4).
+        rounded = self.cute_tv_rounded_extent()
+        if rounded is not None:
+            loop_end = str(rounded)
         for_node = create(
             ast.For,
             target=create(ast.Name, id=offset_var, ctx=ast.Store()),
@@ -1393,8 +3807,8 @@ class LoopedReductionStrategy(ReductionStrategy):
                 self.get_range_call_str(
                     state.config,
                     [self.block_index],
-                    begin="0",
-                    end=state.sympy_expr(numel),
+                    begin=loop_begin,
+                    end=loop_end,
                     step=block_size_var,
                 ),
             ),
@@ -1442,7 +3856,8 @@ class LoopedReductionStrategy(ReductionStrategy):
             device_loop = state.codegen.active_device_loops[self.block_index][-1]
             assert isinstance(device_loop, DeviceLoopState)
             shape_dims = self.fn.tile_strategy.shape_dims([*fake_input.size()])
-            acc_dtype = get_computation_dtype(fake_input.dtype)  # promote fp16 to fp32
+            # Promotes fp16/bf16 -> fp32 and integer sum/prod -> int64.
+            acc_dtype = reduction_acc_dtype(reduction_type, fake_input.dtype)
             default = ir.Reduction.default_accumulator(reduction_type, acc_dtype)
             assert isinstance(default, (float, int, bool))
             assert state.fx_node is not None
@@ -1453,44 +3868,23 @@ class LoopedReductionStrategy(ReductionStrategy):
             )
             result = self.fn.new_var(state.fx_node.name, dce=True)
             if not backend.is_indexed_reduction(reduction_type):
+                # ⛔ THE V-FOLD BLOCK IS GONE WITH THE ``"vec"`` MODE.
+                #
+                # It folded a length-V vector to a scalar and gated it by the masks
+                # the vec load had DEFERRED (``_cute_pending_vec_masks``).  Both were
+                # reachable only from ``vec_mode == "vec"``: that arm was the sole
+                # writer of ``_cute_emitted_vec_load`` and the sole producer of a
+                # pending mask.  With the mode deleted this block could never fire, so
+                # keeping it would be dead code that still *reads* as a live mask path.
+                #
+                # ⭐ EVERY SURVIVING MODE KEEPS ITS MASK WHERE IT BELONGS, per element:
+                # the TV path's ``rindex = base + vi`` inside ``range_constexpr(vec)``
+                # IS the fragment slot ``vi`` holds, so the caller's ``x if mask else
+                # <identity>`` still sits between the load and the combine; the
+                # ``unroll`` / ``tile_unroll`` modes return a per-element scalar for the
+                # same reason.  Deferral existed only because ``vec`` handed the
+                # combine a whole vector.
                 vec_input = input_name
-                if (
-                    backend.name == "cute"
-                    and self._cute_reduction_vec_width > 1
-                    and self._cute_emitted_vec_load
-                ):
-                    # The vec load + downstream elementwise ops produced a
-                    # length-V vector; fold it into a scalar so the warp-level
-                    # reduction stays unchanged.
-                    folded = self.fn.new_var(f"{state.fx_node.name}_vfold", dce=True)
-                    state.add_statement(
-                        f"{folded} = _cute_pre_vec_fold({vec_input}, "
-                        f"{reduction_type!r}, V={self._cute_reduction_vec_width})"
-                    )
-                    # If any vec load was masked, gate the folded scalar by
-                    # the same mask so masked-out rows don't pollute acc.
-                    if self._cute_pending_vec_masks:
-                        identity_repr = constant_repr(default)
-                        identity_expr = backend.cast_expr(
-                            identity_repr, _dtype_str(acc_dtype)
-                        )
-                        mask_combined = " and ".join(
-                            f"({m})" for m in self._cute_pending_vec_masks
-                        )
-                        gated = self.fn.new_var(
-                            f"{state.fx_node.name}_vfold_gated", dce=True
-                        )
-                        state.add_statement(
-                            f"{gated} = {folded} if ({mask_combined}) "
-                            f"else {identity_expr}"
-                        )
-                        vec_input = gated
-                        self._cute_pending_vec_masks.clear()
-                    else:
-                        vec_input = folded
-                # Reset for the next reduction's lane body (the consume
-                # sweep may also be codegen'd later but with no vec load).
-                self._cute_emitted_vec_load = False
                 combine_expr = backend.reduction_combine_expr(
                     reduction_type, acc, vec_input, acc_dtype
                 )
@@ -1640,9 +4034,43 @@ class BlockReductionStrategy(ReductionStrategy):
             return None
         reduce_extent = logical_axis_sizes[reduce_axis]
         group_span = pre * reduce_extent
-        if group_span <= 32 or group_span % 32 != 0:
-            # Single-warp (or non-warp-aligned) groups are not handled by the
-            # cross-warp two-stage path.
+        # ⛔⛔ A SINGLE-WARP GROUP STILL NEEDS DE-INTERLEAVING -- DECLINING IT WAS A
+        # SILENT WRONG ANSWER.  This guard used to read
+        # ``group_span <= 32 or group_span % 32 != 0 -> return None``, justified as
+        # "single-warp groups are not handled by the cross-warp two-stage path".  The
+        # premise is true and the conclusion does not follow: ``pre > 1`` means the
+        # reduce group is STRIDED over the linear lane index, and a strided group is
+        # mis-folded by a consecutive-lane ``warp_reduction_*`` whether or not it fits
+        # in one warp.  Returning ``None`` here hands the caller exactly that plain
+        # warp reduce (``_finalize_lane_reduce_marker``'s fallback), which folds
+        # DIFFERENT ROWS together.
+        #
+        # ⭐ AND THE SINGLE-WARP FORM ALREADY EXISTS -- only this producer refused to
+        # ask for it.  ``_finalize_lane_reduce_marker`` (``tile_strategy.py``) documents
+        # a three-way dispatch and implements it: ``group_span > 32`` (a multiple of 32)
+        # goes to the cross-warp ``_cute_grouped_reduce_shared_two_stage``, and
+        # ``1 < group_span <= 32`` with ``pre > 1`` goes to
+        # ``_cute_grouped_reduce_warp``, which masks by ``lane % pre`` and reduces over
+        # ``threads_in_group=group_span`` -- precisely this case.  So the fix is to stop
+        # declining, not to write a new helper.
+        #
+        # MEASURED (``{-1,+1}`` integer data, so a correct kernel MUST be bit-exact),
+        # on ``out[tm,tn] = v - sum(v,-1)`` at ``block_sizes=[32,32]``:
+        # ``num_threads=[4,8]`` and ``[8,4]`` (``group_span == 32``) were WRONG by
+        # maxabs 24 / 20 and are now bit-exact; ``[8,8]``/``[16,8]``/``[8,16]``/
+        # ``[16,16]`` were already correct and are byte-identical.  On a 3-D tile the
+        # same change fixes ``group_span`` 8 and 16 (``num_threads=[2,2,2]``,
+        # ``[2,2,4]``, ``[2,4,4]``: all wrong -> all bit-exact), so the defect was never
+        # specific to span 32 -- it was every ``pre > 1`` group that is not a >32
+        # multiple of 32.  ⚠ Wrong on ``origin/main`` too, identically, so this fixes an
+        # inherited bug rather than branch damage.
+        #
+        # ⚠ ``pre <= 1`` is still declined ABOVE: with the reduce axis at the bottom of
+        # the linear index consecutive lanes DO belong to the reduction, so the plain
+        # warp reduce is correct there and cheaper (one shuffle instead of ``pre``).
+        # What remains declined here is only the genuinely unhandled geometry: a group
+        # wider than a warp that is not warp-aligned, which neither helper can fold.
+        if group_span > 32 and group_span % 32 != 0:
             return None
         num_threads = 1
         for size in logical_axis_sizes.values():
@@ -2056,7 +4484,14 @@ class BlockReductionStrategy(ReductionStrategy):
             debug("skip no lane expr", tuple(fake_input.size()), dim)
             return None
 
-        dtype = _dtype_str(fake_input.dtype)
+        # The accumulator dtype is chosen here and passed EXPLICITLY to every
+        # grouped-combine helper (and to the SMEM budget check below); it is never
+        # inferred from the identity.  A block reduction folds the tile values as
+        # they arrive from the graph, so the base is ``fake_input.dtype`` (float
+        # widening is already handled upstream by the graph's own casts) with the
+        # integer sum/prod widening applied on top so an int32 sum cannot wrap.
+        acc_dtype = widen_integer_acc_dtype(reduction_type, fake_input.dtype)
+        dtype = _dtype_str(acc_dtype)
         identity_expr = backend.cast_expr(constant_repr(default_value), dtype)
         num_threads = 1
         for size in logical_axis_sizes.values():
@@ -2169,10 +4604,10 @@ class BlockReductionStrategy(ReductionStrategy):
                 warps_per_group = group_span // 32
                 partials_size = group_count * pre * warps_per_group
                 results_size = group_count * pre
+                # The staging SMEM is sized from the ACCUMULATOR dtype, which is
+                # what the helper allocates -- not from the input dtype.
                 if (
-                    _cute_reduction_smem_bytes(
-                        partials_size + results_size, fake_input.dtype
-                    )
+                    _cute_reduction_smem_bytes(partials_size + results_size, acc_dtype)
                     > smem_budget_bytes
                 ):
                     return None
@@ -2180,7 +4615,7 @@ class BlockReductionStrategy(ReductionStrategy):
                     state=state,
                     input_name=input_name,
                     reduction_type=reduction_type,
-                    fake_input=fake_input,
+                    acc_dtype=acc_dtype,
                     identity_expr=identity_expr,
                     lane_var=lane_var,
                     lane_in_group_var=lane_in_group_var,
@@ -2190,9 +4625,7 @@ class BlockReductionStrategy(ReductionStrategy):
                     group_count=group_count,
                 )
             if (
-                _cute_reduction_smem_bytes(
-                    num_threads + group_count * pre, fake_input.dtype
-                )
+                _cute_reduction_smem_bytes(num_threads + group_count * pre, acc_dtype)
                 > smem_budget_bytes
             ):
                 return None
@@ -2200,7 +4633,7 @@ class BlockReductionStrategy(ReductionStrategy):
                 state=state,
                 input_name=input_name,
                 reduction_type=reduction_type,
-                fake_input=fake_input,
+                acc_dtype=acc_dtype,
                 identity_expr=identity_expr,
                 lane_var=lane_var,
                 lane_in_group_var=lane_in_group_var,
@@ -2214,7 +4647,7 @@ class BlockReductionStrategy(ReductionStrategy):
         return (
             "_cute_grouped_reduce_warp("
             f"{input_name}, {reduction_type!r}, {identity_expr}, {lane_expr}, "
-            f"pre={pre}, group_span={group_span})"
+            f"acc_dtype={dtype}, pre={pre}, group_span={group_span})"
         )
 
     def _strided_thread_reduction_expr_shared_two_stage(
@@ -2223,7 +4656,7 @@ class BlockReductionStrategy(ReductionStrategy):
         state: CodegenState,
         input_name: str,
         reduction_type: str,
-        fake_input: torch.Tensor,
+        acc_dtype: torch.dtype,
         identity_expr: str,
         lane_var: str,
         lane_in_group_var: str,
@@ -2237,6 +4670,7 @@ class BlockReductionStrategy(ReductionStrategy):
             f"{result_var} = _cute_grouped_reduce_shared_two_stage("
             f"{input_name}, {reduction_type!r}, {identity_expr}, "
             f"{lane_var}, {lane_in_group_var}, {lane_mod_pre_var}, "
+            f"acc_dtype={_dtype_str(acc_dtype)}, "
             f"pre={pre}, group_span={group_span}, group_count={group_count})"
         )
         return result_var
@@ -2247,7 +4681,7 @@ class BlockReductionStrategy(ReductionStrategy):
         state: CodegenState,
         input_name: str,
         reduction_type: str,
-        fake_input: torch.Tensor,
+        acc_dtype: torch.dtype,
         identity_expr: str,
         lane_var: str,
         lane_in_group_var: str,
@@ -2262,6 +4696,7 @@ class BlockReductionStrategy(ReductionStrategy):
             f"{result_var} = _cute_grouped_reduce_shared_tree("
             f"{input_name}, {reduction_type!r}, {identity_expr}, "
             f"{lane_var}, {lane_in_group_var}, {lane_mod_pre_var}, "
+            f"acc_dtype={_dtype_str(acc_dtype)}, "
             f"pre={pre}, group_span={group_span}, "
             f"num_threads={num_threads}, group_count={group_count})"
         )
@@ -2322,23 +4757,30 @@ class BlockReductionStrategy(ReductionStrategy):
                 # ``threads`` -> consume) lane structure.
                 from .tile_strategy import _lane_reduce_marker_expr
 
-                acc_dtype = get_computation_dtype(fake_input.dtype)
+                acc_dtype = reduction_acc_dtype(reduction_type, fake_input.dtype)
                 identity_expr = env.backend.cast_expr(
                     constant_repr(default), _dtype_str(acc_dtype)
                 )
                 group_params = self._lane_loop_cross_warp_group_params()
-                if group_params is not None:
-                    # The reduce group is spread across warps (the reduced tile
-                    # dim sits ABOVE a sibling tile axis on the linear thread
-                    # index). Carry the strided/grouped params so the post-pass
-                    # finalize uses the cross-warp two-stage shared reduction
-                    # instead of a (row-cross-contaminating) consecutive-lane
-                    # warp reduce.
-                    group_pre, group_span, group_count, group_lane_expr = group_params
-                    expr = _lane_reduce_marker_expr(
+                # The reduce group may be spread across warps (the reduced tile
+                # dim sits ABOVE a sibling tile axis on the linear thread index).
+                # Carry the strided/grouped params so the post-pass finalize uses
+                # the cross-warp two-stage shared reduction instead of a
+                # (row-cross-contaminating) consecutive-lane warp reduce.
+                if group_params is None:
+                    group_params = (1, 0, 1, "")
+                group_pre, group_span, group_count, group_lane_expr = group_params
+                if env.backend.is_indexed_reduction(reduction_type):
+                    # No single-accumulator marker exists for an indexed
+                    # reduction; lower it into a value marker plus a dependent
+                    # index marker (see ``_indexed_lane_reduce_expr``).
+                    expr = self._indexed_lane_reduce_expr(
+                        state,
                         input_name,
                         reduction_type,
-                        identity_expr,
+                        dim,
+                        fake_input,
+                        fake_output,
                         threads,
                         group_pre=group_pre,
                         group_span=group_span,
@@ -2346,9 +4788,56 @@ class BlockReductionStrategy(ReductionStrategy):
                         group_count=group_count,
                     )
                 else:
-                    expr = _lane_reduce_marker_expr(
-                        input_name, reduction_type, identity_expr, threads
+                    # ⭐⭐ G1 AT THE SECOND SITE.  Try the inline fold+combine here too; the
+                    # marker below stays as the fallback for every shape the mechanism
+                    # cannot express.
+                    #
+                    # ⚠⚠ THIS IS THE SITE ATTENTION USES, i.e. the hardest placement in the
+                    # set and the one that has broken twice.  ``acc = baddbmm(acc, p, v)`` is
+                    # a matmul over the lane-distributed axis with an accumulator carried
+                    # across the enclosing device loop, sitting next to elementwise-LOOKING
+                    # statements (``l_i = l_i * alpha + l_ij``) that are genuinely
+                    # lane-invariant.  MEASURED, both failure directions: hoisting the fold
+                    # out while leaving the recurrence inside a lane loop gives relerr 1.0
+                    # (the completed sum added 64 times), and raising unconditionally at a
+                    # decline site here broke ALL 8 attention examples, twice.
+                    #
+                    # ⇒ what makes it safe to even try is that the inline emitter DECLINES
+                    # on an unduplicatable producer (``_contains_unduplicatable_op``, which
+                    # names matmuls and cross-thread collectives), so attention's
+                    # matmul-carrying body routes to the marker path and its measured-correct
+                    # per-lane restore -- unchanged.  The decline is the mechanism, not a
+                    # missing feature.
+                    inline = self._emit_inline_lane_reduce(
+                        state,
+                        input_name,
+                        reduction_type,
+                        identity_expr,
+                        threads,
+                        acc_dtype_str=_dtype_str(acc_dtype),
+                        group_pre=group_pre,
+                        group_span=group_span,
+                        group_lane_expr=group_lane_expr,
+                        group_count=group_count,
+                        result_hint=(
+                            state.fx_node.name
+                            if state.fx_node is not None
+                            else reduction_type
+                        ),
                     )
+                    expr = inline
+                    if expr is None:
+                        expr = _lane_reduce_marker_expr(
+                            input_name,
+                            reduction_type,
+                            identity_expr,
+                            threads,
+                            acc_dtype_str=_dtype_str(acc_dtype),
+                            group_pre=group_pre,
+                            group_span=group_span,
+                            group_lane_expr=group_lane_expr,
+                            group_count=group_count,
+                        )
             else:
                 # A serial device loop (or no thread axis at all). A warp-level
                 # reduction would fold together unrelated tensor elements, so

@@ -170,6 +170,35 @@ def _dtype_from_default(node: ast.expr) -> str | None:
     return None
 
 
+def _dtype_from_consumer_cast(
+    container: list[ast.stmt], target_name: str
+) -> str | None:
+    """Dtype for an UNMASKED load, read off its first consumer's cast.
+
+    An unmasked ``(ptr).load()`` carries no dtype of its own, but the scalar
+    pipeline that consumes it always casts first
+    (``row_sum_acc = row_sum_acc + cutlass.Float32(load)``), so the wrapper
+    around the load's target names the value dtype.  Returns None when no
+    consumer casts it, leaving the caller to pick its own default.
+    """
+    for stmt in container:
+        for sub in ast.walk(stmt):
+            if (
+                isinstance(sub, ast.Call)
+                and isinstance(sub.func, ast.Attribute)
+                # A dtype CONSTRUCTOR is ``<Name>.<dtype>(x)``; a chained
+                # method call such as ``cutlass.Uint16(x).bitcast`` shares the
+                # text prefix but is not a dtype.
+                and isinstance(sub.func.value, ast.Name)
+                and sub.func.value.id == "cutlass"
+                and len(sub.args) == 1
+                and isinstance(sub.args[0], ast.Name)
+                and sub.args[0].id == target_name
+            ):
+                return ast.unparse(sub.func)
+    return None
+
+
 def _trip_count_for(
     start: ast.expr,
     end: ast.expr,
@@ -423,7 +452,14 @@ class _CuteFuseTwoPassLoads:
                 alias[second_var] = first_var
         return alias
 
-    def _dtype_for_load_kind(self, node: ast.AST, kind: str) -> str | None:
+    def _dtype_for_load_kind(
+        self,
+        node: ast.AST,
+        kind: str,
+        *,
+        container: list[ast.stmt] | None = None,
+        target_name: str | None = None,
+    ) -> str | None:
         """Extract the storage dtype string for the fragment that backs the
         cached load.  For masked scalar loads, derive from the ``else
         CONST`` branch.  For unmasked / vec loads, derive from the pointer
@@ -433,13 +469,25 @@ class _CuteFuseTwoPassLoads:
             assert isinstance(node, ast.IfExp)
             return _dtype_from_default(node.orelse)
         if kind == "unmasked":
-            # ``(ptr_expr).load()`` — the load expression itself doesn't
-            # carry a dtype, but we can look it up later via the assignment
-            # target's downstream usage.  For now, fall back to a Float32
-            # cache which the cute compiler will coerce.  (RMS-norm consume
-            # sweeps in fp16/bf16 take the masked path; this fallback is
-            # rarely exercised.)
-            return None
+            # ``(ptr_expr).load()`` — the load expression itself carries no
+            # dtype, so read it off the FIRST consumer's cast wrapper
+            # (``row_sum_acc = row_sum_acc + cutlass.Float32(load)`` ->
+            # Float32), falling back to Float32 as the docstring always
+            # promised.
+            #
+            # ⚠ This used to ``return None``, which skipped fusion entirely --
+            # contradicting its own comment ("fall back to a Float32 cache").
+            # Harmless while the comment's claim held ("this fallback is rarely
+            # exercised"), because a masked load carries its dtype in the ``else
+            # <identity>`` branch.  Then the tile strategies started PROVING
+            # vacuous bounds masks away (LEDGER E065): the very loads this pass
+            # exists to fuse became unmasked, and the pass went silently inert.
+            # ``test_two_pass_load_fusion_shape_b_wide_chunk`` pins it.
+            if container is not None and target_name is not None:
+                inferred = _dtype_from_consumer_cast(container, target_name)
+                if inferred is not None:
+                    return inferred
+            return "cutlass.Float32"
         if kind == "vec":
             # ``cute.arch.load(ptr, ir.VectorType.get([V], <elem>.mlir_type))``
             # Pull the element type expression out so the fragment is the
@@ -590,7 +638,12 @@ class _CuteFuseTwoPassLoads:
                     kind = _load_kind(s.value)
                     if kind is None:
                         continue
-                    dtype = self._dtype_for_load_kind(s.value, kind)
+                    dtype = self._dtype_for_load_kind(
+                        s.value,
+                        kind,
+                        container=first_container,
+                        target_name=s.targets[0].id,
+                    )
                     if dtype is None:
                         continue
                     v_width = _vec_width(s.value) if kind == "vec" else 1

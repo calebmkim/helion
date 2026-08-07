@@ -7,6 +7,7 @@ import gc
 import importlib
 import math
 import os
+import re
 import threading
 from typing import TYPE_CHECKING
 from typing import Any
@@ -300,6 +301,7 @@ def cute_shared_tree_reduce_max(inp, out):
         lane,
         lane_in_group,
         lane_mod_pre,
+        acc_dtype=cutlass.Float32,
         pre=3,
         group_span=48,
         num_threads=48,
@@ -324,6 +326,7 @@ def cute_shared_tree_reduce_min(inp, out):
         lane,
         lane_in_group,
         lane_mod_pre,
+        acc_dtype=cutlass.Float32,
         pre=3,
         group_span=48,
         num_threads=48,
@@ -348,6 +351,7 @@ def cute_shared_tree_reduce_prod(inp, out):
         lane,
         lane_in_group,
         lane_mod_pre,
+        acc_dtype=cutlass.Float32,
         pre=3,
         group_span=48,
         num_threads=48,
@@ -373,6 +377,7 @@ def cute_shared_tree_matmul_sum(lhs, rhs, out):
         lane,
         lane_in_group,
         row,
+        acc_dtype=cutlass.Float32,
         pre=3,
         group_span=48,
         num_threads=48,
@@ -4860,8 +4865,30 @@ class TestCuteBackend(TestCase):
         (x,) = args
         expected = (x.float() / x.float().sum(-1, keepdim=True)).to(x.dtype)
         torch.testing.assert_close(out, expected, rtol=1e-2, atol=1e-2)
-        self.assertIn("ir.VectorType.get([4], cutlass.Uint16.mlir_type)", code)
-        self.assertIn(".bitcast(cutlass.BFloat16)", code)
+        # ⚠ UPDATED (run 3 E047).  This used to assert
+        #     ir.VectorType.get([4], cutlass.Uint16.mlir_type)   +   .bitcast(cutlass.BFloat16)
+        # i.e. a raw ``cute.arch.load`` of a Uint16 vector, bitcast back to bf16.  That
+        # path was REPLACED by ``6d77f873b``, which routes both the load and the store
+        # through ONE frozen ``ChunkTVPlan`` -- one ``make_copy_atom``, ``partition_S`` for
+        # inputs / ``partition_D`` for outputs, ``cute.copy`` on both legs.
+        #
+        # It was replaced to fix a REAL CORRECTNESS BUG, which is why the assertion is
+        # updated rather than the compiler: loads and stores came from two unrelated code
+        # paths sharing one hand-rolled index, and the load site had 25 ``return None``
+        # exits that declined the vector load WITHOUT un-scaling the stride -- so the
+        # stride still assumed V while only 1 element was read, and V-1 of every V elements
+        # were never summed.  Signature: ``cross_entropy`` loss short by exactly ``ln(V)``
+        # (vw=2 gave +0.7007 vs ln2=0.6931; vw=4 gave +1.3882 vs ln4=1.3863).
+        #
+        # So the bf16 vec load is now a copy atom of ``4 * 16 = 64`` bits and there is no
+        # bitcast, because the atom is typed ``BFloat16`` and never becomes Uint16 at all.
+        # Asserting the OLD spelling would require restoring the two-path design.
+        # (``cute.copy`` through a 128-bit atom also works at V=8, where
+        # ``cute.arch.load(VectorType([8], Uint16))`` ICEs -- which is why this route was
+        # chosen.)  The ``assert_close`` above is unchanged and still gates the answer.
+        self.assertIn("cute.make_copy_atom", code)
+        self.assertIn("cutlass.BFloat16, num_bits_per_copy=64", code)
+        self.assertIn("cute.copy(_tv_atom", code)
 
     def test_two_pass_load_fusion_shape_b_wide_chunk(self) -> None:
         """Shape B: V=1 wide-chunk reduction emits a lane loop inside the
@@ -4883,9 +4910,40 @@ class TestCuteBackend(TestCase):
         self.assertIn("_fuse_cache_0", code)
 
     def test_two_pass_load_fusion_shape_c_vec_unroll(self) -> None:
-        """Shape C: V>1 unroll mode hoists a Uint16 vec load above the
-        constexpr V-loop; the fuser recognises the vec hoist and caches
-        cache_size * V scalar slots across the two sweeps."""
+        """Shape C: V>1 caches ``cache_size * V`` scalar slots across both sweeps.
+
+        ⚠ UPDATED (run 3 E047).  The docstring used to say "hoists a Uint16 vec load
+        above the constexpr V-loop"; since ``6d77f873b`` the vec load is a ``cute.copy``
+        through a typed copy atom (see the note in
+        ``test_bf16_unroll_mode_emits_uint16_vec_load_and_bitcast`` for why that path was
+        replaced -- it fixed an ``ln(V)`` correctness bug), and the caching is done by
+        ``fuse_tv_copy_sweeps`` rather than ``fuse_two_pass_loads``, so the fragment is
+        spelled ``_tv_sweep_cache_0``.  ``_fuse_cache_`` is still emitted by
+        ``fuse_two_pass_loads`` on the paths that pass still owns; it simply is not the
+        pass that fires here.
+
+        ⚠ ``cute_row_residency=["registers"]`` IS REQUIRED, AND NAMING IT IS THE POINT.
+        This test pins the REGISTER sweep cache, which is only one of three possible row
+        residencies -- and SMEM staging *replaces* it rather than joining it.  The cell
+        left its residency unnamed, so it inherited the ladder
+        (``tv_layout.reload_from_for(n) = "smem" if n >= 4096``), and once the bogus
+        ``plan.lane_extent != 1`` staging gate was removed the ladder started being
+        honoured here: MEASURED, the emission went from ``_tv_sweep_cache_0`` x6 /
+        ``_tv_spart`` x0 to ``_tv_sweep_cache_0`` x0 / ``_tv_spart`` x4, while the answer
+        stayed EXACT (maxabs 0.0 vs the reference).  So the test was reading a mechanism
+        it never asked for.  Naming the residency makes it test what its name and its
+        assertions say; an explicit value survives ``normalize()`` (only an ABSENT slot is
+        refilled from the ladder), so this is a request, not a workaround.
+
+        ⭐ TASK 1 MADE THIS REQUEST SAYABLE.  It used to be spelled
+        ``cute_reduction_reload=[None]`` -- and that is exactly the defect FIXLIST item 1
+        names: ``None`` did not mean "registers", it meant "registers OR gmem depending on
+        the ``cute_tv_sweep_cache`` budget", so this test was asking for one of two
+        kernels and relying on the budget's default to pick the one it asserts. The
+        assertions below (``make_rmem_tensor`` present, ``_tv_spart`` absent) only hold on
+        the ``registers`` arm, so the config now names it directly. Strictly stronger, and
+        VERIFIED byte-identical to the old spelling for this cell.
+        """
         args = (torch.randn(2, 16384, device=DEVICE, dtype=torch.bfloat16) + 2.0,)
         code, out = code_and_output(
             cute_normalize_by_sum_fp32_cast,
@@ -4893,12 +4951,120 @@ class TestCuteBackend(TestCase):
             block_sizes=[1],
             reduction_loop=8192,
             cute_vector_widths=[4],
+            cute_row_residency=["registers"],
         )
         (x,) = args
         expected = (x.float() / x.float().sum(-1, keepdim=True)).to(x.dtype)
         torch.testing.assert_close(out, expected, rtol=1e-2, atol=1e-2)
         self.assertIn("cute.make_rmem_tensor", code)
-        self.assertIn("_fuse_cache_0", code)
+        # ⭐⭐ THE PROPERTY, NOT THE PRODUCER'S VARIABLE NAME.
+        #
+        # This used to assert ``_tv_sweep_cache_0`` -- the name ``fuse_tv_copy_sweeps`` (the AST
+        # post-pass) gives its cache.  The register residency is now decided and emitted AT
+        # LOWERING (``memory_ops._cute_tv_partition_hoist``'s rmem branch), which names its
+        # cache ``_tv_rmem_cache_N``, so the old grep failed on a kernel that is *more* correct
+        # than before: same mechanism, one fewer pass, and the AST pass now fuses nothing.
+        #
+        # ⇒ asserting the PROPERTY instead: exactly ONE gmem read of the row (the first sweep,
+        # which fills the cache) and the second sweep served from registers.  That cannot be
+        # satisfied by either producer's naming accident, and it is what the residency MEANS.
+        # ⚠ A name-shaped assertion here is what made this test fail for a non-defect; do not
+        # put one back.
+        self.assertEqual(
+            code.count("cute.copy(_tv_atom, _tv_part_0"),
+            1,
+            "the row must be read from gmem exactly ONCE (the cache-filling sweep)",
+        )
+        self.assertIn("_tv_rmem_cache_0[", code)
+        # The register cache is the ONLY residency in play, so a future default change cannot
+        # silently substitute SMEM staging and leave the asserts above passing on a different
+        # mechanism.
+        self.assertNotIn("_tv_spart", code)
+        self.assertIn("'row residency: registers'", code)
+
+    def test_a_ladder_filled_residency_stays_non_explicit_across_a_config_copy(
+        self,
+    ) -> None:
+        """⭐ A residency the LADDER supplied must never be read back as a USER request.
+
+        ⛔ THE DEFECT.  ``cute_row_residency`` is filled by a per-shape ladder when the
+        caller names nothing.  ``ConfigSpec`` then records provenance so a later
+        honour-or-error check can tell "the user asked for this and we could not give it"
+        (raise) from "we suggested this and it did not work out" (decline silently).  The
+        explicit half of that record is keyed on ``id()`` of the config dict, which is
+        correct only if the object that reaches codegen is the object that was normalized.
+
+        ``BoundKernel.compile_config`` breaks that: it calls ``_normalized_config_copy``,
+        which does ``Config(**normalized.config)`` and normalizes AGAIN.  By the second
+        call the ladder has already written the key, so it appears in that call's
+        ``provided_keys`` snapshot and the COPY is recorded as an explicit user request.
+
+        MEASURED before the fix, on a config naming no residency at all:
+
+            after ONE normalize                 is_explicit = False   ✅
+            after a COPY + a SECOND normalize   is_explicit = True    ⛔
+
+        and downstream of that, ANY rule that refuses an unhonourable request fails
+        kernels over a default nobody wrote -- measured, 67 cute tests including every
+        flash-attention one, which is the third time an over-eager refusal at a decline
+        site has broken the attention examples.
+
+        THE FIX is to record the ladder fill in the CONTENT-keyed ``synthesised`` set,
+        which exists precisely so it survives a copy and which the reader already checks
+        first.  This test pins the property directly, at the ``ConfigSpec`` level, because
+        the end-to-end symptom (an attention test raising) is several layers away from the
+        cause and would not say what broke.
+
+        ⚠ ASSERTED AS AN INVARIANT OVER *REPEATED NORMALIZE*, not against the specific
+        call sequence ``compile_config`` happens to use today.  The sequence is not this
+        module's contract and may change again; "a ladder fill never becomes explicit,
+        however many times you normalize a copy" is.
+        """
+        x = torch.randn(64, 2048, device=DEVICE, dtype=torch.bfloat16)
+        bound = cute_row_sum.bind((x,))
+        spec = bound.env.config_spec
+
+        cfg = helion.Config(block_sizes=[1], num_threads=[1])
+        self.assertNotIn(
+            "cute_row_residency",
+            cfg.config,
+            "this test needs a config the caller did NOT write the key into",
+        )
+        spec.normalize(cfg)
+        self.assertIn(
+            "cute_row_residency",
+            cfg.config,
+            "the ladder must have FILLED the key, or there is no ladder fill to test "
+            "and every assertion below is vacuous",
+        )
+        self.assertFalse(
+            spec.cute_row_residency_is_explicit(cfg.config),
+            "a ladder fill is not a user request",
+        )
+
+        # Three copy+normalize rounds, which is what compile_config does at least once.
+        current = cfg
+        for round_no in range(1, 4):
+            current = helion.Config(**current.config)
+            spec.normalize(current)
+            self.assertFalse(
+                spec.cute_row_residency_is_explicit(current.config),
+                f"after copy+normalize round {round_no} a LADDER-FILLED "
+                f"cute_row_residency reads as an explicit user request; any "
+                f"honour-or-error rule downstream will now fail kernels over a default",
+            )
+
+        # ⛔ THE POSITIVE CONTROL.  Without it this passes on a tree where nothing is ever
+        # explicit -- which would silently disable the honour-or-error contract entirely.
+        named = helion.Config(
+            block_sizes=[1], num_threads=[1], cute_row_residency=["gmem"]
+        )
+        spec.normalize(named)
+        self.assertTrue(
+            spec.cute_row_residency_is_explicit(named.config),
+            "a config the caller DID write cute_row_residency into must read as "
+            "explicit, or the assertions above are vacuous",
+        )
 
     def test_strided_threaded_block_reduction(self) -> None:
         args = (torch.randn(4, 16, device=DEVICE, dtype=torch.float32),)
@@ -4920,6 +5086,81 @@ class TestCuteBackend(TestCase):
             with self.subTest(kernel=kernel.__name__):
                 _code, out = code_and_output(kernel, args, block_sizes=[2, 8])
                 torch.testing.assert_close(out, expected, rtol=1e-4, atol=1e-4)
+
+    def test_persistent_group_count_tracks_the_launch_not_the_hardware_max(
+        self,
+    ) -> None:
+        """⭐ The MERGED group count (FIXLIST item 5): one number for both consumers.
+
+        ``PersistentReductionStrategy._cute_cross_warp_reduction_expr``'s
+        ``reduction_axis == 0`` branch used to compute TWO group counts:
+
+            group_count         = ceil(MAX_THREADS_PER_BLOCK / group_span)   # SMEM capacity
+            cluster_group_count = max(1, num_threads // group_span)          # expect_tx promise
+
+        and conflating them was a bug in either direction -- over-promising HANGS the cluster
+        mbarrier (MEASURED at N=1024 cluster_n=2: 16 B promised vs 8 B sent, 100% GPU until
+        killed), while under-counting the capacity races the redundant thread rows a sibling
+        control-flow branch can introduce.
+
+        They are now ONE number derived from the LAUNCH geometry --
+        ``max(recorded, planned)`` per axis, where ``recorded`` is
+        ``GenerateAST.max_thread_block_dims`` (which folds in the synthetic ``hl.arange``
+        axes that ``thread_block_dims()`` cannot see) and ``planned`` is
+        ``thread_block_dims()`` (which covers a strategy that has not entered its loop yet).
+        Neither alone is an upper bound; the elementwise max is the tightest available.
+
+        ⚠⚠ THIS TEST EXISTS BECAUSE THE 40-CELL CODEGEN GATE CANNOT SEE THIS CHANGE.
+        MEASURED: instrumenting the method and emitting all 40 frozen cells yields **ZERO**
+        entries -- no frozen cell reaches this site -- so "40/40 byte-identical" is true and
+        says nothing about it.  Silence is not evidence; this is the instrument that speaks.
+
+        The assertion is the OBSERVABLE consequence: ``group_count`` reaches the emitted
+        helper call as a literal, and for a persistent row reduction whose CTA is
+        ``group_span`` wide the launch-derived answer is ``1`` while the hardware-max answer
+        would be ``1024 // group_span``.  MEASURED across N (all numerically correct):
+
+            N=128  span=128  launch=128  -> merged 1, old capacity 8   (8x smaller)
+            N=256  span=256  launch=256  -> merged 1, old capacity 4
+            N=512  span=512  launch=512  -> merged 1, old capacity 2
+            N=1024 span=1024 launch=1024 -> merged 1, old capacity 1   (they agree only here)
+
+        N=1024 is the control: merged and old coincide exactly when the launch IS the
+        hardware maximum, which is the only case the old capacity was right about.
+        """
+
+        @helion.kernel(static_shapes=True, autotune_effort="none")
+        def rowmax(x: torch.Tensor) -> torch.Tensor:
+            m, n = x.shape
+            out = torch.empty([m], dtype=x.dtype, device=x.device)
+            for tile_m in hl.tile(m):
+                out[tile_m] = torch.amax(x[tile_m, :], dim=-1)
+            return out
+
+        for n, old_capacity in ((128, 8), (256, 4), (512, 2), (1024, 1)):
+            with self.subTest(n=n, old_capacity=old_capacity):
+                x = torch.rand([256, n], device=DEVICE, dtype=torch.float32) + 0.5
+                code, out = code_and_output(
+                    rowmax,
+                    (x,),
+                    block_sizes=[1],
+                    reduction_loops=[None],
+                    num_threads=[1],
+                )
+                torch.testing.assert_close(
+                    out, torch.amax(x, dim=-1), rtol=1e-4, atol=1e-4
+                )
+                counts = {int(m) for m in re.findall(r"group_count=(\d+)", code)}
+                self.assertEqual(
+                    counts,
+                    {1},
+                    f"expected the launch-derived group_count (1) at N={n}, got {counts}",
+                )
+                # ⭐ FAIL-CAPABILITY: at N < 1024 the hardware-max answer DIFFERS, so this
+                # arm would fail on the pre-merge code.  At N=1024 the two coincide, which
+                # is why that subtest is the control and not the evidence.
+                if old_capacity != 1:
+                    self.assertNotIn(f"group_count={old_capacity}", code)
 
     def test_direct_shared_tree_reduce_helpers_non_sum(self) -> None:
         x = torch.rand(3, 16, device=DEVICE, dtype=torch.float32) + 0.5
