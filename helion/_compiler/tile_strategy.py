@@ -4588,6 +4588,15 @@ class TileStrategy:
         """
         return self.mask_var(block_idx)
 
+    def ragged_peel_plan(self, block_idx: int) -> tuple[int, int, int, str] | None:
+        """``(numel, bulk_end, block_size, mask_var)`` if this axis's TAIL can be peeled.
+
+        ``None`` -- i.e. "decline" -- for every strategy that does not override this, which
+        is every strategy other than ``NDTileStrategy``.  See that override for the
+        arithmetic; see ``cute/peel_ragged_tile.py`` for the consumer.
+        """
+        return None
+
     def block_size_var(self, block_idx: int) -> str | None:
         return self.fn.block_size_var_cache.get((block_idx,))
 
@@ -6150,6 +6159,50 @@ class NDTileStrategy(_BaseNDTileStrategy):
         if not self._read_index_always_in_range(block_idx):
             return self.mask_vars[block_idx]
         return None
+
+    def ragged_peel_plan(self, block_idx: int) -> tuple[int, int, int, str] | None:
+        """``(numel, bulk_end, block_size, mask_var)`` if the axis's TAIL is peelable.
+
+        ⭐ WHAT THIS ANSWERS, and why it is a *different* question from
+        ``load_mask_var``.  ``_read_index_always_in_range`` proves the read mask vacuous
+        over the WHOLE loop, and needs BOTH ``numel % B == 0`` and ``SPAN == B``.  When only
+        the second holds, the mask is vacuous over the *prefix* ``[0, floor(numel/B)*B)``
+        and non-vacuous only in the final, ragged iteration -- so the loop can be split into
+        a mask-free bulk and a masked one-iteration tail.
+
+        ``bulk_end = floor(numel / B) * B``.  For every ``tile_offset`` the bulk loop
+        visits, ``tile_offset + B <= bulk_end <= numel``, and ``SPAN == B`` bounds a
+        thread's displacement by ``B - 1``, so ``index <= tile_offset + B - 1 < numel``.
+        That is the same arithmetic as ``_read_index_always_in_range``, with
+        ``max(tile_offset) == bulk_end - B`` supplied by the split instead of by
+        divisibility.
+
+        Declines (returns ``None``) whenever a split would be pointless or unsound:
+          * ``mask_var`` is already absent -- nothing to elide;
+          * ``SPAN != B`` -- the surplus-thread problem, which no bound rewrite fixes;
+          * no static extent (data-dependent / jagged) -- ``_static_read_numel`` screens it;
+          * ``numel % B == 0`` -- ``load_mask_var`` already elides; a split would be dead
+            code and would make the emitted source differ for no reason;
+          * ``bulk_end == 0`` (``B > numel``) -- the *only* iteration is the ragged one, so
+            there is no bulk to peel and the mask must stay.
+        """
+        mask_var = self.mask_vars.get(block_idx)
+        if mask_var is None:
+            return None
+        numel = self._static_read_numel(block_idx)
+        if numel is None:
+            return None
+        block_size = dict(zip(self.block_ids, self.block_size, strict=True))[block_idx]
+        if not isinstance(block_size, int) or block_size <= 0:
+            return None
+        if numel % block_size == 0:
+            return None
+        if not self._read_index_span_covers_block(block_idx, block_size):
+            return None
+        bulk_end = (numel // block_size) * block_size
+        if bulk_end <= 0:
+            return None
+        return (numel, bulk_end, block_size, mask_var)
 
     def _lane_elements_per_thread(self, block_idx: int, block_size: int) -> int | None:
         """How many consecutive elements of this axis does ONE thread cover?
@@ -8199,6 +8252,28 @@ class CuteNDTileStrategy(NDTileStrategy):
             )
             if mask_statement is not None:
                 index_setup.append(mask_statement)
+                # ⭐ RAGGED-TAIL PEEL.  Record that this axis's *bounds* mask is vacuous on
+                # every iteration but the last, so ``cute/peel_ragged_tile.py`` can split
+                # the loop after all the other AST passes have run.  Registering the
+                # ``offset_var`` here rather than pattern-matching a ``for`` later means
+                # the pass never has to guess which loop belongs to which axis.  The plan
+                # is *resolved* (not merely recorded) now, because ``block_size`` and the
+                # thread geometry are both final at this point; ``ragged_peel_plan``
+                # declines for every shape it cannot prove.
+                self.fn.register_ragged_peel(offset_var, self, block_idx)
+            # ⭐ AND RECORD THAT THIS IS A DEVICE LOOP, for ``cute/defer_online_merge.py``
+            # (task 3).  Registered here, beside the ragged peel, for the same reason and
+            # by the same argument: the pass must not have to GUESS which ``for`` is the
+            # recurrence's outer loop.  The inner lane loop matches every structural
+            # predicate the outer one does, and deferring at it is relerr 5.18 -- so the
+            # loop that owns an offset var says so, and the lane loop cannot be chosen.
+            #
+            # ⚠ Unconditional and outside the ragged-peel ``if``: this records only "a
+            # strategy emitted a device loop with this offset var", which is true whether or
+            # not that loop is peelable or carries a recurrence.  The recurrence's own
+            # algebra is still checked by the pass from the emitted body, because the
+            # cross-lane reduces it matches on are created by codegen.
+            self.fn.register_online_defer(offset_var)
             body = [for_node]
         assert for_node is not None
         # Run index/mask setup once per loop-offset and per-lane before user body.

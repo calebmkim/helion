@@ -47,10 +47,13 @@ from .variable_origin import TileBeginOrigin
 
 if TYPE_CHECKING:
     from ..runtime.config import Config
+    from .cute.defer_online_merge import OnlineDeferPlan
+    from .cute.peel_ragged_tile import RaggedPeelPlan
     from .device_ir import HelperFunctionGraphInfo
     from .generate_ast import GenerateAST
     from .indexing_strategy import IndexingStrategy
     from .program_id import ProgramIDs
+    from .tile_strategy import TileStrategy
     from helion._compiler.pallas.ordered_carry import CarryBoundaryTile
     from helion._compiler.pallas.ordered_carry import CarryScratchKey
     from helion._compiler.pallas.plan_tiling import DimensionTiling
@@ -297,6 +300,23 @@ class DeviceFunction:
         # (instead of building a per-lane V-fold, which would double-count the
         # already-accumulated running sum).  See ``_emit_cute_matmul``.
         self.cute_matmul_running_sums: set[str] = set()
+        # Reduction loops whose per-element bounds mask is vacuous in every iteration
+        # but the last, keyed by induction variable.  Populated by the tile strategy at
+        # ``codegen_device_loop`` (it owns the proof) and consumed by
+        # ``cute/peel_ragged_tile.py`` after the other AST passes have run.
+        self.cute_ragged_peels: dict[str, RaggedPeelPlan] = {}
+        # ⭐ DEVICE LOOPS THAT MAY CARRY AN ONLINE (max, sum) RECURRENCE, keyed by
+        # induction variable.  Registered by the tile strategy at ``codegen_device_loop``
+        # -- the same site and the same shape as ``cute_ragged_peels`` above -- and read by
+        # ``cute/defer_online_merge.py``, which uses it to LOOK UP which loop is the
+        # recurrence's outer one instead of inferring it from sibling position.
+        #
+        # ⛔ That inference is the pass's worst measured bug: the emitted nest is
+        # ``for tile_offset in range(...): for lane in range(...)``, the inner lane loop
+        # satisfies every other structural predicate, and merging at ITS exit gives relerr
+        # 5.18.  Only a loop whose own emitter registered it can be deferred, so the wrong
+        # loop is not merely rejected -- it is unrepresentable.
+        self.cute_online_defer_plans: dict[str, OnlineDeferPlan] = {}
         # Arg names referenced only by fusion placeholder strings
         # (<STORE_OUTPUT_*>, <LOAD_INPUT_*>), not by the AST body.
         # DCE would incorrectly strip them without this exemption.
@@ -660,6 +680,60 @@ class DeviceFunction:
         if dce:
             self.dce_vars.append(name)
         return name
+
+    def register_ragged_peel(
+        self, offset_var: str, strategy: TileStrategy, block_idx: int
+    ) -> None:
+        """Record that ``offset_var``'s loop has a peelable ragged tail, if it has one.
+
+        The *strategy* owns the proof (``TileStrategy.ragged_peel_plan``); this only
+        carries the answer forward to ``cute/peel_ragged_tile.py``.  Declining strategies
+        return ``None`` and nothing is recorded, so this is a no-op on every backend and
+        every shape that cannot be proved.
+        """
+        if CompileEnvironment.current().backend_name != "cute":
+            return
+        plan = strategy.ragged_peel_plan(block_idx)
+        if plan is None:
+            return
+        from .cute.peel_ragged_tile import RaggedPeelPlan
+
+        numel, bulk_end, block_size, mask_var = plan
+        self.cute_ragged_peels[offset_var] = RaggedPeelPlan(
+            offset_var=offset_var,
+            mask_var=mask_var,
+            bulk_end=bulk_end,
+            block_size=block_size,
+            numel=numel,
+        )
+
+    def register_online_defer(self, offset_var: str) -> None:
+        """Record that ``offset_var`` names a DEVICE LOOP, so the online-merge deferral
+        may consider it.
+
+        ⭐ WHAT THIS DOES AND DOES NOT CLAIM.  It does NOT claim the loop carries an online
+        recurrence -- the recurrence's algebra (two cross-lane reduces, max then sum, the
+        one-way dependency asymmetry that makes the max fold independent) is checked by
+        ``defer_online_merge`` itself, from the emitted body, because those reduce calls are
+        CREATED by codegen and do not exist before lowering.
+
+        What it claims is the one fact the pass cannot recover soundly: **this offset
+        variable belongs to a device loop that a strategy emitted.**  That is enough to make
+        the wrong loop unrepresentable, because the inner LANE loop -- which matches every
+        structural predicate the outer one does, and whose deferral is relerr 5.18 -- is not
+        a device loop and never gets registered.
+
+        Same shape and same site as :meth:`register_ragged_peel`: producer records where the
+        fact is still explicit, consumer looks it up.  Cheap and unconditional by design;
+        the plan is a key, not a proof of deferrability.
+        """
+        if CompileEnvironment.current().backend_name != "cute":
+            return
+        from .cute.defer_online_merge import OnlineDeferPlan
+
+        self.cute_online_defer_plans.setdefault(
+            offset_var, OnlineDeferPlan(offset_var=offset_var)
+        )
 
     def tensor_arg(
         self, fake_value: torch.Tensor, prefer_name: str | None = None
@@ -1113,6 +1187,49 @@ class DeviceFunction:
             kernel_body = hoist_warp_reduce_from_vloop(
                 kernel_body, running_sum_accumulators=self.cute_matmul_running_sums
             )
+            # Defer the CROSS-LANE combine of an online (max, sum-of-exp)
+            # recurrence out of the reduction loop, leaving one merge after
+            # it.  ``hoist_warp_reduce`` above collapses V per-V-lane reduces
+            # into one per tile iteration; this removes the remaining
+            # per-iteration reduce from the loop-carried critical path, so a
+            # row costs ONE cross-lane reduce instead of ``2 * N/(nt*V)``.
+            # MEASURED on ``cross_entropy_online`` vs quack: 32768x8192
+            # 0.702 -> 0.836, 32768x4096 0.863 -> 0.977 (LEDGER E054).
+            #
+            # MUST run after the hoist: the deferral replaces each reduce with
+            # its per-thread accumulator, and that accumulator only exists
+            # because the hoist built it.
+            #
+            # ``rename_groups`` is NOT optional here.  This runs before
+            # ``ast_rename``, so the recurrence still writes its carried max
+            # through an alias (``v_6 = max(m_run, ...)`` … ``m_run = v_6``)
+            # and the two names must be treated as one to see the carry at
+            # all.  Same reason ``hoist_loop_invariant_recips`` below takes it.
+            from .cute.defer_online_merge import defer_online_merge
+
+            kernel_body = defer_online_merge(
+                kernel_body,
+                rename_groups={k: v[0] for k, v in self._variable_renames.items()},
+                # ``cute_online_defer`` (``CuteOnlineDeferSpec``).  The DISABLED
+                # set, so an empty one is today's behaviour -- see the pass's
+                # docstring for why that polarity matters.
+                disabled_offsets=frozenset(
+                    offset_var
+                    for offset_var, enabled in self._cute_pass_knob_by_offset_var(
+                        "cute_online_defer"
+                    ).items()
+                    if enabled is False
+                ),
+                # ⭐ THE PLAN CHANNEL (task 3): which loops their EMITTER registered as
+                # device loops.  The pass looks the candidate up instead of inferring the
+                # recurrence's outer loop from sibling position -- the inference that gave
+                # relerr 5.18 by choosing the inner lane loop, which satisfies every other
+                # structural predicate.  ⚠ Passed even when empty, which is the point: an
+                # empty map from a real compile means "no device loop was registered", so
+                # nothing may be deferred.  (The pass's ``None`` default is for its
+                # hand-written-body unit tests, which have no producer at all.)
+                plans=self.cute_online_defer_plans,
+            )
             # Merge adjacent constexpr V-loops that share an identical
             # statement prefix.  Caches the last common per-V-lane value
             # into a register fragment so V-loop 2's bitcast/cast chain
@@ -1164,6 +1281,24 @@ class DeviceFunction:
             # and incorrectly skip pipelining.
             kernel_body = pipeline_inner_loads(
                 kernel_body, constexpr_values, rename_groups=rename_groups
+            )
+            # Split a reduction loop whose per-element bounds mask is vacuous in every
+            # iteration but the last into a MASK-FREE BULK plus a masked one-iteration
+            # ragged TAIL.  ``load_mask_var``'s elision is all-or-nothing over the whole
+            # loop and needs ``numel % B == 0``; at an extent like ``N = 12000`` no legal
+            # power-of-two tile divides it, so the mask survived on every element even
+            # though it is only ever non-vacuous in the final iteration.  MEASURED on
+            # ``cross_entropy_online`` 32768x12000: 0.832 -> 0.9997 at the frozen
+            # geometry, 1.106 at ``bi=1024/nt=64`` (LEDGER E027).
+            #
+            # MUST run LAST: it copies the loop body, so it has to see the body every
+            # earlier pass produced -- in particular ``pipeline_inner_loads``, whose
+            # in-body prefetch is expressed relative to the induction variable and
+            # therefore keeps working across the split (see that file's (P5)).
+            from .cute.peel_ragged_tile import peel_ragged_tiles
+
+            kernel_body = peel_ragged_tiles(
+                kernel_body, list(self.cute_ragged_peels.values())
             )
             # ⭐ THE ONE canonical row-residency statement, emitted LAST so it is a
             # function of the FINAL body.  It must come after ``fuse_tv_copy_sweeps``

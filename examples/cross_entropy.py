@@ -93,6 +93,83 @@ def cross_entropy(
 
 
 # %%
+# Online (single-pass) Cross Entropy Kernel
+# -----------------------------------------
+
+
+# %%
+@helion.kernel(ignore_warnings=[helion.exc.TensorOperationInWrapper])
+def cross_entropy_online(
+    logits: torch.Tensor,  # [N, V] input logits
+    labels: torch.Tensor,  # [N] target labels
+) -> torch.Tensor:
+    """Cross entropy via the ONLINE (single-pass) log-sum-exp recurrence.
+
+    ``cross_entropy`` above computes ``log(sum(exp(x - max(x))))`` with two sweeps over
+    each row: one to find the row max, a second to accumulate the shifted
+    exponentials.  The second sweep cannot begin until the first has finished, because
+    the summand depends on the final max.
+
+    This kernel fuses them into ONE sweep by carrying both accumulators and rescaling
+    the running sum whenever the running max moves::
+
+        m_new = max(m_old, x)
+        s_new = s_old * exp(m_old - m_new) + exp(x - m_new)
+
+    which is the standard online-softmax trick (and what flash-attention's softmax
+    does).  It is algebraically identical to the two-pass form and equally stable --
+    every exponent is <= 0 by construction -- at the cost of one extra ``exp`` per
+    element for the rescale.
+
+    Whether that trade wins is a property of the backend, not of the algorithm: on a
+    machine where the special-function pipe is the limiter the extra ``exp`` can cost
+    more than the saved memory pass.  This kernel exists so that trade can be measured
+    rather than assumed.
+
+    Note this is expressed with an inner ``hl.tile`` over the reduction axis, because
+    the recurrence is loop-carried and needs an explicit sequential loop -- unlike the
+    two-pass version, whose ``torch.amax`` / ``torch.sum`` are whole-axis reductions.
+
+    Args:
+        logits: Input logits, shape ``[N, V]``.
+        labels: Target labels, shape ``[N]``.
+
+    Returns:
+        Scalar mean cross entropy loss.
+    """
+    n, v = logits.shape
+    losses = torch.zeros([n], dtype=torch.float32, device=logits.device)
+    logits_flat = logits.view(-1)
+
+    for tile_n in hl.tile(n):
+        base_indices_tile = tile_n.index * v
+        flat_indices = base_indices_tile + labels[tile_n]
+        logits_at_target = hl.load(logits_flat, [flat_indices]).to(torch.float32)
+
+        # Loop-carried (running max, running sum-of-exp) per row of the tile.
+        m_run = hl.full([tile_n], float("-inf"), dtype=torch.float32)
+        s_run = hl.zeros([tile_n], dtype=torch.float32)
+
+        for tile_v in hl.tile(v):
+            chunk = logits[tile_n, tile_v].to(torch.float32)
+            # Max over this chunk, combined with the running max.
+            m_chunk = torch.amax(chunk, dim=-1)
+            m_new = torch.maximum(m_run, m_chunk)
+            # Rescale the old sum onto the new max, then add this chunk's contribution.
+            # exp(m_run - m_new) is <= 1 and is exactly 1 on the common path where the
+            # max did not move, so this is stable for every input magnitude.
+            s_run = s_run * torch.exp(m_run - m_new) + torch.sum(
+                torch.exp(chunk - m_new[:, None]), dim=-1
+            )
+            m_run = m_new
+
+        log_sum_exp = m_run + torch.log(s_run)
+        losses[tile_n] = log_sum_exp - logits_at_target
+
+    return losses.mean()
+
+
+# %%
 # Main Function
 # -------------
 
