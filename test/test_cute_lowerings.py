@@ -17854,7 +17854,7 @@ class TestCuteTcgen05AuxPipelineCycle2a(unittest.TestCase):
             instead of a deep ``ptxas: uses too much shared
             data`` raise; and
           - the autotune search-time fixup
-            (``_fix_tcgen05_ab_stages_three_search_config``)
+            (``_fix_tcgen05_with_scheduler_search_config``)
             can demote affected ``ab=3`` candidates rather
             than aborting tuning at ptxas.
 
