@@ -3112,7 +3112,7 @@ class TestCuteTcgen05ClusterM2Heuristic(TestCase):
         ):
             bound = cute_matmul_mma.bind(args)
         spec = bound.config_spec
-        self.assertTrue(spec._tcgen05_full_tile_direct_entry_seed_eligible())
+        self.assertTrue(spec._tcgen05_full_tile_direct_entry_seed_emittable())
         seed_config = spec._tcgen05_full_tile_direct_entry_seed_config()
         self.assertIsNotNone(seed_config)
         seed = seed_config.config
@@ -3301,7 +3301,7 @@ class TestCuteTcgen05ClusterM2Heuristic(TestCase):
         # With no recorded SMEM budget the generalized FFI seed is ineligible
         # (ab=3 cannot fit) and the for_search ab cap stays at 2.
         self.assertFalse(
-            no_ab3_budget_bound.config_spec._tcgen05_full_tile_direct_entry_seed_eligible()
+            no_ab3_budget_bound.config_spec._tcgen05_full_tile_direct_entry_seed_emittable()
         )
         no_budget_ab_stages_fragment = (
             no_ab3_budget_bound.config_spec._tcgen05_optional_fragments(
@@ -3325,7 +3325,7 @@ class TestCuteTcgen05ClusterM2Heuristic(TestCase):
         ):
             fp16_bound = cute_matmul_mma.bind(fp16_args)
         self.assertTrue(
-            fp16_bound.config_spec._tcgen05_full_tile_direct_entry_seed_eligible()
+            fp16_bound.config_spec._tcgen05_full_tile_direct_entry_seed_emittable()
         )
         self.assertIsNotNone(
             fp16_bound.config_spec._tcgen05_full_tile_direct_entry_seed_config()
@@ -3336,7 +3336,7 @@ class TestCuteTcgen05ClusterM2Heuristic(TestCase):
         self,
     ) -> None:
         # The structural shape guard for the generalized FFI seed lives entirely
-        # in ``_tcgen05_full_tile_direct_entry_seed_eligible`` (the per-shape
+        # in ``_tcgen05_full_tile_direct_entry_seed_emittable`` (the per-shape
         # TargetN codegen gate and the runtime direct-entry validator were
         # removed). A shape whose N is not a multiple of the 256 CtaGroup.TWO
         # CTA tile is not a full-tile matmul, so the seed must be ineligible and
@@ -3365,7 +3365,7 @@ class TestCuteTcgen05ClusterM2Heuristic(TestCase):
         ):
             invalid_bound = cute_matmul_mma.bind(invalid_args)
         spec = invalid_bound.config_spec
-        self.assertFalse(spec._tcgen05_full_tile_direct_entry_seed_eligible())
+        self.assertFalse(spec._tcgen05_full_tile_direct_entry_seed_emittable())
         self.assertIsNone(spec._tcgen05_full_tile_direct_entry_seed_config())
 
     @onlyBackends(["cute"])
