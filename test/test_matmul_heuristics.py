@@ -12,13 +12,20 @@ from helion._compiler.autotuner_heuristics.triton import (
     TritonB200FormulaMatmulHeuristic,
 )
 from helion._compiler.autotuner_heuristics.triton import TritonB200MatmulHeuristic
+from helion._compiler.autotuner_heuristics.triton import (
+    TritonB200MultiMatmulHeuristic as _MULTI,
+)
 from helion._compiler.autotuner_heuristics.triton import TritonH100MatmulHeuristic
+from helion._compiler.autotuner_heuristics.triton import _batched_static_matmul_fact
+from helion._compiler.autotuner_heuristics.triton import _generalized_static_matmul_fact
 from helion._compiler.autotuner_heuristics.triton import _seed_config_for_bucket
 from helion._compiler.autotuner_heuristics.triton import _seed_config_for_config_spec
 from helion.autotuner.config_fragment import EnumFragment
 from helion.autotuner.config_fragment import IntegerFragment
 from helion.autotuner.config_fragment import ListOf
 from helion.autotuner.config_fragment import PowerOfTwoFragment
+from helion.autotuner.config_spec import DotAxes
+from helion.autotuner.config_spec import DotAxisKind
 from helion.autotuner.config_spec import MatmulFact
 
 _SHAPE_BUCKET_KEYS = {
@@ -338,3 +345,383 @@ def test_sm90_conservative_accounting_is_inert() -> None:
 
     # And the sm90 tile is unchanged: still the register-budget [128, 256].
     assert cls._matmul_tile(4096, 4096, 4096, 2, 132, 1)[:3] == (128, 256, 64)
+
+
+# ---------------------------------------------------------------------------
+# Generalized axis freedom, graded occupancy, and whole-kernel resources.
+#
+# These pin the mandatory Section-3 capabilities individually, so a poor
+# curriculum result is attributable to policy rather than to an implementation
+# bug in the fact layer, the projection, the ranking, or the resource model.
+# ---------------------------------------------------------------------------
+
+_FML = TritonB200FormulaMatmulHeuristic
+
+
+def _axes(
+    m: DotAxisKind = DotAxisKind.TUNABLE_TILED,
+    n: DotAxisKind = DotAxisKind.TUNABLE_TILED,
+    k: DotAxisKind = DotAxisKind.TUNABLE_TILED,
+    *,
+    m_extent: int | None = 1024,
+    n_extent: int | None = 1024,
+    k_extent: int | None = 1024,
+) -> DotAxes:
+    return DotAxes(m, n, k, m_extent, n_extent, k_extent)
+
+
+class _BlockSizesStub(list):
+    """A ``ConfigSpec.block_sizes`` stand-in: indexable + sized like the real one, plus
+    ``valid_block_ids()``."""
+
+    def __init__(self, block_ids: list[int]) -> None:
+        super().__init__(
+            SimpleNamespace(block_id=b, min_size=1, max_size=4096, autotuner_min=1)
+            for b in block_ids
+        )
+        self._ids = list(block_ids)
+
+    def valid_block_ids(self) -> list[int]:
+        return list(self._ids)
+
+
+def _block_sizes_stub(block_ids: list[int]) -> _BlockSizesStub:
+    return _BlockSizesStub(block_ids)
+
+
+def _generalized_spec(
+    fact: MatmulFact,
+    axes: DotAxes,
+    *,
+    valid_block_ids: list[int],
+    grid_block_ids: tuple[int, ...] = (),
+) -> SimpleNamespace:
+    mm = SimpleNamespace(
+        matmuls=(fact,),
+        axes=(axes,),
+        sites=(SimpleNamespace(graph_id=0, loop_trips=1, updates_carry=False),),
+        knob_users=(),
+        outer_grid=1,
+        sequential_loop_trips=1,
+        live_tiles=(),
+        live_dot_outputs=(),
+        ring_load_tiles=(),
+        n_dot_nodes=1,
+        attribution_complete=True,
+    )
+    return SimpleNamespace(
+        matmul_facts=[fact],
+        multi_matmul_fact=mm,
+        block_sizes=_block_sizes_stub(valid_block_ids),
+        grid_block_ids=grid_block_ids,
+    )
+
+
+def test_generalized_gate_admits_a_fixed_contraction_axis() -> None:
+    """A dot whose K is a specialized full extent has no ``block_k`` to set. The incumbent
+    gate declines it for that reason alone; the generalized gate admits it, because a fixed
+    axis is a smaller set of knobs and not a smaller problem."""
+    fact = MatmulFact(
+        lhs_ndim=2,
+        rhs_ndim=2,
+        m_block_id=0,
+        n_block_id=1,
+        k_block_id=4,  # registered but NOT tunable
+        static_m=256,
+        static_n=256,
+        static_k=64,
+        lhs_dtype=torch.bfloat16,
+        rhs_dtype=torch.bfloat16,
+    )
+    spec = _generalized_spec(
+        fact,
+        _axes(k=DotAxisKind.FIXED_FULL_EXTENT, k_extent=64),
+        valid_block_ids=[0, 1],
+    )
+    assert _generalized_static_matmul_fact(spec) is fact
+    # ...and the incumbent gate still declines it, which is what made this widening needed.
+    assert _batched_static_matmul_fact(spec) is None
+
+
+def test_generalized_gate_admits_zero_tunable_dot_axes() -> None:
+    """A kernel that exposes no tile at all still wants num_warps / num_stages; the
+    alternative is the bare fragment default."""
+    fact = MatmulFact(
+        lhs_ndim=2,
+        rhs_ndim=2,
+        m_block_id=None,
+        n_block_id=None,
+        k_block_id=None,
+        static_m=64,
+        static_n=64,
+        static_k=64,
+        lhs_dtype=torch.bfloat16,
+        rhs_dtype=torch.bfloat16,
+    )
+    spec = _generalized_spec(
+        fact,
+        _axes(
+            DotAxisKind.FIXED_FULL_EXTENT,
+            DotAxisKind.FIXED_FULL_EXTENT,
+            DotAxisKind.FIXED_FULL_EXTENT,
+            m_extent=64,
+            n_extent=64,
+            k_extent=64,
+        ),
+        valid_block_ids=[],
+    )
+    assert _generalized_static_matmul_fact(spec) is fact
+
+
+def test_generalized_gate_declines_two_axes_sharing_one_knob() -> None:
+    """Two tunable axes on one block id is a genuine conflict that must be RANKED, which is
+    front end 2's job -- front end 1 has no way to arbitrate it."""
+    fact = MatmulFact(
+        lhs_ndim=2,
+        rhs_ndim=2,
+        m_block_id=0,
+        n_block_id=1,
+        k_block_id=1,  # same knob as N
+        static_m=256,
+        static_n=256,
+        static_k=256,
+        lhs_dtype=torch.bfloat16,
+        rhs_dtype=torch.bfloat16,
+    )
+    spec = _generalized_spec(fact, _axes(), valid_block_ids=[0, 1])
+    assert _generalized_static_matmul_fact(spec) is None
+
+
+def test_generalized_gate_declines_an_unknown_extent() -> None:
+    """No static extent means nothing can be sized; a dynamic/jagged dot must not be
+    silently configured from a guess."""
+    fact = MatmulFact(
+        lhs_ndim=2,
+        rhs_ndim=2,
+        m_block_id=0,
+        n_block_id=1,
+        k_block_id=2,
+        static_m=256,
+        static_n=256,
+        static_k=None,
+        lhs_dtype=torch.bfloat16,
+        rhs_dtype=torch.bfloat16,
+    )
+    spec = _generalized_spec(
+        fact, _axes(k=DotAxisKind.UNKNOWN, k_extent=None), valid_block_ids=[0, 1, 2]
+    )
+    assert _generalized_static_matmul_fact(spec) is None
+
+
+def test_tmem_is_counted_in_columns_and_sums_over_live_accumulators() -> None:
+    """tcgen05 tensor memory is allocated as 128 lanes x N columns of 32 bits, so a tile
+    costs ``ceil(bm/128) * bn`` COLUMNS and a bm<128 accumulator costs the same as a
+    full-lane one. Measured on B200: a kernel's ``tmem_size`` equals its accumulator's N
+    extent exactly ([64,64] -> 64, [128,128] -> 128, [128,256] -> 256)."""
+    assert _FML._tmem_columns([(64, 64, 2)]) == 64
+    assert _FML._tmem_columns([(128, 128, 2)]) == 128
+    assert _FML._tmem_columns([(128, 256, 2)]) == 256
+    # A byte model divides by the lanes a narrow accumulator does not use; the column model
+    # does not, which is the whole point.
+    assert _FML._tmem_columns([(64, 256, 2)]) == 256
+    # bm past a lane group needs a second one.
+    assert _FML._tmem_columns([(256, 256, 2)]) == 512
+    # Live accumulators ADD -- this is the measured failure
+    # (``tensor memory, Required: 768, limit 512``) reproduced as arithmetic.
+    assert _FML._tmem_columns([(128, 256, 2)] * 3) == 768
+    assert _FML._tmem_columns([(128, 256, 2)] * 3) > _FML.TMEM_COLUMN_BUDGET
+    # ...and one accumulator under the incumbent caps never binds, so the single-GEMM path
+    # is unaffected by adding this check.
+    assert _FML._tmem_columns([(128, _FML.BASE_BN_CAP, 2)]) <= _FML.TMEM_COLUMN_BUDGET
+    # Below the tcgen05 minimum the dot uses no tensor memory at all (measured
+    # ``tmem_size == 0``), so charging it would reject a tiny tile for a resource it never
+    # touches.
+    assert _FML._tmem_columns([(32, 256, 2)]) == 0
+    # sm90 has no tensor memory: the check must be completely inert there.
+    assert TritonH100MatmulHeuristic._tmem_columns([(128, 256, 2)] * 8) == 0
+
+
+def test_register_accumulator_charge_depends_on_the_warpgroup() -> None:
+    """tcgen05 MMA issues per warpgroup, so below 4 warps that path is unavailable and EVERY
+    accumulator falls back into the register file -- the budget the tensor-memory model
+    assumed away. Measured spill counts across a warp sweep at a byte-identical tile stop
+    exactly where the warpgroup becomes available (1: 1148 spills, 2: 84, 4: 0, 8: 0)."""
+    tiles = [(64, 64, 2), (64, 64, 2)]
+    assert _FML._register_acc_bytes(tiles, 1) == 2 * 64 * 64 * 4
+    assert _FML._register_acc_bytes(tiles, 2) == 2 * 64 * 64 * 4
+    assert _FML._register_acc_bytes(tiles, 4) == 0
+    # A dot below the tcgen05 minimum stays register-resident at ANY warp count.
+    assert _FML._register_acc_bytes([(32, 64, 2)], 8) == 32 * 64 * 4
+
+
+def test_warps_rise_to_a_warpgroup_when_the_live_set_does_not_fit() -> None:
+    """The canonical failure: two live 64x64 fp32 accumulators are 32 KiB against the 31.9
+    KiB one-warp architectural ceiling -- over budget before a single operand tile. The
+    correction goes straight to a warpgroup, because the two coherent regimes are
+    sub-warpgroup/register-resident and warpgroup/tensor-memory, and a count between them
+    pays for threads while still being denied tensor memory (measured: 2 warps still
+    spilled 84 registers where 4 spilled none)."""
+    two = [(64, 64, 2), (64, 64, 2)]
+    assert _FML._warps_for_live_set(1, two) == _FML.TCGEN05_WARPGROUP_WARPS
+    # ...and it leaves the one-warp draft alone where that is genuinely right: ONE 64x64
+    # accumulator is 16 KiB and fits, which is what the hand-tuning chose for those kernels.
+    assert _FML._warps_for_live_set(1, [(64, 64, 2)]) == 1
+    # No accumulators recorded -> no opinion, so the incumbent ramp is preserved.
+    assert _FML._warps_for_live_set(1, []) == 1
+    assert _FML._warps_for_live_set(8, []) == 8
+    # Never lowers what the tile ramp asked for.
+    assert _FML._warps_for_live_set(8, two) == 8
+    # When tensor memory cannot rescue it (bm below the tcgen05 minimum), it keeps doubling
+    # against the register file instead of stopping at a warpgroup.
+    huge = [(32, 2048, 2)] * 4
+    assert _FML._warps_for_live_set(1, huge) == _FML.MAX_NUM_WARPS
+    # Section 3 asks for the register estimate to come from the register-resident LIVE SET,
+    # not the accumulators alone. Several multi-contraction bodies have NO loop-carried
+    # accumulator, so an accumulator-only estimate sees nothing to fix and leaves them at one
+    # warp with 540-894 measured spills; the non-accumulator live bytes must move the answer.
+    assert _FML._warps_for_live_set(1, [], other_register_bytes=98304) == 4
+    assert _FML._warps_for_live_set(1, [], other_register_bytes=1024) == 1
+
+
+def test_graded_stage_depth_falls_off_with_outer_parallelism() -> None:
+    """Depth is bought with shared memory per CTA, and shared memory per CTA is what limits
+    how many CTAs an SM holds. Below one wave there is no co-residency to protect and depth
+    is the only latency hiding available; above it, every extra stage evicts a CTA. So the
+    depth must fall off GRADUALLY with the grid -- which the incumbent single threshold at
+    ``SAT_WAVES * num_sm`` cannot express, and which matches the hand-tuned corpus (outer
+    grid 32 -> 8-11 stages, 96 -> 3-4, 256 -> 2-4, >=1024 -> 2)."""
+    per_stage = 16 * 1024
+
+    def smem_of(stages: int) -> int:
+        return per_stage * stages
+
+    depths = [
+        _FML._graded_stage_depth(smem_of, loop_trips=256, grid=grid, num_sm=148)
+        for grid in (32, 96, 148, 296, 1024, 16384)
+    ]
+    assert depths == sorted(depths, reverse=True), depths
+    assert depths[0] > depths[-1]
+    # A grid far above the machine size lands on the floor, which is what the hand-tuning
+    # chose for the per-chunk preprocessing kernels (1024-16384 programs, 2 stages).
+    assert depths[-1] == 2
+    # An empty machine reaches depths the incumbent MAX_STAGES ceiling cannot express.
+    assert depths[0] > _FML.MAX_STAGES or _FML.HW_MAX_STAGES <= _FML.MAX_STAGES
+    assert depths[0] <= _FML.HW_MAX_STAGES
+
+
+def test_graded_stage_depth_is_capped_by_the_loop_it_pipelines() -> None:
+    """There is no point pipelining deeper than the loop is long."""
+
+    def cheap(stages: int) -> int:
+        return 1024 * stages
+
+    assert _FML._graded_stage_depth(cheap, loop_trips=3, grid=1, num_sm=148) == 3
+    assert _FML._graded_stage_depth(cheap, loop_trips=1, grid=1, num_sm=148) == 2
+
+
+def test_multi_matmul_ranking_prefers_a_carried_accumulator_then_work() -> None:
+    """A dot feeding a loop-carried accumulator holds that accumulator resident for the whole
+    loop, so its tile sets the kernel's whole-loop footprint -- hence ranking priority. But
+    it is a PREFERENCE: dimensions and execution count must also matter, and a kernel with no
+    carried accumulator has to rank purely on work."""
+    big = MatmulFact(2, 2, 0, 1, 2, 256, 256, 256, torch.bfloat16, torch.bfloat16)
+    small = MatmulFact(2, 2, 0, 1, 2, 64, 64, 64, torch.bfloat16, torch.bfloat16)
+
+    def mm(carry: tuple[bool, ...], trips: tuple[int, ...]) -> SimpleNamespace:
+        facts = (big, small)
+        ns = SimpleNamespace(
+            matmuls=facts,
+            sites=tuple(
+                SimpleNamespace(graph_id=0, loop_trips=t, updates_carry=c)
+                for c, t in zip(carry, trips, strict=True)
+            ),
+            attribution_complete=True,
+        )
+        ns.dot_work = lambda i: (
+            (facts[i].static_m or 1)
+            * (facts[i].static_n or 1)
+            * (facts[i].static_k or 1)
+            * max(1, ns.sites[i].loop_trips)
+        )
+        return ns
+
+    # The carried dot wins even though it does far less work.
+    f = mm((False, True), (1, 1))
+    assert _MULTI._rank_key(f, 1) > _MULTI._rank_key(f, 0)
+    # With no carry anywhere, work decides.
+    f = mm((False, False), (1, 1))
+    assert _MULTI._rank_key(f, 0) > _MULTI._rank_key(f, 1)
+    # Execution count is part of work, so a small dot run many times can outrank a big one.
+    f = mm((False, False), (1, 4096))
+    assert _MULTI._rank_key(f, 1) > _MULTI._rank_key(f, 0)
+    # Untrusted attribution must collapse the carry term for EVERY dot equally, so ranking
+    # degrades to pure work rather than to an arbitrary order.
+    f = mm((False, True), (1, 1))
+    f.attribution_complete = False
+    assert _MULTI._rank_key(f, 0) > _MULTI._rank_key(f, 1)
+
+
+def test_projection_is_a_no_op_for_a_clean_gemm() -> None:
+    """With three tunable axes and no extra live accumulator, ``_tile_for_dot`` must return
+    the incumbent proposal untouched -- that is what makes the whole widening safe for the
+    GEMM/BMM/split-K workloads it was not measured on."""
+    fact = _matmul_fact(static_m=4096, static_n=4096, static_k=4096)
+    spec = _generalized_spec(fact, _axes(), valid_block_ids=[0, 1, 2])
+    env = SimpleNamespace(config_spec=spec, block_sizes=[])
+    proposal = _FML._matmul_tile(4096, 4096, 4096, 2, 148, 1)
+    assert _FML._tile_for_dot(env, fact, _axes(), 2, 148, 1) == proposal
+
+
+def test_sm90_keeps_the_incumbent_gate_and_every_switch_off() -> None:
+    """Every measurement behind the generalized machinery is B200, so sm90 must be a
+    byte-identical freeze: same eligibility precondition, no graded stages, no work-aware
+    warps, no tensor-memory column budget."""
+    cls = TritonH100MatmulHeuristic
+    assert cls.GENERALIZED_AXES is False
+    assert cls.GRADED_STAGES is False
+    assert cls.WORK_AWARE_WARPS is False
+    assert cls.TMEM_COLUMN_BUDGET is None
+    fixed = MatmulFact(
+        lhs_ndim=2,
+        rhs_ndim=2,
+        m_block_id=0,
+        n_block_id=1,
+        k_block_id=4,
+        static_m=256,
+        static_n=256,
+        static_k=64,
+        lhs_dtype=torch.bfloat16,
+        rhs_dtype=torch.bfloat16,
+    )
+    spec = _generalized_spec(
+        fixed,
+        _axes(k=DotAxisKind.FIXED_FULL_EXTENT, k_extent=64),
+        valid_block_ids=[0, 1],
+    )
+    # sm90 routes through the incumbent gate, which declines the fixed-axis dot.
+    assert cls._eligible_fact(spec) is None
+    # ...while sm100 admits it.
+    assert _FML._eligible_fact(spec) is fixed
+
+
+def test_multi_matmul_front_end_declines_whatever_front_end_one_owns() -> None:
+    """Exactly one of the two front ends may own a kernel, so promotion is unambiguous
+    without either of them having to know the other's policy."""
+    fact = _matmul_fact()
+    spec = _generalized_spec(fact, _axes(), valid_block_ids=[0, 1, 2])
+    env = SimpleNamespace(
+        config_spec=spec,
+        device=torch.device("cuda"),
+        settings=SimpleNamespace(),
+    )
+    with patch(
+        "helion._compiler.autotuner_heuristics.triton.matches_hardware",
+        return_value=True,
+    ):
+        assert _MULTI.is_eligible(env, None) is False
+    # Registration order must put the multi front end AFTER the single one, since the
+    # compiler-default loop is last-promote-wins.
+    from helion._compiler.autotuner_heuristics import HEURISTICS_BY_BACKEND
+
+    triton_order = HEURISTICS_BY_BACKEND["triton"]
+    assert triton_order.index(_MULTI) > triton_order.index(_FML)

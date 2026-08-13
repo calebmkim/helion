@@ -17,6 +17,7 @@ from ...autotuner.config_spec import FULL_EXTENT_CATEGORIES
 from ...autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
 from ...autotuner.config_spec import DotAxes
 from ...autotuner.config_spec import DotAxisKind
+from ...autotuner.config_spec import MultiMatmulFact
 from ...autotuner.config_spec import ReductionCategory
 from ...runtime.config import Config
 from .common import clamp_block_size_targets
@@ -537,20 +538,23 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     TMEM_BUDGET = None
     # Smallest block_m that lowers to tcgen05 (below it the dot uses a non-TMEM path, so TMEM is free).
     TCGEN05_MIN_BM = 64
-    # --- whole-kernel resource accounting (see _tmem_columns / _warps_for_register_pressure) ---
+    # --- whole-kernel resource accounting (see _tmem_columns / _warps_for_live_set) ---
     # tcgen05 tensor memory is allocated as TMEM_LANES lanes x TMEM_COLUMN_BUDGET columns of 32
     # bits, and a request is denominated in COLUMNS. None = the arch has no tensor memory, so the
     # column check is inert (which is what keeps sm90 byte-identical).
     TMEM_LANES = 128
     TMEM_COLUMN_BUDGET: int | None = None
-    # Register-file bytes per thread the accumulators may use. 512 B = 128 registers x 4 B, the
-    # SAME 128 regs/thread that ACC_BUDGET (32768 elems = 128 x 256 threads) already encodes; the
-    # architectural max of 255 is not a usable occupancy target.
-    REG_BYTES_PER_THREAD = 512
-    # Accumulators share the register file with operand tiles and temporaries, so requiring only
-    # the accumulators to fit measured a config that still spilled. 2 = accumulators may claim at
-    # most half the file.
-    ACC_REG_HEADROOM = 2
+    # Register-file bytes per thread available to the register-resident live set: the
+    # ARCHITECTURAL ceiling of 255 registers x 4 B. This budget answers "will this spill
+    # catastrophically", not "is occupancy ideal", so the hard ceiling is the right bound -- and it
+    # is the one the measured failure sits on (two live 64x64 fp32 accumulators = 32 KiB against
+    # 31.9 KiB at one warp, over budget before a single operand tile).
+    REG_BYTES_PER_THREAD = 255 * 4
+    # Multiplier on the live-set footprint in the spill test. 1 = the live set may claim the whole
+    # architectural file: with the 255-reg ceiling that IS already the hard bound, and anything
+    # larger measured a regression -- it pushes a single-accumulator kernel off the one-warp draft
+    # that the hand-tuning independently chose for it.
+    ACC_REG_HEADROOM = 1
     # Warps in a tcgen05 warpgroup. Below this the MMA path is unavailable and the fp32
     # accumulator falls back into the register file.
     TCGEN05_WARPGROUP_WARPS = 4
@@ -687,11 +691,216 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         return total
 
     @classmethod
-    def _register_acc_bytes(cls, tiles: list[tuple[int, int, int]]) -> int:
+    def _register_acc_bytes(
+        cls, tiles: list[tuple[int, int, int]], num_warps: int
+    ) -> int:
         """Bytes of live accumulator that must sit in the REGISTER FILE rather than tensor
-        memory: the accumulators of dots below ``TCGEN05_MIN_BM``, which do not reach the
-        tcgen05 path. Charged at fp32 (4 B) because a dot accumulates in fp32."""
+        memory, at a given warp count. Charged at fp32 (4 B): a dot accumulates in fp32.
+
+        Two ways an accumulator misses tensor memory, and the warp count is one of them:
+
+        * ``bm < TCGEN05_MIN_BM`` -- the dot lowers to a non-tcgen05 path (measured
+          ``tmem_size == 0``), so its accumulator was never going to tensor memory;
+        * ``num_warps < TCGEN05_WARPGROUP_WARPS`` -- tcgen05 MMA issues per warpgroup, so
+          below 128 threads that path is unavailable and EVERY accumulator falls back into
+          the register file. This is why the warp count cannot be chosen after the tile has
+          been sized under a tensor-memory budget: at one or two warps that budget does not
+          apply at all.
+
+        Measured register/spill counts across a warp sweep at a byte-identical tile track
+        this exactly (1 warp: 255 regs / 1148 spills; 2: 255 / 84; 4: 104 / 0; 8: 60 / 0) --
+        spilling stops precisely where the warpgroup becomes available.
+        """
+        if num_warps < cls.TCGEN05_WARPGROUP_WARPS:
+            return sum(bm * bn * 4 for bm, bn, _i in tiles)
         return sum(bm * bn * 4 for bm, bn, _i in tiles if bm < cls.TCGEN05_MIN_BM)
+
+    @classmethod
+    def _warps_for_live_set(
+        cls,
+        num_warps: int,
+        acc_tiles: list[tuple[int, int, int]],
+        other_register_bytes: int = 0,
+    ) -> int:
+        """Raise ``num_warps`` until the register-resident live set fits the register file.
+
+        The incumbent rule picks warps from tile area and then, for a saturated grid, forces
+        the minimum -- on the assumption that a large outer grid implies a small program.
+        That assumption fails whenever a program carries several dot-derived tensors, and the
+        failure is not subtle: measured on a three-dot chunked kernel with a grid 14x above
+        the saturation threshold, the one-warp draft spilled 1140 registers to local memory
+        and ran 13.7x slower than the same tile at four warps, which spilled none. Spills
+        fell monotonically with thread count.
+
+        A fixed point, not a one-shot correction, because the answer feeds back: raising the
+        warp count both enlarges the register file AND can move the accumulators out of it
+        entirely, by making the tcgen05 warpgroup available.
+
+        The first step goes straight to a warpgroup rather than doubling. That is the shape
+        of the hardware, not a shortcut: the two coherent regimes are *sub-warpgroup with
+        register-resident accumulators* and *warpgroup with tensor-memory accumulators*, and
+        a count between them pays for the extra threads while still being denied the
+        tensor-memory path. The measured sweep agrees -- two warps still spilled 84
+        registers where four spilled none.
+
+        The fit test uses the ARCHITECTURAL ceiling of 255 registers per thread, because the
+        question here is "will this spill catastrophically", not "is occupancy ideal". At one
+        warp that is 31.9 KiB, and two live 64x64 fp32 accumulators are 32 KiB -- over budget
+        before a single operand tile, which is exactly the measured failure. It also leaves
+        the one-warp draft in place where it is genuinely right: a single 64x64 accumulator
+        is 16 KiB and fits, which is what the hand-tuning chose for those kernels.
+
+        ``other_register_bytes`` carries the rest of the peak-live register-resident set --
+        the masked intermediates and non-accumulator dot-derived tiles of a multi-contraction
+        body. Section 3 asks for registers to be estimated from the register-resident LIVE
+        SET rather than the accumulators alone, and the difference is decisive on the
+        straight-line multi-dot kernels: several have NO loop-carried accumulator at all, so
+        an accumulator-only estimate sees nothing to fix and leaves them at one warp with
+        540-894 measured spills.
+        """
+        warps = max(1, num_warps)
+        for _ in range(4):
+            need = (
+                cls._register_acc_bytes(acc_tiles, warps) + other_register_bytes
+            ) * cls.ACC_REG_HEADROOM
+            if need <= warps * 32 * cls.REG_BYTES_PER_THREAD:
+                return warps
+            if warps >= cls.MAX_NUM_WARPS:
+                return cls.MAX_NUM_WARPS
+            warps = max(cls.TCGEN05_WARPGROUP_WARPS, warps * 2)
+        return warps
+
+    @classmethod
+    def _full_block_map(
+        cls, env: CompileEnvironment, block_sizes: list[int]
+    ) -> dict[int, int]:
+        """``{block_id: per-program extent}`` for EVERY block id, under the config whose
+        ``block_sizes`` list is ``block_sizes``.
+
+        Asked of the compiler's own ``BlockSizeSource``, not inferred. That matters because
+        the three kinds of axis resolve completely differently and guessing any of them
+        wrong corrupts every footprint computed from it:
+
+        * a tunable loop axis resolves to the config's entry for it;
+        * an ``hl.grid`` axis is a fixed source of 1 -- one row per program -- even though
+          the axis's *extent* is the whole grid;
+        * a specialized axis is fixed at its full extent.
+
+        Inferring these from "does it have a ``block_sizes`` entry" gets the middle case
+        backwards, and the error is not small: reading a pinned outer grid axis at its full
+        extent (8192 rather than 1) makes every accumulator look astronomical, so the
+        resource fix-up shrinks every tile to the dot minimum. Measured, that is exactly
+        what happened -- a 6-dot kernel emitted ``[16, 16, 16, 16, 16]`` against a
+        hand-tuned ``[128, 128, 64, 256, 128]`` while sitting at 22 KiB of shared memory and
+        64 tensor-memory columns, i.e. nowhere near any limit.
+        """
+        spec = env.config_spec
+        probe = dict(spec._base_default_config().config)
+        probe["block_sizes"] = list(block_sizes)
+        try:
+            cfg = Config(**cast("dict[str, Any]", probe))
+        except Exception:
+            cfg = spec._base_default_config()
+        out: dict[int, int] = {}
+        for bid in range(len(env.block_sizes)):
+            info = env.block_sizes[bid]
+            value: object
+            try:
+                value = info.block_size_source.from_config(cfg, info)
+            except Exception:
+                value = None
+            if value is None:
+                value = info.size if isinstance(info.size, (int, torch.SymInt)) else 1
+            try:
+                out[bid] = max(1, int(env.size_hint(value)))  # pyrefly: ignore
+            except Exception:
+                out[bid] = 1
+        return out
+
+    @classmethod
+    def _smem_from_map(
+        cls, env: CompileEnvironment, block_sizes: list[int], num_stages: int
+    ) -> int:
+        """Whole-kernel shared-memory ring under an emitted ``block_sizes`` list.
+
+        Region ring = SUM of the region's loads (the pipeliner gives each load in the body
+        its own multi-stage buffer, so within a stage they are all resident) x
+        ``num_stages``, PLUS the region's store staging when it stores from inside itself;
+        then MAX across regions, because separate loops run one after the other."""
+        mm = env.config_spec.multi_matmul_fact
+        if mm is None or not mm.ring_load_tiles:
+            return 0
+        block_of = cls._full_block_map(env, block_sizes)
+        ring = 0
+        for region in mm.ring_load_tiles:
+            loads = sum(
+                cls._resolve_tile_bytes(t, block_of) for t in region if t.kind == "load"
+            )
+            # A region that STORES inside itself (a state recurrence publishes each chunk
+            # from inside the sequential loop) holds its store staging at the same time as
+            # the ring, so those bytes ADD. A region with no store is a plain K-loop whose
+            # ring is dead by the time the epilogue converts, which is the liveness-packed
+            # case the incumbent ``max(ring, epilogue)`` already models.
+            stores = sum(
+                cls._resolve_tile_bytes(t, block_of)
+                for t in region
+                if t.kind == "store"
+            )
+            ring = max(ring, loads * max(1, num_stages) + stores)
+        return ring
+
+    @classmethod
+    def _acc_tiles_from_map(
+        cls, env: CompileEnvironment, block_sizes: list[int]
+    ) -> list[tuple[int, int, int]]:
+        """The simultaneously-live accumulators as ``(rows, cols, itemsize)`` under an
+        emitted ``block_sizes`` list."""
+        mm = env.config_spec.multi_matmul_fact
+        if mm is None or not mm.live_dot_outputs:
+            return []
+        block_of = cls._full_block_map(env, block_sizes)
+        out: list[tuple[int, int, int]] = []
+        for tile in mm.live_dot_outputs:
+            dims = [
+                max(1, block_of.get(blk, 1)) if blk is not None else max(1, static or 1)
+                for blk, static in zip(
+                    tile.dim_block_ids, tile.static_dims, strict=False
+                )
+            ]
+            if len(dims) == 1:
+                rows, cols = 1, dims[0]
+            else:
+                rows, cols = dims[-2], dims[-1]
+                for lead in dims[:-2]:
+                    rows *= lead
+            out.append((rows, cols, tile.itemsize))
+        return out
+
+    @classmethod
+    def _other_register_bytes(
+        cls, env: CompileEnvironment, block_sizes: list[int]
+    ) -> int:
+        """Peak-live register-resident bytes that are NOT dot accumulators.
+
+        The peak-live set of a multi-contraction body is dominated by masked intermediates
+        and dot-derived tiles that are not themselves the loop carry -- a ``[C, C]``
+        interaction matrix, its mask, its exponential. Those live in registers regardless of
+        the tensor-memory budget, and several of these kernels have no loop-carried
+        accumulator at all, so an accumulator-only estimate reports nothing to correct.
+        Measured on those bodies, the one-warp draft spills 540-894 registers.
+
+        Loads are excluded: they are charged to the shared-memory ring, and charging them
+        here as well would double-count the same bytes into two different budgets.
+        """
+        mm = env.config_spec.multi_matmul_fact
+        if mm is None or not mm.live_tiles:
+            return 0
+        block_of = cls._full_block_map(env, block_sizes)
+        return sum(
+            cls._resolve_tile_bytes(t, block_of)
+            for t in mm.live_tiles
+            if t.kind != "load"
+        )
 
     @classmethod
     def _resolve_tile_bytes(cls, tile: object, block_of: dict[int, int]) -> int:
@@ -737,78 +946,11 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         being too strict. It reduces EXACTLY to the incumbent ring on a bare GEMM, whose
         loop body's loads are precisely A and B.
         """
-        mm = env.config_spec.multi_matmul_fact
         base = cls._smem_bytes(bm, bn, bk, itemsize, num_stages)
-        if mm is None or not mm.ring_load_tiles:
-            return base
-        block_of: dict[int, int] = {}
-        for f, ax in zip(mm.matmuls, mm.axes, strict=False):
-            for axis, bid, value in (
-                ("m", f.m_block_id, bm),
-                ("n", f.n_block_id, bn),
-                ("k", f.k_block_id, bk),
-            ):
-                if bid is None:
-                    continue
-                if ax.kind(axis) is DotAxisKind.TUNABLE_TILED:
-                    block_of.setdefault(bid, value)
-                else:
-                    extent = ax.extent(axis)
-                    if extent is not None:
-                        block_of.setdefault(bid, extent)
-        ring = 0
-        for region in mm.ring_load_tiles:
-            loads = sum(
-                cls._resolve_tile_bytes(t, block_of) for t in region if t.kind == "load"
-            )
-            # A region that STORES inside itself (a state recurrence publishes each
-            # chunk from inside the sequential loop) holds its store staging at the same
-            # time as the ring, so those bytes ADD. A region with no store is a plain
-            # K-loop whose ring is dead by the time the epilogue converts, which is the
-            # liveness-packed case the incumbent ``max(ring, epilogue)`` models.
-            stores = sum(
-                cls._resolve_tile_bytes(t, block_of)
-                for t in region
-                if t.kind == "store"
-            )
-            ring = max(ring, loads * max(1, num_stages) + stores)
+        emitted = _h100_build_block_sizes(env.config_spec, fact, bm, bn, bk)
+        ring = cls._smem_from_map(env, emitted, num_stages)
         epilogue = bm * bn * cls.EPILOGUE_ACC_ITEMSIZE
         return max(base, ring, epilogue) + cls.SMEM_SLACK
-
-    @classmethod
-    def _warps_for_register_pressure(cls, num_warps: int, acc_bytes: int) -> int:
-        """Raise ``num_warps`` until the register file can hold the live accumulators.
-
-        The existing rule picks warps from tile area and then, for a saturated grid, forces
-        the minimum -- on the assumption that a large outer grid implies a small program.
-        That assumption fails whenever a program carries several dot-derived tensors: the
-        per-CTA register file is ``num_warps x 32 threads x REG_BYTES_PER_THREAD``, so one
-        warp buys 1/8th of what eight do. Measured on a three-dot chunked kernel with a
-        grid 14x above the saturation threshold, the one-warp draft spilled 1140 registers
-        to local memory and ran 13.7x slower than the same tile at four warps, which
-        spilled none; spills fell monotonically with thread count.
-
-        Two mechanisms make the same prediction, which is why the correction is a floor
-        rather than a tweak. (i) Capacity: the accumulators simply do not fit. (ii) tcgen05
-        MMA issues per warpgroup, so below ``TCGEN05_WARPGROUP_WARPS`` warps that path is
-        unavailable and the fp32 accumulator falls back into registers -- the register
-        budget the tensor-memory model assumed away. Measured register/spill counts across
-        a warp sweep at a byte-identical tile match that exactly (1 warp: 255 regs/1148
-        spills; 2: 255/84; 4: 104/0; 8: 60/0).
-
-        ``ACC_REG_HEADROOM`` reserves room for the operand tiles and temporaries that share
-        the file with the accumulators: a tile is not merely its accumulator, and requiring
-        the accumulators alone to fit measured a config that still spilled.
-        """
-        need = acc_bytes * cls.ACC_REG_HEADROOM
-        if need <= 0:
-            return num_warps
-        warps = max(1, num_warps)
-        while (
-            warps < cls.MAX_NUM_WARPS and warps * 32 * cls.REG_BYTES_PER_THREAD < need
-        ):
-            warps *= 2
-        return warps
 
     @classmethod
     def _graded_stage_depth(
@@ -1073,8 +1215,10 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     def _live_acc_tiles(
         cls,
         env: CompileEnvironment,
+        fact: MatmulFact,
         bm: int,
         bn: int,
+        bk: int,
         itemsize: int,
     ) -> list[tuple[int, int, int]]:
         """The simultaneously-live accumulator tiles, as ``(bm, bn, itemsize)`` at the
@@ -1094,38 +1238,8 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         mm = env.config_spec.multi_matmul_fact
         if mm is None or not mm.live_dot_outputs:
             return [(bm, bn, itemsize)]
-        block_of: dict[int, int] = {}
-        for f, axes in zip(mm.matmuls, mm.axes, strict=False):
-            for axis, bid, value in (
-                ("m", f.m_block_id, bm),
-                ("n", f.n_block_id, bn),
-            ):
-                if bid is None:
-                    continue
-                if axes.kind(axis) is DotAxisKind.TUNABLE_TILED:
-                    block_of[bid] = value
-                else:
-                    extent = axes.extent(axis)
-                    if extent is not None:
-                        block_of[bid] = extent
-        out: list[tuple[int, int, int]] = []
-        for tile in mm.live_dot_outputs:
-            dims: list[int] = []
-            for blk, static in zip(tile.dim_block_ids, tile.static_dims, strict=False):
-                if blk is not None:
-                    dims.append(max(1, block_of.get(blk, 1)))
-                else:
-                    dims.append(max(1, static or 1))
-            # The last two dims are the accumulator's [M, N]; a leading dim of a rank-3
-            # accumulator is a batch that multiplies the count, so fold it into rows.
-            if len(dims) == 1:
-                rows, cols = 1, dims[0]
-            else:
-                rows, cols = dims[-2], dims[-1]
-                for lead in dims[:-2]:
-                    rows *= lead
-            out.append((rows, cols, tile.itemsize))
-        return out or [(bm, bn, itemsize)]
+        emitted = _h100_build_block_sizes(env.config_spec, fact, bm, bn, bk)
+        return cls._acc_tiles_from_map(env, emitted) or [(bm, bn, itemsize)]
 
     @classmethod
     def _tile_for_dot(
@@ -1216,10 +1330,12 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
                 num_sm=num_sm,
             )
 
-        acc_tiles = cls._live_acc_tiles(env, bm, bn, itemsize)
+        emitted = _h100_build_block_sizes(env.config_spec, fact, bm, bn, bk)
         if cls.WORK_AWARE_WARPS:
-            num_warps = cls._warps_for_register_pressure(
-                num_warps, cls._register_acc_bytes(acc_tiles)
+            num_warps = cls._warps_for_live_set(
+                num_warps,
+                cls._live_acc_tiles(env, fact, bm, bn, bk, itemsize),
+                cls._other_register_bytes(env, emitted),
             )
 
         # (3b) resource enforcement on the projected tile. The knobs are spent in cost
@@ -1241,7 +1357,7 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         def over_budget() -> bool:
             if smem_over():
                 return True
-            tiles = cls._live_acc_tiles(env, bm, bn, itemsize)
+            tiles = cls._live_acc_tiles(env, fact, bm, bn, bk, itemsize)
             if cls.TMEM_COLUMN_BUDGET is not None and (
                 cls._tmem_columns(tiles) > cls.TMEM_COLUMN_BUDGET
             ):
@@ -1276,9 +1392,13 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
                 break
 
         if cls.WORK_AWARE_WARPS:
-            num_warps = cls._warps_for_register_pressure(
+            # Re-run the correction on the FINAL tile: the fix-up above may have shrunk it,
+            # which changes both the footprint and the warp count it needs.
+            final = _h100_build_block_sizes(env.config_spec, fact, bm, bn, bk)
+            num_warps = cls._warps_for_live_set(
                 num_warps,
-                cls._register_acc_bytes(cls._live_acc_tiles(env, bm, bn, itemsize)),
+                cls._live_acc_tiles(env, fact, bm, bn, bk, itemsize),
+                cls._other_register_bytes(env, final),
             )
         return bm, bn, bk, num_warps, num_stages, l2
 
@@ -1503,6 +1623,296 @@ class TritonB200FormulaMatmulHeuristic(TritonH100MatmulHeuristic):
     GRADED_STAGES = True
     # Let live-accumulator register pressure override the grid-only one-warp draft.
     WORK_AWARE_WARPS = True
+
+
+class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
+    """B200 (sm100) seed for a kernel whose contraction structure is more than one clean
+    dot: FRONT END 2, consuming the composed :class:`MultiMatmulFact`.
+
+    The single-matmul front end configures one contraction against one budget. A kernel with
+    several contractions cannot be configured that way, for two independent measured reasons:
+
+    * **A knob is shared.** Two dots' axes frequently map onto the SAME ``block_size`` entry
+      (an intra-chunk kernel builds ``A = q @ k.T`` and then consumes ``A @ v``, so one knob
+      is dot 1's N and dot 2's K). Whichever dot the code happens to size first wins by
+      accident, so the choice has to be RANKED.
+    * **The resources are shared.** Several accumulators are live at once. Sizing the tile
+      off one of them under-counts tensor memory by a factor of the accumulator count:
+      measured, a three-dot chunked kernel at chunk extent 256 emits a config that dies with
+      ``OutOfResources: tensor memory, Required: 768, limit 512`` -- exactly three 256-column
+      accumulators against a 512-column budget. That is a correctness defect, not a missed
+      optimisation.
+
+    Two phases, as the plan prescribes:
+
+    1. **Draft construction.** Run the shared budget formula once per structurally distinct
+       dot to get a PROPOSAL each; for every tunable block id, rank the dots whose axis maps
+       onto it and take the winner's corresponding value; then correct the kernel-global
+       scalars (``num_warps``, top-level ``num_stages``) against AGGREGATE work and occupancy
+       rather than any single dot's.
+    2. **Resource fix-up.** Re-validate the assembled draft against whole-kernel liveness and
+       spend knobs in cost order until it fits: ``num_stages`` first (pipeline depth is the
+       cheapest thing to give up), then the tunable tile axes. A fixed axis is not a knob and
+       is never shrunk.
+
+    Ranking is by ``(updates a loop-carried accumulator, dynamic work, output area)``. The
+    carry term leads because a dot feeding a loop-carried accumulator holds that accumulator
+    resident for the entire loop, so its tile sets the kernel's whole-loop footprint; but it
+    is a PREFERENCE, not an eligibility rule -- dimensions and execution count break every
+    tie, and a kernel with no carried accumulator ranks purely on work.
+
+    Registered after the single-matmul front end so the last-promote-wins compiler-default
+    loop is unambiguous, and it declines whenever front end 1 fires, so exactly one of the
+    two owns any given kernel.
+    """
+
+    name = "triton_b200_multi_matmul"
+    HARDWARE_TARGETS = (("cuda", "sm100"),)
+    # promote_seed_to_default=True inherited: with autotune off these kernels otherwise fall
+    # back to the bare fragment default, which is the case this seed exists to fix.
+
+    @classmethod
+    def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
+        if not matches_hardware(env, cls.HARDWARE_TARGETS):
+            return False
+        mm = env.config_spec.multi_matmul_fact
+        if mm is None or not mm.matmuls:
+            return False
+        # Front end 1 owns the clean single-contraction case (including the generalized
+        # fixed-axis form). Declining there keeps promotion ownership unambiguous.
+        if _generalized_static_matmul_fact(env.config_spec) is not None:
+            return False
+        # At least one dot must have static extents; nothing can be sized without them.
+        if not any(
+            f.static_m is not None and f.static_n is not None and f.static_k is not None
+            for f in mm.matmuls
+        ):
+            return False
+        # Decline fp8 for exactly the reason front end 1 does: Helion cannot force the
+        # full-precision fp8 accumulate today, and this heuristic promotes, so an eligible
+        # fp8 seed would become a silently reduced-precision autotune-off default.
+        return not any(_is_fp8_matmul_fact(f) for f in mm.matmuls)
+
+    @classmethod
+    def _rank_key(cls, mm: MultiMatmulFact, index: int) -> tuple[int, int, int]:
+        """Dynamic importance of one dot. Higher wins.
+
+        ``updates_carry`` leads because a dot writing a loop-carried accumulator keeps that
+        accumulator resident for the whole loop; ``dot_work`` (``m*n*k`` times executions) is
+        the magnitude term; the dot's own output area breaks remaining ties toward the dot
+        with the most to lose from a bad tile. Untrusted attribution collapses the first term
+        for every dot equally, so ranking degrades to pure work rather than to an arbitrary
+        order."""
+        carry = 1 if (mm.attribution_complete and mm.sites[index].updates_carry) else 0
+        f = mm.matmuls[index]
+        area = (f.static_m or 1) * (f.static_n or 1)
+        return (carry, mm.dot_work(index), area)
+
+    @classmethod
+    def _proposal_for(
+        cls, env: CompileEnvironment, mm: MultiMatmulFact, index: int, num_sm: int
+    ) -> tuple[int, int, int, int, int, int] | None:
+        """The shared budget formula's proposal for one dot, projected onto that dot's own
+        axis roles. Not a kernel config -- one dot's view of what it wants."""
+        fact = mm.matmuls[index]
+        if fact.static_m is None or fact.static_n is None or fact.static_k is None:
+            return None
+        itemsize = max(1, fact.lhs_dtype.itemsize)
+        return cls._tile_for_dot(
+            env, fact, mm.axes[index], itemsize, num_sm, max(1, mm.outer_grid)
+        )
+
+    @classmethod
+    def _draft(
+        cls, env: CompileEnvironment, mm: MultiMatmulFact
+    ) -> dict[str, Any] | None:
+        """Phase 1: assemble a whole-kernel draft from the per-dot proposals."""
+        from ...runtime import get_num_sm
+
+        spec = env.config_spec
+        num_sm = max(1, get_num_sm(env.device))
+        proposals: dict[int, tuple[int, int, int, int, int, int]] = {}
+        for i in range(len(mm.matmuls)):
+            p = cls._proposal_for(env, mm, i, num_sm)
+            if p is not None:
+                proposals[i] = p
+        if not proposals:
+            return None
+
+        order = sorted(proposals, key=lambda i: cls._rank_key(mm, i), reverse=True)
+        rank_of = {i: r for r, i in enumerate(order)}
+
+        # --- block sizes: the winning dot's value for each contested knob ---------------
+        # Start from the base default so an axis that is NO dot's M/N/K and no grid axis
+        # keeps exactly the size it has today, rather than being pinned by a rule that was
+        # never measured on it.
+        base = spec._base_default_config()
+        block_sizes = list(cast("list[int]", base.config.get("block_sizes", [])))
+        grid_ids = set(spec.grid_block_ids)
+        mn_ids = {f.m_block_id for f in mm.matmuls} | {f.n_block_id for f in mm.matmuls}
+        for slot in range(len(spec.block_sizes)):
+            bs = cast("BlockSizeSpec", spec.block_sizes[slot])
+            bid = bs.block_id
+            users = mm.users_of(bid)
+            lo = max(1, bs.min_size, bs.autotuner_min)
+            if users:
+                # Rank the competing dots and take the winner's corresponding axis.
+                winner, axis = min(
+                    users, key=lambda ua: (rank_of.get(ua[0], len(order)), ua[1])
+                )
+                p = proposals.get(winner)
+                value = (
+                    {"m": p[0], "n": p[1], "k": p[2]}[axis]
+                    if p is not None
+                    else (block_sizes[slot] if slot < len(block_sizes) else lo)
+                )
+            elif bid in grid_ids and bid not in mn_ids:
+                # A batch/outer parallel axis: pin to its floor, exactly as front end 1
+                # does, so the per-program budget the proposals were sized under holds.
+                value = lo
+            else:
+                value = block_sizes[slot] if slot < len(block_sizes) else lo
+            value = max(lo, min(bs.max_size, value))
+            if slot < len(block_sizes):
+                block_sizes[slot] = value
+            else:
+                block_sizes.append(value)
+
+        # --- kernel-global scalars: aggregate, not any single dot's ---------------------
+        num_warps = max(proposals[i][3] for i in proposals)
+        num_stages = max(proposals[i][4] for i in proposals)
+
+        # The real launch grid: the outer parallel axes times the winning tile counts.
+        block_of = cls._full_block_map(env, block_sizes)
+        grid = max(1, mm.outer_grid)
+        for f in mm.matmuls:
+            for bid, extent in (
+                (f.m_block_id, f.static_m),
+                (f.n_block_id, f.static_n),
+            ):
+                if bid is not None and extent and bid not in grid_ids:
+                    grid *= max(1, -(-extent // max(1, block_of.get(bid, 1))))
+
+        if cls.GRADED_STAGES:
+            num_stages = cls._graded_stage_depth(
+                lambda s: cls._smem_from_map(env, block_sizes, s) + cls.SMEM_SLACK,
+                loop_trips=max(1, mm.sequential_loop_trips),
+                grid=grid,
+                num_sm=num_sm,
+            )
+        if cls.WORK_AWARE_WARPS:
+            num_warps = cls._warps_for_live_set(
+                num_warps,
+                cls._acc_tiles_from_map(env, block_sizes),
+                cls._other_register_bytes(env, block_sizes),
+            )
+
+        return {
+            "block_sizes": block_sizes,
+            "num_warps": num_warps,
+            "num_stages": num_stages,
+            "_grid": grid,
+            "_num_sm": num_sm,
+        }
+
+    @classmethod
+    def _fixup(
+        cls, env: CompileEnvironment, mm: MultiMatmulFact, draft: dict[str, Any]
+    ) -> None:
+        """Phase 2: correct the draft in place until it fits the hard budgets.
+
+        Knobs are spent in cost order and every budget is recomputed after every correction,
+        because they interact: a shallower pipeline frees shared memory but does nothing for
+        tensor memory, and a smaller tile relieves both while changing the shared-memory ring
+        the stage count was measured against.
+        """
+        spec = env.config_spec
+        block_sizes: list[int] = draft["block_sizes"]
+        slot_of: dict[int, int] = {}
+        floors: dict[int, int] = {}
+        for slot in range(len(spec.block_sizes)):
+            bs = cast("BlockSizeSpec", spec.block_sizes[slot])
+            slot_of[bs.block_id] = slot
+            floors[bs.block_id] = max(1, bs.min_size, bs.autotuner_min)
+
+        # Only knobs a dot actually claims are shrinkable: shrinking an unrelated axis would
+        # trade away something this heuristic never reasoned about.
+        claimable = [bid for bid, _users in mm.knob_users if bid in slot_of]
+
+        def smem_over() -> bool:
+            return cls.ENFORCE_SMEM_BUDGET and (
+                cls._smem_from_map(env, block_sizes, draft["num_stages"])
+                + cls.SMEM_SLACK
+                > cls.SMEM_BUDGET
+            )
+
+        def tmem_over() -> bool:
+            if cls.TMEM_COLUMN_BUDGET is None:
+                return False
+            return (
+                cls._tmem_columns(cls._acc_tiles_from_map(env, block_sizes))
+                > cls.TMEM_COLUMN_BUDGET
+            )
+
+        guard = 0
+        while (smem_over() or tmem_over()) and guard < 64:
+            guard += 1
+            if draft["num_stages"] > 2 and smem_over():
+                draft["num_stages"] -= 1
+                continue
+            candidates = [
+                bid
+                for bid in claimable
+                if block_sizes[slot_of[bid]] // 2
+                >= max(floors[bid], min(cls.DOT_MIN, block_sizes[slot_of[bid]]))
+            ]
+            if not candidates:
+                break
+            victim = max(candidates, key=lambda b: block_sizes[slot_of[b]])
+            block_sizes[slot_of[victim]] //= 2
+
+        if cls.WORK_AWARE_WARPS:
+            draft["num_warps"] = cls._warps_for_live_set(
+                draft["num_warps"],
+                cls._acc_tiles_from_map(env, block_sizes),
+                cls._other_register_bytes(env, block_sizes),
+            )
+
+    @classmethod
+    def _multi_ranked(cls, env: CompileEnvironment) -> list[Config]:
+        mm = env.config_spec.multi_matmul_fact
+        if mm is None:
+            return []
+        draft = cls._draft(env, mm)
+        if draft is None:
+            return []
+        cls._fixup(env, mm, draft)
+        primary: dict[str, Any] = {
+            "block_sizes": list(draft["block_sizes"]),
+            "num_warps": draft["num_warps"],
+            "num_stages": draft["num_stages"],
+        }
+        ranked = [Config(**primary)]
+        # One shallower-pipeline alternate, the same neighbour front end 1 plants: stage
+        # depth is the knob whose optimum the budget model resolves least sharply.
+        if draft["num_stages"] > 2:
+            alt = dict(primary)
+            alt["num_stages"] = draft["num_stages"] - 1
+            ranked.append(Config(**alt))
+        return dedupe_configs(ranked)
+
+    @classmethod
+    def get_seed_config(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> Config | None:
+        ranked = cls._multi_ranked(env)
+        return ranked[0] if ranked else None
+
+    @classmethod
+    def get_seed_configs(
+        cls, env: CompileEnvironment, device_ir: DeviceIR
+    ) -> list[Config] | None:
+        return cls._multi_ranked(env) or None
 
 
 # Module-level shims delegating to the class (tests + lab harness call these by name).
