@@ -967,3 +967,29 @@ def test_grid_knob_shrinks_until_the_launch_grid_fills_a_wave() -> None:
     block_sizes = [128]
     _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
     assert block_sizes == [128]
+
+
+def test_narrow_row_warp_cap_never_overrides_the_m_collapse_floor() -> None:
+    """The vector-width warp cap must sit UNDER the grad-parameter M-collapse warp floor.
+
+    Applied over it, the cap rewrote num_warps 8 -> 1/2/4 on exactly the family that floor
+    exists for, and adversarial review measured the consequence on upstream kernels the
+    curriculum does not cover: layer_norm_bwd::32768x512 8.45x slower (712.8 us vs 83.6) and
+    rms_norm_bwd::8192x256 2.54x slower (83.7 vs 32.7), with 1088-2382 post-ptxas register
+    spills at the capped value against 0 at the value it overrode. A vector-width argument says
+    nothing about register capacity, so it must not be the last word over a rule that does.
+
+    This pins the ORDERING, which is the part that was wrong -- the cap's own formula and gate
+    are separately documented as unresolved."""
+    import inspect
+
+    from helion._compiler.autotuner_heuristics.triton import _TritonReductionSeedSM100
+
+    src = inspect.getsource(_TritonReductionSeedSM100.get_seed_config)
+    # The cap must be guarded by the collapse predicate...
+    assert "_has_reduced_away_grid" in src, src
+    guard = src.index("_has_reduced_away_grid")
+    cap = src.index("_vector_width_warp_cap")
+    assert guard < cap, "the cap must be applied INSIDE the not-collapsed guard"
+    # ...and floored by the register live-set law, so it cannot walk off the register cliff.
+    assert "_spill_floor_warps" in src, src

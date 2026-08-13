@@ -3697,13 +3697,48 @@ class _TritonReductionSeedSM100(_TritonReductionSeedBase):
             nw = cls._b200_num_warps(env.config_spec, pd, cfg)
             if nw is not None:
                 cfg = _config_with_num_warps(cfg, nw)
-            # LAST, over every branch above (including the M-collapse warp FLOOR): a warp count
-            # the row physically cannot occupy is not a policy choice. See
-            # ``_vector_width_warp_cap``.
-            cap = cls._vector_width_warp_cap(env, pd, cfg)
-            if cap is not None and int(cfg.config["num_warps"]) > cap:
-                cfg = _config_with_num_warps(cfg, cap)
+            # UNDER the M-collapse warp FLOOR, not over it. Applying this cap last let it
+            # rewrite num_warps 8 -> 1/2/4 on exactly the grad-parameter family that floor
+            # exists for, and adversarial review measured the consequence on upstream
+            # kernels the curriculum does not cover: ``layer_norm_bwd::32768x512`` **8.45x
+            # slower** (712.8 us vs 83.6) and ``rms_norm_bwd::8192x256`` **2.54x slower**
+            # (83.7 vs 32.7), with 1088-2382 post-ptxas register spills at the capped value
+            # against 0 at the value it overrode. A vector-width argument says nothing about
+            # register capacity, so it must not be the last word over a rule that does.
+            # Ordering it under the floor removes all three off-corpus regressions and costs
+            # the curriculum nothing: after the sizable-grid narrowing the decode body is not
+            # on that branch at all.
+            if not cls._has_reduced_away_grid(env.config_spec):
+                cap = cls._vector_width_warp_cap(env, pd, cfg)
+                if cap is not None and int(cfg.config["num_warps"]) > cap:
+                    cfg = _config_with_num_warps(
+                        cfg, max(cap, cls._spill_floor_warps(env, cfg))
+                    )
         return cfg
+
+    @classmethod
+    def _spill_floor_warps(cls, env: CompileEnvironment, cfg: Config) -> int:
+        """Lowest warp count whose register file holds the kernel's live set.
+
+        A floor UNDER the vector-width cap. The cap is an argument about how many lanes a row
+        can feed; it is silent about whether those lanes have registers, and adversarial review
+        measured it walking straight off the register cliff (1088-2382 spills). This reuses the
+        same live-set law the matmul seeds use, so the two paths cannot disagree about the
+        register file. Returns 1 when nothing is known, which leaves the cap unchanged."""
+        mm = env.config_spec.multi_matmul_fact
+        if mm is None:
+            return 1
+        block_sizes = list(cfg.config.get("block_sizes") or [])
+        try:
+            return TritonB200FormulaMatmulHeuristic._warps_for_live_set(
+                1,
+                TritonB200FormulaMatmulHeuristic._acc_tiles_from_map(env, block_sizes),
+                TritonB200FormulaMatmulHeuristic._other_register_bytes(
+                    env, block_sizes
+                ),
+            )
+        except Exception:
+            return 1
 
     @classmethod
     def _emitted_row_width(
@@ -3755,9 +3790,25 @@ class _TritonReductionSeedSM100(_TritonReductionSeedBase):
         ``num_warps <= row_bytes / (32 x 16)``, on the LOAD width (``input_load_itemsize``, the
         width the vector access actually moves).
 
-        WHY IT IS CONFINED TO A CARRIED REDUCTION. "Extra warps add no bytes in flight" is only
-        true when the CTA's resident working set is fixed independently of the warp count, which
-        is exactly what ``carried_2d_count > 0`` states: that reduction's ``[rows, R]``
+        THE 16 B IS PHYSICAL; THIS FORMULA IS NOT THE GENERAL ONE. Adversarial review held
+        ``row_bytes`` constant at 256 B and swept the rows per program: the optimum warp count
+        moves 2 -> 4 -> 8 as rows goes 4 -> 8 -> 16, i.e. it tracks
+        ``rows * row_bytes / (32 * 16)`` (4 predictions correct out of 4) while this row-only
+        form returns 1 throughout and is 46% wrong at 16 rows. PTX agrees: ``ld.global.v4``
+        survives up to ``num_warps = rows * row_bytes / 512``. The row-only form is right for the
+        decode body only because that body's ``K * itemsize`` happens to equal ``32 * 16``. The
+        tile form is the correct generalization and is NOT taken here only because it has not
+        been measured on the curriculum; that is a recorded residual, not a defence.
+
+        WHY IT IS CONFINED TO A CARRIED REDUCTION -- and this gate is NOT established as the
+        property. Adversarial review measured a matched carried/streamed pair (only the
+        accumulator's rank differing) to be PTX-identical at every warp count and to time within
+        0.97-1.03x in 53 of 54 arms, and found that inside the streamed body the harm the gate was
+        drawn to avoid lands on exactly the 2 of 13 cells with 16 rows per program, where
+        ``carried_2d_count`` is 0 in all 13 and so explains none of the variance. Off-corpus the
+        ungated cap measured free on both sides (0.976-1.027 over 25 cells). The gate is retained
+        as the narrowest form that is measured not to harm, NOT as an explanation. The stated
+        reading below is what motivated it: that reduction's ``[rows, R]``
         accumulator is held resident across the whole reduction rather than streamed and
         released. (The allocator already keys its byte budget and its no-widen guard on the same
         fact.) For such a program the loads outstanding per CTA are set by ``block_sizes``, the
