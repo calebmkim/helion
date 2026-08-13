@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import starmap
 import json
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -406,6 +407,7 @@ def _generalized_spec(
         sequential_loop_trips=1,
         live_tiles=(),
         live_dot_outputs=(),
+        live_tile_steps=(),
         pipelined_regions=(),
         resident_regions=(),
         n_dot_nodes=1,
@@ -543,49 +545,65 @@ def test_tmem_is_counted_in_columns_and_sums_over_live_accumulators() -> None:
     assert TritonH100MatmulHeuristic._tmem_columns([(128, 256, 2)] * 8) == 0
 
 
-def test_register_accumulator_charge_depends_on_the_warpgroup() -> None:
-    """tcgen05 MMA issues per warpgroup, so below 4 warps that path is unavailable and EVERY
-    accumulator falls back into the register file -- the budget the tensor-memory model
-    assumed away. Measured spill counts across a warp sweep at a byte-identical tile stop
-    exactly where the warpgroup becomes available (1: 1148 spills, 2: 84, 4: 0, 8: 0)."""
-    tiles = [(64, 64, 2), (64, 64, 2)]
-    assert _FML._register_acc_bytes(tiles, 1) == 2 * 64 * 64 * 4
-    assert _FML._register_acc_bytes(tiles, 2) == 2 * 64 * 64 * 4
-    assert _FML._register_acc_bytes(tiles, 4) == 0
-    # A dot below the tcgen05 minimum stays register-resident at ANY warp count.
-    assert _FML._register_acc_bytes([(32, 64, 2)], 8) == 32 * 64 * 4
+def test_register_estimate_picks_its_peak_by_resolved_bytes() -> None:
+    """The register estimate must select its peak step by RESOLVED BYTES at the candidate
+    config, not by the block-size-free rank profile the reduction liveness machinery uses.
 
+    Selecting by rank picked a step holding several rank-2 loads over the step that actually
+    holds the accumulators. Measured against post-ptxas spills at one warp, that inverted the
+    ordering: a kernel spilling 540 registers estimated 1.33x the one-warp file while one
+    spilling none estimated 1.51x, so no threshold could separate them. With the byte-selected
+    peak the same 12 cells separate cleanly -- every zero-spill cell at or below 1.51x, every
+    spilling cell at or above 2.30x."""
+    from helion.autotuner.config_spec import LiveTile
 
-def test_warps_rise_with_the_register_resident_live_set() -> None:
-    """The property that decides the one-warp penalty is total live fp32 dot-output bytes
-    against the one-warp register file (32 x 255 x 4 = 32640 B), NOT the contraction count:
-    measured at matched live bytes, matched MMA FLOPs and matched HBM traffic, the one-warp
-    penalty is 8.29x for ONE contraction, 2.69x for two and 4.75x for four, and a dot-free
-    control spills 490 registers and loses 4.0x with no MMA anywhere.
+    def tile(kind: str, rows: int, cols: int, itemsize: int = 4) -> LiveTile:
+        return LiveTile(
+            dim_block_ids=(None, None),
+            static_dims=(rows, cols),
+            itemsize=itemsize,
+            kind=kind,
+        )
 
-    The ladder climbs 1 -> 2 -> 4 -> 8. Losing tcgen05 below a warpgroup is confirmed in the
-    emitted PTX but is not itself a penalty -- at 16 KiB live, one warp on ``mma.sync`` beats
-    four warps on tcgen05 -- and two warps is the hand-tuned answer in 11 of 18
-    ``chunk_cumsum_gc`` cells."""
-    # ONE 64x64 fp32 accumulator is 16 KiB and fits one warp: leave the draft alone.
-    assert _FML._warps_for_live_set(1, [(64, 64, 2)]) == 1
-    # TWO of them are 32 KiB against a 31.9 KiB file: one step up the ladder, not a jump.
-    assert _FML._warps_for_live_set(1, [(64, 64, 2)] * 2) == 2
-    # Accumulators are charged at FACE VALUE (a dot's output extent is exact), unlike the
-    # FX-derived non-accumulator set. Discounting them too left one curriculum case at one
-    # warp with 430 spills, 1.62x slower than the same tile at four warps.
-    assert _FML._warps_for_live_set(1, [(64, 64, 2)] * 4) == 4
-    # No accumulators recorded -> no opinion, so the incumbent ramp is preserved.
-    assert _FML._warps_for_live_set(1, []) == 1
-    assert _FML._warps_for_live_set(8, []) == 8
-    # Never lowers what the tile ramp asked for.
-    assert _FML._warps_for_live_set(8, [(64, 64, 2)] * 4) == 8
-    # Where tensor memory cannot rescue it (bm below the tcgen05 minimum), it keeps climbing.
-    assert _FML._warps_for_live_set(1, [(32, 2048, 2)] * 4) == _FML.MAX_NUM_WARPS
-    # The NON-accumulator live set comes from the FX peak, which over-counts, so it is
-    # discounted by the calibrated factor before the comparison.
-    assert _FML._warps_for_live_set(1, [], other_register_bytes=400000) == 8
-    assert _FML._warps_for_live_set(1, [], other_register_bytes=1024) == 1
+    def env_with(steps: tuple) -> SimpleNamespace:
+        return SimpleNamespace(
+            config_spec=SimpleNamespace(
+                multi_matmul_fact=SimpleNamespace(
+                    live_tile_steps=steps, matmuls=(), axes=()
+                ),
+                block_sizes=_block_sizes_stub([]),
+                _base_default_config=lambda: helion.Config(block_sizes=[]),
+            ),
+            block_sizes=[],
+        )
+
+    # The peak must be the BYTE-heaviest step, not the one with the most tiles: three small
+    # values must not outrank one large one.
+    many_small = tuple(tile("other", 8, 8) for _ in range(3))
+    one_large = (tile("other", 128, 128),)
+    env = env_with((many_small, one_large))
+    assert _FML._register_live_bytes(env, [], 4) == 128 * 128 * 4
+
+    # Loads are excluded: they are charged to the shared-memory ring, and charging them here
+    # would put the same bytes in two budgets.
+    assert _FML._register_live_bytes(env_with(((tile("load", 128, 128),),)), [], 4) == 0
+
+    # A value larger than the largest register file a CTA can have is not register-resident --
+    # it lives in HBM and the graph merely names it (a varlen packed buffer measured 256 MiB).
+    huge = (tile("other", 8192, 64),)
+    assert _FML._register_live_bytes(env_with((huge,)), [], 1) == 0
+
+    # A dot output is charged only where tensor memory cannot absorb it. Below a warpgroup
+    # there is no tcgen05 path at all (PTX: num_warps 1 or 2 emits zero tcgen05.mma and
+    # tmem_size 0), so the accumulator lands in registers; at 4 warps with bm >= the tcgen05
+    # minimum it does not.
+    acc = (tile("dot_out", 64, 64),)
+    assert _FML._register_live_bytes(env_with((acc,)), [], 1) == 64 * 64 * 4
+    assert _FML._register_live_bytes(env_with((acc,)), [], 2) == 64 * 64 * 4
+    assert _FML._register_live_bytes(env_with((acc,)), [], 4) == 0
+    # ...and a dot below the tcgen05 minimum stays register-resident at any warp count.
+    narrow = (tile("dot_out", 32, 64),)
+    assert _FML._register_live_bytes(env_with((narrow,)), [], 8) == 32 * 64 * 4
 
 
 def test_graded_stage_depth_falls_off_with_outer_parallelism() -> None:
@@ -740,57 +758,6 @@ def test_multi_matmul_front_end_declines_whatever_front_end_one_owns() -> None:
     assert triton_order.index(_MULTI) > triton_order.index(_FML)
 
 
-def test_warp_floor_is_conditioned_on_the_live_set_not_the_dot_count() -> None:
-    """The multi-contraction warp floor must NOT fire on dot count alone.
-
-    Adversarial review built a 4-contraction kernel chained so only ONE output is ever live:
-    it spills nothing at any warp count and is fastest at ONE warp by +7.0%. An unconditional
-    floor overrides that, and costs +72.1% on a curriculum cell whose hand-tuned num_warps is
-    1 in all 10 of its cases. Conditioned on the live-set estimate instead, the floor agrees
-    with the answer key on 23 of the 24 cases it touches rather than 13, and changes nothing
-    on the other 408. So: one live accumulator -> never floor, however many dots exist."""
-    env = SimpleNamespace(
-        config_spec=SimpleNamespace(
-            multi_matmul_fact=SimpleNamespace(
-                live_dot_outputs=(), live_tiles=(), matmuls=(), axes=()
-            ),
-            block_sizes=_block_sizes_stub([]),
-        ),
-        block_sizes=[],
-    )
-    # No recorded accumulators at all -> no opinion.
-    assert _MULTI._needs_warp_floor(env, []) is False
-
-    def env_with(tiles: tuple) -> SimpleNamespace:
-        from helion.autotuner.config_spec import LiveTile
-
-        outs = tuple(
-            LiveTile(
-                dim_block_ids=(None, None),
-                static_dims=(rows, cols),
-                itemsize=4,
-                kind="dot_out",
-            )
-            for rows, cols in tiles
-        )
-        return SimpleNamespace(
-            config_spec=SimpleNamespace(
-                multi_matmul_fact=SimpleNamespace(
-                    live_dot_outputs=outs, live_tiles=(), matmuls=(), axes=()
-                ),
-                block_sizes=_block_sizes_stub([]),
-            ),
-            block_sizes=[],
-        )
-
-    # ONE live 64x64 fp32 accumulator fits one warp: no floor, no matter the dot count.
-    assert _MULTI._needs_warp_floor(env_with(((64, 64),)), []) is False
-    # Two of them are 32 KiB against the 31.9 KiB one-warp file: floor applies.
-    assert _MULTI._needs_warp_floor(env_with(((64, 64), (64, 64))), []) is True
-    # Two TINY live accumulators still fit, so the count alone must not trigger it.
-    assert _MULTI._needs_warp_floor(env_with(((16, 16), (16, 16))), []) is False
-
-
 def _live(kind: str, *block_ids: int | None) -> LiveTile:
     return LiveTile(
         dim_block_ids=tuple(block_ids),
@@ -818,6 +785,7 @@ def _knob_spec(
         sequential_loop_trips=1,
         live_tiles=(),
         live_dot_outputs=(),
+        live_tile_steps=(),
         pipelined_regions=pipelined_regions,
         resident_regions=(),
         n_dot_nodes=len(knob_users),
@@ -967,3 +935,102 @@ def test_grid_knob_shrinks_until_the_launch_grid_fills_a_wave() -> None:
     block_sizes = [128]
     _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
     assert block_sizes == [128]
+
+
+def _steps_env(
+    steps: tuple[tuple[tuple[int, int, int, str], ...], ...],
+) -> SimpleNamespace:
+    """A stub env whose ``live_tile_steps`` are literal (rows, cols, itemsize, kind) tiles."""
+    mk = lambda r, c, isz, kind: LiveTile(  # noqa: E731
+        dim_block_ids=(None, None), static_dims=(r, c), itemsize=isz, kind=kind
+    )
+    return SimpleNamespace(
+        config_spec=SimpleNamespace(
+            multi_matmul_fact=SimpleNamespace(
+                live_tile_steps=tuple(tuple(starmap(mk, step)) for step in steps)
+            ),
+            block_sizes=_block_sizes_stub([]),
+            _base_default_config=lambda: helion.Config(block_sizes=[]),
+        ),
+        block_sizes=[],
+    )
+
+
+def test_register_estimate_peaks_on_bytes_not_on_rank() -> None:
+    """The register estimate must select its peak step by RESOLVED BYTES, not by rank profile.
+
+    Rank profile is block-size-free, which is the right question for a reduction's working set
+    (block sizes are unknown there) and the wrong one here (they are known). Selecting by rank
+    picked a step holding several rank-2 loads over the step actually holding the accumulators:
+    it under-counted a kernel spilling 540 registers at one warp (1.33x the one-warp file) while
+    over-counting one spilling none (1.51x), so the ordering inverted and no threshold could
+    separate them. This pins the fix: a step with FEWER tiles but more bytes must win."""
+    many_small = tuple((8, 8, 4, "other") for _ in range(6))  # 6 tiles, 1536 B
+    one_big = ((128, 128, 4, "other"),)  # 1 tile, 65536 B
+    env = _steps_env((many_small, one_big))
+    assert _FML._register_live_bytes(env, [], 8) == 128 * 128 * 4
+
+
+def test_register_estimate_excludes_loads_and_unregisterable_values() -> None:
+    """Loads are charged to the shared-memory ring, so charging them here would put the same
+    bytes in two budgets. And a value larger than the largest register file a CTA can have is
+    not register-resident at all -- it lives in HBM and the graph merely names it. Without that
+    exclusion a varlen packed [T, C, D] buffer (measured 256 MiB) pinned every warp count to
+    the maximum."""
+    env = _steps_env((((64, 64, 4, "load"),),))
+    assert _FML._register_live_bytes(env, [], 8) == 0
+    huge = _FML.MAX_NUM_WARPS * 32 * _FML.REG_BYTES_PER_THREAD
+    env = _steps_env((((huge, 4, 4, "other"),),))
+    assert _FML._register_live_bytes(env, [], 8) == 0
+
+
+def test_register_estimate_lets_tensor_memory_absorb_wide_accumulators() -> None:
+    """A dot output is charged to the register file only when tensor memory cannot take it.
+    tcgen05 MMA issues per warpgroup -- confirmed in PTX, num_warps 1 or 2 emits zero
+    tcgen05.mma with tmem_size 0 -- and below TCGEN05_MIN_BM the dot never reaches that path at
+    any warp count. So the charge is warp-count dependent, which is why the ladder must re-ask
+    the estimate at every rung rather than compute it once."""
+    wide = (((128, 128, 4, "dot_out"),),)
+    assert _FML._register_live_bytes(_steps_env(wide), [], 1) == 128 * 128 * 4
+    assert _FML._register_live_bytes(_steps_env(wide), [], 2) == 128 * 128 * 4
+    assert _FML._register_live_bytes(_steps_env(wide), [], 4) == 0
+    narrow = (
+        ((32, 128, 4, "dot_out"),),
+    )  # below TCGEN05_MIN_BM: never in tensor memory
+    assert _FML._register_live_bytes(_steps_env(narrow), [], 8) == 32 * 128 * 4
+
+
+def test_warps_climb_the_ladder_until_the_live_set_fits() -> None:
+    """Section 3's register fix-up: estimate from the register-resident live set and the
+    proposed warp count, then increase num_warps first. A fixed point, because raising the count
+    both enlarges the file and can move the accumulators out of it entirely.
+
+    The ladder is 1 -> 2 -> 4 -> 8, not a jump to a warpgroup: losing tcgen05 below one is not
+    itself a penalty (at 16 KiB live, one warp on mma.sync beats four on tcgen05) and two warps
+    is the hand-tuned answer in 11 of 18 chunk_cumsum_gc cells."""
+    one_warp_file = 32 * _FML.REG_BYTES_PER_THREAD
+    fits_one = (((64, 64, 4, "other"),),)  # 16 KiB
+    assert _FML._register_live_bytes(_steps_env(fits_one), [], 1) <= one_warp_file
+    assert _FML._warps_for_live_set(1, _steps_env(fits_one), []) == 1
+    two = (((64, 64, 4, "other"), (64, 64, 4, "other")),)  # 32 KiB > 31.9 KiB
+    assert _FML._warps_for_live_set(1, _steps_env(two), []) == 2
+    four = tuple([tuple((64, 64, 4, "other") for _ in range(4))])
+    assert _FML._warps_for_live_set(1, _steps_env(four), []) == 4
+    # never lowers what the tile ramp asked for, and no opinion when nothing is recorded
+    assert _FML._warps_for_live_set(8, _steps_env(four), []) == 8
+    assert _FML._warps_for_live_set(1, _steps_env(()), []) == 1
+
+
+def test_no_structural_warp_floor_survives() -> None:
+    """The two-warp floor for multi-contraction kernels is DELETED, not disabled.
+
+    It was a patch over the rank-selected estimate. Once the peak is chosen by bytes, the
+    floor's own predicate became identical to the ladder's first rung, so it could never raise
+    anything the ladder did not already raise. Adversarial review had independently shown the
+    unconditional form cost +72% on a cell whose hand-tuned num_warps is 1 in all 10 of its
+    cases, and that a 4-contraction kernel with one live output is fastest at one warp."""
+    import inspect
+
+    src = inspect.getsource(_MULTI)
+    assert "MULTI_DOT_MIN_NUM_WARPS" not in src
+    assert "_needs_warp_floor" not in src

@@ -303,6 +303,13 @@ class MultiMatmulFact(NamedTuple):
       register working set, the wrong one for the accumulator budget: the rank peak can
       be a step where the heavy loads are live and the accumulators are not). This is
       what a sum-over-live-accumulators tensor-memory/register term is computed from.
+    - ``live_tile_steps`` — the live tile set at EVERY step of the kernel's graphs, deduped.
+      ``live_tiles`` above is one step chosen by RANK PROFILE, which is block-size-free and so
+      the right question when block sizes are unknown; a register estimate is asked later, when
+      the candidate block sizes ARE known, and should pick its peak by resolved BYTES. Keeping
+      every step is what lets it. Selecting by rank instead under-counted a kernel that spills
+      540 registers at one warp while over-counting one that spills none — the ordering
+      inverted, so no threshold on that estimate could separate them.
     - ``pipelined_regions`` — the loads/stores of each LOOP BODY, i.e. the regions whose
       loads the software pipeliner multi-buffers. The SMEM operand ring is charged over
       every load such a region stages, not only the dot's own A and B: a sum within a
@@ -325,6 +332,7 @@ class MultiMatmulFact(NamedTuple):
     sequential_loop_trips: int
     live_tiles: tuple[LiveTile, ...]
     live_dot_outputs: tuple[LiveTile, ...]
+    live_tile_steps: tuple[tuple[LiveTile, ...], ...]
     pipelined_regions: tuple[tuple[LiveTile, ...], ...]
     resident_regions: tuple[tuple[LiveTile, ...], ...]
     n_dot_nodes: int

@@ -1699,6 +1699,14 @@ class DeviceIR:
                 best_acc_key = acc_key
                 best_acc = chain
 
+        # (4b) every step's live set, so a register estimate can pick its peak by resolved
+        # BYTES once the candidate block sizes are known (see ``_graph_live_tile_steps``).
+        all_steps: list[tuple[LiveTile, ...]] = []
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            all_steps.extend(_graph_live_tile_steps(gi.graph, env))
+
         # (5) memory regions, split by whether the software pipeliner multi-buffers them.
         # A LOOP BODY's loads are staged num_stages deep; a load in a non-loop graph is
         # issued once. Charging the latter per stage over-states shared memory badly enough
@@ -1725,6 +1733,7 @@ class DeviceIR:
             sequential_loop_trips=seq_trips,
             live_tiles=tuple(best),
             live_dot_outputs=tuple(best_acc),
+            live_tile_steps=tuple(all_steps),
             pipelined_regions=tuple(pipelined),
             resident_regions=tuple(resident),
             n_dot_nodes=max(n_dot_nodes, len(facts)),
@@ -3761,6 +3770,79 @@ def _graph_peak_dot_output_tiles(
         # in the kernel).
         live = {v for v in live if last_use.get(v, len(nodes)) > i}
     return best
+
+
+def _graph_live_tile_steps(
+    graph: torch.fx.Graph, env: CompileEnvironment
+) -> list[tuple[LiveTile, ...]]:
+    """The live tile set at EVERY step of the graph, deduplicated.
+
+    ``_graph_peak_live_tiles_detailed`` returns one step, chosen by RANK PROFILE -- a
+    block-size-free proxy for "big" that is the right question for a reduction's working set,
+    because there the block sizes are not yet known. A register-pressure estimate is asked
+    later, when the candidate block sizes ARE known, so it can and should pick its peak by
+    resolved BYTES instead. Keeping every step lets it do that.
+
+    The distinction is not academic. Selecting by rank picked a step holding several rank-2
+    loads over the step that actually holds the accumulators, and the resulting estimate
+    UNDER-counted a kernel that spills 540 registers at one warp (43520 B estimated against a
+    32640 B one-warp file) while OVER-counting one that spills none (49152 B). The ordering
+    inverted, so no threshold on that estimate could separate them -- which is what drove two
+    successive patches (a calibration divisor, then a structural warp floor) over a defect
+    that was in the selector.
+
+    Graphs here are tens of nodes, so this is a handful of small tuples per graph.
+    """
+    steps: list[tuple[LiveTile, ...]] = []
+    seen: set[frozenset[int]] = set()
+    nodes = list(graph.nodes)
+    last_use: dict[torch.fx.Node, int] = {}
+    for i, node in enumerate(nodes):
+        for inp in node.all_input_nodes:
+            last_use[inp] = i
+    detail = _live_tile_details(nodes, env)
+    live: set[torch.fx.Node] = set()
+    for i, node in enumerate(nodes):
+        if node in detail:
+            live.add(node)
+        if live:
+            key = frozenset(id(v) for v in live)
+            if key not in seen:
+                seen.add(key)
+                steps.append(tuple(detail[v] for v in live))
+        live = {v for v in live if last_use.get(v, -1) > i}
+    return steps
+
+
+def _live_tile_details(
+    nodes: list[torch.fx.Node], env: CompileEnvironment
+) -> dict[torch.fx.Node, LiveTile]:
+    """``{node: LiveTile}`` for every value that spans at least one block axis."""
+    dot_targets = frozenset(_matmul_operand_positions())
+    out: dict[torch.fx.Node, LiveTile] = {}
+    for node in nodes:
+        val = node.meta.get("val")
+        if not (isinstance(val, torch.Tensor) and val.shape):
+            continue
+        dims = tuple(env.resolve_block_id(s) for s in val.shape)
+        if not any(d is not None for d in dims):
+            continue
+        static_out: list[int | None] = []
+        for dim, blk in zip(val.shape, dims, strict=False):
+            if blk is not None:
+                static_out.append(None)
+                continue
+            try:
+                static_out.append(int(env.size_hint(dim)))
+            except Exception:
+                static_out.append(None)
+        out[node] = LiveTile(
+            dim_block_ids=dims,
+            static_dims=tuple(static_out),
+            itemsize=val.dtype.itemsize,
+            kind=_live_tile_kind(node, dot_targets),
+        )
+    return out
 
 
 def _graph_peak_live_tiles_detailed(
