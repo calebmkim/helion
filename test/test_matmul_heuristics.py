@@ -737,3 +737,54 @@ def test_multi_matmul_front_end_declines_whatever_front_end_one_owns() -> None:
 
     triton_order = HEURISTICS_BY_BACKEND["triton"]
     assert triton_order.index(_MULTI) > triton_order.index(_FML)
+
+
+def test_warp_floor_is_conditioned_on_the_live_set_not_the_dot_count() -> None:
+    """The multi-contraction warp floor must NOT fire on dot count alone.
+
+    Adversarial review built a 4-contraction kernel chained so only ONE output is ever live:
+    it spills nothing at any warp count and is fastest at ONE warp by +7.0%. An unconditional
+    floor overrides that, and costs +72.1% on a curriculum cell whose hand-tuned num_warps is
+    1 in all 10 of its cases. Conditioned on the live-set estimate instead, the floor agrees
+    with the answer key on 23 of the 24 cases it touches rather than 13, and changes nothing
+    on the other 408. So: one live accumulator -> never floor, however many dots exist."""
+    env = SimpleNamespace(
+        config_spec=SimpleNamespace(
+            multi_matmul_fact=SimpleNamespace(
+                live_dot_outputs=(), live_tiles=(), matmuls=(), axes=()
+            ),
+            block_sizes=_block_sizes_stub([]),
+        ),
+        block_sizes=[],
+    )
+    # No recorded accumulators at all -> no opinion.
+    assert _MULTI._needs_warp_floor(env, []) is False
+
+    def env_with(tiles: tuple) -> SimpleNamespace:
+        from helion.autotuner.config_spec import LiveTile
+
+        outs = tuple(
+            LiveTile(
+                dim_block_ids=(None, None),
+                static_dims=(rows, cols),
+                itemsize=4,
+                kind="dot_out",
+            )
+            for rows, cols in tiles
+        )
+        return SimpleNamespace(
+            config_spec=SimpleNamespace(
+                multi_matmul_fact=SimpleNamespace(
+                    live_dot_outputs=outs, live_tiles=(), matmuls=(), axes=()
+                ),
+                block_sizes=_block_sizes_stub([]),
+            ),
+            block_sizes=[],
+        )
+
+    # ONE live 64x64 fp32 accumulator fits one warp: no floor, no matter the dot count.
+    assert _MULTI._needs_warp_floor(env_with(((64, 64),)), []) is False
+    # Two of them are 32 KiB against the 31.9 KiB one-warp file: floor applies.
+    assert _MULTI._needs_warp_floor(env_with(((64, 64), (64, 64))), []) is True
+    # Two TINY live accumulators still fit, so the count alone must not trigger it.
+    assert _MULTI._needs_warp_floor(env_with(((16, 16), (16, 16))), []) is False

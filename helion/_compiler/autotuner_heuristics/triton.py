@@ -1095,6 +1095,21 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         for stages in range(ceiling, 0, -1):
             if smem_of(stages) <= share:
                 return stages
+        # Nothing fits the per-CTA SHARE, so return the floor of one stage.
+        #
+        # It is tempting to fall back to whatever total CAPACITY allows here, on the argument
+        # that once even one stage cannot meet the share, co-residency is already sacrificed
+        # and there is nothing left to protect. That argument is MEASURED NOT TO HOLD across
+        # the curriculum, in both of its forms:
+        #   * deepest-that-fits-capacity: +0.09 and +0.03 on two 18-case bodies whose cells
+        #     were emitting ns=1 at the same tile the hand-tuning runs at ns=2..8, but -0.12
+        #     and -0.18 on two others, for a net -0.016 over the whole curriculum;
+        #   * bounded to double buffering: keeps most of the gain (+0.087, +0.033) and most of
+        #     one loss back (-0.010), but still -0.205 on a 6-case varlen body whose hand-tuned
+        #     answer really is one stage. Net still negative.
+        # So a body that wants depth here and a body that wants one stage here are not
+        # separated by anything this model currently sees. Recorded as a characterized
+        # residual rather than papered over with a third constant.
         return 1
 
     @classmethod
@@ -1793,25 +1808,45 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
     # to change that path, and no evidence it would hurt; it is left alone.
     SAT_TILE_BM = 128
     SAT_TILE_BN = 128
-    # Warp floor for a MULTI-contraction program: never emit the single-warp draft here.
+    # Warp floor for a multi-contraction program whose live register state does not fit one
+    # warp. NOT an unconditional floor: adversarial review refuted that form and this is the
+    # narrower rule it measured.
     #
-    # This is a floor rather than a policy because the two errors are not symmetric, and the
-    # asymmetry is measured. One rung too HIGH is nearly free: two warps is the hand-tuned
-    # answer in 11 of 18 ``chunk_cumsum_gc`` cells and the best of four counts in 7 of 14
-    # synthetic cells. One rung too LOW is catastrophic: 4-8x, via register spilling to local
-    # memory. And the live-set estimate provably cannot separate the boundary cases -- a cell
-    # that spills 540 registers at one warp estimates 1.33x the one-warp file while a cell that
-    # spills ZERO estimates 1.51x, i.e. the ordering inverts, so no threshold on that estimate
-    # can decide them.
+    # What the review established, with its own synthetic kernels:
+    #   * "several contractions imply more live register state" is BACKWARDS. At matched live
+    #     fp32 bytes (32768) the one-warp penalty FALLS with contraction count -- 1.449x at one
+    #     dot (62 spills), 1.162x at two (0 spills), 0.996x at four (0 spills).
+    #   * A 4-contraction kernel chained so only ONE output is ever live spills nothing at any
+    #     warp count and is FASTEST at one warp by +7.0% (null spread 0.002%). The tree's own
+    #     ``live_dot_outputs`` already reports one live tile there, so the estimate was right
+    #     and an unconditional floor overrode it.
+    #   * One rung too high is NOT nearly free: an unconditional floor costs +72.1% on one
+    #     curriculum cell (null 0.003%) whose hand-tuned num_warps is 1 in all 10 of its cases.
+    #   * Conditioned as below, the floor agrees with the hand-tuned answer key on 23 of the 24
+    #     cases it touches, against 13 of 24 unconditioned, and changes nothing on the other
+    #     408 cases.
     #
-    # What IS certain without any estimate is that a program running several contractions holds
-    # more simultaneously-live register state than a single-contraction program with the same
-    # tile. Given the cost asymmetry, spending one rung on that certainty is the right trade,
-    # and it leaves the single-contraction front end -- where the one-warp draft is measured to
-    # tie hand-tuning -- untouched. Measured on the two zero-tunable-axis 8-dot bodies, the
-    # one-warp draft spills 204-540 registers and scores 0.19-0.38 against hand-tuned configs
-    # that use two and four warps.
+    # So the trigger is the ESTIMATE, charged at face value, and the structural count is only a
+    # soundness guard. The count is measured over ``live_dot_outputs`` rather than
+    # ``matmul_facts`` because the latter counts dot nodes that dead-code elimination removes:
+    # a synthetic kernel emitting exactly one ``tl.dot`` reports four facts.
+    #
+    # No ``LIVE_SET_OVERCOUNT`` divisor in THIS test. The divisor is calibrated for
+    # ``_warps_for_live_set``, which governs 432 cases; applying it here would either move 148
+    # unmeasured cases or lose the separation. The face-value test is exact for the
+    # accumulator term, which is what decides these 24.
     MULTI_DOT_MIN_NUM_WARPS = 2
+
+    @classmethod
+    def _needs_warp_floor(cls, env: CompileEnvironment, block_sizes: list[int]) -> bool:
+        """Whether this kernel's live register state at ONE warp overflows one warp's file."""
+        acc = cls._acc_tiles_from_map(env, block_sizes)
+        if len(acc) <= 1:
+            return False
+        need = cls._register_acc_bytes(acc, 1) + cls._other_register_bytes(
+            env, block_sizes
+        )
+        return need > 32 * cls.REG_BYTES_PER_THREAD
 
     @classmethod
     def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
@@ -1960,7 +1995,7 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
                 cls._acc_tiles_from_map(env, block_sizes),
                 cls._other_register_bytes(env, block_sizes),
             )
-        if len(mm.matmuls) > 1:
+        if cls._needs_warp_floor(env, block_sizes):
             num_warps = max(num_warps, cls.MULTI_DOT_MIN_NUM_WARPS)
 
         return {
