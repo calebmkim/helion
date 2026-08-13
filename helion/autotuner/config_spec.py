@@ -303,11 +303,15 @@ class MultiMatmulFact(NamedTuple):
       register working set, the wrong one for the accumulator budget: the rank peak can
       be a step where the heavy loads are live and the accumulators are not). This is
       what a sum-over-live-accumulators tensor-memory/register term is computed from.
-    - ``ring_load_tiles`` — the loads of each candidate PIPELINED region (one tuple per
-      region), so the SMEM operand ring can be charged over every load the pipeliner
-      buffers rather than only the dot's own A and B. A sum within a region (each load
-      gets its own multi-stage buffer), a max across regions (separate loops run one
-      after the other).
+    - ``pipelined_regions`` — the loads/stores of each LOOP BODY, i.e. the regions whose
+      loads the software pipeliner multi-buffers. The SMEM operand ring is charged over
+      every load such a region stages, not only the dot's own A and B: a sum within a
+      region (each load gets its own multi-stage buffer) times the stage count, and a max
+      across regions (separate loops run one after the other).
+    - ``resident_regions`` — the loads/stores of the NON-loop graphs. These are charged
+      ONCE, with no stage multiplier: a load outside a loop is not multi-buffered, and
+      charging it per stage over-states shared memory badly enough to shrink a tile to the
+      dot minimum for a phantom overflow.
     - ``n_dot_nodes`` — contraction sites counted spelling-independently, so a kernel
       whose dots are written as ``torch.matmul``/``@`` is not read as having none.
     - ``attribution_complete`` — post-condition flag described above.
@@ -321,7 +325,8 @@ class MultiMatmulFact(NamedTuple):
     sequential_loop_trips: int
     live_tiles: tuple[LiveTile, ...]
     live_dot_outputs: tuple[LiveTile, ...]
-    ring_load_tiles: tuple[tuple[LiveTile, ...], ...]
+    pipelined_regions: tuple[tuple[LiveTile, ...], ...]
+    resident_regions: tuple[tuple[LiveTile, ...], ...]
     n_dot_nodes: int
     attribution_complete: bool
 
@@ -332,11 +337,16 @@ class MultiMatmulFact(NamedTuple):
         return ()
 
     def dot_work(self, index: int) -> int:
-        """Dynamic work of one dot: ``m*n*k`` per execution times its executions."""
+        """Dynamic work of one dot: ``m*n*k`` per execution times its executions.
+
+        Falls back to the axis classification's per-program extent when the fact's own
+        ``static_*`` is absent, which happens whenever the axis length is dynamic but the
+        per-program extent is not."""
         f = self.matmuls[index]
-        m = f.static_m or 1
-        n = f.static_n or 1
-        k = f.static_k or 1
+        ax = self.axes[index]
+        m = f.static_m or ax.m_extent or 1
+        n = f.static_n or ax.n_extent or 1
+        k = f.static_k or ax.k_extent or 1
         return m * n * k * max(1, self.sites[index].loop_trips)
 
 

@@ -405,7 +405,8 @@ def _generalized_spec(
         sequential_loop_trips=1,
         live_tiles=(),
         live_dot_outputs=(),
-        ring_load_tiles=(),
+        pipelined_regions=(),
+        resident_regions=(),
         n_dot_nodes=1,
         attribution_complete=True,
     )
@@ -561,16 +562,20 @@ def test_warps_rise_to_a_warpgroup_when_the_live_set_does_not_fit() -> None:
     sub-warpgroup/register-resident and warpgroup/tensor-memory, and a count between them
     pays for threads while still being denied tensor memory (measured: 2 warps still
     spilled 84 registers where 4 spilled none)."""
-    two = [(64, 64, 2), (64, 64, 2)]
-    assert _FML._warps_for_live_set(1, two) == _FML.TCGEN05_WARPGROUP_WARPS
-    # ...and it leaves the one-warp draft alone where that is genuinely right: ONE 64x64
-    # accumulator is 16 KiB and fits, which is what the hand-tuning chose for those kernels.
+    # The estimate is judged against LIVE_SET_OVERCOUNT x the file, because the FX peak-live
+    # set counts each SSA value separately while the backend reuses registers inside that
+    # step; the factor is calibrated against measured post-ptxas spills (see the constant).
+    four = [(64, 64, 2)] * 4
+    assert _FML._warps_for_live_set(1, four) == _FML.TCGEN05_WARPGROUP_WARPS
+    # ...and it leaves the one-warp draft alone where that is genuinely right: the cell whose
+    # estimate is 1.5x the one-warp file measured ZERO spills, and the hand-tuning chose one
+    # warp for it.
     assert _FML._warps_for_live_set(1, [(64, 64, 2)]) == 1
     # No accumulators recorded -> no opinion, so the incumbent ramp is preserved.
     assert _FML._warps_for_live_set(1, []) == 1
     assert _FML._warps_for_live_set(8, []) == 8
     # Never lowers what the tile ramp asked for.
-    assert _FML._warps_for_live_set(8, two) == 8
+    assert _FML._warps_for_live_set(8, four) == 8
     # When tensor memory cannot rescue it (bm below the tcgen05 minimum), it keeps doubling
     # against the register file instead of stopping at a warpgroup.
     huge = [(32, 2048, 2)] * 4
@@ -579,7 +584,7 @@ def test_warps_rise_to_a_warpgroup_when_the_live_set_does_not_fit() -> None:
     # not the accumulators alone. Several multi-contraction bodies have NO loop-carried
     # accumulator, so an accumulator-only estimate sees nothing to fix and leaves them at one
     # warp with 540-894 measured spills; the non-accumulator live bytes must move the answer.
-    assert _FML._warps_for_live_set(1, [], other_register_bytes=98304) == 4
+    assert _FML._warps_for_live_set(1, [], other_register_bytes=200000) == 4
     assert _FML._warps_for_live_set(1, [], other_register_bytes=1024) == 1
 
 
@@ -601,9 +606,16 @@ def test_graded_stage_depth_falls_off_with_outer_parallelism() -> None:
     ]
     assert depths == sorted(depths, reverse=True), depths
     assert depths[0] > depths[-1]
-    # A grid far above the machine size lands on the floor, which is what the hand-tuning
-    # chose for the per-chunk preprocessing kernels (1024-16384 programs, 2 stages).
-    assert depths[-1] == 2
+    # The divisor is CLAMPED at GRADED_MAX_CTAS_PER_SM, so the gradient SATURATES rather
+    # than running to the floor: a grid far above the machine size does not demand a
+    # matching number of simultaneously-resident CTAs (the excess queues), and dividing by
+    # the raw wave count instead collapsed every large-grid kernel to a single stage
+    # (measured: an outer grid of 8192 on 148 SMs gives a 4 KiB per-CTA share).
+    assert depths[-1] == depths[-2]
+    assert (
+        _FML._graded_stage_depth(smem_of, loop_trips=256, grid=10**6, num_sm=148)
+        == depths[-1]
+    )
     # An empty machine reaches depths the incumbent MAX_STAGES ceiling cannot express.
     assert depths[0] > _FML.MAX_STAGES or _FML.HW_MAX_STAGES <= _FML.MAX_STAGES
     assert depths[0] <= _FML.HW_MAX_STAGES
@@ -631,6 +643,7 @@ def test_multi_matmul_ranking_prefers_a_carried_accumulator_then_work() -> None:
         facts = (big, small)
         ns = SimpleNamespace(
             matmuls=facts,
+            axes=(_axes(), _axes()),
             sites=tuple(
                 SimpleNamespace(graph_id=0, loop_trips=t, updates_carry=c)
                 for c, t in zip(carry, trips, strict=True)

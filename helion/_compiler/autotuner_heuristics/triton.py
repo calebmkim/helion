@@ -17,6 +17,7 @@ from ...autotuner.config_spec import FULL_EXTENT_CATEGORIES
 from ...autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
 from ...autotuner.config_spec import DotAxes
 from ...autotuner.config_spec import DotAxisKind
+from ...autotuner.config_spec import LiveTile
 from ...autotuner.config_spec import MultiMatmulFact
 from ...autotuner.config_spec import ReductionCategory
 from ...runtime.config import Config
@@ -223,12 +224,15 @@ def _generalized_static_matmul_fact(config_spec: ConfigSpec) -> MatmulFact | Non
     if len(facts) != 1:
         return None
     fact = facts[0]
-    if fact.static_m is None or fact.static_n is None or fact.static_k is None:
-        return None
     axes = _axis_roles(config_spec, 0)
     if axes is None:
         return None
+    # Sizing needs a per-program EXTENT per axis, which ``DotAxes`` supplies -- including for
+    # an axis the config cannot move whose total length is dynamic. Requiring
+    # ``MatmulFact.static_*`` instead declines those, and they are configurable exactly.
     if DotAxisKind.UNKNOWN in (axes.m_kind, axes.n_kind, axes.k_kind):
+        return None
+    if any(axes.extent(a) is None for a in ("m", "n", "k")):
         return None
     valid = set(config_spec.block_sizes.valid_block_ids())
     tunable_ids = [
@@ -550,11 +554,17 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     # is the one the measured failure sits on (two live 64x64 fp32 accumulators = 32 KiB against
     # 31.9 KiB at one warp, over budget before a single operand tile).
     REG_BYTES_PER_THREAD = 255 * 4
-    # Multiplier on the live-set footprint in the spill test. 1 = the live set may claim the whole
-    # architectural file: with the 255-reg ceiling that IS already the hard bound, and anything
-    # larger measured a regression -- it pushes a single-accumulator kernel off the one-warp draft
-    # that the hand-tuning independently chose for it.
-    ACC_REG_HEADROOM = 1
+    # The FX-level peak-live set OVER-COUNTS the real register footprint, because it counts each
+    # SSA value separately while the backend reuses registers across sub-lifetimes inside that
+    # peak step. Calibrated against post-ptxas ``n_spills`` at one warp over 12 curriculum cells,
+    # the over-count factor is 2 and the separation is clean with no overlap: every cell whose
+    # estimate is <= 1.51x the one-warp file spilled ZERO (chunk_cumsum_gc, 1.506x, 0 spills),
+    # and every cell at >= 2.51x spilled (2.51x -> 142, 2.76x -> 650, 3.01x -> 1148, 3.52x -> 894,
+    # 3.64x -> 1128, 4.03x -> 850, 5.28x -> 2122, 6.04x -> 2338). So a config is judged to spill
+    # when its estimate exceeds LIVE_SET_OVERCOUNT x the file. Directly load-bearing: a factor of
+    # 1 pushes chunk_cumsum_gc off the one-warp draft the hand-tuning chose for it and costs that
+    # body 0.92 -> 0.67.
+    LIVE_SET_OVERCOUNT = 2
     # Warps in a tcgen05 warpgroup. Below this the MMA path is unavailable and the fp32
     # accumulator falls back into the register file.
     TCGEN05_WARPGROUP_WARPS = 4
@@ -562,6 +572,22 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     # Ceiling for the GRADED (sequential-pipeline) stage model. Deliberately above MAX_STAGES: the
     # incumbent 6 cannot express the 8 and 11 the hand-tuning selected at low outer parallelism.
     HW_MAX_STAGES = 12
+    # Floor for the stage knob. The incumbent formula never emits 1 -- right for a bare GEMM, where
+    # an unpipelined K-loop is a large regression -- but it makes a fifth of the answer space
+    # unreachable: 53 of the 251 hand-tuned B200 cells (21.1%), spanning 13 of 26 bodies, use
+    # num_stages=1. And when the operand ring only fits at one stage, the alternative is halving
+    # the tile repeatedly, which is strictly worse: measured, a kernel whose ring needs 152576 B per
+    # stage was pinned to its FLOOR tile because the fix-up refused to go below two stages, while
+    # the hand-tuned config for that cell is the full tile at one stage.
+    MIN_NUM_STAGES = 1
+    # Resident CTAs per SM the graded stage model will budget shared memory for. A grid far
+    # above the machine size does NOT demand a matching number of simultaneously-resident
+    # CTAs -- the excess queues -- so dividing the SMEM budget by the raw wave count collapses
+    # the pipeline to one stage on every large-grid kernel (measured: an outer grid of 8192 on
+    # 148 SMs gives 56 waves and a 4 KiB per-CTA share, which nothing fits). Occupancy past a
+    # few CTAs per SM buys little on a throughput-bound program, and the hand-tuned corpus
+    # accepts 1-2 resident CTAs in exchange for pipeline depth, so the divisor is clamped here.
+    GRADED_MAX_CTAS_PER_SM = 4
     # Master switches for the generalized/graded machinery, so an arch that has not been measured
     # keeps its exact incumbent behavior (sm90 is a byte-identical freeze).
     GENERALIZED_AXES = False
@@ -762,7 +788,7 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         for _ in range(4):
             need = (
                 cls._register_acc_bytes(acc_tiles, warps) + other_register_bytes
-            ) * cls.ACC_REG_HEADROOM
+            ) // cls.LIVE_SET_OVERCOUNT
             if need <= warps * 32 * cls.REG_BYTES_PER_THREAD:
                 return warps
             if warps >= cls.MAX_NUM_WARPS:
@@ -795,18 +821,30 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         64 tensor-memory columns, i.e. nowhere near any limit.
         """
         spec = env.config_spec
-        probe = dict(spec._base_default_config().config)
-        probe["block_sizes"] = list(block_sizes)
-        try:
-            cfg = Config(**cast("dict[str, Any]", probe))
-        except Exception:
-            cfg = spec._base_default_config()
         out: dict[int, int] = {}
+        # A TUNABLE axis's per-program extent is simply the entry the config carries for it.
+        # Read it straight from the list rather than round-tripping through the block-size
+        # source: ``LoopSpecBlockSizeSource.from_config`` reaches for
+        # ``CompileEnvironment.current()``, which is not guaranteed to be entered on every
+        # path that wants a footprint, and a silent failure there falls back to the axis's
+        # FULL extent -- reading a 16384-row grid axis as 16384 rather than 1 and inflating
+        # every footprint by four orders of magnitude.
+        for slot in range(len(spec.block_sizes)):
+            bs = cast("BlockSizeSpec", spec.block_sizes[slot])
+            if slot < len(block_sizes):
+                out[bs.block_id] = max(1, int(block_sizes[slot]))
+        # Everything else is fixed by its source: an ``hl.grid`` axis is one row per program
+        # even though its extent is the whole grid, and a specialized / persistent-reduction
+        # axis is its full extent.
         for bid in range(len(env.block_sizes)):
+            if bid in out:
+                continue
             info = env.block_sizes[bid]
-            value: object
+            value: object = None
             try:
-                value = info.block_size_source.from_config(cfg, info)
+                value = info.block_size_source.from_config(
+                    spec._base_default_config(), info
+                )
             except Exception:
                 value = None
             if value is None:
@@ -828,11 +866,11 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         ``num_stages``, PLUS the region's store staging when it stores from inside itself;
         then MAX across regions, because separate loops run one after the other."""
         mm = env.config_spec.multi_matmul_fact
-        if mm is None or not mm.ring_load_tiles:
+        if mm is None or not (mm.pipelined_regions or mm.resident_regions):
             return 0
         block_of = cls._full_block_map(env, block_sizes)
-        ring = 0
-        for region in mm.ring_load_tiles:
+
+        def region_bytes(region: tuple[LiveTile, ...], stages: int) -> int:
             loads = sum(
                 cls._resolve_tile_bytes(t, block_of) for t in region if t.kind == "load"
             )
@@ -846,7 +884,18 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
                 for t in region
                 if t.kind == "store"
             )
-            ring = max(ring, loads * max(1, num_stages) + stores)
+            return loads * max(1, stages) + stores
+
+        # MAX across regions: separate loops run one after the other, not together. A LOOP
+        # BODY's loads are multi-buffered ``num_stages`` deep; a load in a NON-loop graph is
+        # issued once, so charging it per stage over-states shared memory -- measured, that
+        # over-charge computed 325632 B for a kernel already at its floor tile and pinned it
+        # there for an overflow that cannot happen.
+        ring = 0
+        for region in mm.pipelined_regions:
+            ring = max(ring, region_bytes(region, num_stages))
+        for region in mm.resident_regions:
+            ring = max(ring, region_bytes(region, 1))
         return ring
 
     @classmethod
@@ -896,11 +945,22 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         if mm is None or not mm.live_tiles:
             return 0
         block_of = cls._full_block_map(env, block_sizes)
-        return sum(
-            cls._resolve_tile_bytes(t, block_of)
-            for t in mm.live_tiles
-            if t.kind != "load"
-        )
+        # A value larger than the largest register file a CTA can ever have is not
+        # register-resident by construction -- it lives in HBM and the graph merely names
+        # it. Without this, a varlen kernel's packed ``[T, C, D]`` buffer (measured 256 MiB
+        # at T=8192) is charged to the register file and the correction pins every warp
+        # count to the maximum. The bound is physical, not tuned: 8 warps x 32 threads x
+        # 255 registers.
+        ceiling = cls.MAX_NUM_WARPS * 32 * cls.REG_BYTES_PER_THREAD
+        total = 0
+        for t in mm.live_tiles:
+            if t.kind == "load":
+                continue
+            tile_bytes = cls._resolve_tile_bytes(t, block_of)
+            if tile_bytes > ceiling:
+                continue
+            total += tile_bytes
+        return total
 
     @classmethod
     def _resolve_tile_bytes(cls, tile: object, block_of: dict[int, int]) -> int:
@@ -994,12 +1054,13 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         parallelism, so leaving it in place would cap the model below the answer.
         """
         ctas_per_sm = max(1, -(-max(1, grid) // max(1, num_sm)))
+        ctas_per_sm = min(ctas_per_sm, cls.GRADED_MAX_CTAS_PER_SM)
         share = cls.SMEM_BUDGET // ctas_per_sm
         ceiling = min(cls.HW_MAX_STAGES, max(2, loop_trips))
-        for stages in range(ceiling, 1, -1):
+        for stages in range(ceiling, 0, -1):
             if smem_of(stages) <= share:
                 return stages
-        return 2
+        return 1
 
     @classmethod
     def _matmul_tile(
@@ -1274,9 +1335,13 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         Returns the incumbent proposal unchanged when no axis is fixed and no extra
         accumulator is live, so an ordinary GEMM takes exactly the path it takes today.
         """
-        assert fact.static_m is not None
-        assert fact.static_n is not None
-        assert fact.static_k is not None
+        m_extent = fact.static_m if fact.static_m is not None else None
+        n_extent = fact.static_n if fact.static_n is not None else None
+        if axes is not None:
+            m_extent = axes.m_extent if m_extent is None else m_extent
+            n_extent = axes.n_extent if n_extent is None else n_extent
+        if m_extent is None or n_extent is None:
+            return cls.DOT_MIN, cls.DOT_MIN, cls.DOT_MIN, 4, cls.MIN_NUM_STAGES, 1
         mm = env.config_spec.multi_matmul_fact
         loop_trips = 1
         if mm is not None:
@@ -1286,9 +1351,11 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         k_fixed = axes is not None and axes.k_kind is DotAxisKind.FIXED_FULL_EXTENT
         if k_fixed and axes is not None and axes.k_extent:
             k_logical = axes.k_extent * loop_trips
+        elif k_logical is None and axes is not None and axes.k_extent:
+            k_logical = axes.k_extent
 
         bm, bn, bk, num_warps, num_stages, l2 = cls._matmul_tile(
-            fact.static_m, fact.static_n, k_logical, itemsize, num_sm, pinned_grid
+            m_extent, n_extent, k_logical or cls.DOT_MIN, itemsize, num_sm, pinned_grid
         )
 
         if axes is None:
@@ -1325,8 +1392,8 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
                 smem_of,
                 loop_trips=loop_trips,
                 grid=max(pinned_grid, 1)
-                * ((fact.static_m + bm - 1) // bm)
-                * ((fact.static_n + bn - 1) // bn),
+                * ((m_extent + bm - 1) // bm)
+                * ((n_extent + bn - 1) // bn),
                 num_sm=num_sm,
             )
 
@@ -1373,7 +1440,7 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
             # then tile area. TMEM columns cannot be relieved by num_stages at all -- the
             # accumulator set is independent of pipeline depth -- so that case falls
             # straight through to the tile.
-            if num_stages > 2 and smem_over():
+            if num_stages > cls.MIN_NUM_STAGES and smem_over():
                 num_stages -= 1
                 continue
             moved = False
@@ -1671,6 +1738,39 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
     # promote_seed_to_default=True inherited: with autotune off these kernels otherwise fall
     # back to the bare fragment default, which is the case this seed exists to fix.
 
+    # The saturated-grid ONE-WARP override does not apply here; fall back to the tile ramp.
+    #
+    # That override exists because a large outer grid usually means a small, latency-hidden
+    # program, so many one-warp CTAs beat a few wide ones. The premise is a statement about
+    # PER-PROGRAM WORK, and a grid size cannot see it. It holds for a single clean
+    # contraction -- there the one-warp draft ties the hand-tuned corpus -- and it fails for
+    # a program running several contractions, whose accumulators and masked intermediates all
+    # compete for one register file. Measured at one warp on 12 curriculum cells with a grid
+    # 14x above the saturation threshold: 11 of 12 spilled to local memory (142 to 2338
+    # spills), the worst cell ran 13.7x slower than the same tile at four warps, and the
+    # geometric mean against hand-tuning was 2.57x off; with the override disabled it is
+    # 1.18x off and spills nothing.
+    #
+    # The number of structurally distinct contractions sharing a program is a measurable
+    # workload property, not a kernel identity: any kernel that fuses several contractions
+    # into one program -- attention, a blocked triangular solve, a pairwise-distance kernel --
+    # sits on the same side of it.
+    SAT_NUM_WARPS = None
+    # The saturated-grid TILE caps are relaxed here for the same reason, to the tcgen05 lane
+    # count. They rest on the identical premise ("once the grid saturates the SMs, many small
+    # concurrent CTAs beat a few big ones"), and measured on 54 curriculum cases across 18
+    # bodies the incumbent 32x64 caps cost a geometric mean of 0.700 against hand-tuning where
+    # 128x128 scores 0.778 -- with the emitted tile consistently one or two halvings below the
+    # hand-tuned one while sitting far inside every hard budget (12-24 KiB of shared memory,
+    # 64-128 tensor-memory columns).
+    #
+    # Relaxing them is confined to THIS front end deliberately: the same sweep applied the
+    # relaxed caps to the single-contraction front end as well and scored WORSE (0.754), which
+    # is the discriminator the structural argument predicts -- a program with one contraction
+    # really does prefer the small saturated tile.
+    SAT_TILE_BM = 128
+    SAT_TILE_BN = 128
+
     @classmethod
     def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
         if not matches_hardware(env, cls.HARDWARE_TARGETS):
@@ -1682,10 +1782,17 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
         # fixed-axis form). Declining there keeps promotion ownership unambiguous.
         if _generalized_static_matmul_fact(env.config_spec) is not None:
             return False
-        # At least one dot must have static extents; nothing can be sized without them.
+        # At least one dot must have a sizable per-program extent on every axis; nothing can
+        # be sized without them. Read off ``DotAxes`` rather than ``MatmulFact.static_*``,
+        # which reports UNKNOWN for a config-immovable axis over a dynamic-length sequence --
+        # measured, that alone left 26 curriculum cases with no seed at all, even though the
+        # per-program contraction there is a compile-time constant.
         if not any(
-            f.static_m is not None and f.static_n is not None and f.static_k is not None
-            for f in mm.matmuls
+            all(
+                ax.kind(a) is not DotAxisKind.UNKNOWN and ax.extent(a) is not None
+                for a in ("m", "n", "k")
+            )
+            for ax in mm.axes
         ):
             return False
         # Decline fp8 for exactly the reason front end 1 does: Helion cannot force the
@@ -1705,7 +1812,8 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
         order."""
         carry = 1 if (mm.attribution_complete and mm.sites[index].updates_carry) else 0
         f = mm.matmuls[index]
-        area = (f.static_m or 1) * (f.static_n or 1)
+        ax = mm.axes[index]
+        area = (f.static_m or ax.m_extent or 1) * (f.static_n or ax.n_extent or 1)
         return (carry, mm.dot_work(index), area)
 
     @classmethod
@@ -1715,7 +1823,11 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
         """The shared budget formula's proposal for one dot, projected onto that dot's own
         axis roles. Not a kernel config -- one dot's view of what it wants."""
         fact = mm.matmuls[index]
-        if fact.static_m is None or fact.static_n is None or fact.static_k is None:
+        ax = mm.axes[index]
+        if any(
+            ax.kind(a) is DotAxisKind.UNKNOWN or ax.extent(a) is None
+            for a in ("m", "n", "k")
+        ):
             return None
         itemsize = max(1, fact.lhs_dtype.itemsize)
         return cls._tile_for_dot(
@@ -1785,10 +1897,10 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
         # The real launch grid: the outer parallel axes times the winning tile counts.
         block_of = cls._full_block_map(env, block_sizes)
         grid = max(1, mm.outer_grid)
-        for f in mm.matmuls:
+        for f, ax in zip(mm.matmuls, mm.axes, strict=False):
             for bid, extent in (
-                (f.m_block_id, f.static_m),
-                (f.n_block_id, f.static_n),
+                (f.m_block_id, f.static_m or ax.m_extent),
+                (f.n_block_id, f.static_n or ax.n_extent),
             ):
                 if bid is not None and extent and bid not in grid_ids:
                     grid *= max(1, -(-extent // max(1, block_of.get(bid, 1))))
@@ -1857,7 +1969,7 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
         guard = 0
         while (smem_over() or tmem_over()) and guard < 64:
             guard += 1
-            if draft["num_stages"] > 2 and smem_over():
+            if draft["num_stages"] > cls.MIN_NUM_STAGES and smem_over():
                 draft["num_stages"] -= 1
                 continue
             candidates = [

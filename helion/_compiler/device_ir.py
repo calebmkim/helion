@@ -1479,25 +1479,60 @@ class DeviceIR:
 
         valid = set(spec.block_sizes.valid_block_ids())
 
+        def immovable_extent(block_id: int) -> int | None:
+            """The per-program extent of an axis the config cannot move, or ``None``.
+
+            Asked of the axis's own ``BlockSizeSource``: a source that returns the same
+            value for two different configs is one the config cannot move, and that value
+            IS the per-program extent. A COMPUTED property, deliberately not an
+            ``isinstance`` check on the source class -- the set of source classes is not a
+            closed enumeration, and a check that is right for every class present today is
+            exactly the shape of bug this analysis has to avoid.
+
+            This is also why the axis's ``size`` cannot be used instead: ``size`` is the
+            AXIS LENGTH, which for ``hl.tile(seqlen, block_size=64)`` is the whole sequence
+            (8192) rather than the 64 rows one program sees -- an over-count of 128x that
+            would corrupt every footprint derived from it.
+            """
+            if not (0 <= block_id < len(env.block_sizes)):
+                return None
+            info = env.block_sizes[block_id]
+            probes = []
+            for bs_probe in (16, 128):
+                cfg = spec._base_default_config()
+                sizes = cfg.config.get("block_sizes")
+                if isinstance(sizes, list) and sizes:
+                    cfg.config["block_sizes"] = [bs_probe] * len(sizes)
+                try:
+                    probes.append(info.block_size_source.from_config(cfg, info))
+                except Exception:
+                    return None
+            if probes[0] is None or probes[0] != probes[1]:
+                return None
+            try:
+                return max(1, int(env.size_hint(probes[0])))
+            except Exception:
+                return None
+
         def classify(
             block_id: int | None, static: int | None
         ) -> tuple[DotAxisKind, int | None]:
             if block_id is not None and block_id in valid:
                 return DotAxisKind.TUNABLE_TILED, static
+            # Not tunable. The per-program extent is what the axis's source pins it to,
+            # which is knowable even when the axis LENGTH is dynamic: a chunked kernel that
+            # walks a runtime-length sequence in fixed 64-row tiles has an unknown total
+            # length and a perfectly known 64-row contraction. Tile budgets consume the
+            # per-program extent; only the grid and trip count need the length. Reporting
+            # such an axis as UNKNOWN declines a kernel that can be configured exactly --
+            # measured, it is the sole reason 26 curriculum cases received no seed at all.
+            if block_id is not None:
+                extent = immovable_extent(block_id)
+                if extent is not None:
+                    return DotAxisKind.FIXED_FULL_EXTENT, extent
             if static is None:
                 return DotAxisKind.UNKNOWN, None
-            # Statically known but not tunable. When the axis carries a registered (but
-            # non-tunable) block id, the real per-program extent is that block's size --
-            # which is the chunk extent, not necessarily the whole logical axis.
-            extent = static
-            if block_id is not None and 0 <= block_id < len(env.block_sizes):
-                size = env.block_sizes[block_id].size
-                if isinstance(size, (int, torch.SymInt)):
-                    try:
-                        extent = int(env.size_hint(size))
-                    except Exception:
-                        extent = static
-            return DotAxisKind.FIXED_FULL_EXTENT, extent
+            return DotAxisKind.FIXED_FULL_EXTENT, static
 
         axes: list[DotAxes] = []
         for f in facts:
@@ -1543,9 +1578,11 @@ class DeviceIR:
             sequential loops in one kernel run one after the other, so their trip counts
             add, they do not multiply).
 
-            An axis whose block size is still tunable contributes its full extent, i.e. its
-            trip count at the smallest legal block. That is an UPPER bound, which is the
-            safe direction: every consumer uses this only to CAP a pipeline depth.
+            A loop over an axis the config cannot move runs ``length / block`` times, not
+            ``length`` times -- a 128x over-count for a 64-row tile over an 8192-long
+            sequence. An axis whose block size IS still tunable contributes its full extent,
+            i.e. its trip count at the smallest legal block: an UPPER bound, which is the
+            safe direction, since every consumer uses this only to CAP a pipeline depth.
             """
             trips = 1
             seen: set[int] = set()
@@ -1553,7 +1590,9 @@ class DeviceIR:
             while cur in loop_block_ids and cur not in seen:
                 seen.add(cur)
                 for bid in loop_block_ids[cur]:
-                    trips *= _axis_extent(bid)
+                    extent = _axis_extent(bid)
+                    block = immovable_extent(bid)
+                    trips *= max(1, extent // block) if block else extent
                 cur = parent_of.get(cur, -1)
             return trips
 
@@ -1660,16 +1699,22 @@ class DeviceIR:
                 best_acc_key = acc_key
                 best_acc = chain
 
-        # (5) candidate pipelined regions: every graph that is a loop body, plus the root
-        # graphs (a kernel with no sequential loop still stages its loads). One entry per
-        # region so the consumer can take the max across regions and the sum within one.
-        ring_regions: list[tuple[LiveTile, ...]] = []
+        # (5) memory regions, split by whether the software pipeliner multi-buffers them.
+        # A LOOP BODY's loads are staged num_stages deep; a load in a non-loop graph is
+        # issued once. Charging the latter per stage over-states shared memory badly enough
+        # to shrink a tile to the dot minimum for an overflow that cannot happen.
+        pipelined: list[tuple[LiveTile, ...]] = []
+        resident: list[tuple[LiveTile, ...]] = []
         for gi in self.graphs:
             if isinstance(gi, ReductionLoopGraphInfo):
                 continue
-            loads = _graph_load_tiles(gi.graph, env)
-            if loads:
-                ring_regions.append(tuple(loads))
+            tiles = _graph_load_tiles(gi.graph, env)
+            if not tiles:
+                continue
+            if gi.graph_id in loop_block_ids:
+                pipelined.append(tuple(tiles))
+            else:
+                resident.append(tuple(tiles))
 
         spec.multi_matmul_fact = MultiMatmulFact(
             matmuls=tuple(facts),
@@ -1680,7 +1725,8 @@ class DeviceIR:
             sequential_loop_trips=seq_trips,
             live_tiles=tuple(best),
             live_dot_outputs=tuple(best_acc),
-            ring_load_tiles=tuple(ring_regions),
+            pipelined_regions=tuple(pipelined),
+            resident_regions=tuple(resident),
             n_dot_nodes=max(n_dot_nodes, len(facts)),
             attribution_complete=attribution_complete,
         )
