@@ -593,6 +593,27 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     # stage was pinned to its FLOOR tile because the fix-up refused to go below two stages, while
     # the hand-tuned config for that cell is the full tile at one stage.
     MIN_NUM_STAGES = 1
+    # When the per-CTA occupancy SHARE cannot be met at any depth, fall back to the deepest
+    # depth total CAPACITY allows instead of the floor of one stage.
+    #
+    # REFUTED and off by default, but kept switchable because it is the most obvious next move
+    # and someone will propose it again. The argument for it is sound-sounding -- once even one
+    # stage cannot meet the share, co-residency is already sacrificed and there is nothing left
+    # for the share to protect -- and the symptom it targets is real and large: 11 of the 15
+    # bodies still under the 0.80 bar emit ns=1 where the hand-tuning uses ns=2..8, and on two
+    # 18-case bodies that costs 0.43-0.64x per cell.
+    #
+    # It is nevertheless a net LOSS, measured twice on two different populations:
+    #   * 4 bodies, full case counts: +0.09 and +0.03 on the two that emit ns=1 at a big tile,
+    #     -0.12 and -0.18 on two others; bounding it to double buffering keeps most of the gain
+    #     and most of one loss back but is still negative overall;
+    #   * all 34 scored bodies, 2 cases each, variants compared within each case: 0.8632 with
+    #     17 bodies >= 0.90 against 0.8678 with 19 for the floor (and 0.8548/17 at a raised
+    #     ceiling), median null-arm spread 0.03%.
+    # So a body that wants depth here and a body that wants one stage here are not separated by
+    # anything this model currently sees. That is the largest single characterized residual in
+    # the B200 linear-attention curriculum, and it is a MISSING PROPERTY, not a missing constant.
+    GRADED_SHARE_FALLBACK = False
     # Resident CTAs per SM the graded stage model will budget shared memory for. A grid far
     # above the machine size does NOT demand a matching number of simultaneously-resident
     # CTAs -- the excess queues -- so dividing the SMEM budget by the raw wave count collapses
@@ -1138,21 +1159,15 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         for stages in range(ceiling, 0, -1):
             if smem_of(stages) <= share:
                 return stages
-        # Nothing fits the per-CTA SHARE, so return the floor of one stage.
-        #
-        # It is tempting to fall back to whatever total CAPACITY allows here, on the argument
-        # that once even one stage cannot meet the share, co-residency is already sacrificed
-        # and there is nothing left to protect. That argument is MEASURED NOT TO HOLD across
-        # the curriculum, in both of its forms:
-        #   * deepest-that-fits-capacity: +0.09 and +0.03 on two 18-case bodies whose cells
-        #     were emitting ns=1 at the same tile the hand-tuning runs at ns=2..8, but -0.12
-        #     and -0.18 on two others, for a net -0.016 over the whole curriculum;
-        #   * bounded to double buffering: keeps most of the gain (+0.087, +0.033) and most of
-        #     one loss back (-0.010), but still -0.205 on a 6-case varlen body whose hand-tuned
-        #     answer really is one stage. Net still negative.
-        # So a body that wants depth here and a body that wants one stage here are not
-        # separated by anything this model currently sees. Recorded as a characterized
-        # residual rather than papered over with a third constant.
+        # Nothing fits the per-CTA SHARE. ``GRADED_SHARE_FALLBACK`` chooses what that means:
+        # the floor (occupancy is the binding term and depth is not affordable), or the deepest
+        # depth total CAPACITY allows (co-residency is already sacrificed, so there is nothing
+        # left for the share to protect). Which is right is a measured question, not an
+        # argument -- see the constant.
+        if cls.GRADED_SHARE_FALLBACK:
+            for stages in range(ceiling, 0, -1):
+                if smem_of(stages) <= cls.SMEM_BUDGET:
+                    return stages
         return 1
 
     @classmethod
