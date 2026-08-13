@@ -290,15 +290,6 @@ class MultiMatmulFact(NamedTuple):
       whose axis maps onto it, i.e. which dots COMPETE for that knob.
     - ``outer_grid`` — parallel programs contributed by grid axes that are no dot's
       M or N tile: the occupancy the kernel already has before any tiling choice.
-      Uses each axis's SIZE HINT, so for a ``static_shapes=False`` kernel it includes
-      dimensions the compiled program is not specialized on.
-    - ``outer_grid_specialized`` — the same product restricted to axes whose extent the
-      compiled kernel IS specialized on (a plain int, or a ``SymInt`` that evaluates to a
-      constant). This is the part of the outer grid that is a compile-time property of the
-      program being emitted; the difference between the two fields is exactly the occupancy
-      that varies from call to call under one compiled kernel. Kept alongside ``outer_grid``
-      rather than replacing it so the fact stays descriptive and the seed decides which
-      question it is asking.
     - ``sequential_loop_trips`` — product of the trip counts of the kernel's
       sequential (non-grid) loops. For a chunked recurrence this is the number of
       chunks, so ``sequential_loop_trips * fixed_k`` recovers the logical contraction
@@ -338,10 +329,6 @@ class MultiMatmulFact(NamedTuple):
     resident_regions: tuple[tuple[LiveTile, ...], ...]
     n_dot_nodes: int
     attribution_complete: bool
-    # Defaulted so a bare-spec unit test that builds the fact positionally keeps working; the
-    # default is the NEUTRAL product (1), i.e. "no specialized outer parallelism", which is the
-    # conservative reading for every consumer.
-    outer_grid_specialized: int = 1
 
     def users_of(self, block_id: int) -> tuple[tuple[int, str], ...]:
         for bid, users in self.knob_users:
