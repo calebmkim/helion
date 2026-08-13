@@ -35,7 +35,12 @@ from ..autotuner.config_spec import FULL_EXTENT_CATEGORIES
 from ..autotuner.config_spec import SIZED_REDUCTION_CATEGORIES
 from ..autotuner.config_spec import CoResidencyGroup
 from ..autotuner.config_spec import CuteVectorWidthSpec
+from ..autotuner.config_spec import DotAxes
+from ..autotuner.config_spec import DotAxisKind
+from ..autotuner.config_spec import DotSite
+from ..autotuner.config_spec import LiveTile
 from ..autotuner.config_spec import MatmulWithReductionEpilogueFact
+from ..autotuner.config_spec import MultiMatmulFact
 from ..autotuner.config_spec import ReductionCategory
 from ..autotuner.config_spec import ReductionDescriptor
 from ..autotuner.config_spec import ReductionKernelFact
@@ -1438,6 +1443,247 @@ class DeviceIR:
             "reread_eviction_index": reread_eviction_index,
             "input_load_itemsize": input_load_itemsize,
         }
+
+    def build_multi_matmul_fact(self) -> None:
+        """Compose the whole-kernel ``MultiMatmulFact`` for any kernel with >=1 contraction.
+
+        Built unconditionally (not only for MULTI-dot kernels) so the single-matmul and
+        multi-matmul seeds read ONE description of the workload and differ only in policy;
+        that is what keeps workload analysis independent of heuristic execution order.
+
+        Four pieces of analysis, none of which mentions a kernel name or a semantic role:
+
+        1. **Axis classification** per dot (:class:`DotAxes`). An M/N/K axis is tunable when
+           it has a block id that is in ``valid_block_ids()``; fixed-full-extent when its
+           extent is statically known but it has no tunable block id (the author
+           ``hl.specialize``\\d it, so there is no loop over it and no block size to set);
+           unknown when there is no static extent at all.
+        2. **Knob competition**: which dots' axes map onto each tunable block id. A knob
+           used by two dots must be resolved by ranking rather than by whichever dot the
+           code happened to look at first.
+        3. **Placement and work** per dot (:class:`DotSite`): the enclosing sequential loop
+           trip count (how many times one program runs this dot) and whether it updates a
+           loop-carried value. Attribution of a trace-order ``MatmulFact`` to a graph node is
+           a COMPUTED pairing with a post-condition (the paired node's M/N/K extents must
+           match the fact); ``attribution_complete`` is False when the post-condition fails,
+           so a consumer never silently trusts a wrong pairing.
+        4. **Peak liveness** for the whole kernel, from the same last-use sweep the reduction
+           fact uses, retaining element width and producer class so a resource estimate can
+           charge tensor memory, shared memory and registers separately.
+        """
+        env = CompileEnvironment.current()
+        spec = env.config_spec
+        facts = spec.matmul_facts
+        if not facts:
+            return
+
+        valid = set(spec.block_sizes.valid_block_ids())
+
+        def classify(
+            block_id: int | None, static: int | None
+        ) -> tuple[DotAxisKind, int | None]:
+            if block_id is not None and block_id in valid:
+                return DotAxisKind.TUNABLE_TILED, static
+            if static is None:
+                return DotAxisKind.UNKNOWN, None
+            # Statically known but not tunable. When the axis carries a registered (but
+            # non-tunable) block id, the real per-program extent is that block's size --
+            # which is the chunk extent, not necessarily the whole logical axis.
+            extent = static
+            if block_id is not None and 0 <= block_id < len(env.block_sizes):
+                size = env.block_sizes[block_id].size
+                if isinstance(size, (int, torch.SymInt)):
+                    try:
+                        extent = int(env.size_hint(size))
+                    except Exception:
+                        extent = static
+            return DotAxisKind.FIXED_FULL_EXTENT, extent
+
+        axes: list[DotAxes] = []
+        for f in facts:
+            mk, me = classify(f.m_block_id, f.static_m)
+            nk, ne = classify(f.n_block_id, f.static_n)
+            kk, ke = classify(f.k_block_id, f.static_k)
+            axes.append(DotAxes(mk, nk, kk, me, ne, ke))
+
+        # (2) knob competition
+        users: dict[int, list[tuple[int, str]]] = {}
+        for i, f in enumerate(facts):
+            for axis, bid in (
+                ("m", f.m_block_id),
+                ("n", f.n_block_id),
+                ("k", f.k_block_id),
+            ):
+                if bid is not None and bid in valid:
+                    users.setdefault(bid, []).append((i, axis))
+
+        # (3) placement + work. Sequential loop trip counts come from the for-loop child
+        # edge map, so a dot inside a chunk walk is charged that walk's length.
+        child_loops = self._forloop_child_edges()
+        parent_of: dict[int, int] = {}
+        loop_block_ids: dict[int, frozenset[int]] = {}
+        for parent, edges in child_loops.items():
+            for body_gid, blk in edges:
+                parent_of[body_gid] = parent
+                loop_block_ids[body_gid] = blk
+
+        def _axis_extent(bid: int) -> int:
+            if 0 <= bid < len(env.block_sizes):
+                size = env.block_sizes[bid].size
+                if isinstance(size, (int, torch.SymInt)):
+                    try:
+                        return max(1, int(env.size_hint(size)))
+                    except Exception:
+                        return 1
+            return 1
+
+        def trips_for(graph_id: int) -> int:
+            """Iterations one program runs a dot in this graph: the product over the
+            ANCESTOR CHAIN of loops enclosing it (never across sibling loops -- two
+            sequential loops in one kernel run one after the other, so their trip counts
+            add, they do not multiply).
+
+            An axis whose block size is still tunable contributes its full extent, i.e. its
+            trip count at the smallest legal block. That is an UPPER bound, which is the
+            safe direction: every consumer uses this only to CAP a pipeline depth.
+            """
+            trips = 1
+            seen: set[int] = set()
+            cur = graph_id
+            while cur in loop_block_ids and cur not in seen:
+                seen.add(cur)
+                for bid in loop_block_ids[cur]:
+                    trips *= _axis_extent(bid)
+                cur = parent_of.get(cur, -1)
+            return trips
+
+        dot_targets = _matmul_operand_positions()
+        dot_nodes: list[tuple[int, torch.fx.Node]] = []
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            for node in gi.graph.nodes:
+                if node.op == "call_function" and node.target in dot_targets:
+                    dot_nodes.append((gi.graph_id, node))
+
+        n_dot_nodes = len(dot_nodes)
+        attribution_complete = n_dot_nodes == len(facts)
+        sites: list[DotSite] = []
+        if attribution_complete:
+            for i, (gid, node) in enumerate(dot_nodes):
+                val = node.meta.get("val")
+                # POST-CONDITION on the positional pairing: the node's own output extents
+                # must agree with the fact's M/N. If they do not, the pairing is not proven
+                # and every per-dot placement field becomes untrusted (flag cleared below).
+                if isinstance(val, torch.Tensor) and val.ndim >= 2:
+                    got = []
+                    for dim in val.shape[-2:]:
+                        blk = env.resolve_block_id(dim)
+                        if blk is not None and 0 <= blk < len(env.block_sizes):
+                            dim = env.block_sizes[blk].size
+                        try:
+                            got.append(int(env.size_hint(dim)))
+                        except Exception:
+                            got.append(-1)
+                    want = [facts[i].static_m, facts[i].static_n]
+                    if any(
+                        w is not None and g != -1 and w != g
+                        for w, g in zip(want, got, strict=False)
+                    ):
+                        attribution_complete = False
+                # A dot updates a loop-carried value iff its result REACHES the body
+                # graph's ``output`` node, i.e. it is part of what the next iteration
+                # carries in. Testing the dot's direct users is not enough: the carry
+                # normally passes through a cast or a decay multiply first.
+                updates_carry = _reaches_graph_output(node) and gid in loop_block_ids
+                sites.append(DotSite(gid, trips_for(gid), updates_carry))
+        if not attribution_complete:
+            # Unproven pairing: keep a same-length, deliberately uninformative site list so
+            # consumers never index out of range, and let the flag carry the uncertainty.
+            sites = [DotSite(-1, 1, False) for _ in facts]
+
+        # (3b) outer parallel programs: grid axes that are no dot's M or N tile.
+        mn_ids = {f.m_block_id for f in facts} | {f.n_block_id for f in facts}
+        outer_grid = 1
+        for bid in spec.grid_block_ids:
+            if bid in mn_ids:
+                continue
+            outer_grid *= _axis_extent(bid)
+
+        # (3c) sequential (non-grid) loop trip count over the whole kernel: the chunk walk of
+        # a state recurrence. ``sequential_loop_trips * fixed_k`` recovers the logical
+        # contraction length when each dot only ever sees one chunk. The MAX over loop nests,
+        # not the product over all of them: two sequential loops in one kernel run one after
+        # the other (their iterations add), only a nest multiplies.
+        seq_trips = 1
+        for body_gid, blk in loop_block_ids.items():
+            if any(bid in spec.grid_block_ids for bid in blk):
+                continue
+            seq_trips = max(seq_trips, trips_for(body_gid))
+
+        # (4) whole-kernel peak liveness, max-by-rank-profile over graphs (never a sum:
+        # separate graphs are nested or mutually exclusive, not additively resident).
+        best: list[LiveTile] = []
+        best_key: tuple[int, ...] = ()
+        best_acc: list[LiveTile] = []
+        best_acc_key: tuple[int, int] = (-1, -1)
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            tiles = _graph_peak_live_tiles_detailed(gi.graph, env)
+            dims = [t.dim_block_ids for t in tiles]
+            mr = max((_tile_rank(d) for d in dims), default=0)
+            key = _tile_set_rank_profile(dims, mr)
+            if key > best_key:
+                best_key = key
+                best = tiles
+        # Accumulator residency is NESTED: a parent graph's accumulator is still live while
+        # the loop body it drives runs, so along an ancestor chain the accumulators ADD.
+        # (Across sibling graphs they do not -- those run one after the other -- hence the
+        # max over chains.) This is the term whose absence lets a kernel size its tile off
+        # ONE accumulator while several are resident.
+        acc_of: dict[int, list[LiveTile]] = {}
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            acc_of[gi.graph_id] = _graph_peak_dot_output_tiles(gi.graph, env)
+        for gid, own in acc_of.items():
+            chain = list(own)
+            cur = parent_of.get(gid, -1)
+            seen_chain = {gid}
+            while cur in acc_of and cur not in seen_chain:
+                seen_chain.add(cur)
+                chain += acc_of[cur]
+                cur = parent_of.get(cur, -1)
+            acc_key = (sum(_tile_rank(t.dim_block_ids) for t in chain), len(chain))
+            if acc_key > best_acc_key:
+                best_acc_key = acc_key
+                best_acc = chain
+
+        # (5) candidate pipelined regions: every graph that is a loop body, plus the root
+        # graphs (a kernel with no sequential loop still stages its loads). One entry per
+        # region so the consumer can take the max across regions and the sum within one.
+        ring_regions: list[tuple[LiveTile, ...]] = []
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            loads = _graph_load_tiles(gi.graph, env)
+            if loads:
+                ring_regions.append(tuple(loads))
+
+        spec.multi_matmul_fact = MultiMatmulFact(
+            matmuls=tuple(facts),
+            axes=tuple(axes),
+            sites=tuple(sites),
+            knob_users=tuple((bid, tuple(users[bid])) for bid in sorted(users)),
+            outer_grid=outer_grid,
+            sequential_loop_trips=seq_trips,
+            live_tiles=tuple(best),
+            live_dot_outputs=tuple(best_acc),
+            ring_load_tiles=tuple(ring_regions),
+            n_dot_nodes=max(n_dot_nodes, len(facts)),
+            attribution_complete=attribution_complete,
+        )
 
     def build_matmul_reduction_epilogue_facts(self) -> None:
         """Phase 4: compose a ``MatmulWithReductionEpilogueFact`` for a fused matmul +
@@ -3285,12 +3531,209 @@ def _graph_peak_live_tiles(
     miss errs toward a slightly larger R (bounded by the persistence/chunk math) — a stated
     heuristic, not a random choice.
     """
+    return [t.dim_block_ids for t in _graph_peak_live_tiles_detailed(graph, env)]
+
+
+def _live_tile_kind(node: torch.fx.Node, dot_targets: frozenset[object]) -> str:
+    """Producer class of one live tile: which storage a resource model charges it to.
+
+    A dot's output is an fp32 accumulator (tensor memory on tcgen05, the register file
+    otherwise); a load is an operand staged through the SMEM ring; a loop-carried
+    placeholder is resident for the whole loop. These are different budgets, so the
+    producer has to be recorded, not inferred from rank.
+    """
+    from ..language import memory_ops
+
+    if node.op == "placeholder":
+        return "carry"
+    if node.op == "call_function":
+        if node.target in dot_targets:
+            return "dot_out"
+        if node.target is memory_ops.load:
+            return "load"
+    return "other"
+
+
+def _reaches_graph_output(node: torch.fx.Node, limit: int = 64) -> bool:
+    """True when ``node``'s value flows into its graph's ``output`` node.
+
+    Used to decide whether a dot updates a loop-carried value: in a rolled loop body the
+    carried-out values ARE the ``output`` args, and a state update almost always passes
+    through a cast or a decay multiply on the way, so checking the dot's direct users
+    misses it. Bounded walk so a pathological graph cannot make fact-building quadratic.
+    """
+    frontier = [node]
+    seen: set[torch.fx.Node] = {node}
+    steps = 0
+    while frontier and steps < limit:
+        steps += 1
+        cur = frontier.pop()
+        for user in cur.users:
+            if user.op == "output":
+                return True
+            if user not in seen:
+                seen.add(user)
+                frontier.append(user)
+    return False
+
+
+def _graph_load_tiles(graph: torch.fx.Graph, env: CompileEnvironment) -> list[LiveTile]:
+    """Every load AND store in one graph, as a :class:`LiveTile` tagged by kind.
+
+    Stores are recorded too because a kernel that publishes INSIDE its sequential loop --
+    which is what a state recurrence does -- holds its store staging buffer at the same
+    time as the operand ring, so the two add rather than reusing each other's bytes. (In a
+    bare GEMM the store happens after the K-loop, so the incumbent ``max(ring, epilogue)``
+    is right there; the consumer keeps that behaviour for a region with no store.)
+
+    The SMEM operand ring is charged per PIPELINED LOAD, and a contraction inside a
+    chunked kernel is rarely alone in its loop: the same body also loads the decay gates
+    that scale the state. Charging only the dot's own A and B under-counts those, which is
+    a hard failure rather than a lost percent -- measured, a config the A/B-only model
+    accepted at 230400 B needed 384528 B and raised ``OutOfResources``, because two fp32
+    gate loads were being staged alongside the two bf16 operands.
+
+    Unlike the peak-live sweeps this is a SUM over the graph's loads, not a max: the
+    pipeliner gives each load in the body its own multi-stage buffer, so within one stage
+    they are all resident.
+    """
+    from ..language import memory_ops
+
+    out: list[LiveTile] = []
+    for node in graph.nodes:
+        if node.op != "call_function":
+            continue
+        if node.target is memory_ops.load:
+            kind = "load"
+            val = node.meta.get("val")
+        elif node.target is memory_ops.store:
+            kind = "store"
+            # A store's own ``val`` is empty; the staged tile is the value argument.
+            val = None
+            for arg in node.args:
+                if isinstance(arg, torch.fx.Node):
+                    cand = arg.meta.get("val")
+                    if isinstance(cand, torch.Tensor) and cand.shape:
+                        val = cand
+        else:
+            continue
+        if not (isinstance(val, torch.Tensor) and val.shape):
+            continue
+        dims = tuple(env.resolve_block_id(s) for s in val.shape)
+        static_out: list[int | None] = []
+        for dim, blk in zip(val.shape, dims, strict=False):
+            if blk is not None:
+                static_out.append(None)
+                continue
+            try:
+                static_out.append(int(env.size_hint(dim)))
+            except Exception:
+                static_out.append(None)
+        out.append(
+            LiveTile(
+                dim_block_ids=dims,
+                static_dims=tuple(static_out),
+                itemsize=val.dtype.itemsize,
+                kind=kind,
+            )
+        )
+    return out
+
+
+def _graph_peak_dot_output_tiles(
+    graph: torch.fx.Graph, env: CompileEnvironment
+) -> list[LiveTile]:
+    """The live set at the step holding the most simultaneously-live DOT OUTPUT bytes.
+
+    A separate sweep from :func:`_graph_peak_live_tiles_detailed` on purpose. That
+    function's peak is selected by RANK PROFILE, the block-size-free proxy for "big",
+    which is the right question for a reduction's register working set. It is the wrong
+    question for the accumulator budget: what tensor memory (and, when the dot cannot use
+    tcgen05, the register file) must hold is specifically the set of dot outputs alive at
+    once, and the rank-profile peak can easily be a step where the heavy loads are live and
+    the accumulators are not.
+
+    So this maximizes ``sum(dot-output tile ranks)`` -- again block-size-free, since the
+    tile widths are the not-yet-chosen block sizes -- breaking ties toward more tiles. The
+    result is what a sum-over-live-accumulators resource term is computed from; sizing a
+    kernel's tile off ONE accumulator while three are resident is what lets an illegal
+    config reach ptxas.
+    """
+    dot_targets = frozenset(_matmul_operand_positions())
+    nodes = list(graph.nodes)
+    last_use: dict[torch.fx.Node, int] = {}
+    for i, node in enumerate(nodes):
+        for inp in node.all_input_nodes:
+            last_use[inp] = i
+
+    # A dot's accumulator is the dot's own output plus anything derived from it that is
+    # still an accumulator-shaped fp32 tile (the ``acc * decay`` / ``.to()`` chain). We
+    # charge only the dot outputs themselves: the derived values reuse the same storage
+    # (they are the same accumulator at the next step), so counting both double-charges.
+    detail_of: dict[torch.fx.Node, LiveTile] = {}
+    for node in nodes:
+        if node.op != "call_function" or node.target not in dot_targets:
+            continue
+        val = node.meta.get("val")
+        if not (isinstance(val, torch.Tensor) and val.shape):
+            continue
+        dims = tuple(env.resolve_block_id(s) for s in val.shape)
+        static_out: list[int | None] = []
+        for dim, blk in zip(val.shape, dims, strict=False):
+            if blk is not None:
+                static_out.append(None)
+                continue
+            try:
+                static_out.append(int(env.size_hint(dim)))
+            except Exception:
+                static_out.append(None)
+        detail_of[node] = LiveTile(
+            dim_block_ids=dims,
+            static_dims=tuple(static_out),
+            itemsize=val.dtype.itemsize,
+            kind="dot_out",
+        )
+
+    best: list[LiveTile] = []
+    best_key: tuple[int, int] = (-1, -1)
+    live: set[torch.fx.Node] = set()
+    for i, node in enumerate(nodes):
+        if node in detail_of:
+            live.add(node)
+        if live:
+            tiles = [detail_of[v] for v in live]
+            key = (
+                sum(_tile_rank(t.dim_block_ids) for t in tiles),
+                len(tiles),
+            )
+            if key > best_key:
+                best_key = key
+                best = tiles
+        # A dot output with NO later use in this graph is still the loop's carried-out
+        # value, so treat "no recorded last use" as live to the end rather than dead
+        # immediately (that is the state-recurrence accumulator, the longest-lived tile
+        # in the kernel).
+        live = {v for v in live if last_use.get(v, len(nodes)) > i}
+    return best
+
+
+def _graph_peak_live_tiles_detailed(
+    graph: torch.fx.Graph, env: CompileEnvironment
+) -> list[LiveTile]:
+    """:func:`_graph_peak_live_tiles` plus element width and producer class per tile.
+
+    Same last-use sweep and same peak-selection rule; the extra fields are what a
+    candidate-specific resource estimate needs (see :class:`LiveTile`). Kept as one
+    function so the two views can never disagree about which step is the peak.
+    """
+    dot_targets = frozenset(_matmul_operand_positions())
     nodes = list(graph.nodes)
     last_use: dict[torch.fx.Node, int] = {}
     for i, node in enumerate(nodes):
         for inp in node.all_input_nodes:
             last_use[inp] = i
     shape_of: dict[torch.fx.Node, tuple[int | None, ...]] = {}
+    detail_of: dict[torch.fx.Node, LiveTile] = {}
     for node in nodes:
         val = node.meta.get("val")
         if isinstance(val, torch.Tensor) and val.shape:
@@ -3298,6 +3741,21 @@ def _graph_peak_live_tiles(
             # only tiles that span at least one block axis are register-resident reduction tiles
             if any(d is not None for d in dims):
                 shape_of[node] = dims
+                static_out: list[int | None] = []
+                for dim, blk in zip(val.shape, dims, strict=False):
+                    if blk is not None:
+                        static_out.append(None)
+                        continue
+                    try:
+                        static_out.append(int(env.size_hint(dim)))
+                    except Exception:
+                        static_out.append(None)
+                detail_of[node] = LiveTile(
+                    dim_block_ids=dims,
+                    static_dims=tuple(static_out),
+                    itemsize=val.dtype.itemsize,
+                    kind=_live_tile_kind(node, dot_targets),
+                )
 
     # Graph-wide max rank -> a FIXED-length, absolute-rank-indexed profile so the lexicographic
     # comparison aligns the same rank across steps (a per-step-length key would compare a step's
@@ -3305,7 +3763,7 @@ def _graph_peak_live_tiles(
     max_rank = max((_tile_rank(d) for d in shape_of.values()), default=0)
 
     best_key: tuple[int, ...] = ()
-    best_tiles: list[tuple[int | None, ...]] = []
+    best_tiles: list[LiveTile] = []
     live: set[torch.fx.Node] = set()
     for i, node in enumerate(nodes):
         if node in shape_of:
@@ -3314,7 +3772,7 @@ def _graph_peak_live_tiles(
         key = _tile_set_rank_profile(cur, max_rank)
         if key > best_key:
             best_key = key
-            best_tiles = cur
+            best_tiles = [detail_of[v] for v in live]
         live = {v for v in live if last_use.get(v, -1) > i}
     return best_tiles
 
@@ -3907,6 +4365,10 @@ def lower_to_device_ir(func: HostFunction) -> DeviceIR:
         device_ir.build_reduction_kernel_fact(
             memory_op_facts, config_spec.accumulator_facts, liveness_by_axis
         )
+        # Phase 3b: compose the whole-kernel contraction fact for ANY kernel with a matmul,
+        # so both matmul front ends read one description of the workload (axis roles, knob
+        # competition, per-dot placement/work, peak liveness).
+        device_ir.build_multi_matmul_fact()
         # Phase 4: compose a matmul + reduction-over-output epilogue fact when a matmul AND a
         # register-resident epilogue reduction co-occur (matmul_rms_norm etc.).
         device_ir.build_matmul_reduction_epilogue_facts()

@@ -171,6 +171,175 @@ class MatmulFact(NamedTuple):
     rhs_dtype: torch.dtype
 
 
+class DotAxisKind(enum.Enum):
+    """How one M/N/K axis of a contraction maps onto the config surface.
+
+    A GEMM has three ``TUNABLE_TILED`` axes, which is what the historical matmul gate
+    assumed. A contraction written inside a chunked kernel very often has one axis the
+    kernel fixes at its full extent: the author ``hl.specialize``\\d it, so the axis has
+    either no block id at all or a block id that is not in ``valid_block_ids()``. That
+    is not a smaller problem, only a smaller set of knobs — the seed must adjust a
+    different axis or a scalar knob instead of declining.
+
+    - ``TUNABLE_TILED`` — a real, tunable ``block_size`` entry the seed may set.
+    - ``FIXED_FULL_EXTENT`` — statically known, not tunable: the tile extent along
+      this axis is the extent itself and cannot be moved.
+    - ``UNKNOWN`` — no static extent (dynamic / jagged); nothing can be sized.
+    """
+
+    TUNABLE_TILED = "tunable_tiled"
+    FIXED_FULL_EXTENT = "fixed_full_extent"
+    UNKNOWN = "unknown"
+
+
+class DotAxes(NamedTuple):
+    """The :class:`DotAxisKind` and the REAL per-program tile extent of one dot's
+    M/N/K axes.
+
+    ``*_extent`` is the extent the hardware sees along that axis for one program:
+    the (not-yet-chosen) block size for a ``TUNABLE_TILED`` axis — recorded here as
+    the axis's full static extent, an upper bound — and the fixed extent for a
+    ``FIXED_FULL_EXTENT`` one. ``*_iters`` is how many times the axis is traversed
+    per program (1 unless the axis is tiled and looped).
+    """
+
+    m_kind: DotAxisKind
+    n_kind: DotAxisKind
+    k_kind: DotAxisKind
+    m_extent: int | None
+    n_extent: int | None
+    k_extent: int | None
+
+    def kind(self, axis: str) -> DotAxisKind:
+        return {"m": self.m_kind, "n": self.n_kind, "k": self.k_kind}[axis]
+
+    def extent(self, axis: str) -> int | None:
+        return {"m": self.m_extent, "n": self.n_extent, "k": self.k_extent}[axis]
+
+    @property
+    def tunable_axes(self) -> tuple[str, ...]:
+        return tuple(
+            a for a in ("m", "n", "k") if self.kind(a) is DotAxisKind.TUNABLE_TILED
+        )
+
+    @property
+    def fixed_axes(self) -> tuple[str, ...]:
+        return tuple(
+            a for a in ("m", "n", "k") if self.kind(a) is DotAxisKind.FIXED_FULL_EXTENT
+        )
+
+
+class LiveTile(NamedTuple):
+    """One simultaneously-live tensor tile at a graph's peak-live step.
+
+    Extends the bare ``dim_block_ids`` tuple that ``_graph_peak_live_tiles`` returns
+    with the two things a resource estimate cannot be written without: how WIDE an
+    element is, and WHO produced the tile. A dot's fp32 output is charged to tensor
+    memory on tcgen05 and to the register file otherwise; a plain load is charged to
+    the operand staging ring; neither substitutes for the other.
+
+    - ``dim_block_ids`` — block id spanned per shape dim (``None`` for a static dim),
+      the same representation as :class:`AccumulatorFact`.
+    - ``static_dims`` — the extent at each ``None`` position, so a footprint can be
+      computed without re-resolving shapes (``None`` where unresolvable).
+    - ``itemsize`` — element width in bytes.
+    - ``kind`` — ``"dot_out"`` | ``"load"`` | ``"carry"`` | ``"other"``.
+    """
+
+    dim_block_ids: tuple[int | None, ...]
+    static_dims: tuple[int | None, ...]
+    itemsize: int
+    kind: str
+
+
+class DotSite(NamedTuple):
+    """Where one contraction sits in the kernel, and how much work it does.
+
+    Attribution of a :class:`MatmulFact` (recorded at trace time, in source order) to
+    a graph node is a COMPUTED pairing validated by a post-condition, never an
+    assumed one: :attr:`MultiMatmulFact.attribution_complete` is False when the
+    pairing could not be proven, and a consumer that needs per-dot placement must
+    check it rather than trusting these fields.
+
+    - ``graph_id`` — the device graph the dot's node lives in.
+    - ``loop_trips`` — product of the sequential loop trip counts enclosing it, i.e.
+      how many times one program executes this dot.
+    - ``updates_carry`` — the dot writes into a value carried by an enclosing loop
+      (``acc=`` into a loop-carried accumulator). Such a dot's accumulator is
+      resident for the whole loop, which is why it gets ranking priority.
+    """
+
+    graph_id: int
+    loop_trips: int
+    updates_carry: bool
+
+
+class MultiMatmulFact(NamedTuple):
+    """Whole-kernel contraction fact: every :class:`MatmulFact` in the kernel plus the
+    shared analysis a seed needs to configure them TOGETHER.
+
+    Built for any kernel with at least one contraction, so the single-matmul and
+    multi-matmul front ends read the same description of the workload and only their
+    POLICY differs. Kernel-name- and role-free by construction: every field is a
+    measured property of the contraction structure.
+
+    - ``matmuls`` / ``axes`` — the constituent facts, 1:1 with their axis
+      classification (:class:`DotAxes`).
+    - ``sites`` — 1:1 per-dot placement/work (:class:`DotSite`).
+    - ``knob_users`` — for each tunable block id, the ``(dot_index, axis)`` pairs
+      whose axis maps onto it, i.e. which dots COMPETE for that knob.
+    - ``outer_grid`` — parallel programs contributed by grid axes that are no dot's
+      M or N tile: the occupancy the kernel already has before any tiling choice.
+    - ``sequential_loop_trips`` — product of the trip counts of the kernel's
+      sequential (non-grid) loops. For a chunked recurrence this is the number of
+      chunks, so ``sequential_loop_trips * fixed_k`` recovers the logical contraction
+      length even though each dot only sees one chunk.
+    - ``live_tiles`` — the peak simultaneously-live tile set over the whole kernel
+      (:class:`LiveTile`), from the same last-use liveness sweep the reduction fact
+      uses. The maximum simultaneously-live footprint, NOT the sum of every op.
+    - ``live_dot_outputs`` — the live set at the step holding the most simultaneously
+      live DOT OUTPUT tiles. A separate measurement from ``live_tiles`` because that
+      one's peak is chosen by rank profile (the right question for a reduction's
+      register working set, the wrong one for the accumulator budget: the rank peak can
+      be a step where the heavy loads are live and the accumulators are not). This is
+      what a sum-over-live-accumulators tensor-memory/register term is computed from.
+    - ``ring_load_tiles`` — the loads of each candidate PIPELINED region (one tuple per
+      region), so the SMEM operand ring can be charged over every load the pipeliner
+      buffers rather than only the dot's own A and B. A sum within a region (each load
+      gets its own multi-stage buffer), a max across regions (separate loops run one
+      after the other).
+    - ``n_dot_nodes`` — contraction sites counted spelling-independently, so a kernel
+      whose dots are written as ``torch.matmul``/``@`` is not read as having none.
+    - ``attribution_complete`` — post-condition flag described above.
+    """
+
+    matmuls: tuple[MatmulFact, ...]
+    axes: tuple[DotAxes, ...]
+    sites: tuple[DotSite, ...]
+    knob_users: tuple[tuple[int, tuple[tuple[int, str], ...]], ...]
+    outer_grid: int
+    sequential_loop_trips: int
+    live_tiles: tuple[LiveTile, ...]
+    live_dot_outputs: tuple[LiveTile, ...]
+    ring_load_tiles: tuple[tuple[LiveTile, ...], ...]
+    n_dot_nodes: int
+    attribution_complete: bool
+
+    def users_of(self, block_id: int) -> tuple[tuple[int, str], ...]:
+        for bid, users in self.knob_users:
+            if bid == block_id:
+                return users
+        return ()
+
+    def dot_work(self, index: int) -> int:
+        """Dynamic work of one dot: ``m*n*k`` per execution times its executions."""
+        f = self.matmuls[index]
+        m = f.static_m or 1
+        n = f.static_n or 1
+        k = f.static_k or 1
+        return m * n * k * max(1, self.sites[index].loop_trips)
+
+
 class ReductionCategory(enum.Enum):
     """How a reduction axis maps onto the program grid — one category per reduction.
 
@@ -772,6 +941,10 @@ class ConfigSpec:
         self.compiler_seed_timeout_retry_repetitions: int | None = None
         self.autotuner_heuristics: list[str] = []
         self.matmul_facts: list[MatmulFact] = []
+        # Whole-kernel composed contraction fact (built for ANY kernel with >=1
+        # matmul fact); both matmul front ends read it so workload analysis is
+        # independent of which heuristic runs.
+        self.multi_matmul_fact: MultiMatmulFact | None = None
         # The Stage-1 categorizing product the reduction seed + allocator consume.
         self.reduction_kernel_fact: ReductionKernelFact | None = None
         self.matmul_reduction_epilogue_facts: list[MatmulWithReductionEpilogueFact] = []
