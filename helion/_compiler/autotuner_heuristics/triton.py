@@ -429,17 +429,27 @@ def _h100_build_block_sizes(
     return out
 
 
-def _h100_pinned_grid(env: CompileEnvironment, fact: MatmulFact) -> int:
+def _h100_pinned_grid(
+    env: CompileEnvironment, fact: MatmulFact, *, specialized_only: bool = False
+) -> int:
     """Product of any PINNED (block_size=1) grid axes other than the dot's M/N tiles — 1 for a
     bare GEMM, ``batch·nchunks·nheads`` for mamba's fused dot. These already saturate the SMs, so
     the occupancy fill counts them (else it shrinks an already-grid-saturated dot's tile) and the
-    num_stages cap keys on them (the batched-dot signature)."""
+    num_stages cap keys on them (the batched-dot signature).
+
+    ``specialized_only`` restricts the product to axes whose extent the compiled kernel is
+    SPECIALIZED on — see ``SPECIALIZED_GRID_ONLY``."""
     pinned_grid = 1
     for bid in env.config_spec.grid_block_ids:
         if bid in (fact.m_block_id, fact.n_block_id):
             continue
         size = env.block_sizes[bid].size
-        if isinstance(size, (int, torch.SymInt)):
+        if specialized_only:
+            if isinstance(size, int):
+                pinned_grid *= max(1, size)
+            elif isinstance(size, torch.SymInt) and not size._sympy_().free_symbols:
+                pinned_grid *= max(1, int(size._sympy_()))
+        elif isinstance(size, (int, torch.SymInt)):
             pinned_grid *= max(1, env.size_hint(size))
     return pinned_grid
 
@@ -596,6 +606,31 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     GENERALIZED_AXES = False
     GRADED_STAGES = False
     WORK_AWARE_WARPS = False
+    # Whether the outer/pinned parallel grid the occupancy levers key on counts ONLY axes the
+    # compiled kernel is specialized on. OFF EVERYWHERE, and kept only as the switch that
+    # documents a REAL defect together with the measurement showing this is not yet the cure.
+    #
+    # The defect: every lever downstream of that product -- the saturated-tile caps, the
+    # saturated warp override, the saturated stage ceiling, the wave-quantization fill and the
+    # graded stage depth -- asks "how much parallelism does this program already have". Under
+    # ``static_shapes=False`` a grid dimension is a RUNTIME value: one compiled program serves
+    # every value of it, and helion's bind cache hands that program to every later call whose
+    # only difference is that dimension. Reading its size hint therefore picks a config for one
+    # batch size and runs it at all of them, and makes the emitted config depend on which shape
+    # the process happened to bind FIRST. Measured on the 18 ReplaySSM decode cases: a fresh
+    # bind per case scores 0.9484 against hand-tuning, while the shared-bind-cache order a gate
+    # worker produces scores 0.7435 -- same heuristic, same cases, a 0.20 spread that is
+    # entirely first-bind order.
+    #
+    # Why it is OFF: turning it on makes every ReplaySSM case take the small-grid branch, which
+    # emits a [64,64] tile at the tile-AREA warp ramp's 4 warps -- measured 0.6269 against 0.9484
+    # for the hint-keyed configs, because that tile wants 1-2 warps and the ramp cannot reach
+    # them. Pairing it with ``MULTI_DOT_WARP_DRAFT`` recovers ReplaySSM (0.9449) but costs
+    # ``chunk_fwd_h_delta_helion`` 0.5629 -> 0.0806 and three more bodies, so the pair is
+    # refuted too. The sound end state is to make the hint-keyed levers unreachable for an
+    # unspecialized axis AND give the un-saturated branch a register-driven warp choice; only
+    # the second half of that is measured, and it is negative on its own.
+    SPECIALIZED_GRID_ONLY = False
     BK_CAP = (
         256  # max block_k (deep K amortizes small-M; past this returns vanish / spill)
     )
@@ -1046,6 +1081,14 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         ring = cls._smem_from_map(env, emitted, num_stages)
         epilogue = bm * bn * cls.EPILOGUE_ACC_ITEMSIZE
         return max(base, ring, epilogue) + cls.SMEM_SLACK
+
+    @classmethod
+    def _outer_grid(cls, mm: MultiMatmulFact) -> int:
+        """The outer parallel grid the occupancy levers key on: the specialized-only product
+        when ``SPECIALIZED_GRID_ONLY`` is set, else the hint-based one. See that constant."""
+        if cls.SPECIALIZED_GRID_ONLY:
+            return max(1, mm.outer_grid_specialized)
+        return max(1, mm.outer_grid)
 
     @classmethod
     def _graded_stage_depth(
@@ -1533,7 +1576,9 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         spec = env.config_spec
         itemsize = max(1, fact.lhs_dtype.itemsize)
         num_sm = max(1, get_num_sm(env.device))
-        pinned_grid = _h100_pinned_grid(env, fact)
+        pinned_grid = _h100_pinned_grid(
+            env, fact, specialized_only=cls.SPECIALIZED_GRID_ONLY
+        )
         # The budget formula sizes the dot tile under a register/SMEM budget, keyed on
         # (M, N, K, operand-width via itemsize) and the pinned batch grid. ``_tile_for_dot``
         # then projects that proposal onto the axes this kernel actually exposes and
@@ -1741,6 +1786,8 @@ class TritonB200FormulaMatmulHeuristic(TritonH100MatmulHeuristic):
     GRADED_STAGES = True
     # Let live-accumulator register pressure override the grid-only one-warp draft.
     WORK_AWARE_WARPS = True
+    # SPECIALIZED_GRID_ONLY stays FALSE: see the constant on the base class for the defect it
+    # describes and the measurement that REFUTES turning it on here.
 
 
 class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
@@ -1836,6 +1883,25 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
     # unmeasured cases or lose the separation. The face-value test is exact for the
     # accumulator term, which is what decides these 24.
     MULTI_DOT_MIN_NUM_WARPS = 2
+    # The warp count the draft STARTS from, before ``_warps_for_live_set`` corrects it upward.
+    # ``None`` = keep the per-dot proposals' tile-area ramp, and that is the MEASURED answer.
+    #
+    # The hypothesis this switch tested: the proposals' ramp is the H100 rule
+    # ``num_warps = 8 if bm*bn >= 16384 else 4``, i.e. tile AREA, while adversarial review of the
+    # warp policy established that the register-resident live set is the property that decides
+    # the warp count. Since ``_warps_for_live_set`` only ever DOUBLES upward from the draft, a
+    # draft of 4 makes two warps unreachable even for a program whose live set fits it -- and two
+    # warps is the hand-tuned answer in 11 of 18 ``chunk_cumsum_gc`` cells.
+    #
+    # REFUTED on the curriculum. Drafting from 1 leaves the register rule as the only warp signal,
+    # and its live-set estimate is too coarse to replace the ramp: over 34 bodies it costs
+    # ``chunk_fwd_h_delta_helion`` 0.5629 -> 0.0806, ``chunk_fwd_h_delta_varlen_helion``
+    # 0.7391 -> 0.3558, ``chunk_bwd_state_du_kda_helion`` 0.6840 -> 0.5092 and
+    # ``chunk_bwd_wy_dL_delta_helion`` 0.8853 -> 0.7645, for a 2-case-screen geomean of 0.7549
+    # against 0.8297. The review's "``_warps_for_live_set`` already raises 47 of 48 cases" was
+    # measured against the SATURATED one-warp override, not against this ramp, and does not
+    # transfer. So the ramp is load-bearing where it fires and the draft stays on it.
+    MULTI_DOT_WARP_DRAFT: int | None = None
 
     @classmethod
     def _needs_warp_floor(cls, env: CompileEnvironment, block_sizes: list[int]) -> bool:
@@ -1908,7 +1974,7 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
             return None
         itemsize = max(1, fact.lhs_dtype.itemsize)
         return cls._tile_for_dot(
-            env, fact, mm.axes[index], itemsize, num_sm, max(1, mm.outer_grid)
+            env, fact, mm.axes[index], itemsize, num_sm, cls._outer_grid(mm)
         )
 
     @classmethod
@@ -1970,10 +2036,12 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
         # --- kernel-global scalars: aggregate, not any single dot's ---------------------
         num_warps = max(proposals[i][3] for i in proposals)
         num_stages = max(proposals[i][4] for i in proposals)
+        if cls.MULTI_DOT_WARP_DRAFT is not None:
+            num_warps = cls.MULTI_DOT_WARP_DRAFT
 
         # The real launch grid: the outer parallel axes times the winning tile counts.
         block_of = cls._full_block_map(env, block_sizes)
-        grid = max(1, mm.outer_grid)
+        grid = cls._outer_grid(mm)
         for f, ax in zip(mm.matmuls, mm.axes, strict=False):
             for bid, extent in (
                 (f.m_block_id, f.static_m or ax.m_extent),
@@ -2581,6 +2649,11 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
 
     # num_warps ramp: keyed on the primary reduction extent (see ``_num_warps``).
 
+    # Whether the "grid axis reduced away" test additionally requires the axis to be SIZABLE,
+    # i.e. to own a tunable ``block_sizes`` slot (see ``_has_reduced_away_grid``). False on
+    # sm90 (byte-identical freeze); True on sm100.
+    COLLAPSE_NEEDS_SIZABLE_AXIS = False
+
     # =============================== Stage-1 fact accessors ================================= #
     @classmethod
     def _non_reduction_loop_ids(cls, spec: ConfigSpec) -> tuple[int, ...]:
@@ -2612,12 +2685,32 @@ class _TritonReductionSeedBase(AutotunerHeuristic):
         """True iff some grid axis is REDUCED AWAY — a grid block_id that appears in NO live tile,
         i.e. a sequential cross-grid reduction loop whose partial is finalized by a later
         ``.sum(0)`` (the grad-parameter M-collapse idiom). Uses the shared ``_resident_block_ids``
-        residency test. False if no kernel fact."""
+        residency test. False if no kernel fact.
+
+        Non-residency ALONE does not identify that idiom, and the second reason a grid axis can
+        be absent from every live tile is unrelated: an axis the kernel PINNED to one row per
+        program (``hl.tile(..., block_size=1)`` / ``hl.grid``) is consumed as a scalar program
+        index (``tile.id``), so it is a rank-0 value that no tile can contain. Such an axis owns
+        no ``block_sizes`` slot, which is exactly the property that makes the M-collapse reading
+        impossible: the collapse branch of the allocator pays for itself by RAISING that axis's
+        block size to batch ``grid_rows / num_sm`` rows per program, and PASS 2 skips a
+        non-tunable grid axis entirely (``if mbid not in valid: continue``). An axis that cannot
+        be sized cannot batch rows, cannot host a sequential in-program accumulation, and so
+        cannot be the idiom whose wide ``[inner, N]`` cross-warp accumulate justifies the +8-warp
+        floor and the L2 re-read pin that this predicate gates.
+
+        ``COLLAPSE_NEEDS_SIZABLE_AXIS`` therefore restricts the candidates to grid axes that own
+        a tunable slot. It is False on sm90 only to keep that path byte-identical.
+        """
         kf = spec.reduction_kernel_fact
         if kf is None:
             return False
         resident = cls._resident_block_ids(spec)
-        return any(g not in resident for g in kf.grid_axis_block_ids)
+        candidates = [g for g in kf.grid_axis_block_ids if g not in resident]
+        if cls.COLLAPSE_NEEDS_SIZABLE_AXIS:
+            sizable = set(spec.block_sizes.valid_block_ids())
+            candidates = [g for g in candidates if g in sizable]
+        return bool(candidates)
 
     @staticmethod
     def _max_group_footprint(
@@ -3347,6 +3440,18 @@ class _TritonReductionSeedSM100(_TritonReductionSeedBase):
     NW8_MAX_ROW_TRAFFIC = 64 * 1024
     # Element cap for a non-reduction apply loop (see non_reduction_loop_block_cap).
     NON_REDUCTION_LOOP_MAX_ELEMS = 4096
+    # A grid axis pinned to one row per program is not the M-collapse idiom (see
+    # ``_has_reduced_away_grid``).
+    COLLAPSE_NEEDS_SIZABLE_AXIS = True
+    # Widest single global-memory access one thread can issue, in bytes (``ld.global.v4.f32`` /
+    # 128-bit LSU access granularity). NOT a tuned constant: it is the hardware's per-thread
+    # vector width, and it is what makes ``_vector_width_warp_cap`` a capability bound rather
+    # than a calibration. Set to 0 to disable the cap.
+    MAX_BYTES_PER_THREAD_ACCESS = 16
+    # Confine that cap to kernels whose reduction holds a CARRIED >=2-D tile. See
+    # ``_vector_width_warp_cap`` for the premise and for the measured counterexample that
+    # establishes this boundary.
+    VECTOR_WIDTH_CAP_NEEDS_CARRIED_TILE = True
 
     @classmethod
     def non_reduction_loop_block_cap(
@@ -3369,7 +3474,99 @@ class _TritonReductionSeedSM100(_TritonReductionSeedBase):
             nw = cls._b200_num_warps(env.config_spec, pd, cfg)
             if nw is not None:
                 cfg = _config_with_num_warps(cfg, nw)
+            # LAST, over every branch above (including the M-collapse warp FLOOR): a warp count
+            # the row physically cannot occupy is not a policy choice. See
+            # ``_vector_width_warp_cap``.
+            cap = cls._vector_width_warp_cap(env, pd, cfg)
+            if cap is not None and int(cfg.config["num_warps"]) > cap:
+                cfg = _config_with_num_warps(cfg, cap)
         return cfg
+
+    @classmethod
+    def _emitted_row_width(
+        cls, spec: ConfigSpec, pd: ReductionDescriptor, cfg: Config
+    ) -> int:
+        """Elements of the primary reduction one program holds, READ BACK OFF THE EMITTED CONFIG
+        rather than recomputed: the rolled ``reduction_loops`` chunk, else the ``block_sizes``
+        entry when the rdim is user-tiled, else the full (pow2-padded) extent for a materialized
+        full-width rdim. Those three are exactly the emission routes ``size_reduction_tiles``
+        can take, so reading the config cannot disagree with what was emitted."""
+        from ..._utils import next_power_of_2 as _np2
+
+        loops = cfg.config.get("reduction_loops")
+        if isinstance(loops, (list, tuple)) and pd.block_id in (
+            rl.block_ids[0] for rl in spec.reduction_loops
+        ):
+            for rl, value in zip(spec.reduction_loops, loops, strict=False):
+                if rl.block_ids[0] == pd.block_id and isinstance(value, int):
+                    return max(1, value)
+        blocks = cfg.config.get("block_sizes")
+        if isinstance(blocks, (list, tuple)) and pd.block_id in set(
+            spec.block_sizes.valid_block_ids()
+        ):
+            idx = spec.block_sizes.block_id_to_index(pd.block_id)
+            if idx < len(blocks) and isinstance(blocks[idx], int):
+                return max(1, int(blocks[idx]))
+        return _np2(max(1, pd.size_hint))
+
+    @classmethod
+    def _vector_width_warp_cap(
+        cls, env: CompileEnvironment, pd: ReductionDescriptor, cfg: Config
+    ) -> int | None:
+        """Warp ceiling set by how many lanes the emitted reduction row can actually feed, or
+        None when the cap does not apply.
+
+        The base ramp (:meth:`_num_warps`) is a function of the reduction EXTENT alone, and its
+        buckets encode a roughly constant elements-per-lane load: 1024 elems -> 4 warps is 8
+        elems/lane, 4096 -> 8 is 16, 16384 -> 16 is 32. Its lowest bucket is a flat FLOOR of 4
+        warps, so below ~1 KiB/row it stops honouring its own invariant and hands 128 lanes a row
+        of 128 elements -- one element per lane.
+
+        The bound that replaces the floor is a hardware capability, not a calibration. A thread
+        can issue at most ``MAX_BYTES_PER_THREAD_ACCESS`` (16 B, ``.v4.f32``) in one global
+        access, so a lane owning fewer than ``16 / itemsize`` elements of the row cannot fill a
+        single vector access. Past that point additional warps buy no extra bytes in flight: they
+        split the SAME access stream into more, narrower requests, and they convert a reduction a
+        single warp finishes in registers plus shuffles into one that round-trips partials through
+        shared memory behind a ``bar.sync``. So
+        ``num_warps <= row_bytes / (32 x 16)``, on the LOAD width (``input_load_itemsize``, the
+        width the vector access actually moves).
+
+        WHY IT IS CONFINED TO A CARRIED REDUCTION. "Extra warps add no bytes in flight" is only
+        true when the CTA's resident working set is fixed independently of the warp count, which
+        is exactly what ``carried_2d_count > 0`` states: that reduction's ``[rows, R]``
+        accumulator is held resident across the whole reduction rather than streamed and
+        released. (The allocator already keys its byte budget and its no-widen guard on the same
+        fact.) For such a program the loads outstanding per CTA are set by ``block_sizes``, the
+        CTAs an SM holds is bounded by (warp slots per SM) / num_warps, and each extra warp
+        therefore DIVIDES the memory-level parallelism per SM. Measured on the 28 packed-decode
+        cases (512 B/row, ``carried_2d_count == 2``): 8 warps scores 0.4563 against the hand-tuned
+        configs, 4 scores 0.7205, 2 scores 0.7943 and the 1 warp this bound emits scores 0.8973 --
+        monotone on all 28 cells.
+
+        A STREAMED row (``carried_2d_count == 0``) is the counterexample that draws the boundary,
+        and it is measured, not assumed: its tile is loaded, consumed and released, so its
+        outstanding loads DO scale with the lanes issuing them, and a one-warp CTA can occupy only
+        32 of an SM's 64 warp slots because the resident-CTA limit is 32. Applying the cap there
+        costs ``_l2norm_qk`` 1.0018 -> 0.9444 over its 13 cases, concentrated entirely in its two
+        16-rows-per-program cells (0.998 -> 0.693 each) while its 4- and 8-row cells move under
+        1%. So the premise fails in the streamed regime and the cap is gated on the fact that
+        states the premise.
+        """
+        from ..._utils import prev_power_of_2 as _pp2
+
+        access = cls.MAX_BYTES_PER_THREAD_ACCESS
+        if access <= 0:
+            return None
+        kf = env.config_spec.reduction_kernel_fact
+        if cls.VECTOR_WIDTH_CAP_NEEDS_CARRIED_TILE and not (
+            kf is not None and any(d.carried_2d_count > 0 for d in kf.reductions)
+        ):
+            return None
+        row_bytes = cls._emitted_row_width(env.config_spec, pd, cfg) * max(
+            1, pd.input_load_itemsize
+        )
+        return max(1, _pp2(max(1, row_bytes // (32 * access))))
 
     @classmethod
     def _b200_num_warps(

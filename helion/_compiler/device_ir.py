@@ -1572,6 +1572,26 @@ class DeviceIR:
                         return 1
             return 1
 
+        def _specialized_axis_extent(bid: int) -> int | None:
+            """The axis extent when the compiled kernel is SPECIALIZED on it, else ``None``.
+
+            ``_axis_extent`` answers with a size HINT, which for a ``static_shapes=False``
+            kernel is the value of whichever example tensor happened to be traced -- not a
+            property of the program being emitted, since one compiled program serves every
+            value of that dimension. Specialized means the extent is a plain ``int`` (static
+            shapes / ``hl.specialize``) or a ``SymInt`` that has already collapsed to a
+            constant expression."""
+            if not (0 <= bid < len(env.block_sizes)):
+                return None
+            size = env.block_sizes[bid].size
+            if isinstance(size, int):
+                return max(1, size)
+            if isinstance(size, torch.SymInt):
+                expr = size._sympy_()
+                if not expr.free_symbols:
+                    return max(1, int(expr))
+            return None
+
         def trips_for(graph_id: int) -> int:
             """Iterations one program runs a dot in this graph: the product over the
             ANCESTOR CHAIN of loops enclosing it (never across sibling loops -- two
@@ -1644,10 +1664,14 @@ class DeviceIR:
         # (3b) outer parallel programs: grid axes that are no dot's M or N tile.
         mn_ids = {f.m_block_id for f in facts} | {f.n_block_id for f in facts}
         outer_grid = 1
+        outer_grid_specialized = 1
         for bid in spec.grid_block_ids:
             if bid in mn_ids:
                 continue
             outer_grid *= _axis_extent(bid)
+            specialized = _specialized_axis_extent(bid)
+            if specialized is not None:
+                outer_grid_specialized *= specialized
 
         # (3c) sequential (non-grid) loop trip count over the whole kernel: the chunk walk of
         # a state recurrence. ``sequential_loop_trips * fixed_k`` recovers the logical
@@ -1722,6 +1746,7 @@ class DeviceIR:
             sites=tuple(sites),
             knob_users=tuple((bid, tuple(users[bid])) for bid in sorted(users)),
             outer_grid=outer_grid,
+            outer_grid_specialized=outer_grid_specialized,
             sequential_loop_trips=seq_trips,
             live_tiles=tuple(best),
             live_dot_outputs=tuple(best_acc),
