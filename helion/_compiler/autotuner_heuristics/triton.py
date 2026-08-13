@@ -1914,6 +1914,53 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
         )
         return need > 32 * cls.REG_BYTES_PER_THREAD
 
+    # --- knob-role tile sizing (see ``_apply_knob_roles``) ----------------------------
+    # Master switch, so the correction can be A/B'd against the plain ranked draft; the
+    # three roles are separately switchable because they are separately measurable.
+    ROLE_AWARE_KNOBS = True
+    ROLE_FLAT_OUTPUT = True
+    ROLE_GRID_FILL = True
+    # REFUTED and off by default: growing a contraction-only knob to its full extent
+    # (nothing resident scales with it, so it looked like a free divider of the serial step
+    # count) measures NET NEGATIVE on the curriculum -- 0.8654 against 0.8707 for the two
+    # rules that survive. It is right on some kernels (chunk_bwd_dqk +0.027, dqkg +0.024)
+    # and badly wrong on others (_intra_matrices_wide -0.163, chunk_bwd_dv -0.110), and the
+    # measured optimum is 32-64 elements regardless of the extent, i.e. a bytes-in-flight
+    # target rather than a fraction of the axis. The property that separates the two groups
+    # is not established, so the knob is left where the incumbent formula puts it.
+    ROLE_CONTRACTION_GROW = False
+    # Take the pipeline depth from the PRE-correction ring (see ``_draft``), so a tile
+    # correction cannot re-tune the pipeline as a side effect: with this ON the correction
+    # changes ONLY block sizes, and ``num_stages`` is bit-identical to the un-corrected
+    # draft on every curriculum case.
+    #
+    # Measured over ALL cases of the 14 bodies whose config this correction changes, the two
+    # stage policies trade one body each and ON wins on both counts:
+    #   ON : geomean 0.8325, ``chunk_bwd_dk_delta`` 0.9284 -> 1.0110,
+    #        ``chunk_bwd_wy_dL_delta`` 0.7700 -> 0.7040
+    #   OFF: geomean 0.8243, ``chunk_bwd_dk_delta`` 0.9284 -> 0.7216 (a body that WAS above
+    #        0.90 falls to 0.72), ``chunk_bwd_wy_dL_delta`` 0.7700 -> 0.9220
+    # ON is shipped because its one regression is 3x smaller and lands on a body that was
+    # already under the floor, while OFF's lands on a body that was above 0.90. The
+    # underlying split -- a small tile whose loop wants ns=1 versus one that wants ns=3 --
+    # is a property of the graded stage model, not of the tile rule; the 1.44x that
+    # ``chunk_bwd_dk_delta``'s [32] tile gains from ns=1 over ns=2 (45.5 us vs 65.3 us,
+    # null-arm floor 0.03%) is the direct evidence that respending freed shared memory on
+    # depth is not free.
+    ROLE_KEEP_STAGES = True
+    # tcgen05 tensor memory is allocated by ``tcgen05.alloc``, whose column count is a
+    # power of two and AT LEAST 32. An accumulator narrower than 32 columns therefore
+    # reserves 32 columns anyway while issuing half the MMA work per instruction, so 32
+    # is a hardware floor on any knob that sizes an accumulator extent -- not a tuned
+    # constant. Measured: on a reuse-free output axis, 32 beats 16 on every case swept
+    # (wy_delta#2 1.209 vs 1.111, #10 1.192 vs 1.139, #15 1.179 vs 1.090,
+    # wy_delta_varlen#0 1.737 vs 1.460) and beats the un-corrected draft by 1.2-1.8x.
+    TMEM_ALLOC_COLUMNS = 32
+    # Pipeline depth the operand ring must still fit at when a contraction knob grows.
+    # 1 = "grow while the ring fits unpipelined"; the graded stage model then re-derives
+    # the depth the resulting ring can afford.
+    CONTRACTION_RING_STAGES = 1
+
     @classmethod
     def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
         if not matches_hardware(env, cls.HARDWARE_TARGETS):
@@ -1958,6 +2005,163 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
         ax = mm.axes[index]
         area = (f.static_m or ax.m_extent or 1) * (f.static_n or ax.n_extent or 1)
         return (carry, mm.dot_work(index), area)
+
+    @classmethod
+    def _axis_extent(cls, env: CompileEnvironment, block_id: int) -> int:
+        """Full length of one block axis (not the per-program tile)."""
+        if 0 <= block_id < len(env.block_sizes):
+            size = env.block_sizes[block_id].size
+            if isinstance(size, (int, torch.SymInt)):
+                return max(1, env.size_hint(size))
+        return 1
+
+    @classmethod
+    def _launch_grid(cls, env: CompileEnvironment, block_sizes: list[int]) -> int:
+        """Parallel programs this config launches: the product over GRID axes only.
+
+        The distinction the budget formula does not make. ``_matmul_tile``'s wave model
+        counts ``ceil(extent / tile)`` for the dot's M and N as if every tile were a
+        program; that is true of a GEMM and false of a chunked kernel, where an M/N axis
+        is frequently walked by a sequential loop INSIDE one program. Counting those
+        iterations as occupancy reports a saturated machine for a kernel running 64
+        programs on 148 SMs -- measured, one such cell runs 2.5x faster once the grid axis
+        is actually sized to fill the machine.
+        """
+        block_of = cls._full_block_map(env, block_sizes)
+        grid = 1
+        for bid in env.config_spec.grid_block_ids:
+            extent = cls._axis_extent(env, bid)
+            grid *= max(1, -(-extent // max(1, block_of.get(bid, 1))))
+        return grid
+
+    @classmethod
+    def _knob_amortizes(cls, mm: MultiMatmulFact, block_id: int) -> bool:
+        """Does enlarging this knob buy arithmetic intensity?
+
+        Yes iff some pipelined region the knob appears in also stages a LOAD that the knob
+        does not span. Such a load is re-fetched once per iteration of this axis
+        regardless of the tile, so a bigger tile amortizes it over more work and the
+        classic tile-growth argument applies. If every load in the region spans the knob,
+        then bytes moved and MMA work both scale linearly with the tile and arithmetic
+        intensity is CONSTANT in it -- growth buys nothing at all.
+
+        This is a property of the kernel's dataflow, available for any workload: it is
+        read off the same per-region load tiles the shared-memory ring is charged from.
+        Measured on both sides. Reuse-free (``chunk_fwd_wy_delta``'s ``hl.tile(D)`` body,
+        which loads and stores only its own D slice): shrinking the tile 128 -> 32 is
+        1.18-1.74x FASTER. Reuse-bearing (``chunk_bwd_dqkw_delta``'s inner DV loop, which
+        re-loads ``do``/``v_new``/``dvni`` for every D tile): the same shrink 64 -> 32 is
+        0.79-0.96x, i.e. SLOWER, and growing it 64 -> 128 is 1.05x faster. Same axis
+        position, same dtype, opposite sign -- so the discriminator has to be the reuse,
+        not the axis.
+        """
+        for region in mm.pipelined_regions:
+            if not any(block_id in t.dim_block_ids for t in region):
+                continue
+            if any(
+                t.kind == "load" and block_id not in t.dim_block_ids for t in region
+            ):
+                return True
+        return False
+
+    @classmethod
+    def _apply_knob_roles(
+        cls,
+        env: CompileEnvironment,
+        mm: MultiMatmulFact,
+        block_sizes: list[int],
+        num_sm: int,
+    ) -> None:
+        """Correct the ranked draft for what each knob's axis actually IS.
+
+        ``_matmul_tile`` is a GEMM formula: it grows ``bm``/``bn`` toward an
+        arithmetic-intensity optimum under an accumulator budget, on two assumptions that
+        hold for a GEMM and fail for most knobs of a multi-contraction chunked kernel --
+        that an M/N tile is a PARALLEL PROGRAM, and that enlarging it AMORTIZES the other
+        operand. Both failures push the same way (the tile is grown for a benefit that
+        does not exist), which is why the errors look unrelated until the knob's role is
+        named. Three roles, one floor, and the direction is decided by what growth buys:
+
+        * **reuse-free output knob** (claimed as some dot's M or N, not a grid axis, and
+          its loop region re-fetches nothing it does not span): arithmetic intensity is
+          constant in it, while the fp32 accumulator, the register-resident intermediates
+          and the store staging all scale with it. Growth is pure cost -> take the floor.
+        * **grid knob**: the tile divides the launch grid, so it IS occupancy. Shrink
+          until the grid covers one wave of the machine.
+        * **contraction-only knob** (no dot claims it as M or N): nothing resident scales
+          with it -- every iteration accumulates into the same output -- so it is purely a
+          divider of the serial step count, bounded only by the operand ring. Grow it.
+
+        The floor is the same quantity in all three cases, ``TMEM_ALLOC_COLUMNS``, because
+        it is a hardware allocation granularity rather than a policy choice.
+        """
+        spec = env.config_spec
+        grid_ids = set(spec.grid_block_ids)
+        slot_of: dict[int, int] = {}
+        lo_of: dict[int, int] = {}
+        hi_of: dict[int, int] = {}
+        for slot in range(len(spec.block_sizes)):
+            bs = cast("BlockSizeSpec", spec.block_sizes[slot])
+            slot_of[bs.block_id] = slot
+            lo_of[bs.block_id] = max(1, bs.min_size, bs.autotuner_min)
+            hi_of[bs.block_id] = bs.max_size
+
+        def claimed_as_output(users: tuple[tuple[int, str], ...]) -> bool:
+            return any(axis in ("m", "n") for _i, axis in users)
+
+        # (1) reuse-free output knobs -> the allocation floor.
+        for bid, users in mm.knob_users if cls.ROLE_FLAT_OUTPUT else ():
+            if bid not in slot_of or bid in grid_ids or not users:
+                continue
+            if not claimed_as_output(users) or cls._knob_amortizes(mm, bid):
+                continue
+            slot = slot_of[bid]
+            target = min(cls._axis_extent(env, bid), cls.TMEM_ALLOC_COLUMNS)
+            block_sizes[slot] = max(lo_of[bid], min(block_sizes[slot], target))
+
+        # (2) grid knobs -> fill one wave. Shrink-only: a grid already past one wave is
+        # saturated, and giving back tile area there would cost operand reuse for nothing.
+        grid_knobs = [
+            bid
+            for bid, _users in mm.knob_users
+            if bid in slot_of and bid in grid_ids and cls.ROLE_GRID_FILL
+        ]
+        want_programs = max(1, int(num_sm * cls.WAVE_FULL))
+        guard = 0
+        while cls._launch_grid(env, block_sizes) < want_programs and guard < 32:
+            guard += 1
+            candidates = [
+                bid
+                for bid in grid_knobs
+                if block_sizes[slot_of[bid]] // 2
+                >= max(lo_of[bid], cls.TMEM_ALLOC_COLUMNS)
+            ]
+            if not candidates:
+                break
+            victim = max(candidates, key=lambda b: block_sizes[slot_of[b]])
+            block_sizes[slot_of[victim]] //= 2
+
+        # (3) contraction-only knobs -> the largest tile the operand ring affords. Last,
+        # so it sees the shared memory the first two passes freed.
+        for bid, users in mm.knob_users if cls.ROLE_CONTRACTION_GROW else ():
+            if bid not in slot_of or bid in grid_ids or not users:
+                continue
+            if claimed_as_output(users):
+                continue
+            slot = slot_of[bid]
+            cap = min(hi_of[bid], cls._axis_extent(env, bid))
+            value = max(lo_of[bid], block_sizes[slot])
+            while value * 2 <= cap:
+                trial = list(block_sizes)
+                trial[slot] = value * 2
+                if (
+                    cls._smem_from_map(env, trial, cls.CONTRACTION_RING_STAGES)
+                    + cls.SMEM_SLACK
+                    > cls.SMEM_BUDGET
+                ):
+                    break
+                value *= 2
+            block_sizes[slot] = value
 
     @classmethod
     def _proposal_for(
@@ -2033,6 +2237,25 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
             else:
                 block_sizes.append(value)
 
+        # The ranked draft sizes every knob as if it were a GEMM's output tile axis.
+        # Correct it for what each knob's axis actually is before anything derived from
+        # the tile (the launch grid, the stage depth, the warp count) is computed.
+        #
+        # ``stage_ring`` is the PRE-correction tile, and the graded stage model keeps using
+        # it: the correction hands shared memory back, and re-deriving depth against the
+        # freed capacity respends it on pipeline stages. That is not a neutral side effect
+        # -- measured on ``chunk_bwd_dk_delta``, the corrected tile at the draft's depth is
+        # 1.44x FASTER than the same tile at the depth the freed capacity affords, because
+        # on a small tile another stage adds an mbarrier round-trip per iteration and very
+        # few extra bytes in flight. Since the correction only ever shrinks a knob, the
+        # pre-correction ring is the LARGER one, so the depth taken from it is a lower
+        # bound and cannot over-subscribe shared memory.
+        stage_ring = list(block_sizes)
+        if cls.ROLE_AWARE_KNOBS:
+            cls._apply_knob_roles(env, mm, block_sizes, num_sm)
+            if not cls.ROLE_KEEP_STAGES:
+                stage_ring = block_sizes
+
         # --- kernel-global scalars: aggregate, not any single dot's ---------------------
         num_warps = max(proposals[i][3] for i in proposals)
         num_stages = max(proposals[i][4] for i in proposals)
@@ -2052,7 +2275,7 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
 
         if cls.GRADED_STAGES:
             num_stages = cls._graded_stage_depth(
-                lambda s: cls._smem_from_map(env, block_sizes, s) + cls.SMEM_SLACK,
+                lambda s: cls._smem_from_map(env, stage_ring, s) + cls.SMEM_SLACK,
                 loop_trips=max(1, mm.sequential_loop_trips),
                 grid=grid,
                 num_sm=num_sm,

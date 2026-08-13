@@ -26,6 +26,7 @@ from helion.autotuner.config_fragment import ListOf
 from helion.autotuner.config_fragment import PowerOfTwoFragment
 from helion.autotuner.config_spec import DotAxes
 from helion.autotuner.config_spec import DotAxisKind
+from helion.autotuner.config_spec import LiveTile
 from helion.autotuner.config_spec import MatmulFact
 
 _SHAPE_BUCKET_KEYS = {
@@ -788,3 +789,181 @@ def test_warp_floor_is_conditioned_on_the_live_set_not_the_dot_count() -> None:
     assert _MULTI._needs_warp_floor(env_with(((64, 64), (64, 64))), []) is True
     # Two TINY live accumulators still fit, so the count alone must not trigger it.
     assert _MULTI._needs_warp_floor(env_with(((16, 16), (16, 16))), []) is False
+
+
+def _live(kind: str, *block_ids: int | None) -> LiveTile:
+    return LiveTile(
+        dim_block_ids=tuple(block_ids),
+        static_dims=tuple(None for _ in block_ids),
+        itemsize=2,
+        kind=kind,
+    )
+
+
+def _knob_spec(
+    *,
+    knob_users: tuple[tuple[int, tuple[tuple[int, str], ...]], ...],
+    block_ids: list[int],
+    extents: dict[int, int],
+    grid_block_ids: tuple[int, ...] = (),
+    pipelined_regions: tuple[tuple[LiveTile, ...], ...] = (),
+) -> SimpleNamespace:
+    """An ``env`` stub carrying just what ``_apply_knob_roles`` reads."""
+    mm = SimpleNamespace(
+        matmuls=(),
+        axes=(),
+        sites=(),
+        knob_users=knob_users,
+        outer_grid=1,
+        sequential_loop_trips=1,
+        live_tiles=(),
+        live_dot_outputs=(),
+        pipelined_regions=pipelined_regions,
+        resident_regions=(),
+        n_dot_nodes=len(knob_users),
+        attribution_complete=True,
+    )
+    spec = SimpleNamespace(
+        matmul_facts=[],
+        multi_matmul_fact=mm,
+        block_sizes=_block_sizes_stub(block_ids),
+        grid_block_ids=grid_block_ids,
+        _base_default_config=lambda: SimpleNamespace(config={}),
+    )
+    env = SimpleNamespace(
+        config_spec=spec,
+        block_sizes=[
+            SimpleNamespace(
+                size=extents.get(b, 1),
+                block_size_source=SimpleNamespace(from_config=lambda *_a: None),
+            )
+            for b in range(max(extents or {0: 0}) + 1)
+        ],
+        size_hint=lambda v: int(v),
+    )
+    return env, mm
+
+
+def test_launch_grid_counts_only_grid_axes() -> None:
+    """A knob that is walked by a SEQUENTIAL loop contributes iterations, not programs. The
+    budget formula's wave model counts every M/N tile as a program, which reports a saturated
+    machine for a kernel that launches a handful of CTAs."""
+    env, _mm = _knob_spec(
+        knob_users=((0, ((0, "n"),)), (1, ((0, "m"),))),
+        block_ids=[0, 1],
+        extents={0: 128, 1: 128},
+        grid_block_ids=(1,),
+    )
+    # Only block id 1 is a grid axis: halving the LOOP axis 0 must not change the grid,
+    # halving the grid axis must double it.
+    assert _MULTI._launch_grid(env, [128, 128]) == 1
+    assert _MULTI._launch_grid(env, [32, 128]) == 1
+    assert _MULTI._launch_grid(env, [128, 32]) == 4
+
+
+def test_knob_amortization_separates_reuse_free_from_reuse_bearing() -> None:
+    """The discriminator for whether growing a tile buys anything: does its loop region stage
+    a load the knob does NOT span? If every load spans the knob, bytes and MMA work both
+    scale with the tile and arithmetic intensity is constant in it."""
+    reuse_free = (_live("load", 9, 4), _live("store", 9, 4))
+    reuse_bearing = (_live("load", 9, 4), _live("load", 9, 3), _live("store", 9, 4))
+    _env, mm = _knob_spec(
+        knob_users=((4, ((0, "n"),)),),
+        block_ids=[4],
+        extents={4: 128},
+        pipelined_regions=(reuse_free,),
+    )
+    assert _MULTI._knob_amortizes(mm, 4) is False
+    _env, mm = _knob_spec(
+        knob_users=((4, ((0, "n"),)),),
+        block_ids=[4],
+        extents={4: 128},
+        pipelined_regions=(reuse_bearing,),
+    )
+    # Block id 3 is re-fetched for every iteration of 4, so growing 4 amortizes it.
+    assert _MULTI._knob_amortizes(mm, 4) is True
+    # ...and symmetrically, 3's own loop re-fetches the 4-spanning load, so 3 amortizes too.
+    assert _MULTI._knob_amortizes(mm, 3) is True
+
+
+def test_reuse_free_output_knob_drops_to_the_allocation_floor() -> None:
+    """A reuse-free knob that sizes a dot OUTPUT extent buys no arithmetic intensity while
+    the fp32 accumulator, the register-resident intermediates and the store staging all scale
+    with it, so it goes to the tcgen05 allocation granularity. A reuse-BEARING knob in the
+    same position must be left alone."""
+    env, _mm = _knob_spec(
+        knob_users=((4, ((0, "n"),)),),
+        block_ids=[4],
+        extents={4: 128},
+        pipelined_regions=((_live("load", 9, 4), _live("store", 9, 4)),),
+    )
+    block_sizes = [128]
+    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    assert block_sizes == [_MULTI.TMEM_ALLOC_COLUMNS]
+
+    env, _mm = _knob_spec(
+        knob_users=((4, ((0, "n"),)),),
+        block_ids=[4],
+        extents={4: 128},
+        pipelined_regions=((_live("load", 9, 4), _live("load", 9, 3)),),
+    )
+    block_sizes = [128]
+    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    assert block_sizes == [128]
+
+
+def test_contraction_only_knob_is_left_where_the_formula_put_it() -> None:
+    """Growing a contraction-only knob to its extent measured NET NEGATIVE on the curriculum
+    (right on some kernels, 0.84x-0.89x on others), so the rule is off and a knob no dot
+    claims as M or N must come out unchanged."""
+    assert _MULTI.ROLE_CONTRACTION_GROW is False
+    env, _mm = _knob_spec(
+        knob_users=((4, ((0, "k"), (1, "k"))),),
+        block_ids=[4],
+        extents={4: 128},
+        pipelined_regions=((_live("load", 9, 4),),),
+    )
+    block_sizes = [32]
+    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    assert block_sizes == [32]
+
+
+def test_grid_knob_shrinks_until_the_launch_grid_fills_a_wave() -> None:
+    """A knob that IS the grid trades tile area against occupancy, so it is sized by the
+    machine: shrink while the launch grid is under one wave, and stop at the allocation
+    granularity rather than at the dot minimum."""
+    env, _mm = _knob_spec(
+        knob_users=((0, ((0, "m"), (1, "n"))),),
+        block_ids=[0],
+        extents={0: 8192},
+        grid_block_ids=(0,),
+        pipelined_regions=((_live("load", 9, 0), _live("load", 9, 7)),),
+    )
+    block_sizes = [8192]
+    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    # 8192 / 64 = 128 programs >= 0.8 * 148, so the shrink stops there rather than
+    # continuing to the floor.
+    assert block_sizes == [64]
+    # When even the floor cannot fill a wave, the granularity floor wins: a narrower
+    # accumulator reserves the same tensor memory while issuing less MMA work.
+    env, _mm = _knob_spec(
+        knob_users=((0, ((0, "m"), (1, "n"))),),
+        block_ids=[0],
+        extents={0: 1024},
+        grid_block_ids=(0,),
+        pipelined_regions=((_live("load", 9, 0), _live("load", 9, 7)),),
+    )
+    block_sizes = [1024]
+    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    assert block_sizes == [_MULTI.TMEM_ALLOC_COLUMNS]
+    # A grid that already covers the machine is left alone.
+    env, _mm = _knob_spec(
+        knob_users=((0, ((0, "m"),)),),
+        block_ids=[0],
+        extents={0: 65536},
+        grid_block_ids=(0,),
+        pipelined_regions=((_live("load", 9, 0), _live("load", 9, 7)),),
+    )
+    block_sizes = [128]
+    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    assert block_sizes == [128]
