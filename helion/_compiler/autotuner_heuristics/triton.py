@@ -569,9 +569,12 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
     # accumulator falls back into the register file.
     TCGEN05_WARPGROUP_WARPS = 4
     MAX_NUM_WARPS = 8
-    # Ceiling for the GRADED (sequential-pipeline) stage model. Deliberately above MAX_STAGES: the
-    # incumbent 6 cannot express the 8 and 11 the hand-tuning selected at low outer parallelism.
-    HW_MAX_STAGES = 12
+    # Ceiling for the GRADED (sequential-pipeline) stage model. Measured over all 34 scored
+    # curriculum bodies, the optimum coincides with MAX_STAGES: 4, 6 and 12 land within 0.002
+    # geomean of each other (0.7813 / 0.7824 / 0.7804), so raising the ceiling to reach the
+    # ns=8 and ns=11 cells the hand-tuning chose at low outer parallelism buys nothing, and 6
+    # is kept for agreement with the non-graded path rather than for its own sake.
+    HW_MAX_STAGES = 6
     # Floor for the stage knob. The incumbent formula never emits 1 -- right for a bare GEMM, where
     # an unpipelined K-loop is a large regression -- but it makes a fifth of the answer space
     # unreachable: 53 of the 251 hand-tuned B200 cells (21.1%), spanning 13 of 26 bodies, use
@@ -751,49 +754,47 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         """Raise ``num_warps`` until the register-resident live set fits the register file.
 
         The incumbent rule picks warps from tile area and then, for a saturated grid, forces
-        the minimum -- on the assumption that a large outer grid implies a small program.
-        That assumption fails whenever a program carries several dot-derived tensors, and the
-        failure is not subtle: measured on a three-dot chunked kernel with a grid 14x above
-        the saturation threshold, the one-warp draft spilled 1140 registers to local memory
-        and ran 13.7x slower than the same tile at four warps, which spilled none. Spills
-        fell monotonically with thread count.
+        the minimum -- on the assumption that a large outer grid implies a small,
+        latency-hidden program. That assumption is about PER-PROGRAM WORK, which a grid size
+        cannot observe, and the property that decides it is measured to be **total live fp32
+        dot-output bytes against the one-warp register file** (32 x 255 x 4 = 32640 B): at
+        matched live bytes, matched MMA FLOPs and matched HBM traffic, the one-warp penalty
+        is 8.29x for ONE contraction, 2.69x for two and 4.75x for four, and spills are zero
+        at 16 KiB live and 62-364 at 32 KiB live regardless of the contraction count. A
+        DOT-FREE control spills 490 registers and loses 4.0x at one warp with no MMA
+        anywhere. So the contraction count is a proxy; the live set is the cause.
 
-        A fixed point, not a one-shot correction, because the answer feeds back: raising the
-        warp count both enlarges the register file AND can move the accumulators out of it
-        entirely, by making the tcgen05 warpgroup available.
+        The grid is not meaningless -- one warp is worth +23% where the program does fit --
+        so the grid-keyed one-warp draft stays as the prior and this is the correction.
 
-        The first step goes straight to a warpgroup rather than doubling. That is the shape
-        of the hardware, not a shortcut: the two coherent regimes are *sub-warpgroup with
-        register-resident accumulators* and *warpgroup with tensor-memory accumulators*, and
-        a count between them pays for the extra threads while still being denied the
-        tensor-memory path. The measured sweep agrees -- two warps still spilled 84
-        registers where four spilled none.
+        A fixed point, because the answer feeds back: raising the warp count both enlarges
+        the register file and can move the accumulators out of it entirely. tcgen05 MMA
+        issues per warpgroup, confirmed directly in the emitted PTX: at ``num_warps`` 1 or 2
+        there is no ``tcgen05.mma`` at all (128-512 ``mma.sync`` instead, ``tmem_size = 0``),
+        and at 4 or more there is. Losing that path is NOT itself a penalty, though -- at
+        16 KiB live, one warp on ``mma.sync`` beats four warps on tcgen05 -- so the ladder
+        climbs 1 -> 2 -> 4 -> 8 rather than jumping to a warpgroup: two warps is the best
+        choice in 7 of 14 synthetic cells and is the hand-tuned answer in 11 of 18
+        ``chunk_cumsum_gc`` cells.
 
-        The fit test uses the ARCHITECTURAL ceiling of 255 registers per thread, because the
-        question here is "will this spill catastrophically", not "is occupancy ideal". At one
-        warp that is 31.9 KiB, and two live 64x64 fp32 accumulators are 32 KiB -- over budget
-        before a single operand tile, which is exactly the measured failure. It also leaves
-        the one-warp draft in place where it is genuinely right: a single 64x64 accumulator
-        is 16 KiB and fits, which is what the hand-tuning chose for those kernels.
-
-        ``other_register_bytes`` carries the rest of the peak-live register-resident set --
-        the masked intermediates and non-accumulator dot-derived tiles of a multi-contraction
-        body. Section 3 asks for registers to be estimated from the register-resident LIVE
-        SET rather than the accumulators alone, and the difference is decisive on the
-        straight-line multi-dot kernels: several have NO loop-carried accumulator at all, so
-        an accumulator-only estimate sees nothing to fix and leaves them at one warp with
-        540-894 measured spills.
+        The two terms are charged differently, and that asymmetry is the measured part. A
+        dot's own output extent is an EXACT quantity, so accumulators are charged at face
+        value. ``other_register_bytes`` comes from the FX peak-live set, which over-counts
+        (it counts each SSA value separately while the backend reuses registers inside the
+        peak step), so it is discounted by the calibrated ``LIVE_SET_OVERCOUNT``. Discounting
+        the accumulator term as well was measured to leave exactly one curriculum case at one
+        warp with 430 spills, running 1.62x slower than the same tile at four.
         """
         warps = max(1, num_warps)
         for _ in range(4):
-            need = (
-                cls._register_acc_bytes(acc_tiles, warps) + other_register_bytes
-            ) // cls.LIVE_SET_OVERCOUNT
+            need = cls._register_acc_bytes(acc_tiles, warps) + (
+                other_register_bytes // cls.LIVE_SET_OVERCOUNT
+            )
             if need <= warps * 32 * cls.REG_BYTES_PER_THREAD:
                 return warps
             if warps >= cls.MAX_NUM_WARPS:
                 return cls.MAX_NUM_WARPS
-            warps = max(cls.TCGEN05_WARPGROUP_WARPS, warps * 2)
+            warps *= 2
         return warps
 
     @classmethod
@@ -903,7 +904,7 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         cls, env: CompileEnvironment, block_sizes: list[int]
     ) -> list[tuple[int, int, int]]:
         """The simultaneously-live accumulators as ``(rows, cols, itemsize)`` under an
-        emitted ``block_sizes`` list."""
+        emitted ``block_sizes`` list -- the PEAK-LIVE measure, for the register budget."""
         mm = env.config_spec.multi_matmul_fact
         if mm is None or not mm.live_dot_outputs:
             return []
@@ -923,6 +924,40 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
                 for lead in dims[:-2]:
                     rows *= lead
             out.append((rows, cols, tile.itemsize))
+        return out
+
+    @classmethod
+    def _all_dot_acc_tiles(
+        cls, env: CompileEnvironment, block_sizes: list[int]
+    ) -> list[tuple[int, int, int]]:
+        """EVERY dot's accumulator tile, for the tensor-memory budget.
+
+        Tensor memory is a static per-CTA reservation, and measured on B200 the compiler does
+        not always reuse it across the dots of one kernel: a 5-dot kernel whose PEAK-LIVE dot
+        outputs came to 512 columns raised
+        ``OutOfResources: tensor memory, Required: 704, limit 512`` at launch. So the peak-live
+        measure -- which is the right one for registers, where the backend really does reuse --
+        under-counts here, and the budget has to reserve for every dot.
+
+        Deliberately the same unconditional pessimism ``_tmem_bytes`` already applies to a
+        single dot's promoted LHS: this accounting is only allowed to err toward being too
+        strict, because the alternative is a config that dies at launch.
+        """
+        mm = env.config_spec.multi_matmul_fact
+        if mm is None:
+            return []
+        block_of = cls._full_block_map(env, block_sizes)
+
+        def extent(bid: int | None, axes_extent: int | None, static: int | None) -> int:
+            if bid is not None and bid in block_of:
+                return max(1, block_of[bid])
+            return max(1, axes_extent or static or 1)
+
+        out: list[tuple[int, int, int]] = []
+        for f, ax in zip(mm.matmuls, mm.axes, strict=False):
+            rows = extent(f.m_block_id, ax.m_extent, f.static_m)
+            cols = extent(f.n_block_id, ax.n_extent, f.static_n)
+            out.append((rows, cols, max(1, f.lhs_dtype.itemsize)))
         return out
 
     @classmethod
@@ -1424,9 +1459,10 @@ class TritonH100MatmulHeuristic(AutotunerHeuristic):
         def over_budget() -> bool:
             if smem_over():
                 return True
-            tiles = cls._live_acc_tiles(env, fact, bm, bn, bk, itemsize)
+            emitted_now = _h100_build_block_sizes(env.config_spec, fact, bm, bn, bk)
             if cls.TMEM_COLUMN_BUDGET is not None and (
-                cls._tmem_columns(tiles) > cls.TMEM_COLUMN_BUDGET
+                cls._tmem_columns(cls._all_dot_acc_tiles(env, emitted_now))
+                > cls.TMEM_COLUMN_BUDGET
             ):
                 return True
             return cls.TMEM_BUDGET is not None and (
@@ -1738,24 +1774,6 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
     # promote_seed_to_default=True inherited: with autotune off these kernels otherwise fall
     # back to the bare fragment default, which is the case this seed exists to fix.
 
-    # The saturated-grid ONE-WARP override does not apply here; fall back to the tile ramp.
-    #
-    # That override exists because a large outer grid usually means a small, latency-hidden
-    # program, so many one-warp CTAs beat a few wide ones. The premise is a statement about
-    # PER-PROGRAM WORK, and a grid size cannot see it. It holds for a single clean
-    # contraction -- there the one-warp draft ties the hand-tuned corpus -- and it fails for
-    # a program running several contractions, whose accumulators and masked intermediates all
-    # compete for one register file. Measured at one warp on 12 curriculum cells with a grid
-    # 14x above the saturation threshold: 11 of 12 spilled to local memory (142 to 2338
-    # spills), the worst cell ran 13.7x slower than the same tile at four warps, and the
-    # geometric mean against hand-tuning was 2.57x off; with the override disabled it is
-    # 1.18x off and spills nothing.
-    #
-    # The number of structurally distinct contractions sharing a program is a measurable
-    # workload property, not a kernel identity: any kernel that fuses several contractions
-    # into one program -- attention, a blocked triangular solve, a pairwise-distance kernel --
-    # sits on the same side of it.
-    SAT_NUM_WARPS = None
     # The saturated-grid TILE caps are relaxed here for the same reason, to the tcgen05 lane
     # count. They rest on the identical premise ("once the grid saturates the SMs, many small
     # concurrent CTAs beat a few big ones"), and measured on 54 curriculum cases across 18
@@ -1764,12 +1782,36 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
     # hand-tuned one while sitting far inside every hard budget (12-24 KiB of shared memory,
     # 64-128 tensor-memory columns).
     #
-    # Relaxing them is confined to THIS front end deliberately: the same sweep applied the
-    # relaxed caps to the single-contraction front end as well and scored WORSE (0.754), which
-    # is the discriminator the structural argument predicts -- a program with one contraction
-    # really does prefer the small saturated tile.
+    # Relaxing them is confined to THIS front end for MINIMALITY, not because a single
+    # contraction is measured to want the small tile. An earlier sweep did read that way
+    # (relaxing front end 1's caps too scored 0.754 against 0.778), but adversarial review
+    # showed the difference was an artifact of the one-warp override still being pinned there:
+    # at one warp a wider ``bn`` costs 2.1-2.2x and spills 364 registers, while with the warp
+    # count free the same widening is 2-3% BETTER. Re-measured with the register correction in
+    # place, relaxing front end 1's caps is NEUTRAL (0.8050 either way over 66 cases, and
+    # 0.7596 vs 0.7566 over 54 -- both inside the between-run floor). So there is no evidence
+    # to change that path, and no evidence it would hurt; it is left alone.
     SAT_TILE_BM = 128
     SAT_TILE_BN = 128
+    # Warp floor for a MULTI-contraction program: never emit the single-warp draft here.
+    #
+    # This is a floor rather than a policy because the two errors are not symmetric, and the
+    # asymmetry is measured. One rung too HIGH is nearly free: two warps is the hand-tuned
+    # answer in 11 of 18 ``chunk_cumsum_gc`` cells and the best of four counts in 7 of 14
+    # synthetic cells. One rung too LOW is catastrophic: 4-8x, via register spilling to local
+    # memory. And the live-set estimate provably cannot separate the boundary cases -- a cell
+    # that spills 540 registers at one warp estimates 1.33x the one-warp file while a cell that
+    # spills ZERO estimates 1.51x, i.e. the ordering inverts, so no threshold on that estimate
+    # can decide them.
+    #
+    # What IS certain without any estimate is that a program running several contractions holds
+    # more simultaneously-live register state than a single-contraction program with the same
+    # tile. Given the cost asymmetry, spending one rung on that certainty is the right trade,
+    # and it leaves the single-contraction front end -- where the one-warp draft is measured to
+    # tie hand-tuning -- untouched. Measured on the two zero-tunable-axis 8-dot bodies, the
+    # one-warp draft spills 204-540 registers and scores 0.19-0.38 against hand-tuned configs
+    # that use two and four warps.
+    MULTI_DOT_MIN_NUM_WARPS = 2
 
     @classmethod
     def is_eligible(cls, env: CompileEnvironment, device_ir: DeviceIR) -> bool:
@@ -1918,6 +1960,8 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
                 cls._acc_tiles_from_map(env, block_sizes),
                 cls._other_register_bytes(env, block_sizes),
             )
+        if len(mm.matmuls) > 1:
+            num_warps = max(num_warps, cls.MULTI_DOT_MIN_NUM_WARPS)
 
         return {
             "block_sizes": block_sizes,
@@ -1962,7 +2006,7 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
             if cls.TMEM_COLUMN_BUDGET is None:
                 return False
             return (
-                cls._tmem_columns(cls._acc_tiles_from_map(env, block_sizes))
+                cls._tmem_columns(cls._all_dot_acc_tiles(env, block_sizes))
                 > cls.TMEM_COLUMN_BUDGET
             )
 
@@ -1989,6 +2033,8 @@ class TritonB200MultiMatmulHeuristic(TritonB200FormulaMatmulHeuristic):
                 cls._acc_tiles_from_map(env, block_sizes),
                 cls._other_register_bytes(env, block_sizes),
             )
+        if len(mm.matmuls) > 1:
+            draft["num_warps"] = max(draft["num_warps"], cls.MULTI_DOT_MIN_NUM_WARPS)
 
     @classmethod
     def _multi_ranked(cls, env: CompileEnvironment) -> list[Config]:

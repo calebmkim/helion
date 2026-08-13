@@ -555,36 +555,35 @@ def test_register_accumulator_charge_depends_on_the_warpgroup() -> None:
     assert _FML._register_acc_bytes([(32, 64, 2)], 8) == 32 * 64 * 4
 
 
-def test_warps_rise_to_a_warpgroup_when_the_live_set_does_not_fit() -> None:
-    """The canonical failure: two live 64x64 fp32 accumulators are 32 KiB against the 31.9
-    KiB one-warp architectural ceiling -- over budget before a single operand tile. The
-    correction goes straight to a warpgroup, because the two coherent regimes are
-    sub-warpgroup/register-resident and warpgroup/tensor-memory, and a count between them
-    pays for threads while still being denied tensor memory (measured: 2 warps still
-    spilled 84 registers where 4 spilled none)."""
-    # The estimate is judged against LIVE_SET_OVERCOUNT x the file, because the FX peak-live
-    # set counts each SSA value separately while the backend reuses registers inside that
-    # step; the factor is calibrated against measured post-ptxas spills (see the constant).
-    four = [(64, 64, 2)] * 4
-    assert _FML._warps_for_live_set(1, four) == _FML.TCGEN05_WARPGROUP_WARPS
-    # ...and it leaves the one-warp draft alone where that is genuinely right: the cell whose
-    # estimate is 1.5x the one-warp file measured ZERO spills, and the hand-tuning chose one
-    # warp for it.
+def test_warps_rise_with_the_register_resident_live_set() -> None:
+    """The property that decides the one-warp penalty is total live fp32 dot-output bytes
+    against the one-warp register file (32 x 255 x 4 = 32640 B), NOT the contraction count:
+    measured at matched live bytes, matched MMA FLOPs and matched HBM traffic, the one-warp
+    penalty is 8.29x for ONE contraction, 2.69x for two and 4.75x for four, and a dot-free
+    control spills 490 registers and loses 4.0x with no MMA anywhere.
+
+    The ladder climbs 1 -> 2 -> 4 -> 8. Losing tcgen05 below a warpgroup is confirmed in the
+    emitted PTX but is not itself a penalty -- at 16 KiB live, one warp on ``mma.sync`` beats
+    four warps on tcgen05 -- and two warps is the hand-tuned answer in 11 of 18
+    ``chunk_cumsum_gc`` cells."""
+    # ONE 64x64 fp32 accumulator is 16 KiB and fits one warp: leave the draft alone.
     assert _FML._warps_for_live_set(1, [(64, 64, 2)]) == 1
+    # TWO of them are 32 KiB against a 31.9 KiB file: one step up the ladder, not a jump.
+    assert _FML._warps_for_live_set(1, [(64, 64, 2)] * 2) == 2
+    # Accumulators are charged at FACE VALUE (a dot's output extent is exact), unlike the
+    # FX-derived non-accumulator set. Discounting them too left one curriculum case at one
+    # warp with 430 spills, 1.62x slower than the same tile at four warps.
+    assert _FML._warps_for_live_set(1, [(64, 64, 2)] * 4) == 4
     # No accumulators recorded -> no opinion, so the incumbent ramp is preserved.
     assert _FML._warps_for_live_set(1, []) == 1
     assert _FML._warps_for_live_set(8, []) == 8
     # Never lowers what the tile ramp asked for.
-    assert _FML._warps_for_live_set(8, four) == 8
-    # When tensor memory cannot rescue it (bm below the tcgen05 minimum), it keeps doubling
-    # against the register file instead of stopping at a warpgroup.
-    huge = [(32, 2048, 2)] * 4
-    assert _FML._warps_for_live_set(1, huge) == _FML.MAX_NUM_WARPS
-    # Section 3 asks for the register estimate to come from the register-resident LIVE SET,
-    # not the accumulators alone. Several multi-contraction bodies have NO loop-carried
-    # accumulator, so an accumulator-only estimate sees nothing to fix and leaves them at one
-    # warp with 540-894 measured spills; the non-accumulator live bytes must move the answer.
-    assert _FML._warps_for_live_set(1, [], other_register_bytes=200000) == 4
+    assert _FML._warps_for_live_set(8, [(64, 64, 2)] * 4) == 8
+    # Where tensor memory cannot rescue it (bm below the tcgen05 minimum), it keeps climbing.
+    assert _FML._warps_for_live_set(1, [(32, 2048, 2)] * 4) == _FML.MAX_NUM_WARPS
+    # The NON-accumulator live set comes from the FX peak, which over-counts, so it is
+    # discounted by the calibrated factor before the comparison.
+    assert _FML._warps_for_live_set(1, [], other_register_bytes=400000) == 8
     assert _FML._warps_for_live_set(1, [], other_register_bytes=1024) == 1
 
 
