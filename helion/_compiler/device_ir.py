@@ -39,8 +39,10 @@ from ..autotuner.config_spec import DotAxes
 from ..autotuner.config_spec import DotAxisKind
 from ..autotuner.config_spec import DotSite
 from ..autotuner.config_spec import LiveTile
+from ..autotuner.config_spec import LoopAxisFact
 from ..autotuner.config_spec import MatmulWithReductionEpilogueFact
 from ..autotuner.config_spec import MultiMatmulFact
+from ..autotuner.config_spec import PipelinedRegion
 from ..autotuner.config_spec import ReductionCategory
 from ..autotuner.config_spec import ReductionDescriptor
 from ..autotuner.config_spec import ReductionKernelFact
@@ -58,6 +60,7 @@ from .ast_extension import create
 from .ast_extension import expr_from_string
 from .ast_read_writes import ReadWrites
 from .compile_environment import CompileEnvironment
+from .compile_environment import FixedBlockSizeSource
 from .host_function import HostFunction
 from .indexing_strategy import subscript_index_scale
 from .indexing_strategy import subscript_tile_info
@@ -791,6 +794,41 @@ def _reduction_fx_inter_loop_rw_names(
     return frozenset(reads), frozenset(writes)
 
 
+def _immovable_extent(
+    env: CompileEnvironment, spec: ConfigSpec, block_id: int
+) -> int | None:
+    """The per-program extent of an axis the config cannot move, or ``None``.
+
+    A ``FixedBlockSizeSource`` is the one source the config cannot move: it returns its own
+    ``value`` and ignores the config entirely. Every other source reads a config knob
+    (``block_sizes`` for a loop axis, ``reduction_loops`` for a reduction one), so the config
+    CAN move it and there is no config-independent extent to report.
+
+    The value is asked of the source rather than read off ``value``, so this stays correct if
+    a fixed source ever computes it. Note the axis's ``size`` is NOT it: ``size`` is the AXIS
+    LENGTH, which for ``hl.tile(seqlen, block_size=64)`` is the whole sequence (8192) rather
+    than the 64 rows one program sees. That distinction is why every footprint resolves
+    extents through ``_full_block_map`` -> ``from_config`` instead of reading ``size``.
+
+    Module-level rather than a closure so it can be tested without building a real graph.
+    """
+    if not (0 <= block_id < len(env.block_sizes)):
+        return None
+    info = env.block_sizes[block_id]
+    if not isinstance(info.block_size_source, FixedBlockSizeSource):
+        return None
+    try:
+        value = info.block_size_source.from_config(spec._base_default_config(), info)
+    except Exception:
+        return None
+    if value is None:
+        return None
+    try:
+        return max(1, int(env.size_hint(value)))
+    except Exception:
+        return None
+
+
 class DeviceIR:
     def __init__(self) -> None:
         super().__init__()
@@ -1479,41 +1517,6 @@ class DeviceIR:
 
         valid = set(spec.block_sizes.valid_block_ids())
 
-        def immovable_extent(block_id: int) -> int | None:
-            """The per-program extent of an axis the config cannot move, or ``None``.
-
-            Asked of the axis's own ``BlockSizeSource``: a source that returns the same
-            value for two different configs is one the config cannot move, and that value
-            IS the per-program extent. A COMPUTED property, deliberately not an
-            ``isinstance`` check on the source class -- the set of source classes is not a
-            closed enumeration, and a check that is right for every class present today is
-            exactly the shape of bug this analysis has to avoid.
-
-            This is also why the axis's ``size`` cannot be used instead: ``size`` is the
-            AXIS LENGTH, which for ``hl.tile(seqlen, block_size=64)`` is the whole sequence
-            (8192) rather than the 64 rows one program sees -- an over-count of 128x that
-            would corrupt every footprint derived from it.
-            """
-            if not (0 <= block_id < len(env.block_sizes)):
-                return None
-            info = env.block_sizes[block_id]
-            probes = []
-            for bs_probe in (16, 128):
-                cfg = spec._base_default_config()
-                sizes = cfg.config.get("block_sizes")
-                if isinstance(sizes, list) and sizes:
-                    cfg.config["block_sizes"] = [bs_probe] * len(sizes)
-                try:
-                    probes.append(info.block_size_source.from_config(cfg, info))
-                except Exception:
-                    return None
-            if probes[0] is None or probes[0] != probes[1]:
-                return None
-            try:
-                return max(1, int(env.size_hint(probes[0])))
-            except Exception:
-                return None
-
         def classify(
             block_id: int | None, static: int | None
         ) -> tuple[DotAxisKind, int | None]:
@@ -1527,7 +1530,7 @@ class DeviceIR:
             # such an axis as UNKNOWN declines a kernel that can be configured exactly --
             # measured, it is the sole reason 26 curriculum cases received no seed at all.
             if block_id is not None:
-                extent = immovable_extent(block_id)
+                extent = _immovable_extent(env, spec, block_id)
                 if extent is not None:
                     return DotAxisKind.FIXED_FULL_EXTENT, extent
             if static is None:
@@ -1557,20 +1560,87 @@ class DeviceIR:
         child_loops = self._forloop_child_edges()
         parent_of: dict[int, int] = {}
         loop_block_ids: dict[int, frozenset[int]] = {}
+        loop_calls: dict[int, list[torch.fx.Node]] = {}
         for parent, edges in child_loops.items():
             for body_gid, blk in edges:
                 parent_of[body_gid] = parent
                 loop_block_ids[body_gid] = blk
+        for gi in self.graphs:
+            if isinstance(gi, ReductionLoopGraphInfo):
+                continue
+            for node in gi.graph.nodes:
+                if (
+                    node.op == "call_function"
+                    and _tracing_ops.is_for_loop_target(node.target)
+                    and node.args
+                    and isinstance(node.args[0], int)
+                ):
+                    loop_calls.setdefault(node.args[0], []).append(node)
 
-        def _axis_extent(bid: int) -> int:
+        def _axis_extent_or_none(bid: int) -> int | None:
             if 0 <= bid < len(env.block_sizes):
                 size = env.block_sizes[bid].size
                 if isinstance(size, (int, torch.SymInt)):
                     try:
                         return max(1, int(env.size_hint(size)))
                     except Exception:
-                        return 1
-            return 1
+                        return None
+            return None
+
+        def _axis_extent(bid: int) -> int:
+            return _axis_extent_or_none(bid) or 1
+
+        grid_ids = set(spec.grid_block_ids)
+        mn_ids = {f.m_block_id for f in facts} | {f.n_block_id for f in facts}
+        outer_grid = 1
+        for bid in spec.grid_block_ids:
+            if bid in mn_ids:
+                continue
+            outer_grid *= _axis_extent(bid)
+
+        bounded_by: dict[int, int] = {}
+        bounded_extent: dict[int, int] = {}
+        for slot in range(len(spec.block_sizes)):
+            block_spec = spec.block_sizes[slot]
+            parent = getattr(block_spec, "bounded_by_block_id", None)
+            if isinstance(parent, int):
+                bounded_by[block_spec.block_id] = parent
+                if 0 <= parent < len(env.block_sizes):
+                    source = env.block_sizes[parent].block_size_source
+                    value = getattr(source, "value", None)
+                    if isinstance(source, FixedBlockSizeSource) and isinstance(
+                        value, int
+                    ):
+                        bounded_extent[block_spec.block_id] = max(1, value)
+
+        inferred_work_trips: dict[tuple[int, int], int] = {}
+
+        def loop_axes_for(graph_id: int) -> tuple[LoopAxisFact, ...]:
+            """Sequential loop axes enclosing ``graph_id``, before tile selection.
+
+            A fact is retained instead of prematurely collapsing an extent to a trip
+            count.  The heuristic can then divide by the candidate's real block size.
+            """
+            axes_out: list[LoopAxisFact] = []
+            seen_graphs: set[int] = set()
+            seen_axes: set[int] = set()
+            cur = graph_id
+            while cur in loop_block_ids and cur not in seen_graphs:
+                seen_graphs.add(cur)
+                for bid in sorted(loop_block_ids[cur]):
+                    if bid in grid_ids or bid in seen_axes:
+                        continue
+                    seen_axes.add(bid)
+                    axes_out.append(
+                        LoopAxisFact(
+                            bid,
+                            _axis_extent_or_none(bid),
+                            bounded_by.get(bid),
+                            bounded_extent.get(bid),
+                        )
+                    )
+                cur = parent_of.get(cur, -1)
+            return tuple(axes_out)
 
         def trips_for(graph_id: int) -> int:
             """Iterations one program runs a dot in this graph: the product over the
@@ -1585,15 +1655,20 @@ class DeviceIR:
             safe direction, since every consumer uses this only to CAP a pipeline depth.
             """
             trips = 1
-            seen: set[int] = set()
-            cur = graph_id
-            while cur in loop_block_ids and cur not in seen:
-                seen.add(cur)
-                for bid in loop_block_ids[cur]:
-                    extent = _axis_extent(bid)
-                    block = immovable_extent(bid)
-                    trips *= max(1, extent // block) if block else extent
-                cur = parent_of.get(cur, -1)
+            for axis in loop_axes_for(graph_id):
+                extent = axis.extent or 1
+                if axis.bounded_by_block_id is not None:
+                    extent = (
+                        axis.bounded_extent
+                        or _immovable_extent(
+                            env,
+                            spec,
+                            axis.bounded_by_block_id,
+                        )
+                        or _axis_extent(axis.bounded_by_block_id)
+                    )
+                block = _immovable_extent(env, spec, axis.block_id)
+                trips *= max(1, -(-extent // block)) if block else extent
             return trips
 
         dot_targets = _matmul_operand_positions()
@@ -1605,9 +1680,167 @@ class DeviceIR:
                 if node.op == "call_function" and node.target in dot_targets:
                     dot_nodes.append((gi.graph_id, node))
 
+        def _strip_index_cast(value: object) -> object:
+            for _ in range(4):
+                if not isinstance(value, torch.fx.Node) or value.target not in (
+                    torch.ops.prims.convert_element_type.default,
+                    torch.ops.aten._to_copy.default,
+                ):
+                    break
+                value = value.args[0]
+            return value
+
+        def _single_segment_loop(body_gid: int, block_id: int) -> bool:
+            """Whether this loop walks the sole segment in a length-2 offsets array."""
+            calls = loop_calls.get(body_gid, ())
+            if len(calls) != 1:
+                return False
+            graph_info = self.graphs[body_gid]
+            body_block_ids = getattr(graph_info, "block_ids", ())
+            if block_id not in body_block_ids:
+                return False
+            position = body_block_ids.index(block_id)
+            call = calls[0]
+            ends = call.args[2] if len(call.args) > 2 else None
+            if not isinstance(ends, (list, tuple)) or position >= len(ends):
+                return False
+
+            difference = _strip_index_cast(ends[position])
+            if (
+                not isinstance(difference, torch.fx.Node)
+                or difference.target is not torch.ops.aten.sub.Tensor
+            ):
+                return False
+            end = _strip_index_cast(difference.args[0])
+            begin = _strip_index_cast(difference.args[1])
+
+            from ..language import memory_ops
+
+            if (
+                not isinstance(end, torch.fx.Node)
+                or end.target is not memory_ops.load
+                or not isinstance(begin, torch.fx.Node)
+                or begin.target is not memory_ops.load
+                or end.args[0] is not begin.args[0]
+            ):
+                return False
+            offsets = _accessed_tensor_fake(end)
+            if (
+                offsets is None
+                or offsets.ndim != 1
+                or env.size_hint(offsets.shape[0]) != 2
+            ):
+                return False
+            end_indices = end.args[1] if len(end.args) > 1 else None
+            begin_indices = begin.args[1] if len(begin.args) > 1 else None
+            if (
+                not isinstance(end_indices, (list, tuple))
+                or len(end_indices) != 1
+                or not isinstance(begin_indices, (list, tuple))
+                or len(begin_indices) != 1
+            ):
+                return False
+            end_index = _strip_index_cast(end_indices[0])
+            begin_index = _strip_index_cast(begin_indices[0])
+            if not isinstance(end_index, torch.fx.Node):
+                return False
+            if end_index.target not in (
+                operator.add,
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.add.Scalar,
+            ):
+                return False
+            lhs, rhs = end_index.args[:2]
+            return (lhs is begin_index and isinstance(rhs, int) and rhs == 1) or (
+                rhs is begin_index and isinstance(lhs, int) and lhs == 1
+            )
+
+        def _direct_operand_trip_count(
+            node: torch.fx.Node,
+            operand_index: int,
+        ) -> tuple[int, int] | None:
+            """Return ``(load identity, loop trips)`` proven by one direct operand."""
+            from ..language import memory_ops
+
+            if operand_index >= len(node.args):
+                return None
+            operand = node.args[operand_index]
+            load = _trace_back_to_load(operand, memory_ops.load)
+            if load is None or not isinstance(operand, torch.fx.Node):
+                return None
+            source = _accessed_tensor_fake(load)
+            operand_value = operand.meta.get("val")
+            if source is None or not isinstance(operand_value, torch.Tensor):
+                return None
+
+            source_numel = 1
+            for size, stride in zip(source.shape, source.stride(), strict=True):
+                if stride != 0:
+                    source_numel *= max(1, env.size_hint(size))
+            operand_numel = 1
+            for size in operand_value.shape:
+                operand_numel *= max(1, env.size_hint(size))
+            denominator = max(1, outer_grid) * operand_numel
+            if source_numel % denominator:
+                return None
+            return id(load), max(1, source_numel // denominator)
+
+        # A runtime offsets load normally makes a segmented loop's trip count
+        # unknowable. With exactly one segment, however, two independently loaded
+        # dot operands can prove it from shapes: total accessed elements divided by
+        # the parallel grid and one operand tile is the number of dynamic dot calls.
+        # Requiring two distinct loads to agree prevents a broadcast or shared
+        # operand from turning a weak shape ratio into an exact loop fact.
+        dots_by_graph: dict[int, list[torch.fx.Node]] = {}
+        for gid, node in dot_nodes:
+            dots_by_graph.setdefault(gid, []).append(node)
+        for body_gid, block_ids in loop_block_ids.items():
+            unresolved = [
+                bid
+                for bid in block_ids
+                if bid not in grid_ids
+                and _axis_extent_or_none(bid) is None
+                and bid not in bounded_by
+            ]
+            enclosing_axes = loop_axes_for(body_gid)
+            if len(block_ids) != 1 or len(unresolved) != 1 or len(enclosing_axes) != 1:
+                continue
+            block_id = unresolved[0]
+            if not _single_segment_loop(body_gid, block_id):
+                continue
+            block = _immovable_extent(env, spec, block_id)
+            if block is None:
+                continue
+            trip_by_load: dict[int, int] = {}
+            for node in dots_by_graph.get(body_gid, ()):
+                positions = dot_targets.get(node.target)
+                if positions is None:
+                    continue
+                for operand_index in positions:
+                    proof = _direct_operand_trip_count(node, operand_index)
+                    if proof is not None:
+                        trip_by_load[proof[0]] = proof[1]
+            trips = set(trip_by_load.values())
+            if len(trip_by_load) >= 2 and len(trips) == 1:
+                inferred_work_trips[(body_gid, block_id)] = trips.pop()
+
         n_dot_nodes = len(dot_nodes)
         attribution_complete = n_dot_nodes == len(facts)
         sites: list[DotSite] = []
+
+        root_group_by_graph = {
+            graph_id: tuple(self.grid_block_ids[index])
+            for index, graph_id in enumerate(self.root_ids)
+        }
+
+        def grid_group_for(graph_id: int) -> tuple[int, ...]:
+            seen: set[int] = set()
+            current = graph_id
+            while current not in root_group_by_graph and current not in seen:
+                seen.add(current)
+                current = parent_of.get(current, -1)
+            return root_group_by_graph.get(current, ())
+
         if attribution_complete:
             for i, (gid, node) in enumerate(dot_nodes):
                 val = node.meta.get("val")
@@ -1620,6 +1853,9 @@ class DeviceIR:
                         blk = env.resolve_block_id(dim)
                         if blk is not None and 0 <= blk < len(env.block_sizes):
                             dim = env.block_sizes[blk].size
+                        if not isinstance(dim, (int, torch.SymInt)):
+                            got.append(-1)
+                            continue
                         try:
                             got.append(int(env.size_hint(dim)))
                         except Exception:
@@ -1635,19 +1871,26 @@ class DeviceIR:
                 # carries in. Testing the dot's direct users is not enough: the carry
                 # normally passes through a cast or a decay multiply first.
                 updates_carry = _reaches_graph_output(node) and gid in loop_block_ids
-                sites.append(DotSite(gid, trips_for(gid), updates_carry))
+                loop_axes = loop_axes_for(gid)
+                exact_loop_trips = (
+                    inferred_work_trips.get((gid, loop_axes[0].block_id))
+                    if len(loop_axes) == 1
+                    else None
+                )
+                sites.append(
+                    DotSite(
+                        gid,
+                        trips_for(gid),
+                        updates_carry,
+                        loop_axes,
+                        exact_loop_trips,
+                        grid_group_for(gid),
+                    )
+                )
         if not attribution_complete:
             # Unproven pairing: keep a same-length, deliberately uninformative site list so
             # consumers never index out of range, and let the flag carry the uncertainty.
-            sites = [DotSite(-1, 1, False) for _ in facts]
-
-        # (3b) outer parallel programs: grid axes that are no dot's M or N tile.
-        mn_ids = {f.m_block_id for f in facts} | {f.n_block_id for f in facts}
-        outer_grid = 1
-        for bid in spec.grid_block_ids:
-            if bid in mn_ids:
-                continue
-            outer_grid *= _axis_extent(bid)
+            sites = [DotSite(-1, 1, False, (), None, ()) for _ in facts]
 
         # (3c) sequential (non-grid) loop trip count over the whole kernel: the chunk walk of
         # a state recurrence. ``sequential_loop_trips * fixed_k`` recovers the logical
@@ -1711,16 +1954,23 @@ class DeviceIR:
         # A LOOP BODY's loads are staged num_stages deep; a load in a non-loop graph is
         # issued once. Charging the latter per stage over-states shared memory badly enough
         # to shrink a tile to the dot minimum for an overflow that cannot happen.
-        pipelined: list[tuple[LiveTile, ...]] = []
+        pipelined: list[PipelinedRegion] = []
         resident: list[tuple[LiveTile, ...]] = []
         for gi in self.graphs:
             if isinstance(gi, ReductionLoopGraphInfo):
                 continue
-            tiles = _graph_load_tiles(gi.graph, env)
+            loop_axes = (
+                loop_axes_for(gi.graph_id) if gi.graph_id in loop_block_ids else ()
+            )
+            tiles = _graph_load_tiles(
+                gi.graph,
+                env,
+                frozenset(axis.block_id for axis in loop_axes),
+            )
             if not tiles:
                 continue
             if gi.graph_id in loop_block_ids:
-                pipelined.append(tuple(tiles))
+                pipelined.append(PipelinedRegion(loop_axes, tuple(tiles)))
             else:
                 resident.append(tuple(tiles))
 
@@ -1738,6 +1988,7 @@ class DeviceIR:
             resident_regions=tuple(resident),
             n_dot_nodes=max(n_dot_nodes, len(facts)),
             attribution_complete=attribution_complete,
+            grid_groups=tuple(tuple(group) for group in self.grid_block_ids),
         )
 
     def build_matmul_reduction_epilogue_facts(self) -> None:
@@ -3632,7 +3883,81 @@ def _reaches_graph_output(node: torch.fx.Node, limit: int = 64) -> bool:
     return False
 
 
-def _graph_load_tiles(graph: torch.fx.Graph, env: CompileEnvironment) -> list[LiveTile]:
+def _index_depends_on_loop(
+    obj: object,
+    env: CompileEnvironment,
+    loop_block_ids: frozenset[int],
+    seen: set[torch.fx.Node] | None = None,
+) -> bool | None:
+    """Whether an FX index is proven to depend on an enclosing loop axis.
+
+    ``None`` means the provenance is incomplete. Callers must treat that as
+    stageable; only a fully proven independent index may be charged once.
+    """
+    if isinstance(obj, (list, tuple)):
+        states = [
+            _index_depends_on_loop(item, env, loop_block_ids, seen) for item in obj
+        ]
+        if any(state is True for state in states):
+            return True
+        if any(state is None for state in states):
+            return None
+        return False
+    if isinstance(obj, dict):
+        return _index_depends_on_loop(tuple(obj.values()), env, loop_block_ids, seen)
+    if isinstance(obj, torch.fx.Node):
+        seen = set() if seen is None else seen
+        if obj in seen:
+            return False
+        seen.add(obj)
+        value = obj.meta.get("val")
+        known_origin = False
+        try:
+            block_id = env.resolve_block_id(value)
+        except Exception:
+            block_id = None
+        if block_id is not None:
+            known_origin = True
+            if block_id in loop_block_ids:
+                return True
+        if isinstance(value, torch.Tensor):
+            for dim in value.shape:
+                try:
+                    dim_block_id = env.resolve_block_id(dim)
+                except Exception:
+                    dim_block_id = None
+                if dim_block_id is not None:
+                    known_origin = True
+                    if dim_block_id in loop_block_ids:
+                        return True
+        if obj.op == "placeholder":
+            return False if known_origin else None
+        children = (*obj.args, *obj.kwargs.values())
+        if children:
+            state = _index_depends_on_loop(children, env, loop_block_ids, seen)
+            if state is not False:
+                return state
+            return False
+        if obj.op == "get_attr":
+            return False
+        return False if known_origin else None
+    if isinstance(obj, torch.SymInt):
+        try:
+            block_id = env.resolve_block_id(obj)
+        except Exception:
+            return None
+        return block_id in loop_block_ids if block_id is not None else None
+    if isinstance(obj, torch.Tensor):
+        return None
+    # Literal integers, slices, None, and other immutable indexing tokens.
+    return False
+
+
+def _graph_load_tiles(
+    graph: torch.fx.Graph,
+    env: CompileEnvironment,
+    loop_block_ids: frozenset[int] = frozenset(),
+) -> list[LiveTile]:
     """Every load AND store in one graph, as a :class:`LiveTile` tagged by kind.
 
     Stores are recorded too because a kernel that publishes INSIDE its sequential loop --
@@ -3661,8 +3986,14 @@ def _graph_load_tiles(graph: torch.fx.Graph, env: CompileEnvironment) -> list[Li
         if node.target is memory_ops.load:
             kind = "load"
             val = node.meta.get("val")
+            stageable = (
+                _index_depends_on_loop(node.args[1], env, loop_block_ids)
+                if len(node.args) > 1 and loop_block_ids
+                else False
+            )
         elif node.target is memory_ops.store:
             kind = "store"
+            stageable = False
             # A store's own ``val`` is empty; the staged tile is the value argument.
             val = None
             for arg in node.args:
@@ -3690,6 +4021,7 @@ def _graph_load_tiles(graph: torch.fx.Graph, env: CompileEnvironment) -> list[Li
                 static_dims=tuple(static_out),
                 itemsize=val.dtype.itemsize,
                 kind=kind,
+                stageable=stageable,
             )
         )
     return out

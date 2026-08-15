@@ -244,12 +244,48 @@ class LiveTile(NamedTuple):
       computed without re-resolving shapes (``None`` where unresolvable).
     - ``itemsize`` — element width in bytes.
     - ``kind`` — ``"dot_out"`` | ``"load"`` | ``"carry"`` | ``"other"``.
+    - ``stageable`` — for a loop-body load, whether its index is proven to
+      vary with the enclosing loop. ``None`` means uncertain and is charged
+      conservatively as stageable.
     """
 
     dim_block_ids: tuple[int | None, ...]
     static_dims: tuple[int | None, ...]
     itemsize: int
     kind: str
+    stageable: bool | None = None
+
+
+class LoopAxisFact(NamedTuple):
+    """One tunable or fixed axis in an enclosing device loop.
+
+    ``extent`` is the full axis length. ``bounded_by_block_id`` records an inner
+    loop over exactly one outer tile (for example split-K's
+    ``tile(outer.begin, outer.end)``); in that case the candidate outer block is
+    the real extent, not the whole underlying axis. ``bounded_extent`` is set
+    only when that outer extent is a literal; a symbolic fixed parent remains
+    explicitly uncertain. The per-program block is deliberately not recorded
+    here: it is a candidate property and must be resolved from the emitted
+    ``block_sizes`` before the trip count is used.
+    """
+
+    block_id: int
+    extent: int | None
+    bounded_by_block_id: int | None = None
+    bounded_extent: int | None = None
+
+
+class PipelinedRegion(NamedTuple):
+    """Memory operations belonging to one sequential device-loop body.
+
+    Separate regions are siblings unless their loop descriptors explicitly contain
+    the same ancestor axes.  Loads are conservatively considered stageable for now;
+    the tuple representation keeps that uncertainty local to this fact boundary
+    while allowing useful depth to be capped by the candidate-real loop length.
+    """
+
+    loop_axes: tuple[LoopAxisFact, ...]
+    tiles: tuple[LiveTile, ...]
 
 
 class DotSite(NamedTuple):
@@ -267,11 +303,20 @@ class DotSite(NamedTuple):
     - ``updates_carry`` — the dot writes into a value carried by an enclosing loop
       (``acc=`` into a loop-carried accumulator). Such a dot's accumulator is
       resident for the whole loop, which is why it gets ranking priority.
+    - ``loop_axes`` — the enclosing loop axes before a candidate block size is
+      selected. Consumers that need an exact execution count resolve these axes
+      against the candidate instead of treating ``loop_trips`` as exact.
+    - ``exact_loop_trips`` — an exact dynamic execution count proven independently
+      of the loop-bound expression. This is used for work estimation only; it does
+      not claim that the same loop is a useful software-pipeline opportunity.
     """
 
     graph_id: int
     loop_trips: int
     updates_carry: bool
+    loop_axes: tuple[LoopAxisFact, ...] = ()
+    exact_loop_trips: int | None = None
+    grid_block_ids: tuple[int, ...] = ()
 
 
 class MultiMatmulFact(NamedTuple):
@@ -310,11 +355,12 @@ class MultiMatmulFact(NamedTuple):
       every step is what lets it. Selecting by rank instead under-counted a kernel that spills
       540 registers at one warp while over-counting one that spills none — the ordering
       inverted, so no threshold on that estimate could separate them.
-    - ``pipelined_regions`` — the loads/stores of each LOOP BODY, i.e. the regions whose
-      loads the software pipeliner multi-buffers. The SMEM operand ring is charged over
-      every load such a region stages, not only the dot's own A and B: a sum within a
-      region (each load gets its own multi-stage buffer) times the stage count, and a max
-      across regions (separate loops run one after the other).
+    - ``pipelined_regions`` — the loads/stores and enclosing loop axes of each LOOP
+      BODY. The axes let a candidate cap useful pipeline depth by the iterations it
+      actually executes. The SMEM operand ring is charged over every conservatively
+      stageable load, not only the dot's own A and B: a sum within a region times its
+      useful stage count, and a max across regions (separate loops run one after the
+      other).
     - ``resident_regions`` — the loads/stores of the NON-loop graphs. These are charged
       ONCE, with no stage multiplier: a load outside a loop is not multi-buffered, and
       charging it per stage over-states shared memory badly enough to shrink a tile to the
@@ -333,10 +379,11 @@ class MultiMatmulFact(NamedTuple):
     live_tiles: tuple[LiveTile, ...]
     live_dot_outputs: tuple[LiveTile, ...]
     live_tile_steps: tuple[tuple[LiveTile, ...], ...]
-    pipelined_regions: tuple[tuple[LiveTile, ...], ...]
+    pipelined_regions: tuple[PipelinedRegion, ...]
     resident_regions: tuple[tuple[LiveTile, ...], ...]
     n_dot_nodes: int
     attribution_complete: bool
+    grid_groups: tuple[tuple[int, ...], ...] = ()
 
     def users_of(self, block_id: int) -> tuple[tuple[int, str], ...]:
         for bid, users in self.knob_users:
@@ -355,7 +402,9 @@ class MultiMatmulFact(NamedTuple):
         m = f.static_m or ax.m_extent or 1
         n = f.static_n or ax.n_extent or 1
         k = f.static_k or ax.k_extent or 1
-        return m * n * k * max(1, self.sites[index].loop_trips)
+        site = self.sites[index]
+        trips = site.exact_loop_trips or site.loop_trips
+        return m * n * k * max(1, trips)
 
 
 class ReductionCategory(enum.Enum):

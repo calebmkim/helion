@@ -28,6 +28,7 @@ from helion.autotuner.config_fragment import PowerOfTwoFragment
 from helion.autotuner.config_spec import DotAxes
 from helion.autotuner.config_spec import DotAxisKind
 from helion.autotuner.config_spec import LiveTile
+from helion.autotuner.config_spec import LoopAxisFact
 from helion.autotuner.config_spec import MatmulFact
 
 _SHAPE_BUCKET_KEYS = {
@@ -358,6 +359,7 @@ def test_sm90_conservative_accounting_is_inert() -> None:
 # ---------------------------------------------------------------------------
 
 _FML = TritonB200FormulaMatmulHeuristic
+_H100 = TritonH100MatmulHeuristic
 
 
 def _axes(
@@ -398,10 +400,22 @@ def _generalized_spec(
     valid_block_ids: list[int],
     grid_block_ids: tuple[int, ...] = (),
 ) -> SimpleNamespace:
+    loop_axes = (
+        (LoopAxisFact(fact.k_block_id, fact.static_k),)
+        if axes.k_kind is DotAxisKind.TUNABLE_TILED and fact.k_block_id is not None
+        else ()
+    )
     mm = SimpleNamespace(
         matmuls=(fact,),
         axes=(axes,),
-        sites=(SimpleNamespace(graph_id=0, loop_trips=1, updates_carry=False),),
+        sites=(
+            SimpleNamespace(
+                graph_id=0,
+                loop_trips=max(1, fact.static_k or 1),
+                updates_carry=False,
+                loop_axes=loop_axes,
+            ),
+        ),
         knob_users=(),
         outer_grid=1,
         sequential_loop_trips=1,
@@ -640,13 +654,31 @@ def test_graded_stage_depth_falls_off_with_outer_parallelism() -> None:
 
 
 def test_graded_stage_depth_is_capped_by_the_loop_it_pipelines() -> None:
-    """There is no point pipelining deeper than the loop is long."""
+    """Real loop trips cap deep lookahead; one trip conditionally admits stage two."""
 
     def cheap(stages: int) -> int:
         return 1024 * stages
 
     assert _FML._graded_stage_depth(cheap, loop_trips=3, grid=1, num_sm=148) == 3
     assert _FML._graded_stage_depth(cheap, loop_trips=1, grid=1, num_sm=148) == 2
+    assert (
+        _FML._graded_stage_depth(
+            cheap,
+            loop_trips=1,
+            grid=1,
+            num_sm=148,
+            allow_one_trip_stage2=False,
+        )
+        == 1
+    )
+
+
+def test_tcgen_occupancy_penalty_uses_effective_residency() -> None:
+    """Queued waves do not increase the penalty after resident capacity is full."""
+    assert _FML._tcgen_occupancy_penalty(1, 1) == 1.0
+    assert _FML._tcgen_occupancy_penalty(4, 4) == 1.0
+    assert _FML._tcgen_occupancy_penalty(4, 2) == 2.0
+    assert _FML._tcgen_occupancy_penalty(32, 1) == _FML.TCGEN_OCCUPANCY_PENALTY_MAX
 
 
 def test_multi_matmul_ranking_prefers_a_carried_accumulator_then_work() -> None:
@@ -880,26 +912,10 @@ def test_reuse_free_output_knob_drops_to_the_allocation_floor() -> None:
     assert block_sizes == [128]
 
 
-def test_contraction_only_knob_is_left_where_the_formula_put_it() -> None:
-    """Growing a contraction-only knob to its extent measured NET NEGATIVE on the curriculum
-    (right on some kernels, 0.84x-0.89x on others), so the rule is off and a knob no dot
-    claims as M or N must come out unchanged."""
-    assert _MULTI.ROLE_CONTRACTION_GROW is False
-    env, _mm = _knob_spec(
-        knob_users=((4, ((0, "k"), (1, "k"))),),
-        block_ids=[4],
-        extents={4: 128},
-        pipelined_regions=((_live("load", 9, 4),),),
-    )
-    block_sizes = [32]
-    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
-    assert block_sizes == [32]
-
-
-def test_grid_knob_shrinks_until_the_launch_grid_fills_a_wave() -> None:
+def test_grid_knob_shrinks_only_when_wave_utilization_improves() -> None:
     """A knob that IS the grid trades tile area against occupancy, so it is sized by the
-    machine: shrink while the launch grid is under one wave, and stop at the allocation
-    granularity rather than at the dot minimum."""
+    machine: shrink while the launch grid is under one wave and wave utilization strictly
+    improves, then stop at the allocation granularity rather than at the dot minimum."""
     env, _mm = _knob_spec(
         knob_users=((0, ((0, "m"), (1, "n"))),),
         block_ids=[0],
@@ -924,6 +940,18 @@ def test_grid_knob_shrinks_until_the_launch_grid_fills_a_wave() -> None:
     block_sizes = [1024]
     _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
     assert block_sizes == [_MULTI.TMEM_ALLOC_COLUMNS]
+    # Do not cross into a second partial wave when that leaves utilization unchanged:
+    # 11008/128 = 86 programs in one wave, while 11008/64 = 172 in two waves.
+    env, _mm = _knob_spec(
+        knob_users=((0, ((0, "m"),)),),
+        block_ids=[0],
+        extents={0: 11008},
+        grid_block_ids=(0,),
+        pipelined_regions=((_live("load", 9, 0), _live("load", 9, 7)),),
+    )
+    block_sizes = [128]
+    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    assert block_sizes == [128]
     # A grid that already covers the machine is left alone.
     env, _mm = _knob_spec(
         knob_users=((0, ((0, "m"),)),),
@@ -935,6 +963,17 @@ def test_grid_knob_shrinks_until_the_launch_grid_fills_a_wave() -> None:
     block_sizes = [128]
     _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
     assert block_sizes == [128]
+
+
+def test_role_correction_runs_once_per_front_end() -> None:
+    """Front end 1 corrects its projected tile; front end 2 corrects only its merged draft."""
+    assert _FML.SINGLE_ROLE_AWARE_KNOBS is True
+    assert _MULTI.SINGLE_ROLE_AWARE_KNOBS is False
+
+
+def test_multi_stages_follow_the_emitted_tile_by_default() -> None:
+    """Stage facts must describe the role-corrected block sizes the kernel actually uses."""
+    assert _MULTI.ROLE_KEEP_STAGES is False
 
 
 def _steps_env(
@@ -1000,7 +1039,7 @@ def test_register_estimate_lets_tensor_memory_absorb_wide_accumulators() -> None
     assert _FML._register_live_bytes(_steps_env(narrow), [], 8) == 32 * 128 * 4
 
 
-def test_warps_climb_the_ladder_until_the_live_set_fits() -> None:
+def test_warps_climb_the_ladder_while_the_live_set_overshoots() -> None:
     """Section 3's register fix-up: estimate from the register-resident live set and the
     proposed warp count, then increase num_warps first. A fixed point, because raising the count
     both enlarges the file and can move the accumulators out of it entirely.
@@ -1021,6 +1060,35 @@ def test_warps_climb_the_ladder_until_the_live_set_fits() -> None:
     assert _FML._warps_for_live_set(1, _steps_env(()), []) == 1
 
 
+def test_register_climb_stops_at_a_warpgroup_not_at_max_warps() -> None:
+    """Registers are SOFT -- they spill, where tensor and shared memory raise OutOfResources at
+    launch -- so relieving pressure past the point where it is relieved has a real cost. Each warp
+    doubling halves resident CTAs, and for a grid over batch/head that buys less than the spill
+    costs: measured on chunk_fwd_A_diag_anchored_varlen, nw=2 spills 38 B holding 4 CTAs/SM while
+    nw=8 spills NOTHING holding 1, and nw=2 is 1.75x faster.
+
+    The stop is a warpgroup because that is where _register_live_bytes hands the accumulators to
+    tcgen05, so past it the estimate cannot justify another doubling. Over 75 swept cells scored
+    against each cell's measured optimum, climbing to a fit and on to eight scores 0.8959 and
+    stopping at a warpgroup scores 0.9591 -- above the hand-tuned key's 0.9363."""
+    # A live set far past ANY register file must still stop at a warpgroup, not run to eight.
+    huge = tuple([tuple((128, 128, 4, "other") for _ in range(8))])  # 512 KiB
+    assert (
+        _FML._warps_for_live_set(1, _steps_env(huge), [])
+        == _FML.TCGEN05_WARPGROUP_WARPS
+    )
+    assert _FML.TCGEN05_WARPGROUP_WARPS < _FML.MAX_NUM_WARPS
+    # Eight is still reachable -- it just has to come from the work term, which this rule keeps.
+    assert _FML._warps_for_live_set(8, _steps_env(huge), []) == 8
+    # The stop is a per-arch class attribute, not an arch test inside the ladder: hardware
+    # selection already happened in is_eligible via HARDWARE_TARGETS. Pin that the sm100 carrier
+    # ties it to the absorption boundary it is derived from, so the two cannot drift apart...
+    assert _FML.REG_CLIMB_MAX_WARPS == _FML.TCGEN05_WARPGROUP_WARPS
+    # ...and that the sm90 carrier is left where it was, holding that frozen emit still.
+    assert _H100.REG_CLIMB_MAX_WARPS == _H100.MAX_NUM_WARPS
+    assert _H100._warps_for_live_set(1, _steps_env(huge), []) == _H100.MAX_NUM_WARPS
+
+
 def test_no_structural_warp_floor_survives() -> None:
     """The two-warp floor for multi-contraction kernels is DELETED, not disabled.
 
@@ -1034,3 +1102,52 @@ def test_no_structural_warp_floor_survives() -> None:
     src = inspect.getsource(_MULTI)
     assert "MULTI_DOT_MIN_NUM_WARPS" not in src
     assert "_needs_warp_floor" not in src
+
+
+def test_only_a_fixed_block_size_source_has_a_config_independent_extent() -> None:
+    """The per-program extent an axis reports to the fact layer, and which sources have one.
+
+    A ``FixedBlockSizeSource`` ignores the config, so its value IS the per-program extent and
+    can be recorded once. Every other source reads a config knob -- ``block_sizes`` for a loop
+    axis, ``reduction_loops`` for a reduction one -- so there is no config-independent extent
+    and the answer must be ``None``, leaving the axis classified as tunable.
+
+    This replaced a two-config PROBE (call ``from_config`` under block_sizes=16 and =128, and
+    call the axis immovable if the answer did not move). The probe perturbed only
+    ``block_sizes``, so a source movable solely via ``reduction_loops`` returned the same value
+    both times and was misreported as immovable.
+
+    The movable case uses a STUB source that returns a definite value, not a real
+    ``LoopSpecBlockSizeSource``. That is deliberate: a real one needs a live
+    ``CompileEnvironment`` and a spec with ``block_id_to_index``, and without them it returns
+    ``None`` through the exception path -- which made an earlier version of this test pass with
+    the ``isinstance`` guard DELETED. The stub is what makes the guard load-bearing here.
+    """
+    from helion._compiler.compile_environment import BlockSizeSource
+    from helion._compiler.compile_environment import FixedBlockSizeSource
+    from helion._compiler.device_ir import _immovable_extent
+
+    spec = _matmul_config_spec()
+
+    class _MovableSource(BlockSizeSource):
+        """Not a FixedBlockSizeSource, and yields a value the guard must still refuse."""
+
+        def from_config(self, config: object, block_size_info: object) -> int:
+            return 64
+
+    def env_with(source: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            block_sizes=[SimpleNamespace(block_size_source=source, size=8192)],
+            size_hint=lambda v: int(v),
+        )
+
+    # hl.tile(seqlen, block_size=64): the axis LENGTH is 8192, one program sees 64.
+    assert _immovable_extent(env_with(FixedBlockSizeSource(64)), spec, 0) == 64
+    # hl.grid: one scalar index per program, so the extent is 1 -- not the grid length.
+    assert _immovable_extent(env_with(FixedBlockSizeSource(1)), spec, 0) == 1
+    # Anything the config can move has NO config-independent extent, even though asking it
+    # would have produced a perfectly plausible number.
+    assert _MovableSource().from_config(None, None) == 64
+    assert _immovable_extent(env_with(_MovableSource()), spec, 0) is None
+    # Out-of-range ids are not an error, they simply have no extent.
+    assert _immovable_extent(env_with(FixedBlockSizeSource(64)), spec, 7) is None
