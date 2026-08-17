@@ -232,11 +232,11 @@ class DotAxes(NamedTuple):
 class LiveTile(NamedTuple):
     """One simultaneously-live tensor tile at a graph's peak-live step.
 
-    Extends the bare ``dim_block_ids`` tuple that ``_graph_peak_live_tiles`` returns
-    with the two things a resource estimate cannot be written without: how WIDE an
-    element is, and WHO produced the tile. A dot's fp32 output is charged to tensor
-    memory on tcgen05 and to the register file otherwise; a plain load is charged to
-    the operand staging ring; neither substitutes for the other.
+    Extends the bare ``dim_block_ids`` liveness view with the two things a resource
+    estimate cannot be written without: how WIDE an element is, and WHO produced
+    the tile. A dot's fp32 output is charged to tensor memory on tcgen05 and to the
+    register file otherwise; a plain load is charged to the operand staging ring;
+    neither substitutes for the other.
 
     - ``dim_block_ids`` — block id spanned per shape dim (``None`` for a static dim),
       the same representation as :class:`AccumulatorFact`.
@@ -288,16 +288,71 @@ class PipelinedRegion(NamedTuple):
     tiles: tuple[LiveTile, ...]
 
 
+class ResidentRegion(NamedTuple):
+    """Memory operations belonging to one non-loop graph."""
+
+    tiles: tuple[LiveTile, ...]
+
+
+class RootGridFact(NamedTuple):
+    """One top-level device grid before a candidate block size is selected."""
+
+    root_graph_id: int
+    block_ids: tuple[int, ...]
+
+
+class KernelGridFact(NamedTuple):
+    """Root-grid topology shared by every specialized kernel fact.
+
+    ``roots`` preserves the independent top-level grids in source order.
+    ``graph_to_root`` assigns nested device graphs to their owning root. Concrete
+    program counts are intentionally absent: they depend on the candidate block
+    sizes and must be recomputed while a heuristic edits its draft.
+    """
+
+    roots: tuple[RootGridFact, ...]
+    graph_to_root: tuple[tuple[int, int], ...]
+
+    @property
+    def grid_groups(self) -> tuple[tuple[int, ...], ...]:
+        return tuple(root.block_ids for root in self.roots)
+
+    def root_id_for_graph(self, graph_id: int) -> int | None:
+        for candidate, root_id in self.graph_to_root:
+            if candidate == graph_id:
+                return root_id
+        return None
+
+    def group_for_graph(self, graph_id: int) -> tuple[int, ...]:
+        root_id = self.root_id_for_graph(graph_id)
+        for root in self.roots:
+            if root.root_graph_id == root_id:
+                return root.block_ids
+        return ()
+
+    def groups_for_graphs(
+        self, graph_ids: tuple[int, ...]
+    ) -> tuple[tuple[int, ...], ...]:
+        groups: list[tuple[int, ...]] = []
+        for graph_id in graph_ids:
+            group = self.group_for_graph(graph_id)
+            if group and group not in groups:
+                groups.append(group)
+        return tuple(groups)
+
+
 class DotSite(NamedTuple):
     """Where one contraction sits in the kernel, and how much work it does.
 
     Attribution of a :class:`MatmulFact` (recorded at trace time, in source order) to
     a graph node is a COMPUTED pairing validated by a post-condition, never an
-    assumed one: :attr:`MultiMatmulFact.attribution_complete` is False when the
+    assumed one: :attr:`KernelMatmulFact.attribution_complete` is False when the
     pairing could not be proven, and a consumer that needs per-dot placement must
     check it rather than trusting these fields.
 
     - ``graph_id`` — the device graph the dot's node lives in.
+      :class:`KernelGridFact` maps that graph to its root grid; the topology is
+      intentionally not copied into each site.
     - ``loop_trips`` — product of the sequential loop trip counts enclosing it, i.e.
       how many times one program executes this dot.
     - ``updates_carry`` — the dot writes into a value carried by an enclosing loop
@@ -316,21 +371,31 @@ class DotSite(NamedTuple):
     updates_carry: bool
     loop_axes: tuple[LoopAxisFact, ...] = ()
     exact_loop_trips: int | None = None
-    grid_block_ids: tuple[int, ...] = ()
 
 
-class MultiMatmulFact(NamedTuple):
-    """Whole-kernel contraction fact: every :class:`MatmulFact` in the kernel plus the
-    shared analysis a seed needs to configure them TOGETHER.
+class ResolvedMatmulFact(NamedTuple):
+    """One :class:`MatmulFact` interpreted in its graph and config context.
+
+    ``MatmulFact`` remains the trace-local description of the dot. This fact binds
+    it to the axis roles and execution site that consumers previously recovered
+    through parallel kernel-wide arrays.
+    """
+
+    fact: MatmulFact
+    axes: DotAxes
+    site: DotSite
+
+
+class KernelMatmulFact(NamedTuple):
+    """Every resolved matmul plus the shared facts needed to configure the kernel.
 
     Built for any kernel with at least one contraction, so the single-matmul and
     multi-matmul front ends read the same description of the workload and only their
     POLICY differs. Kernel-name- and role-free by construction: every field is a
-    measured property of the contraction structure.
+    measured property of the contraction structure. Generic root-grid topology lives
+    in :class:`KernelGridFact` and is not duplicated here.
 
-    - ``matmuls`` / ``axes`` — the constituent facts, 1:1 with their axis
-      classification (:class:`DotAxes`).
-    - ``sites`` — 1:1 per-dot placement/work (:class:`DotSite`).
+    - ``matmuls`` — the contextual facts, one per dot.
     - ``knob_users`` — for each tunable block id, the ``(dot_index, axis)`` pairs
       whose axis maps onto it, i.e. which dots COMPETE for that knob.
     - ``outer_grid`` — parallel programs contributed by grid axes that are no dot's
@@ -370,9 +435,7 @@ class MultiMatmulFact(NamedTuple):
     - ``attribution_complete`` — post-condition flag described above.
     """
 
-    matmuls: tuple[MatmulFact, ...]
-    axes: tuple[DotAxes, ...]
-    sites: tuple[DotSite, ...]
+    matmuls: tuple[ResolvedMatmulFact, ...]
     knob_users: tuple[tuple[int, tuple[tuple[int, str], ...]], ...]
     outer_grid: int
     sequential_loop_trips: int
@@ -380,10 +443,9 @@ class MultiMatmulFact(NamedTuple):
     live_dot_outputs: tuple[LiveTile, ...]
     live_tile_steps: tuple[tuple[LiveTile, ...], ...]
     pipelined_regions: tuple[PipelinedRegion, ...]
-    resident_regions: tuple[tuple[LiveTile, ...], ...]
+    resident_regions: tuple[ResidentRegion, ...]
     n_dot_nodes: int
     attribution_complete: bool
-    grid_groups: tuple[tuple[int, ...], ...] = ()
 
     def users_of(self, block_id: int) -> tuple[tuple[int, str], ...]:
         for bid, users in self.knob_users:
@@ -397,12 +459,13 @@ class MultiMatmulFact(NamedTuple):
         Falls back to the axis classification's per-program extent when the fact's own
         ``static_*`` is absent, which happens whenever the axis length is dynamic but the
         per-program extent is not."""
-        f = self.matmuls[index]
-        ax = self.axes[index]
+        resolved = self.matmuls[index]
+        f = resolved.fact
+        ax = resolved.axes
         m = f.static_m or ax.m_extent or 1
         n = f.static_n or ax.n_extent or 1
         k = f.static_k or ax.k_extent or 1
-        site = self.sites[index]
+        site = resolved.site
         trips = site.exact_loop_trips or site.loop_trips
         return m * n * k * max(1, trips)
 
@@ -954,6 +1017,9 @@ class ConfigSpec:
         self.restriction_reasons: list[tuple[str, str]] = []
         self.max_num_sm_multiplier: int = MAX_NUM_SM_MULTIPLIER
         self.grid_block_ids: list[int] = []
+        # Ordered root grids and nested-graph ownership, independent of any
+        # specialized matmul/reduction policy.
+        self.kernel_grid_fact: KernelGridFact | None = None
         self.tensor_numel_constraints: list[TensorNumelConstraint] = []
         self.load_eviction_policies = ListOf(
             EnumFragment(choices=get_valid_eviction_policies(self.backend_name)),
@@ -1011,7 +1077,7 @@ class ConfigSpec:
         # Whole-kernel composed contraction fact (built for ANY kernel with >=1
         # matmul fact); both matmul front ends read it so workload analysis is
         # independent of which heuristic runs.
-        self.multi_matmul_fact: MultiMatmulFact | None = None
+        self.kernel_matmul_fact: KernelMatmulFact | None = None
         # The Stage-1 categorizing product the reduction seed + allocator consume.
         self.reduction_kernel_fact: ReductionKernelFact | None = None
         self.matmul_reduction_epilogue_facts: list[MatmulWithReductionEpilogueFact] = []

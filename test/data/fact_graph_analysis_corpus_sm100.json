@@ -1,0 +1,3498 @@
+{
+  "cross_entropy": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_stages": 1,
+        "num_warps": 4,
+        "pid_type": "flat",
+        "range_flattens": [
+          null
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "reduction_loops": [
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ],
+      "reduction_loops": [
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "cross_entropy",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ],
+      "reduction_loops": [
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              null
+            ],
+            [
+              0
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.FULL_SLICE",
+            "value": "full_slice"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 4,
+          "itemsize": 4,
+          "num_load": 3,
+          "reread_eviction_index": 2,
+          "row_reread": true,
+          "size_hint": 1000
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "shape": "128x1000",
+    "source": "examples/cross_entropy.py"
+  },
+  "grpo_loss_forward": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          1,
+          1,
+          128
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first",
+          "first",
+          "first",
+          "first"
+        ],
+        "loop_orders": [
+          [
+            0,
+            1
+          ]
+        ],
+        "num_stages": 1,
+        "num_warps": 4,
+        "pid_type": "flat",
+        "range_flattens": [
+          null,
+          null
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_num_stages": [],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1,
+        1,
+        128
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "l2_groupings": [
+        1
+      ],
+      "load_eviction_policies": [
+        "last",
+        "first",
+        "first",
+        "first",
+        "first",
+        "first",
+        "first"
+      ],
+      "loop_orders": [
+        [
+          0,
+          1
+        ]
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "grpo_loss",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1,
+        1,
+        128
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "l2_groupings": [
+        1
+      ],
+      "load_eviction_policies": [
+        "last",
+        "first",
+        "first",
+        "first",
+        "first",
+        "first",
+        "first"
+      ],
+      "loop_orders": [
+        [
+          0,
+          1
+        ]
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0,
+        1
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 2,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.USER_TILE",
+            "value": "user_tile"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 1,
+          "reread_eviction_index": 0,
+          "row_reread": true,
+          "size_hint": 128
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "shape": "2x16x128",
+    "source": "examples/grpo_loss.py"
+  },
+  "jsd_forward": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          256,
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_stages": 1,
+        "num_warps": 4,
+        "pid_type": "flat",
+        "range_flattens": [
+          null,
+          null
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        256,
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [
+        0,
+        0
+      ],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "jsd",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        256,
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [
+        0,
+        0
+      ],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 1,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0
+            ],
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            1
+          ],
+          "graph_id": 3,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0
+            ],
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            2
+          ],
+          "graph_id": 5,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        1
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.GRID_TILE",
+            "value": "grid_tile"
+          },
+          "graph_id": 1,
+          "input_load_itemsize": 0,
+          "itemsize": 4,
+          "num_load": 0,
+          "reread_eviction_index": null,
+          "row_reread": false,
+          "size_hint": 32
+        },
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.GRID_TILE",
+            "value": "grid_tile"
+          },
+          "graph_id": 3,
+          "input_load_itemsize": 0,
+          "itemsize": 4,
+          "num_load": 0,
+          "reread_eviction_index": null,
+          "row_reread": false,
+          "size_hint": 32
+        },
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 0,
+          "carried_2d_count": 2,
+          "category": {
+            "__enum__": "ReductionCategory.USER_TILE",
+            "value": "user_tile"
+          },
+          "graph_id": 5,
+          "input_load_itemsize": 4,
+          "itemsize": 4,
+          "num_load": 0,
+          "reread_eviction_index": null,
+          "row_reread": false,
+          "size_hint": 256
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "shape": "32x256",
+    "source": "examples/jsd.py"
+  },
+  "kl_div_forward": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          256,
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_stages": 1,
+        "num_warps": 4,
+        "pid_type": "flat",
+        "range_flattens": [
+          null,
+          null
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        256,
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [
+        0,
+        0
+      ],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "kl_div",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        256,
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [
+        0,
+        0
+      ],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 1,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        1
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 0,
+          "carried_2d_count": 1,
+          "category": {
+            "__enum__": "ReductionCategory.USER_TILE",
+            "value": "user_tile"
+          },
+          "graph_id": 1,
+          "input_load_itemsize": 4,
+          "itemsize": 4,
+          "num_load": 0,
+          "reread_eviction_index": null,
+          "row_reread": false,
+          "size_hint": 256
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "shape": "32x256",
+    "source": "examples/kl_div.py"
+  },
+  "layer_norm_bwd": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          1,
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_stages": 1,
+        "num_warps": 8,
+        "pid_type": "flat",
+        "range_flattens": [
+          null,
+          null
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1,
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "last",
+        "first",
+        "first",
+        "first",
+        "first"
+      ],
+      "num_stages": 1,
+      "num_warps": 8,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [
+        0,
+        0
+      ],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "layer_norm_bwd",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1,
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "last",
+        "first",
+        "first",
+        "first",
+        "first"
+      ],
+      "num_stages": 1,
+      "num_warps": 8,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [
+        0,
+        0
+      ],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0,
+            1
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              null
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              2,
+              null
+            ],
+            [
+              2
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 2,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.USER_TILE",
+            "value": "user_tile"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 4,
+          "reread_eviction_index": 0,
+          "row_reread": true,
+          "size_hint": 8192
+        },
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 3,
+          "category": {
+            "__enum__": "ReductionCategory.FULL_SLICE",
+            "value": "full_slice"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 4,
+          "reread_eviction_index": 0,
+          "row_reread": true,
+          "size_hint": 64
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "shape": "32x64",
+    "source": "examples/layer_norm.py"
+  },
+  "layer_norm_fwd": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_stages": 1,
+        "num_warps": 4,
+        "pid_type": "flat",
+        "range_flattens": [
+          null
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "reduction_loops": [
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ],
+      "reduction_loops": [
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "layer_norm",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ],
+      "reduction_loops": [
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.FULL_SLICE",
+            "value": "full_slice"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 3,
+          "reread_eviction_index": 0,
+          "row_reread": true,
+          "size_hint": 64
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "shape": "32x64",
+    "source": "examples/layer_norm.py"
+  },
+  "rms_norm_bwd": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          1,
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "first",
+          "first"
+        ],
+        "num_stages": 1,
+        "num_warps": 8,
+        "pid_type": "flat",
+        "range_flattens": [
+          null,
+          null
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1,
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "last",
+        "first",
+        "first",
+        "first"
+      ],
+      "num_stages": 1,
+      "num_warps": 8,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [
+        0,
+        0
+      ],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "rms_norm_bwd",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1,
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "last",
+        "first",
+        "first",
+        "first"
+      ],
+      "num_stages": 1,
+      "num_warps": 8,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null
+      ],
+      "range_num_stages": [
+        0,
+        0
+      ],
+      "range_unroll_factors": [
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0,
+            1
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              2,
+              null
+            ],
+            [
+              2
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.USER_TILE",
+            "value": "user_tile"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 4,
+          "reread_eviction_index": 0,
+          "row_reread": true,
+          "size_hint": 8192
+        },
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 2,
+          "carried_2d_count": 1,
+          "category": {
+            "__enum__": "ReductionCategory.FULL_SLICE",
+            "value": "full_slice"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 4,
+          "reread_eviction_index": 0,
+          "row_reread": true,
+          "size_hint": 64
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "shape": "32x64",
+    "source": "examples/rms_norm.py"
+  },
+  "rms_norm_fwd": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_stages": 1,
+        "num_warps": 4,
+        "pid_type": "flat",
+        "range_flattens": [
+          null
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "reduction_loops": [
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ],
+      "reduction_loops": [
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "rms_norm",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ],
+      "reduction_loops": [
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              null
+            ],
+            [
+              0
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.FULL_SLICE",
+            "value": "full_slice"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 2,
+          "reread_eviction_index": 0,
+          "row_reread": true,
+          "size_hint": 256
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "shape": "128x256",
+    "source": "examples/rms_norm.py"
+  },
+  "sum": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "first",
+          "first"
+        ],
+        "num_stages": 1,
+        "num_warps": 4,
+        "pid_type": "flat",
+        "range_flattens": [
+          null
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "reduction_loops": [
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first"
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ],
+      "reduction_loops": [
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "sum",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "first",
+        "first"
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ],
+      "reduction_loops": [
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              1,
+              1
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.FULL_SLICE",
+            "value": "full_slice"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 4,
+          "itemsize": 4,
+          "num_load": 1,
+          "reread_eviction_index": null,
+          "row_reread": false,
+          "size_hint": 512
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "shape": "512x512",
+    "source": "examples/sum.py"
+  },
+  "vllm_dynamic_per_token_scaled_fp8_quant": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          2048,
+          2048
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_stages": 1,
+        "num_warps": 8,
+        "pid_type": "flat",
+        "range_flattens": [
+          null,
+          null,
+          null
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null
+        ],
+        "range_num_stages": [],
+        "range_unroll_factors": [
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null,
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        2048,
+        2048
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 8,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null,
+        null
+      ],
+      "range_num_stages": [],
+      "range_unroll_factors": [
+        0,
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null,
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "vllm",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        2048,
+        2048
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        ""
+      ],
+      "num_stages": 1,
+      "num_warps": 8,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null,
+        null
+      ],
+      "range_num_stages": [],
+      "range_unroll_factors": [
+        0,
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null,
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0
+      ],
+      "non_reduction_loop_block_ids": [
+        2
+      ],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.USER_TILE",
+            "value": "user_tile"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 1,
+          "reread_eviction_index": null,
+          "row_reread": false,
+          "size_hint": 2048
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "shape": "8x2048",
+    "source": "pretuned_kernels/dynamic_per_token_scaled_fp8_quant/dynamic_per_token_scaled_fp8_quant.py"
+  },
+  "vllm_fused_qk_norm_rope": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          1
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "loop_orders": [
+          [
+            0,
+            1,
+            2
+          ]
+        ],
+        "num_stages": 1,
+        "num_warps": 4,
+        "pid_type": "flat",
+        "range_flattens": [
+          null
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_num_stages": [],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "l2_groupings": [
+        1
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "loop_orders": [
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ]
+    },
+    "expects_reduction": true,
+    "family": "vllm",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "l2_groupings": [
+        1
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "loop_orders": [
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 2,
+          "live_tiles": [
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              0,
+              1,
+              2
+            ],
+            [
+              0,
+              1,
+              null
+            ],
+            [
+              1,
+              2,
+              null
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0,
+        1
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 2,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.FULL_GRID",
+            "value": "full_grid"
+          },
+          "graph_id": 2,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 8,
+          "reread_eviction_index": 0,
+          "row_reread": true,
+          "size_hint": 128
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_tile_sm100"
+    ],
+    "shape": "tokens=8, q_heads=16, kv_heads=8",
+    "source": "pretuned_kernels/fused_qk_norm_rope/fused_qk_norm_rope.py"
+  },
+  "vllm_rms_norm_per_block_quant": {
+    "compiler_seeds": [
+      {
+        "atomic_indexing": [],
+        "block_sizes": [
+          2048,
+          16
+        ],
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "loop_orders": [
+          [
+            0,
+            1
+          ]
+        ],
+        "num_stages": 1,
+        "num_warps": 8,
+        "pid_type": "flat",
+        "range_flattens": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "range_multi_buffers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "range_num_stages": [],
+        "range_unroll_factors": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "static_ranges": [
+          false
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        2048,
+        16
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "loop_orders": [
+        [
+          0,
+          1
+        ]
+      ],
+      "num_stages": 1,
+      "num_warps": 8,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "range_num_stages": [],
+      "range_unroll_factors": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "static_ranges": [
+        false
+      ]
+    },
+    "expects_reduction": true,
+    "family": "vllm",
+    "has_reduction": true,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": true,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": false,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        2048,
+        16
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "loop_orders": [
+        [
+          0,
+          1
+        ]
+      ],
+      "num_stages": 1,
+      "num_warps": 8,
+      "pid_type": "flat",
+      "range_flattens": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "range_multi_buffers": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "range_num_stages": [],
+      "range_unroll_factors": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "range_warp_specializes": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "static_ranges": [
+        false
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            0
+          ],
+          "graph_id": 0,
+          "live_tiles": [
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0
+            ]
+          ]
+        },
+        {
+          "__type__": "CoResidencyGroup",
+          "descriptor_indices": [
+            1
+          ],
+          "graph_id": 1,
+          "live_tiles": [
+            [
+              0,
+              2,
+              3
+            ],
+            [
+              0,
+              2,
+              3
+            ],
+            [
+              0,
+              2,
+              3
+            ],
+            [
+              0,
+              2,
+              3
+            ],
+            [
+              0,
+              null,
+              null
+            ],
+            [
+              0,
+              null,
+              null
+            ],
+            [
+              2,
+              3,
+              null
+            ],
+            [
+              2,
+              null,
+              null
+            ]
+          ]
+        }
+      ],
+      "grid_axis_block_ids": [
+        0
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": [
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 1,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.USER_TILE",
+            "value": "user_tile"
+          },
+          "graph_id": 0,
+          "input_load_itemsize": 2,
+          "itemsize": 4,
+          "num_load": 2,
+          "reread_eviction_index": null,
+          "row_reread": false,
+          "size_hint": 2048
+        },
+        {
+          "__type__": "ReductionDescriptor",
+          "block_id": 3,
+          "carried_2d_count": 0,
+          "category": {
+            "__enum__": "ReductionCategory.FULL_SLICE",
+            "value": "full_slice"
+          },
+          "graph_id": 1,
+          "input_load_itemsize": 2,
+          "itemsize": 2,
+          "num_load": 4,
+          "reread_eviction_index": 2,
+          "row_reread": true,
+          "size_hint": 128
+        }
+      ]
+    },
+    "reduction_heuristics": [
+      "triton_reduction_user_tile_sm100"
+    ],
+    "shape": "8x2048, group=128",
+    "source": "pretuned_kernels/rms_norm_per_block_quant/rms_norm_per_block_quant.py"
+  },
+  "vllm_silu_mul_fp8": {
+    "compiler_seeds": [
+      {
+        "block_sizes": [
+          1,
+          256
+        ]
+      }
+    ],
+    "contributing_heuristics": [
+      "triton_pointwise"
+    ],
+    "default": {
+      "atomic_indexing": [],
+      "block_sizes": [
+        1,
+        256
+      ],
+      "flatten_loops": [
+        false
+      ],
+      "indexing": [
+        "pointer",
+        "pointer",
+        "pointer",
+        "pointer"
+      ],
+      "l2_groupings": [
+        1
+      ],
+      "load_eviction_policies": [
+        "",
+        "",
+        ""
+      ],
+      "loop_orders": [
+        [
+          0,
+          1
+        ]
+      ],
+      "num_stages": 1,
+      "num_warps": 4,
+      "pid_type": "flat",
+      "range_flattens": [
+        null
+      ],
+      "range_multi_buffers": [
+        null
+      ],
+      "range_num_stages": [
+        0
+      ],
+      "range_unroll_factors": [
+        0
+      ],
+      "range_warp_specializes": [
+        null
+      ]
+    },
+    "expects_reduction": false,
+    "family": "vllm",
+    "has_reduction": false,
+    "heuristic_eligibility": [
+      {
+        "eligible": false,
+        "name": "triton_h100_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_skinny_gemm"
+      },
+      {
+        "eligible": true,
+        "name": "triton_b200_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_formula_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_b200_multi_matmul"
+      },
+      {
+        "eligible": false,
+        "name": "triton_matmul_reduction_epilogue"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_user_tile_sm100"
+      },
+      {
+        "eligible": false,
+        "name": "triton_reduction_narrow"
+      },
+      {
+        "eligible": true,
+        "name": "triton_pointwise"
+      }
+    ],
+    "local_matmul_facts": [],
+    "matmul_fact": null,
+    "promoted_default": {
+      "block_sizes": [
+        1,
+        256
+      ]
+    },
+    "reduction_fact": {
+      "__type__": "ReductionKernelFact",
+      "coresidency_groups": [],
+      "grid_axis_block_ids": [
+        0,
+        1
+      ],
+      "non_reduction_loop_block_ids": [],
+      "reductions": []
+    },
+    "reduction_heuristics": [],
+    "shape": "8x2048",
+    "source": "pretuned_kernels/silu_mul_fp8/silu_mul_fp8.py"
+  }
+}

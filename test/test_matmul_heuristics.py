@@ -27,9 +27,12 @@ from helion.autotuner.config_fragment import ListOf
 from helion.autotuner.config_fragment import PowerOfTwoFragment
 from helion.autotuner.config_spec import DotAxes
 from helion.autotuner.config_spec import DotAxisKind
+from helion.autotuner.config_spec import KernelGridFact
 from helion.autotuner.config_spec import LiveTile
 from helion.autotuner.config_spec import LoopAxisFact
 from helion.autotuner.config_spec import MatmulFact
+from helion.autotuner.config_spec import PipelinedRegion
+from helion.autotuner.config_spec import RootGridFact
 
 _SHAPE_BUCKET_KEYS = {
     "dtype",
@@ -406,14 +409,16 @@ def _generalized_spec(
         else ()
     )
     mm = SimpleNamespace(
-        matmuls=(fact,),
-        axes=(axes,),
-        sites=(
+        matmuls=(
             SimpleNamespace(
-                graph_id=0,
-                loop_trips=max(1, fact.static_k or 1),
-                updates_carry=False,
-                loop_axes=loop_axes,
+                fact=fact,
+                axes=axes,
+                site=SimpleNamespace(
+                    graph_id=0,
+                    loop_trips=max(1, fact.static_k or 1),
+                    updates_carry=False,
+                    loop_axes=loop_axes,
+                ),
             ),
         ),
         knob_users=(),
@@ -429,7 +434,7 @@ def _generalized_spec(
     )
     return SimpleNamespace(
         matmul_facts=[fact],
-        multi_matmul_fact=mm,
+        kernel_matmul_fact=mm,
         block_sizes=_block_sizes_stub(valid_block_ids),
         grid_block_ids=grid_block_ids,
     )
@@ -582,8 +587,9 @@ def test_register_estimate_picks_its_peak_by_resolved_bytes() -> None:
     def env_with(steps: tuple) -> SimpleNamespace:
         return SimpleNamespace(
             config_spec=SimpleNamespace(
-                multi_matmul_fact=SimpleNamespace(
-                    live_tile_steps=steps, matmuls=(), axes=()
+                kernel_matmul_fact=SimpleNamespace(
+                    live_tile_steps=steps,
+                    matmuls=(),
                 ),
                 block_sizes=_block_sizes_stub([]),
                 _base_default_config=lambda: helion.Config(block_sizes=[]),
@@ -691,12 +697,19 @@ def test_multi_matmul_ranking_prefers_a_carried_accumulator_then_work() -> None:
 
     def mm(carry: tuple[bool, ...], trips: tuple[int, ...]) -> SimpleNamespace:
         facts = (big, small)
+        sites = tuple(
+            SimpleNamespace(graph_id=0, loop_trips=t, updates_carry=c)
+            for c, t in zip(carry, trips, strict=True)
+        )
         ns = SimpleNamespace(
-            matmuls=facts,
-            axes=(_axes(), _axes()),
-            sites=tuple(
-                SimpleNamespace(graph_id=0, loop_trips=t, updates_carry=c)
-                for c, t in zip(carry, trips, strict=True)
+            matmuls=tuple(
+                SimpleNamespace(fact=fact, axes=axes, site=site)
+                for fact, axes, site in zip(
+                    facts,
+                    (_axes(), _axes()),
+                    sites,
+                    strict=True,
+                )
             ),
             attribution_complete=True,
         )
@@ -704,7 +717,7 @@ def test_multi_matmul_ranking_prefers_a_carried_accumulator_then_work() -> None:
             (facts[i].static_m or 1)
             * (facts[i].static_n or 1)
             * (facts[i].static_k or 1)
-            * max(1, ns.sites[i].loop_trips)
+            * max(1, ns.matmuls[i].site.loop_trips)
         )
         return ns
 
@@ -733,6 +746,90 @@ def test_projection_is_a_no_op_for_a_clean_gemm() -> None:
     env = SimpleNamespace(config_spec=spec, block_sizes=[])
     proposal = _FML._matmul_tile(4096, 4096, 4096, 2, 148, 1)
     assert _FML._tile_for_dot(env, fact, _axes(), 2, 148, 1) == proposal
+
+
+def _kernel_smem_env(
+    facts: tuple[MatmulFact, ...],
+    *,
+    block_ids: list[int],
+    pipelined_regions: tuple[PipelinedRegion, ...] = (),
+) -> SimpleNamespace:
+    matmuls = tuple(
+        SimpleNamespace(fact=fact, axes=_axes(), site=SimpleNamespace(graph_id=0))
+        for fact in facts
+    )
+    spec = SimpleNamespace(
+        kernel_matmul_fact=SimpleNamespace(
+            matmuls=matmuls,
+            pipelined_regions=pipelined_regions,
+            resident_regions=(),
+        ),
+        block_sizes=_block_sizes_stub(block_ids),
+        _base_default_config=lambda: helion.Config(block_sizes=[1] * len(block_ids)),
+    )
+    return SimpleNamespace(config_spec=spec, block_sizes=[], size_hint=int)
+
+
+def test_kernel_smem_uses_region_peak_and_applies_slack_once() -> None:
+    fact = _matmul_fact()
+    loads = (
+        LiveTile((0, 2), (None, None), 2, "load"),
+        LiveTile((2, 1), (None, None), 2, "load"),
+    )
+    env = _kernel_smem_env(
+        (fact,),
+        block_ids=[0, 1, 2],
+        pipelined_regions=(PipelinedRegion((), loads),),
+    )
+    blocks = [64, 32, 16]
+    region_peak = (64 * 16 * 2 + 16 * 32 * 2) * 4
+
+    assert _FML._smem_from_map(env, blocks, 4) == region_peak
+    assert _FML._epilogue_smem(env, blocks) == 64 * 32 * 4
+    assert _FML._kernel_smem_bytes(env, blocks, 4) == region_peak + _FML.SMEM_SLACK
+
+
+def test_kernel_smem_uses_latest_complete_map_and_max_dot_epilogue() -> None:
+    first = _matmul_fact()
+    second = MatmulFact(
+        2,
+        2,
+        3,
+        4,
+        2,
+        1024,
+        1024,
+        1024,
+        torch.bfloat16,
+        torch.bfloat16,
+    )
+    env = _kernel_smem_env((first, second), block_ids=[0, 1, 2, 3, 4])
+
+    assert _FML._epilogue_smem(env, [16, 32, 8, 64, 64]) == 64 * 64 * 4
+    assert _FML._kernel_smem_bytes(env, [16, 32, 8, 32, 32], 3) == (
+        32 * 32 * 4 + _FML.SMEM_SLACK
+    )
+
+
+def test_multi_dot_proposal_preconditions_with_complete_kernel_smem_map() -> None:
+    fact = _matmul_fact()
+    spec = _generalized_spec(fact, _axes(), valid_block_ids=[0, 1, 2, 7])
+    env = SimpleNamespace(config_spec=spec, block_sizes=[])
+    seen: list[tuple[int, ...]] = []
+
+    def record_smem(_env: object, block_sizes: list[int], _stages: int) -> int:
+        seen.append(tuple(block_sizes))
+        return 0
+
+    with patch.object(
+        _MULTI,
+        "_kernel_smem_bytes",
+        side_effect=record_smem,
+    ):
+        assert _MULTI._proposal_for(env, spec.kernel_matmul_fact, 0, 148) is not None
+    assert seen
+    assert all(len(block_sizes) == len(spec.block_sizes) for block_sizes in seen)
+    assert all(block_sizes[3] == 1 for block_sizes in seen)
 
 
 def test_sm90_keeps_the_incumbent_gate_and_every_switch_off() -> None:
@@ -805,13 +902,11 @@ def _knob_spec(
     block_ids: list[int],
     extents: dict[int, int],
     grid_block_ids: tuple[int, ...] = (),
-    pipelined_regions: tuple[tuple[LiveTile, ...], ...] = (),
+    pipelined_regions: tuple[PipelinedRegion, ...] = (),
 ) -> SimpleNamespace:
     """An ``env`` stub carrying just what ``_apply_knob_roles`` reads."""
     mm = SimpleNamespace(
         matmuls=(),
-        axes=(),
-        sites=(),
         knob_users=knob_users,
         outer_grid=1,
         sequential_loop_trips=1,
@@ -825,7 +920,8 @@ def _knob_spec(
     )
     spec = SimpleNamespace(
         matmul_facts=[],
-        multi_matmul_fact=mm,
+        kernel_matmul_fact=mm,
+        kernel_grid_fact=None,
         block_sizes=_block_sizes_stub(block_ids),
         grid_block_ids=grid_block_ids,
         _base_default_config=lambda: SimpleNamespace(config={}),
@@ -861,6 +957,37 @@ def test_launch_grid_counts_only_grid_axes() -> None:
     assert _MULTI._launch_grid(env, [128, 32]) == 4
 
 
+def test_launch_grid_uses_only_dot_bearing_root_groups() -> None:
+    """Independent top-level loops add their grids, while a matmul policy sizes against
+    only roots that execute a dot. Nested dot graphs resolve through the generic kernel
+    grid fact rather than carrying a copied block-id tuple."""
+    env, mm = _knob_spec(
+        knob_users=(),
+        block_ids=[0, 1, 2, 4, 5],
+        extents={0: 128, 1: 128, 2: 128, 4: 256, 5: 256},
+        grid_block_ids=(0, 1, 2, 4, 5),
+    )
+    grid_fact = KernelGridFact(
+        roots=(
+            RootGridFact(100, (0, 1, 2)),
+            RootGridFact(200, (4, 5)),
+        ),
+        graph_to_root=((100, 100), (101, 100), (200, 200)),
+    )
+    env.config_spec.kernel_grid_fact = grid_fact
+    mm.matmuls = (SimpleNamespace(site=SimpleNamespace(graph_id=101)),)
+
+    # The nested dot belongs to root 100: 2 * 2 * 2 = 8 programs. Root 200's
+    # 4 * 4 = 16 programs do not execute the dot and must not inflate its waves.
+    assert grid_fact.group_for_graph(101) == (0, 1, 2)
+    assert _MULTI._launch_grid(env, [64, 64, 64, 64, 64]) == 8
+
+    # Without a dot-bearing subset, evaluate the complete independent-root grid
+    # as a sum, 8 + 16, never as a product of the flattened block-id list.
+    mm.matmuls = ()
+    assert _MULTI._launch_grid(env, [64, 64, 64, 64, 64]) == 24
+
+
 def test_knob_amortization_separates_reuse_free_from_reuse_bearing() -> None:
     """The discriminator for whether growing a tile buys anything: does its loop region stage
     a load the knob does NOT span? If every load spans the knob, bytes and MMA work both
@@ -871,14 +998,14 @@ def test_knob_amortization_separates_reuse_free_from_reuse_bearing() -> None:
         knob_users=((4, ((0, "n"),)),),
         block_ids=[4],
         extents={4: 128},
-        pipelined_regions=(reuse_free,),
+        pipelined_regions=(PipelinedRegion((), reuse_free),),
     )
     assert _MULTI._knob_amortizes(mm, 4) is False
     _env, mm = _knob_spec(
         knob_users=((4, ((0, "n"),)),),
         block_ids=[4],
         extents={4: 128},
-        pipelined_regions=(reuse_bearing,),
+        pipelined_regions=(PipelinedRegion((), reuse_bearing),),
     )
     # Block id 3 is re-fetched for every iteration of 4, so growing 4 amortizes it.
     assert _MULTI._knob_amortizes(mm, 4) is True
@@ -895,20 +1022,24 @@ def test_reuse_free_output_knob_drops_to_the_allocation_floor() -> None:
         knob_users=((4, ((0, "n"),)),),
         block_ids=[4],
         extents={4: 128},
-        pipelined_regions=((_live("load", 9, 4), _live("store", 9, 4)),),
+        pipelined_regions=(
+            PipelinedRegion((), (_live("load", 9, 4), _live("store", 9, 4))),
+        ),
     )
     block_sizes = [128]
-    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    _MULTI._apply_knob_roles(env, env.config_spec.kernel_matmul_fact, block_sizes, 148)
     assert block_sizes == [_MULTI.TMEM_ALLOC_COLUMNS]
 
     env, _mm = _knob_spec(
         knob_users=((4, ((0, "n"),)),),
         block_ids=[4],
         extents={4: 128},
-        pipelined_regions=((_live("load", 9, 4), _live("load", 9, 3)),),
+        pipelined_regions=(
+            PipelinedRegion((), (_live("load", 9, 4), _live("load", 9, 3))),
+        ),
     )
     block_sizes = [128]
-    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    _MULTI._apply_knob_roles(env, env.config_spec.kernel_matmul_fact, block_sizes, 148)
     assert block_sizes == [128]
 
 
@@ -921,10 +1052,12 @@ def test_grid_knob_shrinks_only_when_wave_utilization_improves() -> None:
         block_ids=[0],
         extents={0: 8192},
         grid_block_ids=(0,),
-        pipelined_regions=((_live("load", 9, 0), _live("load", 9, 7)),),
+        pipelined_regions=(
+            PipelinedRegion((), (_live("load", 9, 0), _live("load", 9, 7))),
+        ),
     )
     block_sizes = [8192]
-    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    _MULTI._apply_knob_roles(env, env.config_spec.kernel_matmul_fact, block_sizes, 148)
     # 8192 / 64 = 128 programs >= 0.8 * 148, so the shrink stops there rather than
     # continuing to the floor.
     assert block_sizes == [64]
@@ -935,10 +1068,12 @@ def test_grid_knob_shrinks_only_when_wave_utilization_improves() -> None:
         block_ids=[0],
         extents={0: 1024},
         grid_block_ids=(0,),
-        pipelined_regions=((_live("load", 9, 0), _live("load", 9, 7)),),
+        pipelined_regions=(
+            PipelinedRegion((), (_live("load", 9, 0), _live("load", 9, 7))),
+        ),
     )
     block_sizes = [1024]
-    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    _MULTI._apply_knob_roles(env, env.config_spec.kernel_matmul_fact, block_sizes, 148)
     assert block_sizes == [_MULTI.TMEM_ALLOC_COLUMNS]
     # Do not cross into a second partial wave when that leaves utilization unchanged:
     # 11008/128 = 86 programs in one wave, while 11008/64 = 172 in two waves.
@@ -947,10 +1082,12 @@ def test_grid_knob_shrinks_only_when_wave_utilization_improves() -> None:
         block_ids=[0],
         extents={0: 11008},
         grid_block_ids=(0,),
-        pipelined_regions=((_live("load", 9, 0), _live("load", 9, 7)),),
+        pipelined_regions=(
+            PipelinedRegion((), (_live("load", 9, 0), _live("load", 9, 7))),
+        ),
     )
     block_sizes = [128]
-    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    _MULTI._apply_knob_roles(env, env.config_spec.kernel_matmul_fact, block_sizes, 148)
     assert block_sizes == [128]
     # A grid that already covers the machine is left alone.
     env, _mm = _knob_spec(
@@ -958,10 +1095,12 @@ def test_grid_knob_shrinks_only_when_wave_utilization_improves() -> None:
         block_ids=[0],
         extents={0: 65536},
         grid_block_ids=(0,),
-        pipelined_regions=((_live("load", 9, 0), _live("load", 9, 7)),),
+        pipelined_regions=(
+            PipelinedRegion((), (_live("load", 9, 0), _live("load", 9, 7))),
+        ),
     )
     block_sizes = [128]
-    _MULTI._apply_knob_roles(env, env.config_spec.multi_matmul_fact, block_sizes, 148)
+    _MULTI._apply_knob_roles(env, env.config_spec.kernel_matmul_fact, block_sizes, 148)
     assert block_sizes == [128]
 
 
@@ -985,7 +1124,7 @@ def _steps_env(
     )
     return SimpleNamespace(
         config_spec=SimpleNamespace(
-            multi_matmul_fact=SimpleNamespace(
+            kernel_matmul_fact=SimpleNamespace(
                 live_tile_steps=tuple(tuple(starmap(mk, step)) for step in steps)
             ),
             block_sizes=_block_sizes_stub([]),
