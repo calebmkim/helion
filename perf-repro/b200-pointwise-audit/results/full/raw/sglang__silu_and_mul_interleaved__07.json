@@ -1,0 +1,619 @@
+{
+  "cohort": "sglang",
+  "kernel": "silu_and_mul_interleaved",
+  "shape_index": 7,
+  "shape": [
+    12288,
+    1536,
+    true
+  ],
+  "dtype": "bf16",
+  "has_aot": true,
+  "aot_arch": "sm100",
+  "metadata": {
+    "body": "perf-repro/b200-pointwise-audit/sglang_kernel.py:silu_and_mul_interleaved",
+    "sglang_source_commit": "5f79cf35110d6a0be828f266160b75d83a2a6276",
+    "has_topk_weights": true
+  },
+  "tensor_arguments": [
+    {
+      "index": 0,
+      "shape": [
+        12288,
+        1536
+      ],
+      "dtype": "bfloat16"
+    },
+    {
+      "index": 1,
+      "shape": [
+        12288
+      ],
+      "dtype": "bfloat16"
+    }
+  ],
+  "scalar_arguments": [
+    {
+      "index": 2,
+      "value": null
+    }
+  ],
+  "environment": {
+    "helion_commit": "61f4058f3610e1b2bbabc82df8267ac450f591df",
+    "helion_branch": "b200-pointwise-audit-run",
+    "torch_version": "2.12.0+cu132",
+    "torch_git_version": "7661cd9c6b841b62b7f411aa52ec51f05457263b",
+    "triton_version": "3.7.0",
+    "cuda_runtime": "13.2",
+    "cuda_driver": "595.71.05",
+    "cuda_visible_devices": "1",
+    "physical_gpu_index": 1,
+    "logical_device": 0,
+    "gpu_name": "NVIDIA B200",
+    "compute_capability": [
+      10,
+      0
+    ],
+    "total_memory_bytes": 191495471104
+  },
+  "fired_heuristics": [
+    "triton_pointwise"
+  ],
+  "pointwise_seed_present": true,
+  "pointwise_fact": {
+    "total_numel": 9437184,
+    "slab_numel": 5,
+    "storage_itemsize": 2,
+    "compute_itemsize": 4,
+    "contig_block_ids": [
+      1
+    ],
+    "sfu_ops": 1,
+    "gather_stride": 2,
+    "max_op_slab_numel": 1
+  },
+  "dynamo_explain": {
+    "enabled": false
+  },
+  "arms": {
+    "default": {
+      "config": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "loop_orders": [
+          [
+            0,
+            1
+          ]
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=0.007812,maxrel=0.007692,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "bfloat16",
+          "expected_dtype": "bfloat16",
+          "actual_shape": [
+            12288,
+            768
+          ],
+          "expected_shape": [
+            12288,
+            768
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 0.0078125,
+          "max_relative_error": 0.007692307699471712,
+          "max_tolerance_ratio": 0.09208103269338608
+        }
+      ],
+      "status": "ok",
+      "cold_l2_graph_us": 23.593,
+      "spread": 0.0028,
+      "round_medians_us": [
+        23.614,
+        23.557,
+        23.613,
+        23.55,
+        23.606,
+        23.593,
+        23.563,
+        23.616,
+        23.561
+      ],
+      "raw_flush_plus_op_ms": [
+        0.983936,
+        0.983472,
+        0.984,
+        0.982976,
+        0.983872,
+        0.983536,
+        0.983056,
+        0.984032,
+        0.983984
+      ],
+      "batch": 16,
+      "iterations_per_round": 20
+    },
+    "default_null": {
+      "config": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "loop_orders": [
+          [
+            0,
+            1
+          ]
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=0.007812,maxrel=0.007692,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "bfloat16",
+          "expected_dtype": "bfloat16",
+          "actual_shape": [
+            12288,
+            768
+          ],
+          "expected_shape": [
+            12288,
+            768
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 0.0078125,
+          "max_relative_error": 0.007692307699471712,
+          "max_tolerance_ratio": 0.09208103269338608
+        }
+      ],
+      "status": "ok",
+      "cold_l2_graph_us": 23.619,
+      "spread": 0.00347,
+      "round_medians_us": [
+        23.619,
+        23.619,
+        23.643,
+        23.608,
+        23.614,
+        23.623,
+        23.611,
+        23.637,
+        23.561
+      ],
+      "raw_flush_plus_op_ms": [
+        0.984016,
+        0.984464,
+        0.98448,
+        0.983904,
+        0.984,
+        0.984016,
+        0.983824,
+        0.984368,
+        0.983984
+      ],
+      "batch": 16,
+      "iterations_per_round": 20
+    },
+    "seed": {
+      "config": {
+        "block_sizes": [
+          1,
+          512
+        ]
+      },
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=0.007812,maxrel=0.007692,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "bfloat16",
+          "expected_dtype": "bfloat16",
+          "actual_shape": [
+            12288,
+            768
+          ],
+          "expected_shape": [
+            12288,
+            768
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 0.0078125,
+          "max_relative_error": 0.007692307699471712,
+          "max_tolerance_ratio": 0.09208103269338608
+        }
+      ],
+      "status": "ok",
+      "cold_l2_graph_us": 19.258,
+      "spread": 0.00613,
+      "round_medians_us": [
+        19.258,
+        19.226,
+        19.262,
+        19.25,
+        19.261,
+        19.268,
+        19.247,
+        19.263,
+        19.15
+      ],
+      "raw_flush_plus_op_ms": [
+        0.91424,
+        0.914176,
+        0.914384,
+        0.914176,
+        0.914352,
+        0.914336,
+        0.914,
+        0.914384,
+        0.913408
+      ],
+      "batch": 16,
+      "iterations_per_round": 20
+    },
+    "aot": {
+      "config": {
+        "block_sizes": [
+          1,
+          1024
+        ],
+        "loop_orders": [
+          [
+            1,
+            0
+          ]
+        ],
+        "l2_groupings": [
+          1
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "last",
+          "first",
+          "last"
+        ],
+        "num_warps": 1,
+        "num_stages": 5,
+        "indexing": [
+          "tensor_descriptor",
+          "tensor_descriptor",
+          "pointer",
+          "pointer"
+        ],
+        "pid_type": "flat"
+      },
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=0.007812,maxrel=0.007692,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "bfloat16",
+          "expected_dtype": "bfloat16",
+          "actual_shape": [
+            12288,
+            768
+          ],
+          "expected_shape": [
+            12288,
+            768
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 0.0078125,
+          "max_relative_error": 0.007692307699471712,
+          "max_tolerance_ratio": 0.09208103269338608
+        }
+      ],
+      "status": "ok",
+      "cold_l2_graph_us": 21.767,
+      "spread": 0.00285,
+      "round_medians_us": [
+        21.762,
+        21.799,
+        21.758,
+        21.76,
+        21.767,
+        21.767,
+        21.769,
+        21.781,
+        21.737
+      ],
+      "raw_flush_plus_op_ms": [
+        0.954304,
+        0.955344,
+        0.95432,
+        0.954336,
+        0.954448,
+        0.95432,
+        0.954352,
+        0.954672,
+        0.9548
+      ],
+      "batch": 16,
+      "iterations_per_round": 20
+    },
+    "torch_compile": {
+      "status": "ok",
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=0.007812,maxrel=0.007692,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "bfloat16",
+          "expected_dtype": "bfloat16",
+          "actual_shape": [
+            12288,
+            768
+          ],
+          "expected_shape": [
+            12288,
+            768
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 0.0078125,
+          "max_relative_error": 0.007692307699471712,
+          "max_tolerance_ratio": 0.09208103269338608
+        }
+      ],
+      "cold_l2_graph_us": 19.072,
+      "spread": 0.00294,
+      "round_medians_us": [
+        19.043,
+        19.05,
+        19.075,
+        19.071,
+        19.083,
+        19.078,
+        19.099,
+        19.072,
+        19.051
+      ],
+      "raw_flush_plus_op_ms": [
+        0.9108,
+        0.91136,
+        0.911392,
+        0.911312,
+        0.911504,
+        0.911296,
+        0.911632,
+        0.911328,
+        0.911824
+      ],
+      "batch": 16,
+      "iterations_per_round": 20
+    }
+  },
+  "default_config": {
+    "block_sizes": [
+      32,
+      32
+    ],
+    "loop_orders": [
+      [
+        0,
+        1
+      ]
+    ],
+    "l2_groupings": [
+      1
+    ],
+    "range_unroll_factors": [
+      0
+    ],
+    "range_warp_specializes": [
+      null
+    ],
+    "range_num_stages": [
+      0
+    ],
+    "range_multi_buffers": [
+      null
+    ],
+    "range_flattens": [
+      null
+    ],
+    "load_eviction_policies": [
+      "",
+      "",
+      ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+  },
+  "seed_config": {
+    "block_sizes": [
+      1,
+      512
+    ]
+  },
+  "aot_config": {
+    "block_sizes": [
+      1,
+      1024
+    ],
+    "loop_orders": [
+      [
+        1,
+        0
+      ]
+    ],
+    "l2_groupings": [
+      1
+    ],
+    "range_unroll_factors": [
+      0
+    ],
+    "range_warp_specializes": [
+      null
+    ],
+    "range_num_stages": [
+      0
+    ],
+    "range_multi_buffers": [
+      null
+    ],
+    "range_flattens": [
+      null
+    ],
+    "load_eviction_policies": [
+      "last",
+      "first",
+      "last"
+    ],
+    "num_warps": 1,
+    "num_stages": 5,
+    "indexing": [
+      "tensor_descriptor",
+      "tensor_descriptor",
+      "pointer",
+      "pointer"
+    ],
+    "pid_type": "flat"
+  },
+  "aot_selector": {
+    "architecture": "sm100",
+    "selector_key": [
+      1536,
+      [
+        2
+      ],
+      [
+        true
+      ]
+    ],
+    "config_index": 1,
+    "exact_key": true,
+    "source": "sglang/srt/layers/moe/moe_runner/triton_utils/configs/silu_and_mul_interleaved_sm_100.json",
+    "source_commit": "5f79cf35110d6a0be828f266160b75d83a2a6276"
+  },
+  "timing_method": {
+    "name": "calibrated cold-L2 CUDA graph",
+    "formula": "(flush_plus_operation_graph_ms - flush_only_graph_ms) / batch",
+    "flush_inside_graph": true,
+    "interleaved": true,
+    "rounds_requested": 9,
+    "rounds_high_spread": 15,
+    "spread_gate": 0.05,
+    "batch": 16,
+    "iterations_per_round": 20,
+    "flush_only_round_medians_ms": [
+      0.606112,
+      0.60656,
+      0.606192,
+      0.606176,
+      0.606176,
+      0.606048,
+      0.606048,
+      0.606176,
+      0.607008
+    ]
+  },
+  "relative_performance_vs_default": {
+    "seed": 1.225101,
+    "torch_compile": 1.237049,
+    "aot": 1.083888
+  },
+  "default_null_delta": 0.001102
+}

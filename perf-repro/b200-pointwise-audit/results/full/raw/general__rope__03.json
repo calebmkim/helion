@@ -1,0 +1,13 @@
+{
+  "cohort": "general",
+  "kernel": "rope",
+  "shape_index": 3,
+  "shape": [
+    2,
+    32,
+    2048,
+    256
+  ],
+  "dtype": "bf16",
+  "fatal_error": "timeout after 300s"
+}
