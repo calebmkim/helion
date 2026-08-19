@@ -39,6 +39,9 @@ class Cohort:
     key: str
     title: str
     kernels: tuple[tuple[str, str], ...]
+    source_keys: tuple[str, ...] = ()
+    arm_keys: tuple[str, ...] = ("seed", "torch_compile", "aot_sm100")
+    kernel_weighted_overall: bool = False
 
 
 ARMS = (
@@ -102,6 +105,26 @@ COHORTS = (
     ),
 )
 
+EXAMPLES_GENERAL = Cohort(
+    "examples_general",
+    "Examples / General Reductions",
+    (
+        ("rms_norm", "RMSNorm"),
+        ("layer_norm", "LayerNorm"),
+        ("softmax", "Softmax"),
+        ("cross_entropy", "Cross\nEntropy"),
+        ("kl_div", "KL Div"),
+        ("jsd", "JSD"),
+        ("fused_linear_jsd", "Fused Linear\nJSD"),
+        ("grpo", "GRPO"),
+        ("rms_norm_bwd", "RMSNorm\nBackward"),
+        ("layer_norm_bwd", "LayerNorm\nBackward"),
+    ),
+    source_keys=("general_aot", "original"),
+    arm_keys=("seed", "torch_compile"),
+    kernel_weighted_overall=True,
+)
+
 
 def _geomean(values: list[float]) -> float | None:
     valid = [value for value in values if value > 0 and math.isfinite(value)]
@@ -137,10 +160,11 @@ def _cohort_values(
     rows: list[dict[str, Any]],
     cohort: Cohort,
 ) -> tuple[list[str], dict[str, list[float | None]]]:
-    cohort_rows = [row for row in rows if row.get("cohort") == cohort.key]
+    source_keys = cohort.source_keys or (cohort.key,)
+    cohort_rows = [row for row in rows if row.get("cohort") in source_keys]
     labels = [label for _, label in cohort.kernels] + ["Overall"]
     values: dict[str, list[float | None]] = {}
-    for arm in ARMS:
+    for arm in (arm for arm in ARMS if arm.key in cohort.arm_keys):
         arm_values: list[float | None] = []
         for kernel, _label in cohort.kernels:
             samples = [
@@ -150,18 +174,27 @@ def _cohort_values(
                 if (value := _relative_performance(row, arm.key)) is not None
             ]
             arm_values.append(_geomean(samples))
-        overall_samples = [
-            value
-            for row in cohort_rows
-            if (value := _relative_performance(row, arm.key)) is not None
-        ]
-        arm_values.append(_geomean(overall_samples))
+        if cohort.kernel_weighted_overall:
+            arm_values.append(
+                _geomean([value for value in arm_values if value is not None])
+            )
+        else:
+            overall_samples = [
+                value
+                for row in cohort_rows
+                if (value := _relative_performance(row, arm.key)) is not None
+            ]
+            arm_values.append(_geomean(overall_samples))
         values[arm.key] = arm_values
     return labels, values
 
 
 def _active_arms(values: dict[str, list[float | None]]) -> list[Arm]:
-    return [arm for arm in ARMS if any(value is not None for value in values[arm.key])]
+    return [
+        arm
+        for arm in ARMS
+        if arm.key in values and any(value is not None for value in values[arm.key])
+    ]
 
 
 def _legend_handles(arms: list[Arm]) -> list[Patch | Line2D]:
@@ -304,20 +337,28 @@ def _save_separate(
     rows: list[dict[str, Any]],
     cohort: Cohort,
     output: Path,
+    *,
+    figsize: tuple[float, float] = (13.5, 7.3),
+    tick_size: float = 10.5,
 ) -> None:
-    fig, ax = plt.subplots(figsize=(13.5, 7.3), facecolor="white")
+    fig, ax = plt.subplots(figsize=figsize, facecolor="white")
     arms = _plot_cohort(
         ax,
         rows,
         cohort,
         title_size=20,
-        tick_size=10.5,
+        tick_size=tick_size,
+    )
+    overall_text = (
+        "equal-kernel-weighted geomean"
+        if cohort.kernel_weighted_overall
+        else "cell-weighted cohort geomean"
     )
     fig.text(
         0.075,
         0.94,
-        "Kernel bars are geometric means across shapes; Overall is the "
-        "cell-weighted cohort geomean. Higher is faster.",
+        f"Kernel bars are geometric means across shapes; Overall is the "
+        f"{overall_text}. Higher is faster.",
         ha="left",
         va="top",
         fontsize=10.5,
@@ -451,6 +492,16 @@ def main() -> None:
         output = args.output_dir / f"{cohort.key}_relative_performance.png"
         _save_separate(rows, cohort, output)
         outputs.append(output)
+
+    examples_general = args.output_dir / "examples_general_relative_performance.png"
+    _save_separate(
+        rows,
+        EXAMPLES_GENERAL,
+        examples_general,
+        figsize=(17.5, 8.2),
+        tick_size=9.5,
+    )
+    outputs.append(examples_general)
 
     combined = args.output_dir / "all_cohorts_relative_performance.png"
     _save_combined(rows, combined)

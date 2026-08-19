@@ -11,6 +11,7 @@ GPU 1 (`NVIDIA B200`, SM100) with `CUDA_VISIBLE_DEVICES=1`.
 ## Charts
 
 - [All cohorts](charts/all_cohorts_relative_performance.png)
+- [Examples/general kernels](charts/examples_general_relative_performance.png)
 - [General AOT](charts/general_aot_relative_performance.png)
 - [Original kernels](charts/original_relative_performance.png)
 - [vLLM](charts/vllm_relative_performance.png)
