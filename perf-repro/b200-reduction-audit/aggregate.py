@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from collections import defaultdict
 import json
 import math
+from operator import itemgetter
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,25 @@ def _geomean(values: list[float]) -> float | None:
 
 def _fmt(value: float | None, digits: int = 3) -> str:
     return "n/a" if value is None else f"{value:.{digits}f}"
+
+
+def _ratio_stats(values: list[float]) -> dict[str, float | int | None]:
+    return {
+        "geomean": _geomean(values),
+        "min": min(values) if values else None,
+        "max": max(values) if values else None,
+        "n": len(values),
+    }
+
+
+def _fmt_ratio_stats(values: dict[str, Any]) -> str:
+    if values["geomean"] is None:
+        return "n/a (n=0)"
+    return (
+        f"{_fmt(values['geomean'])} "
+        f"[{_fmt(values['min'])}, {_fmt(values['max'])}] "
+        f"(n={values['n']})"
+    )
 
 
 def _arm_us(row: dict[str, Any], arm: str) -> float | None:
@@ -69,17 +90,19 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             ]
             for arm in ("default", "torch_compile", "aot_sm100")
         }
+        ratio_stats = {arm: _ratio_stats(values) for arm, values in ratios.items()}
         kernels[spec.kernel] = {
             "cohort": spec.cohort,
             "dtype": spec.dtype,
             "expected_cells": len(spec.shapes),
             "recorded_cells": len(kernel_rows),
-            "G_default": _geomean(ratios["default"]),
-            "G_torch_compile": _geomean(ratios["torch_compile"]),
-            "G_aot_sm100": _geomean(ratios["aot_sm100"]),
-            "n_default": len(ratios["default"]),
-            "n_torch_compile": len(ratios["torch_compile"]),
-            "n_aot_sm100": len(ratios["aot_sm100"]),
+            "ratios": ratio_stats,
+            "G_default": ratio_stats["default"]["geomean"],
+            "G_torch_compile": ratio_stats["torch_compile"]["geomean"],
+            "G_aot_sm100": ratio_stats["aot_sm100"]["geomean"],
+            "n_default": ratio_stats["default"]["n"],
+            "n_torch_compile": ratio_stats["torch_compile"]["n"],
+            "n_aot_sm100": ratio_stats["aot_sm100"]["n"],
         }
 
     cohorts = {}
@@ -90,8 +113,10 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             values = [
                 value for row in cohort_rows if (value := _ratio(row, arm)) is not None
             ]
-            cohorts[cohort][f"G_{arm}"] = _geomean(values)
-            cohorts[cohort][f"n_{arm}"] = len(values)
+            stats = _ratio_stats(values)
+            cohorts[cohort][arm] = stats
+            cohorts[cohort][f"G_{arm}"] = stats["geomean"]
+            cohorts[cohort][f"n_{arm}"] = stats["n"]
 
     failures = []
     for row in rows:
@@ -119,17 +144,66 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                     }
                 )
 
+    base_environment = rows[0].get("environment", {}) if rows else {}
+    environment_consistent = all(
+        row.get("environment", {}) == base_environment for row in rows
+    )
+    heuristic_counts = Counter(
+        heuristic for row in rows for heuristic in row.get("fired_heuristics", [])
+    )
+    no_seed = [
+        {
+            "kernel": row.get("kernel"),
+            "shape": row.get("shape"),
+            "fired_heuristics": row.get("fired_heuristics", []),
+        }
+        for row in rows
+        if not row.get("reduction_seed_present")
+    ]
+    high_spread = []
+    for row in rows:
+        for arm, data in row.get("arms", {}).items():
+            spread = data.get("spread")
+            if spread is not None and float(spread) > 0.05:
+                high_spread.append(
+                    {
+                        "kernel": row.get("kernel"),
+                        "shape": row.get("shape"),
+                        "arm": arm,
+                        "latency_us": data.get("cold_l2_graph_us"),
+                        "spread": float(spread),
+                        "rounds": len(data.get("round_medians_us", [])),
+                    }
+                )
+    high_spread.sort(key=itemgetter("spread"), reverse=True)
+
     return {
         "expected_cells": expected,
         "recorded_cells": len(rows),
+        "environment": base_environment,
+        "environment_consistent": environment_consistent,
+        "heuristic_counts": dict(sorted(heuristic_counts.items())),
+        "heuristic_no_seed": no_seed,
         "kernels": kernels,
         "cohorts": cohorts,
         "failures": failures,
+        "high_spread": high_spread,
         "rows": rows,
     }
 
 
+def _compact_config(row: dict[str, Any], arm: str) -> str:
+    config = row.get("arms", {}).get(arm, {}).get("config")
+    if not config:
+        return "n/a"
+    block_sizes = config.get("block_sizes")
+    num_warps = config.get("num_warps")
+    num_stages = config.get("num_stages")
+    return f"bs={block_sizes};w={num_warps};s={num_stages}"
+
+
 def _markdown(summary: dict[str, Any]) -> str:
+    environment = summary["environment"]
     lines = [
         "# B200 Reduction-Heuristic Audit Results",
         "",
@@ -139,19 +213,67 @@ def _markdown(summary: dict[str, Any]) -> str:
             "reduction seed is faster."
         ),
         "",
-        "## Cohorts",
+        "## Environment",
         "",
-        "| Cohort | vs default | vs torch.compile | vs SM100 AOT |",
-        "|---|---:|---:|---:|",
+        (
+            f"- Helion: `{environment.get('helion_commit', 'unknown')}` "
+            f"(`{environment.get('helion_branch', 'unknown')}`)"
+        ),
+        (
+            f"- PyTorch: `{environment.get('torch_version', 'unknown')}` "
+            f"(`{environment.get('torch_git_version', 'unknown')}`)"
+        ),
+        f"- Triton: `{environment.get('triton_version', 'unknown')}`",
+        (
+            f"- CUDA runtime / driver: "
+            f"`{environment.get('cuda_runtime', 'unknown')}` / "
+            f"`{environment.get('cuda_driver', 'unknown')}`"
+        ),
+        (
+            f"- GPU: physical "
+            f"`{environment.get('physical_gpu_index', 'unknown')}`, "
+            f"logical `{environment.get('logical_device', 'unknown')}`, "
+            f"`{environment.get('gpu_name', 'unknown')}` "
+            f"(SM{''.join(str(value) for value in environment.get('compute_capability', []))})"
+        ),
+        (
+            f"- `CUDA_VISIBLE_DEVICES="
+            f"{environment.get('cuda_visible_devices', 'unknown')}`; "
+            f"metadata identical across cells: "
+            f"`{summary['environment_consistent']}`"
+        ),
+        "",
+        "## Heuristic Coverage",
+        "",
     ]
+    for name, count in summary["heuristic_counts"].items():
+        lines.append(f"- `{name}`: {count} cells")
+    if summary["heuristic_no_seed"]:
+        lines.append(
+            f"- Missing reduction seed: {len(summary['heuristic_no_seed'])} cells"
+        )
+    else:
+        lines.append(
+            f"- Reduction seed present: {summary['recorded_cells']}/"
+            f"{summary['recorded_cells']} cells"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Cohorts",
+            "",
+            "Entries are geomean [min, max] (count).",
+            "",
+            "| Cohort | vs default | vs torch.compile | vs SM100 AOT |",
+            "|---|---:|---:|---:|",
+        ]
+    )
     for name, values in summary["cohorts"].items():
         lines.append(
-            f"| `{name}` | {_fmt(values['G_default'])} "
-            f"(n={values['n_default']}) | "
-            f"{_fmt(values['G_torch_compile'])} "
-            f"(n={values['n_torch_compile']}) | "
-            f"{_fmt(values['G_aot_sm100'])} "
-            f"(n={values['n_aot_sm100']}) |"
+            f"| `{name}` | {_fmt_ratio_stats(values['default'])} | "
+            f"{_fmt_ratio_stats(values['torch_compile'])} | "
+            f"{_fmt_ratio_stats(values['aot_sm100'])} |"
         )
 
     lines.extend(
@@ -167,11 +289,9 @@ def _markdown(summary: dict[str, Any]) -> str:
         lines.append(
             f"| `{name}` | {values['dtype']} | "
             f"{values['recorded_cells']}/{values['expected_cells']} | "
-            f"{_fmt(values['G_default'])} (n={values['n_default']}) | "
-            f"{_fmt(values['G_torch_compile'])} "
-            f"(n={values['n_torch_compile']}) | "
-            f"{_fmt(values['G_aot_sm100'])} "
-            f"(n={values['n_aot_sm100']}) |"
+            f"{_fmt_ratio_stats(values['ratios']['default'])} | "
+            f"{_fmt_ratio_stats(values['ratios']['torch_compile'])} | "
+            f"{_fmt_ratio_stats(values['ratios']['aot_sm100'])} |"
         )
 
     lines.extend(
@@ -179,8 +299,16 @@ def _markdown(summary: dict[str, Any]) -> str:
             "",
             "## Per Shape",
             "",
-            "| Kernel | Shape | seed us | default/seed | tc/seed | AOT/seed |",
-            "|---|---|---:|---:|---:|---:|",
+            (
+                "Configs show `block_sizes`, `num_warps`, and `num_stages`; "
+                "raw JSON contains each complete config."
+            ),
+            "",
+            (
+                "| Kernel | Shape | seed config | default config | AOT config | "
+                "seed us | default/seed | tc/seed | AOT/seed |"
+            ),
+            "|---|---|---|---|---|---:|---:|---:|---:|",
         ]
     )
     ordered_rows = sorted(
@@ -194,11 +322,37 @@ def _markdown(summary: dict[str, Any]) -> str:
     for row in ordered_rows:
         lines.append(
             f"| `{row.get('kernel', '?')}` | `{row.get('shape')}` | "
+            f"`{_compact_config(row, 'seed')}` | "
+            f"`{_compact_config(row, 'default')}` | "
+            f"`{_compact_config(row, 'aot_sm100')}` | "
             f"{_fmt(_arm_us(row, 'seed'))} | "
             f"{_fmt(_ratio(row, 'default'))} | "
             f"{_fmt(_ratio(row, 'torch_compile'))} | "
             f"{_fmt(_ratio(row, 'aot_sm100'))} |"
         )
+
+    lines.extend(["", "## Timing Spread Above 5%", ""])
+    if not summary["high_spread"]:
+        lines.append("None.")
+    else:
+        lines.extend(
+            [
+                (
+                    "These cells already used the 15-round escalation. Very "
+                    "short kernels are especially sensitive to event-timing "
+                    "granularity."
+                ),
+                "",
+                "| Kernel | Shape | Arm | Latency us | Spread | Rounds |",
+                "|---|---|---|---:|---:|---:|",
+            ]
+        )
+        for item in summary["high_spread"]:
+            lines.append(
+                f"| `{item['kernel']}` | `{item['shape']}` | `{item['arm']}` | "
+                f"{_fmt(item['latency_us'])} | {item['spread']:.1%} | "
+                f"{item['rounds']} |"
+            )
 
     lines.extend(["", "## Failures", ""])
     if not summary["failures"]:

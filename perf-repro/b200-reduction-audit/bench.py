@@ -626,30 +626,72 @@ def _compare(
     actual: tuple[torch.Tensor, ...],
     expected: tuple[torch.Tensor, ...],
     case: Case,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, list[dict[str, Any]]]:
     if len(actual) != len(expected):
-        return False, f"output-count {len(actual)} != {len(expected)}"
+        return (
+            False,
+            f"output-count {len(actual)} != {len(expected)}",
+            [],
+        )
     details = []
+    outputs = []
     all_ok = True
     for index, (got, want) in enumerate(zip(actual, expected, strict=True)):
+        output: dict[str, Any] = {
+            "index": index,
+            "actual_dtype": str(got.dtype).removeprefix("torch."),
+            "expected_dtype": str(want.dtype).removeprefix("torch."),
+            "actual_shape": list(got.shape),
+            "expected_shape": list(want.shape),
+        }
         if got.shape != want.shape:
             all_ok = False
             details.append(f"{index}:shape {tuple(got.shape)}!={tuple(want.shape)}")
+            output["ok"] = False
+            outputs.append(output)
             continue
         got_f = got.detach().float()
         want_f = want.detach().float()
         rtol, atol = _tensor_tolerance(got, want, case)
         ok = bool(torch.allclose(got_f, want_f, rtol=rtol, atol=atol))
         all_ok = all_ok and ok
-        max_abs = float((got_f - want_f).abs().max()) if got.numel() else 0.0
-        details.append(f"{index}:ok={ok},maxabs={max_abs:.4g}")
-    return all_ok, ";".join(details)
+        if got.numel():
+            abs_error = (got_f - want_f).abs()
+            max_abs = float(abs_error.max())
+            significant = want_f.abs() > atol
+            max_rel = (
+                float((abs_error[significant] / want_f.abs()[significant]).max())
+                if bool(significant.any())
+                else 0.0
+            )
+            tolerance = atol + rtol * want_f.abs()
+            max_tolerance_ratio = float((abs_error / tolerance).max())
+        else:
+            max_abs = 0.0
+            max_rel = 0.0
+            max_tolerance_ratio = 0.0
+        output.update(
+            {
+                "ok": ok,
+                "rtol": rtol,
+                "atol": atol,
+                "max_abs_error": max_abs,
+                "max_relative_error": max_rel,
+                "max_tolerance_ratio": max_tolerance_ratio,
+            }
+        )
+        outputs.append(output)
+        details.append(
+            f"{index}:ok={ok},maxabs={max_abs:.4g},maxrel={max_rel:.4g},"
+            f"rtol={rtol:.4g},atol={atol:.4g}"
+        )
+    return all_ok, ";".join(details), outputs
 
 
 def _accuracy_check(
     fn: Callable[..., Any],
     case: Case,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, list[dict[str, Any]]]:
     if case.inplace_indices:
         kernel_args = _clone_args(case.args)
         ref_args = _clone_args(case.args)
@@ -809,13 +851,30 @@ def _time_graphs(
 
 def _environment_metadata() -> dict[str, Any]:
     props = torch.cuda.get_device_properties(0)
+    try:
+        driver_version = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "-i",
+                "1",
+                "--query-gpu=driver_version",
+                "--format=csv,noheader",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        driver_version = "unknown"
     return {
         "helion_commit": _git("rev-parse", "HEAD"),
         "helion_branch": _git("branch", "--show-current"),
         "torch_version": torch.__version__,
+        "torch_git_version": torch.version.git_version,
         "triton_version": triton.__version__,
         "cuda_runtime": torch.version.cuda,
+        "cuda_driver": driver_version,
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "physical_gpu_index": 1,
         "logical_device": 0,
         "gpu_name": props.name,
         "compute_capability": list(torch.cuda.get_device_capability(0)),
@@ -845,6 +904,22 @@ def run_cell(kernel: str, shape_index: int) -> dict[str, Any]:
         "dtype": spec.dtype,
         "has_aot": spec.has_aot,
         "metadata": case.metadata or {},
+        "tensor_arguments": [
+            {
+                "index": index,
+                "shape": list(value.shape),
+                "dtype": str(value.dtype).removeprefix("torch."),
+                "inplace_output": index in case.inplace_indices,
+                "restored_before_replay": index in case.restore_indices,
+            }
+            for index, value in enumerate(case.args)
+            if torch.is_tensor(value)
+        ],
+        "scalar_arguments": [
+            {"index": index, "value": value}
+            for index, value in enumerate(case.args)
+            if not torch.is_tensor(value)
+        ],
         "environment": _environment_metadata(),
         "fired_heuristics": fired,
         "reduction_seed_present": seed_config is not None,
@@ -874,9 +949,10 @@ def run_cell(kernel: str, shape_index: int) -> dict[str, Any]:
             continue
         try:
             compiled = _authored_kernel(case.kfn, config)
-            accurate, detail = _accuracy_check(compiled, case)
+            accurate, detail, outputs = _accuracy_check(compiled, case)
             arm["accuracy"] = accurate
             arm["accuracy_detail"] = detail
+            arm["accuracy_outputs"] = outputs
             arm["status"] = "ok" if accurate else "accuracy-fail"
             callables[name] = lambda compiled=compiled: compiled(*case.args)
         except Exception as exc:
@@ -888,11 +964,12 @@ def run_cell(kernel: str, shape_index: int) -> dict[str, Any]:
     try:
         torch._dynamo.reset()
         torch_compiled = torch.compile(case.ref_fn)
-        accurate, detail = _accuracy_check(torch_compiled, case)
+        accurate, detail, outputs = _accuracy_check(torch_compiled, case)
         row["arms"]["torch_compile"] = {
             "status": "ok" if accurate else "accuracy-fail",
             "accuracy": accurate,
             "accuracy_detail": detail,
+            "accuracy_outputs": outputs,
         }
         callables["torch_compile"] = lambda: torch_compiled(*case.args)
     except Exception as exc:

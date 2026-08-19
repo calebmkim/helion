@@ -21,7 +21,7 @@ No online autotuning is part of this experiment.
 ## Source and Hardware Pinning
 
 - Run on one NVIDIA B200 only.
-- Set `CUDA_VISIBLE_DEVICES=0`; all code must use logical `cuda:0`.
+- Set `CUDA_VISIBLE_DEVICES=1`; all code must use logical `cuda:0`.
 - Assert the device name and compute capability (`sm100`) before running.
 - Start the execution branch from the latest `pytorch/helion:main` available
   when the run begins. Record the exact Helion commit, PyTorch commit/version,
@@ -244,7 +244,7 @@ showing the separate cohort and per-kernel results.
 3. Run one smoke shape per kernel and require all expected arms to compile,
    capture, and pass correctness.
 4. Run the 24 general-AOT cells, 36 original-kernel cells, and 54 vLLM cells on
-   physical GPU 0 only.
+   physical GPU 1 only.
 5. Aggregate the 114 cells and regenerate all tables solely from raw JSON.
 6. Investigate material losses using emitted Triton, register/spill metadata,
    and the recorded configs; do not modify the headline measurements after
