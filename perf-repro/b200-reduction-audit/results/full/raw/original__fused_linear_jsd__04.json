@@ -1,0 +1,532 @@
+{
+  "cohort": "original",
+  "kernel": "fused_linear_jsd",
+  "shape_index": 4,
+  "shape": [
+    2048,
+    256000
+  ],
+  "dtype": "bf16",
+  "has_aot": false,
+  "metadata": {
+    "body": "examples/fused_linear_jsd.py:jsd_kernel"
+  },
+  "tensor_arguments": [
+    {
+      "index": 3,
+      "shape": [
+        2048,
+        256000
+      ],
+      "dtype": "bfloat16",
+      "inplace_output": false,
+      "restored_before_replay": false
+    },
+    {
+      "index": 4,
+      "shape": [
+        2048,
+        256000
+      ],
+      "dtype": "bfloat16",
+      "inplace_output": false,
+      "restored_before_replay": false
+    }
+  ],
+  "scalar_arguments": [
+    {
+      "index": 0,
+      "value": 0.5
+    },
+    {
+      "index": 1,
+      "value": -100
+    },
+    {
+      "index": 2,
+      "value": 1.0
+    }
+  ],
+  "environment": {
+    "helion_commit": "2d753a5c6e855638a8947a296484e187b4ea0bbf",
+    "helion_branch": "b200-reduction-audit-run",
+    "torch_version": "2.12.0+cu130",
+    "torch_git_version": "7661cd9c6b841b62b7f411aa52ec51f05457263b",
+    "triton_version": "3.7.0",
+    "cuda_runtime": "13.0",
+    "cuda_driver": "595.71.05",
+    "cuda_visible_devices": "1",
+    "physical_gpu_index": 1,
+    "logical_device": 0,
+    "gpu_name": "NVIDIA B200",
+    "compute_capability": [
+      10,
+      0
+    ],
+    "total_memory_bytes": 191495471104
+  },
+  "fired_heuristics": [
+    "triton_reduction_tile_sm100"
+  ],
+  "reduction_seed_present": true,
+  "dynamo_explain": {
+    "enabled": false
+  },
+  "arms": {
+    "seed": {
+      "config": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          8192
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=8.941e-07,maxrel=4.461e-06,rtol=0.03,atol=0.03;1:ok=True,maxabs=2.91e-11,maxrel=0,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "float32",
+          "expected_dtype": "float32",
+          "actual_shape": [
+            2048
+          ],
+          "expected_shape": [
+            2048
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 8.940696716308594e-07,
+          "max_relative_error": 4.460568561626133e-06,
+          "max_tolerance_ratio": 2.4826196749927476e-05
+        },
+        {
+          "index": 1,
+          "actual_dtype": "float32",
+          "expected_dtype": "float32",
+          "actual_shape": [
+            2048,
+            256000
+          ],
+          "expected_shape": [
+            2048,
+            256000
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 2.9103830456733704e-11,
+          "max_relative_error": 0.0,
+          "max_tolerance_ratio": 9.700001912804623e-10
+        }
+      ],
+      "status": "ok",
+      "cold_l2_graph_us": 5062.688,
+      "spread": 0.00041,
+      "round_medians_us": [
+        5063.552,
+        5062.688,
+        5062.688,
+        5063.712,
+        5062.688,
+        5062.528,
+        5061.632,
+        5062.656,
+        5062.656
+      ],
+      "reps_per_round": 5
+    },
+    "default": {
+      "config": {
+        "block_sizes": [
+          1
+        ],
+        "reduction_loops": [
+          4096
+        ],
+        "range_unroll_factors": [
+          0
+        ],
+        "range_warp_specializes": [
+          null
+        ],
+        "range_num_stages": [
+          0
+        ],
+        "range_multi_buffers": [
+          null
+        ],
+        "range_flattens": [
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=8.941e-07,maxrel=4.461e-06,rtol=0.03,atol=0.03;1:ok=True,maxabs=2.91e-11,maxrel=0,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "float32",
+          "expected_dtype": "float32",
+          "actual_shape": [
+            2048
+          ],
+          "expected_shape": [
+            2048
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 8.940696716308594e-07,
+          "max_relative_error": 4.460568561626133e-06,
+          "max_tolerance_ratio": 2.4826196749927476e-05
+        },
+        {
+          "index": 1,
+          "actual_dtype": "float32",
+          "expected_dtype": "float32",
+          "actual_shape": [
+            2048,
+            256000
+          ],
+          "expected_shape": [
+            2048,
+            256000
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 2.9103830456733704e-11,
+          "max_relative_error": 0.0,
+          "max_tolerance_ratio": 9.700001912804623e-10
+        }
+      ],
+      "status": "ok",
+      "cold_l2_graph_us": 8973.312,
+      "spread": 0.00102,
+      "round_medians_us": [
+        8969.248,
+        8978.368,
+        8973.312,
+        8970.24,
+        8973.312,
+        8974.336,
+        8972.288,
+        8971.936,
+        8973.344
+      ],
+      "reps_per_round": 5
+    },
+    "torch_compile": {
+      "status": "ok",
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=8.494e-07,maxrel=4.226e-06,rtol=0.03,atol=0.03;1:ok=True,maxabs=2.183e-11,maxrel=0,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "float32",
+          "expected_dtype": "float32",
+          "actual_shape": [
+            2048
+          ],
+          "expected_shape": [
+            2048
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 8.493661880493164e-07,
+          "max_relative_error": 4.225548309477745e-06,
+          "max_tolerance_ratio": 2.3573717044200748e-05
+        },
+        {
+          "index": 1,
+          "actual_dtype": "float32",
+          "expected_dtype": "float32",
+          "actual_shape": [
+            2048,
+            256000
+          ],
+          "expected_shape": [
+            2048,
+            256000
+          ],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 2.1827872842550278e-11,
+          "max_relative_error": 0.0,
+          "max_tolerance_ratio": 7.275254287897326e-10
+        }
+      ],
+      "cold_l2_graph_us": 5019.68,
+      "spread": 0.00102,
+      "round_medians_us": [
+        5019.68,
+        5017.6,
+        5022.72,
+        5018.688,
+        5020.704,
+        5020.672,
+        5018.624,
+        5019.68,
+        5020.736
+      ],
+      "reps_per_round": 5
+    }
+  },
+  "seed_config": {
+    "block_sizes": [
+      1
+    ],
+    "reduction_loops": [
+      8192
+    ],
+    "range_unroll_factors": [
+      0
+    ],
+    "range_warp_specializes": [
+      null
+    ],
+    "range_num_stages": [
+      0
+    ],
+    "range_multi_buffers": [
+      null
+    ],
+    "range_flattens": [
+      null
+    ],
+    "load_eviction_policies": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "indexing": [
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+  },
+  "default_config": {
+    "block_sizes": [
+      1
+    ],
+    "reduction_loops": [
+      4096
+    ],
+    "range_unroll_factors": [
+      0
+    ],
+    "range_warp_specializes": [
+      null
+    ],
+    "range_num_stages": [
+      0
+    ],
+    "range_multi_buffers": [
+      null
+    ],
+    "range_flattens": [
+      null
+    ],
+    "load_eviction_policies": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer",
+      "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+  },
+  "ratios_vs_seed": {
+    "default": 1.77244,
+    "torch_compile": 0.9915
+  }
+}

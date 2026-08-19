@@ -1,0 +1,339 @@
+{
+  "cohort": "original",
+  "kernel": "kl_div",
+  "shape_index": 2,
+  "shape": [
+    4096,
+    114688
+  ],
+  "dtype": "bf16",
+  "has_aot": false,
+  "metadata": {
+    "body": "examples/kl_div.py:kl_div_forward"
+  },
+  "tensor_arguments": [
+    {
+      "index": 0,
+      "shape": [
+        4096,
+        114688
+      ],
+      "dtype": "bfloat16",
+      "inplace_output": false,
+      "restored_before_replay": false
+    },
+    {
+      "index": 1,
+      "shape": [
+        4096,
+        114688
+      ],
+      "dtype": "bfloat16",
+      "inplace_output": false,
+      "restored_before_replay": false
+    }
+  ],
+  "scalar_arguments": [
+    {
+      "index": 2,
+      "value": false
+    },
+    {
+      "index": 3,
+      "value": "batchmean"
+    },
+    {
+      "index": 4,
+      "value": 1e-10
+    }
+  ],
+  "environment": {
+    "helion_commit": "2d753a5c6e855638a8947a296484e187b4ea0bbf",
+    "helion_branch": "b200-reduction-audit-run",
+    "torch_version": "2.12.0+cu130",
+    "torch_git_version": "7661cd9c6b841b62b7f411aa52ec51f05457263b",
+    "triton_version": "3.7.0",
+    "cuda_runtime": "13.0",
+    "cuda_driver": "595.71.05",
+    "cuda_visible_devices": "1",
+    "physical_gpu_index": 1,
+    "logical_device": 0,
+    "gpu_name": "NVIDIA B200",
+    "compute_capability": [
+      10,
+      0
+    ],
+    "total_memory_bytes": 191495471104
+  },
+  "fired_heuristics": [
+    "triton_reduction_user_tile_sm100"
+  ],
+  "reduction_seed_present": true,
+  "dynamo_explain": {
+    "enabled": false
+  },
+  "arms": {
+    "seed": {
+      "config": {
+        "block_sizes": [
+          4096,
+          1
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null
+        ],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 32,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=3.57e-05,maxrel=3.57e-05,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "float32",
+          "expected_dtype": "bfloat16",
+          "actual_shape": [],
+          "expected_shape": [],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 3.5703182220458984e-05,
+          "max_relative_error": 3.5703182220458984e-05,
+          "max_tolerance_ratio": 0.000595053075812757
+        }
+      ],
+      "status": "ok",
+      "cold_l2_graph_us": 634.88,
+      "spread": 0.0001,
+      "round_medians_us": [
+        634.912,
+        634.88,
+        634.88,
+        634.848,
+        634.88,
+        634.88,
+        634.88,
+        634.88,
+        634.88
+      ],
+      "reps_per_round": 15
+    },
+    "default": {
+      "config": {
+        "block_sizes": [
+          32,
+          32
+        ],
+        "range_unroll_factors": [
+          0,
+          0
+        ],
+        "range_warp_specializes": [
+          null,
+          null
+        ],
+        "range_num_stages": [
+          0,
+          0
+        ],
+        "range_multi_buffers": [
+          null,
+          null
+        ],
+        "range_flattens": [
+          null,
+          null
+        ],
+        "load_eviction_policies": [
+          "",
+          ""
+        ],
+        "num_warps": 4,
+        "num_stages": 1,
+        "indexing": [
+          "pointer",
+          "pointer",
+          "pointer"
+        ],
+        "atomic_indexing": [],
+        "pid_type": "flat"
+      },
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=3.57e-05,maxrel=3.57e-05,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "float32",
+          "expected_dtype": "bfloat16",
+          "actual_shape": [],
+          "expected_shape": [],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 3.5703182220458984e-05,
+          "max_relative_error": 3.5703182220458984e-05,
+          "max_tolerance_ratio": 0.000595053075812757
+        }
+      ],
+      "status": "ok",
+      "cold_l2_graph_us": 5055.36,
+      "spread": 0.00042,
+      "round_medians_us": [
+        5055.552,
+        5054.496,
+        5055.36,
+        5056.512,
+        5055.488,
+        5054.4,
+        5054.4,
+        5055.488,
+        5054.528
+      ],
+      "reps_per_round": 15
+    },
+    "torch_compile": {
+      "status": "ok",
+      "accuracy": true,
+      "accuracy_detail": "0:ok=True,maxabs=0,maxrel=0,rtol=0.03,atol=0.03",
+      "accuracy_outputs": [
+        {
+          "index": 0,
+          "actual_dtype": "bfloat16",
+          "expected_dtype": "bfloat16",
+          "actual_shape": [],
+          "expected_shape": [],
+          "ok": true,
+          "rtol": 0.03,
+          "atol": 0.03,
+          "max_abs_error": 0.0,
+          "max_relative_error": 0.0,
+          "max_tolerance_ratio": 0.0
+        }
+      ],
+      "cold_l2_graph_us": 683.936,
+      "spread": 0.00304,
+      "round_medians_us": [
+        681.984,
+        683.936,
+        681.984,
+        682.016,
+        684.064,
+        684.0,
+        683.936,
+        684.064,
+        683.872
+      ],
+      "reps_per_round": 15
+    }
+  },
+  "seed_config": {
+    "block_sizes": [
+      4096,
+      1
+    ],
+    "range_unroll_factors": [
+      0,
+      0
+    ],
+    "range_warp_specializes": [
+      null,
+      null
+    ],
+    "range_num_stages": [
+      0,
+      0
+    ],
+    "range_multi_buffers": [
+      null,
+      null
+    ],
+    "range_flattens": [
+      null,
+      null
+    ],
+    "load_eviction_policies": [
+      "",
+      ""
+    ],
+    "num_warps": 32,
+    "num_stages": 1,
+    "indexing": [
+      "pointer",
+      "pointer",
+      "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+  },
+  "default_config": {
+    "block_sizes": [
+      32,
+      32
+    ],
+    "range_unroll_factors": [
+      0,
+      0
+    ],
+    "range_warp_specializes": [
+      null,
+      null
+    ],
+    "range_num_stages": [
+      0,
+      0
+    ],
+    "range_multi_buffers": [
+      null,
+      null
+    ],
+    "range_flattens": [
+      null,
+      null
+    ],
+    "load_eviction_policies": [
+      "",
+      ""
+    ],
+    "num_warps": 4,
+    "num_stages": 1,
+    "indexing": [
+      "pointer",
+      "pointer",
+      "pointer"
+    ],
+    "atomic_indexing": [],
+    "pid_type": "flat"
+  },
+  "ratios_vs_seed": {
+    "default": 7.9627,
+    "torch_compile": 1.07727
+  }
+}
