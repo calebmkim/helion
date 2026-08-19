@@ -1,0 +1,4657 @@
+{
+  "schema_version": 1,
+  "generated_utc": "2026-08-19T06:55:13.922499+00:00",
+  "raw_dir": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/raw",
+  "selection": {
+    "metric": "G_aot",
+    "threshold_lt": 0.9
+  },
+  "cases": [
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        2048,
+        32000
+      ],
+      "G_aot": 0.7073026822052855,
+      "seed_us": 81.50400221347809,
+      "aot_sm90_us": 57.64799937605858,
+      "aot_selector": {
+        "selector_index": 1,
+        "requested_key": [
+          2048,
+          32000
+        ],
+        "selected_tuned_key": null,
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/cross_entropy/_helion_aot_cross_entropy_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "QR2EHGP53YVMWFK7RDOTRM7HNH6UHN3DXQLXJBGZL34SVJPOUQUQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x32000/seed.py",
+            "sha256": "59cef11665bac4a6e2be2d86035c5ddaaf1f416306f67fc1017f1412b2aff179",
+            "lines": 70,
+            "bytes": 3770
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x32000/seed.ptx",
+            "sha256": "46fb3685ecb63fe7bb83322a196b31bdcb8ecfaac8a47ded5b4da3e3a824ef80",
+            "bytes": 46979
+          },
+          "triton_metadata": {
+            "hash": "84744399fdde2acb155f88dd38b3e769fd43b763bc177484d95ef92aa5eea429",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 41,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:41 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 41,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 41 registers, used 1 barriers\nptxas info    : Compile time = 21.098 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "first",
+              "first",
+              "first",
+              "first",
+              ""
+            ],
+            "num_warps": 16,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "6ULVN3B24LWSRNQFG2EYFP7UQDUMZNAJKLHFGDXU463SFOF3UYCQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x32000/aot_sm90.py",
+            "sha256": "cb3575aa4c4ab479dae1e4496ae9ceb299058d8cbdc10cd1e5f729a988c40ecf",
+            "lines": 70,
+            "bytes": 3863
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x32000/aot_sm90.ptx",
+            "sha256": "664239d8e7a75ab5cbc1616ee1bd42b1f7e8998830e2001fc0c4175c11758591",
+            "bytes": 66651
+          },
+          "triton_metadata": {
+            "hash": "f51756ec3ae2ed28b605368982bff480e8ccb40952ce530ef4e7b722b8bba605",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 16,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 64,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 52,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:52 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 52,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 52 registers, used 1 barriers\nptxas info    : Compile time = 43.576 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "rms_norm_dynamic_per_token_quant",
+      "shape": [
+        8192,
+        5120
+      ],
+      "G_aot": 0.7144866751530325,
+      "seed_us": 91.00800007581711,
+      "aot_sm90_us": 65.0240033864975,
+      "aot_selector": {
+        "selector_index": 55,
+        "requested_key": [
+          5120,
+          8192
+        ],
+        "selected_tuned_key": [
+          5120,
+          8192
+        ],
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/rms_norm_dynamic_per_token_quant/_helion_aot_rms_norm_dynamic_per_token_quant_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              8192,
+              8192,
+              8192
+            ],
+            "range_unroll_factors": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null,
+              null,
+              null,
+              null
+            ],
+            "range_flattens": [
+              null,
+              null,
+              null,
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 16,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "G7D6KW2AKCRAPK6KCJOMDTTEJ45G6TBXTLPDCE6JT3PEYBVFIHJA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_dynamic_per_token_quant__8192x5120/seed.py",
+            "sha256": "3f179208dddb25ada4c5b9f288ca5d5fce727f6af00069047518663aa3f90b33",
+            "lines": 173,
+            "bytes": 11476
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_dynamic_per_token_quant__8192x5120/seed.ptx",
+            "sha256": "2a58215481812e2b26f6f0078618618f1bdee0b2645ac57bc00ced92ee76fc80",
+            "bytes": 49797
+          },
+          "triton_metadata": {
+            "hash": "37c7e55b4050a207abca125cc1ce644f3a6f4c379ade3113c99ede4c06a541d2",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 16,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 64,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_rms_norm_dynamic_per_token_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_rms_norm_dynamic_per_token_quant",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_rms_norm_dynamic_per_token_quant:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:600 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_rms_norm_dynamic_per_token_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_rms_norm_dynamic_per_token_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 23.011 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              8192,
+              8192,
+              2048
+            ],
+            "range_unroll_factors": [
+              0,
+              4,
+              3,
+              2
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null,
+              false,
+              null,
+              false
+            ],
+            "range_flattens": [
+              null,
+              true,
+              true,
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              "last",
+              "",
+              "first",
+              "first",
+              ""
+            ],
+            "num_warps": 8,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "N6L2UMZDF6N4KMGKHH5IOXZJBU7FPDNYOOGZXAXQWUWK6Y3ZYCBQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_dynamic_per_token_quant__8192x5120/aot_sm90.py",
+            "sha256": "ce82fc1ddd1be880fb8c778ce9e8dc560497994d82acc3bc3d3fcbffd373449c",
+            "lines": 173,
+            "bytes": 11663
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_dynamic_per_token_quant__8192x5120/aot_sm90.ptx",
+            "sha256": "57e9af7db1509582144b3b11350195647e09d47f6d456fa205cd28a6365ffa86",
+            "bytes": 61054
+          },
+          "triton_metadata": {
+            "hash": "6f97aa33232f9bc530ca39fa875f290d3e578db8738d9b82f0b52caf6379c083",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 8,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 32,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_rms_norm_dynamic_per_token_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_rms_norm_dynamic_per_token_quant",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_rms_norm_dynamic_per_token_quant:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:600 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_rms_norm_dynamic_per_token_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_rms_norm_dynamic_per_token_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 29.418 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        4096,
+        152064
+      ],
+      "G_aot": 0.7221685064779113,
+      "seed_us": 1092.0000076293945,
+      "aot_sm90_us": 788.6080145835876,
+      "aot_selector": {
+        "selector_index": 0,
+        "requested_key": [
+          4096,
+          152064
+        ],
+        "selected_tuned_key": null,
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/cross_entropy/_helion_aot_cross_entropy_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "X3JECH3DO3TZVMWA4W5IAMFMW5MPLAIQOLJ4CF3KTAXHFBTBJUXA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__4096x152064/seed.py",
+            "sha256": "7dec64eb37a7801a8149420b26c463dd2683bd61b6cd715a1c28d4d9108c2697",
+            "lines": 70,
+            "bytes": 3774
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__4096x152064/seed.ptx",
+            "sha256": "2d260442faa09dabb9b30068585cfeff0a9cf476cc83999e73e10e41b0c6f14a",
+            "bytes": 121722
+          },
+          "triton_metadata": {
+            "hash": "bed2411f6376e79ab2c0e5ba8030acb758f5811072d3c1176a982e7286614d2e",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 64,
+              "stack_bytes": 360,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:64 STACK:360 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 336,
+            "spill_store_bytes": 372,
+            "spill_load_bytes": 460,
+            "registers": 64,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    336 bytes stack frame, 372 bytes spill stores, 460 bytes spill loads\nptxas info    : Used 64 registers, used 1 barriers, 336 bytes cumulative stack size\nptxas info    : Compile time = 151.606 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              32768
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "last",
+              "first",
+              "last",
+              "first",
+              "first"
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "X443EFN72Q2ZDYKZ6U6O5KZ2OHAJHL7L5AZYFHHPD3ELYKARQREQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__4096x152064/aot_sm90.py",
+            "sha256": "4c8d41cc8907a0b14cb68537e11e8411a1c1bb8079264e636dc790b00e24300b",
+            "lines": 88,
+            "bytes": 5205
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__4096x152064/aot_sm90.ptx",
+            "sha256": "2a46b8a55e05b75ceb9c1bbaf2bb08e3e6e3be56aabc4010681e40003e1b86e7",
+            "bytes": 61242
+          },
+          "triton_metadata": {
+            "hash": "bf39b215bfd43591e159f53ceeab3a71c093afebe833829cef1ec8bc28118449",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 59,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:59 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 59,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 59 registers, used 1 barriers\nptxas info    : Compile time = 38.384 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "silu_and_mul_per_block_quant",
+      "shape": [
+        8192,
+        25600,
+        128
+      ],
+      "G_aot": 0.7684404579786954,
+      "seed_us": 451.61598920822144,
+      "aot_sm90_us": 347.03999757766724,
+      "aot_selector": {
+        "selector_index": 41,
+        "requested_key": [
+          25600,
+          128,
+          8192
+        ],
+        "selected_tuned_key": [
+          25600,
+          128,
+          8192
+        ],
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/silu_and_mul_per_block_quant/_helion_aot_silu_and_mul_per_block_quant_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              64
+            ],
+            "loop_orders": [
+              [
+                0,
+                1,
+                2
+              ]
+            ],
+            "l2_groupings": [
+              1
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              ""
+            ],
+            "num_warps": 4,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "6U7JLPKHRDF45U6PEO73WVKWMCA53N45J4IU2DZZNHFR7BMXZ4IA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/silu_and_mul_per_block_quant__8192x25600x128/seed.py",
+            "sha256": "835704dce4686ba29e406c5195071e506dabf89d9782c43180aba48146f23eac",
+            "lines": 159,
+            "bytes": 10498
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/silu_and_mul_per_block_quant__8192x25600x128/seed.ptx",
+            "sha256": "ccfbd69a3303b3b09401d5b4f209a5ba8a499edaec4165cd9cd327c6399945d5",
+            "bytes": 100205
+          },
+          "triton_metadata": {
+            "hash": "f53e95bd4788cbced3cf23bfbb55566081ddb79d4f114d0f3969cb1f8597cf10",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 256,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_silu_and_mul_per_block_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_silu_and_mul_per_block_quant",
+              "registers": 96,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _helion_silu_and_mul_per_block_quant:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:592 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 96,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 0 bytes gmem\nptxas info    : Compiling entry function '_helion_silu_and_mul_per_block_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_silu_and_mul_per_block_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 96 registers, used 1 barriers\nptxas info    : Compile time = 122.133 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              8
+            ],
+            "loop_orders": [
+              [
+                2,
+                1,
+                0
+              ]
+            ],
+            "l2_groupings": [
+              8
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "first",
+              "",
+              ""
+            ],
+            "num_warps": 4,
+            "num_stages": 3,
+            "indexing": [
+              "tensor_descriptor",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "HX7YL7CXZ5P2GGI33VIYKOXZWP7WVY7DNWS2J7ZD6AG4YOAJQZVA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/silu_and_mul_per_block_quant__8192x25600x128/aot_sm90.py",
+            "sha256": "664bfb7fdd8561f57f922b066f62e1c2c8abce61c629e5d2162c2b479450c701",
+            "lines": 164,
+            "bytes": 10596
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/silu_and_mul_per_block_quant__8192x25600x128/aot_sm90.ptx",
+            "sha256": "911365af72bfabaa36c4f78908c003f9fc9675f5f0f146c360356794d7397f70",
+            "bytes": 26827
+          },
+          "triton_metadata": {
+            "hash": "3dff85fc57cf5fa3191bdd51853af9b3ff6ae3e36da5a4ff23f00dcc3809866a",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 3,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 32,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_silu_and_mul_per_block_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_silu_and_mul_per_block_quant",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _helion_silu_and_mul_per_block_quant:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:592 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 0 bytes gmem\nptxas info    : Compiling entry function '_helion_silu_and_mul_per_block_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_silu_and_mul_per_block_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 11.900 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "silu_and_mul_per_block_quant",
+      "shape": [
+        8192,
+        12288,
+        128
+      ],
+      "G_aot": 0.7750505060284512,
+      "seed_us": 221.6320037841797,
+      "aot_sm90_us": 171.77599668502808,
+      "aot_selector": {
+        "selector_index": 40,
+        "requested_key": [
+          12288,
+          128,
+          8192
+        ],
+        "selected_tuned_key": [
+          12288,
+          128,
+          8192
+        ],
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/silu_and_mul_per_block_quant/_helion_aot_silu_and_mul_per_block_quant_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              64
+            ],
+            "loop_orders": [
+              [
+                0,
+                1,
+                2
+              ]
+            ],
+            "l2_groupings": [
+              1
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              ""
+            ],
+            "num_warps": 4,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "LNNLGQZZC26AFTKPSTF4WWUNHJKU2BYDOFB5MN734RM4N2GVBR2A",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/silu_and_mul_per_block_quant__8192x12288x128/seed.py",
+            "sha256": "ed61a8768fc8969d6887e254c744c39512d6ac09e4aebbbe48d5e9c1a944a052",
+            "lines": 159,
+            "bytes": 10492
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/silu_and_mul_per_block_quant__8192x12288x128/seed.ptx",
+            "sha256": "680bc7fe38788d3b7b3b00a16e564d6e4f17afdfe332276eca1a4c93a57bbaed",
+            "bytes": 98631
+          },
+          "triton_metadata": {
+            "hash": "5b5ab3433916bc02cd4f94cbcb5a8d3a554d07037143d637fbe459c6e8d50c74",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 256,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_silu_and_mul_per_block_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_silu_and_mul_per_block_quant",
+              "registers": 93,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _helion_silu_and_mul_per_block_quant:\n  REG:93 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:592 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 93,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 0 bytes gmem\nptxas info    : Compiling entry function '_helion_silu_and_mul_per_block_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_silu_and_mul_per_block_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 93 registers, used 1 barriers\nptxas info    : Compile time = 112.313 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              8
+            ],
+            "loop_orders": [
+              [
+                2,
+                1,
+                0
+              ]
+            ],
+            "l2_groupings": [
+              1
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "first",
+              "",
+              ""
+            ],
+            "num_warps": 4,
+            "num_stages": 5,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "P3652KKDSOCVSM3ZOCEGPF4J3OBHIURNB27AX7YQAM5QIGECOJMQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/silu_and_mul_per_block_quant__8192x12288x128/aot_sm90.py",
+            "sha256": "293553f2a137d21f783e244e2765f642fdb51c4077e725b5855e4acbffc97ec8",
+            "lines": 156,
+            "bytes": 10213
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/silu_and_mul_per_block_quant__8192x12288x128/aot_sm90.ptx",
+            "sha256": "a40ed7ea98dabdec8ac8fb44bc3ee5a8457edf9f860a6253df0f0daceaf8a878",
+            "bytes": 26822
+          },
+          "triton_metadata": {
+            "hash": "7efddd294393855933797088679789db8274522d0ebe0bff10033b0418827259",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 5,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 32,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_silu_and_mul_per_block_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_silu_and_mul_per_block_quant",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _helion_silu_and_mul_per_block_quant:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:592 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 0 bytes gmem\nptxas info    : Compiling entry function '_helion_silu_and_mul_per_block_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_silu_and_mul_per_block_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 11.868 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        8192,
+        128000
+      ],
+      "G_aot": 0.7939098884437138,
+      "seed_us": 1472.2880125045776,
+      "aot_sm90_us": 1168.8640117645264,
+      "aot_selector": {
+        "selector_index": 1,
+        "requested_key": [
+          8192,
+          128000
+        ],
+        "selected_tuned_key": null,
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/cross_entropy/_helion_aot_cross_entropy_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "XI5JSMQHSWJM3HS2LWIS2ULELRW5KME2KTYUEAG2XIQGYT3EBPNA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__8192x128000/seed.py",
+            "sha256": "65c6b0561373bf1d14e07bb01149203e11015c37648fd72e495220adfd483081",
+            "lines": 70,
+            "bytes": 3774
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__8192x128000/seed.ptx",
+            "sha256": "4674e4ae1c6c0575cf38b2064ed16f31ab303f270b274946708c0658ab05e656",
+            "bytes": 104023
+          },
+          "triton_metadata": {
+            "hash": "ba3a9932079592cd9e5a5d912d51645c6dd5309a54f14200daba206c4f640bda",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 64,
+              "stack_bytes": 232,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:64 STACK:232 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 136,
+            "spill_store_bytes": 148,
+            "spill_load_bytes": 188,
+            "registers": 64,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    136 bytes stack frame, 148 bytes spill stores, 188 bytes spill loads\nptxas info    : Used 64 registers, used 1 barriers, 136 bytes cumulative stack size\nptxas info    : Compile time = 114.805 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "first",
+              "first",
+              "first",
+              "first",
+              ""
+            ],
+            "num_warps": 16,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "KFA3CVNVUED7JQ2VUHUEE77VD7QKSBJGOPRTA7C7XQ2PYXSBPJUQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__8192x128000/aot_sm90.py",
+            "sha256": "623bcca54d7b7959bc2c1e7f28fb9c8c235f746f694549dff04d4ccde91f911a",
+            "lines": 70,
+            "bytes": 3867
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__8192x128000/aot_sm90.ptx",
+            "sha256": "31f282fc2a83f79f14024839326a56f7d18d53871beaa40e09ee754848def51c",
+            "bytes": 187870
+          },
+          "triton_metadata": {
+            "hash": "5141b155b5a107f4c355a1e8427ff51fe0a9052673e3307c5fbc34fc5e417a69",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 16,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 64,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 128,
+              "stack_bytes": 272,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:128 STACK:272 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 112,
+            "spill_store_bytes": 176,
+            "spill_load_bytes": 184,
+            "registers": 128,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    112 bytes stack frame, 176 bytes spill stores, 184 bytes spill loads\nptxas info    : Used 128 registers, used 1 barriers, 112 bytes cumulative stack size\nptxas info    : Compile time = 449.417 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "rms_norm_per_block_quant",
+      "shape": [
+        8192,
+        5120,
+        128
+      ],
+      "G_aot": 0.7952185546631099,
+      "seed_us": 132.51199573278427,
+      "aot_sm90_us": 105.3759977221489,
+      "aot_selector": {
+        "selector_index": 95,
+        "requested_key": [
+          5120,
+          128,
+          8192
+        ],
+        "selected_tuned_key": [
+          5120,
+          128,
+          8192
+        ],
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/rms_norm_per_block_quant/_helion_aot_rms_norm_per_block_quant_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              8192,
+              64
+            ],
+            "loop_orders": [
+              [
+                0,
+                1
+              ]
+            ],
+            "range_unroll_factors": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null,
+              null,
+              null,
+              null
+            ],
+            "range_flattens": [
+              null,
+              null,
+              null,
+              null
+            ],
+            "static_ranges": [
+              false
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 16,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "HZ6OGIOAJ5B466K6QDC5MW4AY532CK6VMHY5MRRF2O2AOTSUXGUA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_per_block_quant__8192x5120x128/seed.py",
+            "sha256": "ab3ea5d25a626186f03d6ff53ac5ffa7699ceb05407b70682f08a99c019935e3",
+            "lines": 200,
+            "bytes": 13080
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_per_block_quant__8192x5120x128/seed.ptx",
+            "sha256": "306245d59958c6cb27b98bf8736e0e3db92d41e2002b08b85dd51212f84b76c0",
+            "bytes": 62162
+          },
+          "triton_metadata": {
+            "hash": "3e7ce321c04f43cf795e80c5d65b80c777a12bd561f1d64625d3b4074e54b9a8",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 16,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 16384,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_rms_norm_per_block_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_rms_norm_per_block_quant",
+              "registers": 46,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_rms_norm_per_block_quant:\n  REG:46 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:616 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 46,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_rms_norm_per_block_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_rms_norm_per_block_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 46 registers, used 1 barriers\nptxas info    : Compile time = 25.248 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              8192,
+              64
+            ],
+            "range_unroll_factors": [
+              0,
+              0,
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null,
+              null,
+              true
+            ],
+            "range_flattens": [
+              null,
+              null,
+              true
+            ],
+            "load_eviction_policies": [
+              "last",
+              "last",
+              "first",
+              "first",
+              "",
+              ""
+            ],
+            "num_warps": 4,
+            "num_stages": 3,
+            "indexing": [
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer",
+              "pointer",
+              "tensor_descriptor"
+            ],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "5BIBGL7VHQYNFPUINMUVZQ6FJEGAYRFWSOLIMST5SPPAA5FZ5JBQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_per_block_quant__8192x5120x128/aot_sm90.py",
+            "sha256": "9494f3ebe4682942ac7588553ba397153a2c2e1402e53b00167a73e6c201a010",
+            "lines": 200,
+            "bytes": 13248
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_per_block_quant__8192x5120x128/aot_sm90.ptx",
+            "sha256": "0fcdba2af0a03ced0baf714a772030c1fd4004253da09062ab67da6ee8fa106f",
+            "bytes": 163009
+          },
+          "triton_metadata": {
+            "hash": "e850132ff53c30d2be886b295cc3c5490c0c44b69396864a7d93de0074b9ea43",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 3,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 4096,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_rms_norm_per_block_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_rms_norm_per_block_quant",
+              "registers": 112,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_rms_norm_per_block_quant:\n  REG:112 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:616 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 112,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_rms_norm_per_block_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_rms_norm_per_block_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 112 registers, used 1 barriers\nptxas info    : Compile time = 83.737 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        2048,
+        128256
+      ],
+      "G_aot": 0.7957033071201444,
+      "seed_us": 394.7199881076813,
+      "aot_sm90_us": 314.07999992370605,
+      "aot_selector": {
+        "selector_index": 1,
+        "requested_key": [
+          2048,
+          128256
+        ],
+        "selected_tuned_key": null,
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/cross_entropy/_helion_aot_cross_entropy_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "LRLOSLXXU7P7RO3QEBBXCPUDHPJSTDIAD2UEOUQFCZPDY4DHRYQA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x128256/seed.py",
+            "sha256": "3798f1752e74763671c5650be7c36ba1ddbed4dbe03aacb0d08781896de1baa3",
+            "lines": 70,
+            "bytes": 3774
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x128256/seed.ptx",
+            "sha256": "bedaa0da81070e89342684f524b9c8e874bb1f4c02fd4679618ff57f1bedbf90",
+            "bytes": 104019
+          },
+          "triton_metadata": {
+            "hash": "5c56e92ef7a7dff8bb702043713e833bd3298d001ea8475205165e3c70678e20",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 64,
+              "stack_bytes": 232,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:64 STACK:232 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 136,
+            "spill_store_bytes": 148,
+            "spill_load_bytes": 188,
+            "registers": 64,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    136 bytes stack frame, 148 bytes spill stores, 188 bytes spill loads\nptxas info    : Used 64 registers, used 1 barriers, 136 bytes cumulative stack size\nptxas info    : Compile time = 113.995 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "first",
+              "first",
+              "first",
+              "first",
+              ""
+            ],
+            "num_warps": 16,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "EYLTTP7JZEDSZZ3COXXQX6MSK5R475DLAEYG6N4ZRCLOWZVS526A",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x128256/aot_sm90.py",
+            "sha256": "b42d2b3089f0723a2a909e32c57c48c3936628fffe576454dc9daf949405d25d",
+            "lines": 70,
+            "bytes": 3867
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x128256/aot_sm90.ptx",
+            "sha256": "231281542e82b28da198bf3bbf06a35081dfad8f13e0c6945eeb276e002a6475",
+            "bytes": 187876
+          },
+          "triton_metadata": {
+            "hash": "261739bfe9c9072ce76275ef0bf9925763cff46b01306f37998896eb66b2eebc",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 16,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 64,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 128,
+              "stack_bytes": 272,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:128 STACK:272 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 112,
+            "spill_store_bytes": 176,
+            "spill_load_bytes": 184,
+            "registers": 128,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    112 bytes stack frame, 176 bytes spill stores, 184 bytes spill loads\nptxas info    : Used 128 registers, used 1 barriers, 112 bytes cumulative stack size\nptxas info    : Compile time = 442.467 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "dynamic_per_token_scaled_fp8_quant",
+      "shape": [
+        8192,
+        5120
+      ],
+      "G_aot": 0.8167701810957189,
+      "seed_us": 61.824001371860504,
+      "aot_sm90_us": 50.49600079655647,
+      "aot_selector": {
+        "selector_index": 111,
+        "requested_key": [
+          5120,
+          8192
+        ],
+        "selected_tuned_key": [
+          5120,
+          8192
+        ],
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/dynamic_per_token_scaled_fp8_quant/_helion_aot_dynamic_per_token_scaled_fp8_quant_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              8192,
+              8192
+            ],
+            "range_unroll_factors": [
+              0,
+              0,
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null,
+              null,
+              null
+            ],
+            "range_flattens": [
+              null,
+              null,
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              ""
+            ],
+            "num_warps": 16,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "QXDQPW275ROSL7NB2JGN7LGHFDD77H2JUTLJODAISIMN564W3M7Q",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/dynamic_per_token_scaled_fp8_quant__8192x5120/seed.py",
+            "sha256": "964623163de3ecebcb3a39f5fefc73ed6e7fd7250f8cbcdbffd3ca5cb991874e",
+            "lines": 97,
+            "bytes": 6229
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/dynamic_per_token_scaled_fp8_quant__8192x5120/seed.ptx",
+            "sha256": "64a3709e66254f8c7ee221cc2cfc0170f0076a94730cd5d3c88eda07966e7e6c",
+            "bytes": 31763
+          },
+          "triton_metadata": {
+            "hash": "85c707db5fec5d25fda1d24cdfacc728c7ff9f49a4d6970c089218defb96db3f",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 16,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 64,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_dynamic_per_token_scaled_fp8_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_dynamic_per_token_scaled_fp8_quant",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _helion_dynamic_per_token_scaled_fp8_quant:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 0 bytes gmem\nptxas info    : Compiling entry function '_helion_dynamic_per_token_scaled_fp8_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_dynamic_per_token_scaled_fp8_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 12.480 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              8192,
+              1024
+            ],
+            "range_unroll_factors": [
+              0,
+              1,
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null,
+              false,
+              true
+            ],
+            "range_flattens": [
+              null,
+              false,
+              false
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "first"
+            ],
+            "num_warps": 8,
+            "num_stages": 6,
+            "indexing": [
+              "tensor_descriptor",
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "6I2YDYYQH577GGAEFRNCDOWFF7NFW2MXIQCYDIBLLNFXSJCJLYQQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/dynamic_per_token_scaled_fp8_quant__8192x5120/aot_sm90.py",
+            "sha256": "074188d53f3b37a2404bff8811671c501df0432376b5cbf43c7668bf684f4cb8",
+            "lines": 96,
+            "bytes": 6258
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/dynamic_per_token_scaled_fp8_quant__8192x5120/aot_sm90.ptx",
+            "sha256": "f69bc9945dbc6a3cbf0903999a52cfb6d69545f054226d5be2c5ba7e01057146",
+            "bytes": 25574
+          },
+          "triton_metadata": {
+            "hash": "f23581e3103f7ff318042c5a21bac52fda5b6997440581a02b5b4b7924495e21",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 8,
+            "num_ctas": 1,
+            "num_stages": 6,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 32,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_dynamic_per_token_scaled_fp8_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_dynamic_per_token_scaled_fp8_quant",
+              "registers": 20,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _helion_dynamic_per_token_scaled_fp8_quant:\n  REG:20 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 20,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 0 bytes gmem\nptxas info    : Compiling entry function '_helion_dynamic_per_token_scaled_fp8_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_dynamic_per_token_scaled_fp8_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 20 registers, used 1 barriers\nptxas info    : Compile time = 12.921 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "rms_norm",
+      "shape": [
+        2048,
+        48
+      ],
+      "G_aot": 0.8222222236594484,
+      "seed_us": 7.199999876320362,
+      "aot_sm90_us": 5.919999908655882,
+      "aot_selector": {
+        "selector_index": 0,
+        "requested_key": [
+          2048,
+          48
+        ],
+        "selected_tuned_key": null,
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/rms_norm/_helion_aot_rms_norm_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 4,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "UHCVUHXAKSLSWWKSVRR5HNJZJNY3777BWZFGVISD7BVYIDD7AZEQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm__2048x48/seed.py",
+            "sha256": "2a2fe5253b8110bceb445d7209472e241a862d9c474d2f50b6a1c769c36b1099",
+            "lines": 54,
+            "bytes": 2677
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm__2048x48/seed.ptx",
+            "sha256": "49b978ad3ddf04d9e89f54d4e06843e6dbb7e73e4a40031249c5624f6cc82561",
+            "bytes": 15326
+          },
+          "triton_metadata": {
+            "hash": "a1c55a1ee054972b5952ac63d3b5394b71bfffe1b64a6aa243f86b840c7f0649",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 8,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_rms_norm"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_rms_norm",
+              "registers": 16,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_rms_norm:\n  REG:16 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:584 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 16,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_rms_norm' for 'sm_90a'\nptxas info    : Function properties for _helion_rms_norm\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 16 registers, used 1 barriers\nptxas info    : Compile time = 5.017 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              4
+            ],
+            "reduction_loops": [
+              null
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "last",
+              "",
+              "",
+              "last",
+              "last"
+            ],
+            "num_warps": 8,
+            "num_stages": 5,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "FV7KDAX2ZN3FTX2ZC5JYD77K475RJHAZYTT5CTBKKPGWKLZDUV2A",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm__2048x48/aot_sm90.py",
+            "sha256": "8801fa6d01f65db6ca0d086f317aae009700cb3c615bbf9bf335da798c3fd86e",
+            "lines": 58,
+            "bytes": 2905
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm__2048x48/aot_sm90.ptx",
+            "sha256": "f5e0eee24bae17040ad67de7ebc7a0fc8f5c49bc2db13567bbc022259f5b50f6",
+            "bytes": 16025
+          },
+          "triton_metadata": {
+            "hash": "2d7ea182facb7659df59175381ffeae7fb149c19c4e7d14c2a53cd652f23a574",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 8,
+            "num_ctas": 1,
+            "num_stages": 5,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 32,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_rms_norm"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_rms_norm",
+              "registers": 17,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_rms_norm:\n  REG:17 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:592 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 17,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_rms_norm' for 'sm_90a'\nptxas info    : Function properties for _helion_rms_norm\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 17 registers, used 1 barriers\nptxas info    : Compile time = 5.205 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "fused_qk_norm_rope",
+      "shape": [
+        8192,
+        64,
+        8
+      ],
+      "G_aot": 0.8716022164035432,
+      "seed_us": 144.80000734329224,
+      "aot_sm90_us": 126.20800733566284,
+      "aot_selector": {
+        "selector_index": 41,
+        "requested_key": [
+          64,
+          8,
+          8192
+        ],
+        "selected_tuned_key": [
+          64,
+          8,
+          8192
+        ],
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/fused_qk_norm_rope/_helion_aot_fused_qk_norm_rope_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              128
+            ],
+            "loop_orders": [
+              [
+                0,
+                1,
+                2
+              ]
+            ],
+            "l2_groupings": [
+              1
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 4,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "FQT7GW4AJRJT4SH7EMFNHFLS7TK654UMQZ42FVJVJF4J2HUAWBVA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/fused_qk_norm_rope__8192x64x8/seed.py",
+            "sha256": "b2ab75daa11b91d1750bd6eb7e0b98249f2da07100c575dd6eb4b5436e2b88bd",
+            "lines": 156,
+            "bytes": 10012
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/fused_qk_norm_rope__8192x64x8/seed.ptx",
+            "sha256": "6b2655fba7078f53587466d45ae8d274d62c72f575206555e915cb3d268b71d9",
+            "bytes": 149672
+          },
+          "triton_metadata": {
+            "hash": "2c27f35b804c533e48ff230ad39572fcd5eef28c8679a2d53549789d1e80b06a",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 4096,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_fused_qk_norm_rope"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_fused_qk_norm_rope",
+              "registers": 232,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_fused_qk_norm_rope:\n  REG:232 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:608 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 232,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_fused_qk_norm_rope' for 'sm_90a'\nptxas info    : Function properties for _helion_fused_qk_norm_rope\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 232 registers, used 1 barriers\nptxas info    : Compile time = 88.413 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              2
+            ],
+            "loop_orders": [
+              [
+                2,
+                1,
+                0
+              ]
+            ],
+            "l2_groupings": [
+              2
+            ],
+            "range_unroll_factors": [
+              1
+            ],
+            "range_warp_specializes": [],
+            "range_multi_buffers": [
+              false
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "first",
+              "last",
+              "",
+              "",
+              "",
+              "",
+              "first"
+            ],
+            "num_warps": 1,
+            "num_stages": 2,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "tensor_descriptor"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "persistent_blocked",
+            "num_sm_multiplier": 128,
+            "maxnreg": 64
+          },
+          "backend_cache_key": "GFJR3L5AWIW5BXVAJYDOWQMWYLOWQV4LLPKWU7T7ZYFIFHKHNNOQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/fused_qk_norm_rope__8192x64x8/aot_sm90.py",
+            "sha256": "21ea4336289ee431dc30d0bdecf25c631220aa37703bc914192f13ac29cde566",
+            "lines": 174,
+            "bytes": 11334
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/fused_qk_norm_rope__8192x64x8/aot_sm90.ptx",
+            "sha256": "86f03874f7542b49a59afc9e4a7b7b4bac1a2ddf291349270fb2123fcb51c1be",
+            "bytes": 28975
+          },
+          "triton_metadata": {
+            "hash": "31531dafa0b22dd0dea04e06eb4196c2dd68578b5bd56a7e7fce0a829d476b5d",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 1,
+            "num_ctas": 1,
+            "num_stages": 2,
+            "warp_size": 32,
+            "maxnreg": 64,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 0,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_fused_qk_norm_rope"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_fused_qk_norm_rope",
+              "registers": 56,
+              "stack_bytes": 0,
+              "shared_bytes": 0,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_fused_qk_norm_rope:\n  REG:56 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:608 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 56,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_fused_qk_norm_rope' for 'sm_90a'\nptxas info    : Function properties for _helion_fused_qk_norm_rope\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 56 registers, used 1 barriers\nptxas info    : Compile time = 11.577 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "layer_norm",
+      "shape": [
+        1024,
+        36864
+      ],
+      "G_aot": 0.8752449017921572,
+      "seed_us": 73.48800078034401,
+      "aot_sm90_us": 64.31999802589417,
+      "aot_selector": {
+        "selector_index": 2,
+        "requested_key": [
+          1024,
+          36864
+        ],
+        "selected_tuned_key": null,
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/layer_norm/_helion_aot_layer_norm_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              16384
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "JGDZ7S26QSCSBOD2PXWBAUFWU4NXN6Z4QPS5ND4KJ7GAYDI77OQA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/layer_norm__1024x36864/seed.py",
+            "sha256": "7f93f17b5b986c0e0e0150223c0c9d10a47aaa8a1b623b1d00c41aac74b3c37d",
+            "lines": 102,
+            "bytes": 5591
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/layer_norm__1024x36864/seed.ptx",
+            "sha256": "fbd05e0676c0627735563379af0bc3f3853c1fc442458ff55989c7fda0229683",
+            "bytes": 44212
+          },
+          "triton_metadata": {
+            "hash": "49879fcb5e848520b87a7dec1050b6a71b76fb3c83e5d68f8a4fcc0c0d1ffba0",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_layer_norm"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_layer_norm",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_layer_norm:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:592 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_layer_norm' for 'sm_90a'\nptxas info    : Function properties for _helion_layer_norm\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 20.919 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              8192
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "last",
+              "",
+              "first",
+              "",
+              "",
+              "",
+              "first",
+              ""
+            ],
+            "num_warps": 32,
+            "num_stages": 2,
+            "indexing": [
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "WM2Q252BX4ZZOHHX5VUO7IZI2DOHANC6UNA4CUOFBSV6HGSQX7ZA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/layer_norm__1024x36864/aot_sm90.py",
+            "sha256": "dc6cf767ad3c18344663611a7be906a7f0ba3c579565b9eb97f459ed6a344fa5",
+            "lines": 102,
+            "bytes": 5651
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/layer_norm__1024x36864/aot_sm90.ptx",
+            "sha256": "97be7477d0f2bf0483053926274ca67b8a98b69eee8d0f137865b626db80c5de",
+            "bytes": 34267
+          },
+          "triton_metadata": {
+            "hash": "b3350d7741bf33971cf7ed68efa328d0dc70345ea341c151c50cabe39a50bff2",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 2,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_layer_norm"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_layer_norm",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_layer_norm:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:592 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_layer_norm' for 'sm_90a'\nptxas info    : Function properties for _helion_layer_norm\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 20.632 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "per_token_group_fp8_quant",
+      "shape": [
+        128,
+        2048,
+        128
+      ],
+      "G_aot": 0.8844444680149545,
+      "seed_us": 7.199999876320362,
+      "aot_sm90_us": 6.3680000603199005,
+      "aot_selector": {
+        "selector_index": 8,
+        "requested_key": [
+          2048,
+          128,
+          128
+        ],
+        "selected_tuned_key": [
+          2048,
+          128,
+          128
+        ],
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/per_token_group_fp8_quant/_helion_aot_per_token_group_fp8_quant_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "loop_orders": [
+              [
+                0,
+                1,
+                2
+              ]
+            ],
+            "l2_groupings": [
+              1
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "first"
+            ],
+            "num_warps": 4,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "AJ57PP5WTQPE54VKBDKOMCZU5OBBOABKU237WBUOFYZWWY4JKY3Q",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/per_token_group_fp8_quant__128x2048x128/seed.py",
+            "sha256": "50bacd13e804555d87e6577e46029c85720816281d32a9e4d03fc5980ce4580c",
+            "lines": 91,
+            "bytes": 5955
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/per_token_group_fp8_quant__128x2048x128/seed.ptx",
+            "sha256": "2e24bf81e05a5365676639070c711ee15df9dbe307061de26513cb3abf84a67c",
+            "bytes": 24121
+          },
+          "triton_metadata": {
+            "hash": "027bf7bfb69c1e4ef2aa08d4e60b34eb8217002aa6b7fb068e2e336b63895637",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 16,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_per_token_group_fp8_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_per_token_group_fp8_quant",
+              "registers": 18,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_per_token_group_fp8_quant:\n  REG:18 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:608 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 18,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_per_token_group_fp8_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_per_token_group_fp8_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 18 registers, used 1 barriers\nptxas info    : Compile time = 8.930 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              8
+            ],
+            "loop_orders": [
+              [
+                2,
+                1,
+                0
+              ]
+            ],
+            "l2_groupings": [
+              1
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "first"
+            ],
+            "num_warps": 4,
+            "num_stages": 1,
+            "indexing": [
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "N3BCVY5K477EF532G4DWRM4ZRH5PSXVKVDUPWJNOT4JRGRDT3P6A",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/per_token_group_fp8_quant__128x2048x128/aot_sm90.py",
+            "sha256": "265010f1113b51aa1d72c37426872434a299fe30960f1001e5dcb006c578414a",
+            "lines": 93,
+            "bytes": 6100
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/per_token_group_fp8_quant__128x2048x128/aot_sm90.ptx",
+            "sha256": "096606b129ba9ddd3fd4c5428eef2f6062995b340d51832ba6843d3b56e548b8",
+            "bytes": 29089
+          },
+          "triton_metadata": {
+            "hash": "6ec22ae3aae7fe42f77a370768b39989faf95eaaa8e8fb25ae9f13134473dbfc",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 4,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 32,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_per_token_group_fp8_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_per_token_group_fp8_quant",
+              "registers": 21,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_per_token_group_fp8_quant:\n  REG:21 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:608 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 21,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_per_token_group_fp8_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_per_token_group_fp8_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 21 registers, used 1 barriers\nptxas info    : Compile time = 10.111 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "rms_norm_per_block_quant",
+      "shape": [
+        128,
+        2048,
+        128
+      ],
+      "G_aot": 0.8919999394640356,
+      "seed_us": 8.00000037997961,
+      "aot_sm90_us": 7.135999854654074,
+      "aot_selector": {
+        "selector_index": 41,
+        "requested_key": [
+          2048,
+          128,
+          128
+        ],
+        "selected_tuned_key": [
+          2048,
+          128,
+          128
+        ],
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/rms_norm_per_block_quant/_helion_aot_rms_norm_per_block_quant_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              2048,
+              16
+            ],
+            "loop_orders": [
+              [
+                0,
+                1
+              ]
+            ],
+            "range_unroll_factors": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null,
+              null,
+              null,
+              null
+            ],
+            "range_flattens": [
+              null,
+              null,
+              null,
+              null
+            ],
+            "static_ranges": [
+              false
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 8,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "MHWTNOVWATO7GMPNY4JUU6EH47DKR6XAVR5OAU4SBL4Y5Y72ZGVQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_per_block_quant__128x2048x128/seed.py",
+            "sha256": "dc31ad4629ea4ecdc20bd66b1367a5bda167fa1b851da3f0e19cbd5fbf6d0ba0",
+            "lines": 197,
+            "bytes": 12769
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_per_block_quant__128x2048x128/seed.ptx",
+            "sha256": "1b26cf874ec40ef7ac72b6de41a174e4cf700ad940b3a600e6dab72a933a3594",
+            "bytes": 40433
+          },
+          "triton_metadata": {
+            "hash": "61ed36bab604ddf331edc7134a7887e7c6a8fae0ac7ae053920af98ee3fac9ab",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 8,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 64,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_rms_norm_per_block_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_rms_norm_per_block_quant",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_rms_norm_per_block_quant:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:616 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_rms_norm_per_block_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_rms_norm_per_block_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 12.347 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              2048,
+              16
+            ],
+            "range_unroll_factors": [
+              0,
+              2,
+              2
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [],
+            "range_multi_buffers": [
+              null,
+              null,
+              null
+            ],
+            "range_flattens": [
+              null,
+              true,
+              true
+            ],
+            "load_eviction_policies": [
+              "first",
+              "",
+              "first",
+              "last",
+              "first",
+              "last"
+            ],
+            "num_warps": 8,
+            "num_stages": 2,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "pointer",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "FNMA4LZSPWB5EDYRMLSUI2UQ2BJ6JITE32PHEE57OTC7WJWPAUAA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_per_block_quant__128x2048x128/aot_sm90.py",
+            "sha256": "ef6b300f54e92efe7de2df888d52ddba1d6b9a459bd7c536aebf9b904d228160",
+            "lines": 197,
+            "bytes": 12950
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/rms_norm_per_block_quant__128x2048x128/aot_sm90.ptx",
+            "sha256": "e4aea853e8b1b3d5c084c4c48c30f25f31c685ed9817d1c23cd46e2d83b04396",
+            "bytes": 41203
+          },
+          "triton_metadata": {
+            "hash": "2b580e2f327d83d20f1162e5446a90d053e4a264de9e7213bf74c5fb26cf0500",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 8,
+            "num_ctas": 1,
+            "num_stages": 2,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 64,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_rms_norm_per_block_quant"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_rms_norm_per_block_quant",
+              "registers": 32,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_rms_norm_per_block_quant:\n  REG:32 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:616 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 32,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_rms_norm_per_block_quant' for 'sm_90a'\nptxas info    : Function properties for _helion_rms_norm_per_block_quant\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 32 registers, used 1 barriers\nptxas info    : Compile time = 12.505 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        2048,
+        256000
+      ],
+      "G_aot": 0.8928664694659436,
+      "seed_us": 796.9119846820831,
+      "aot_sm90_us": 711.5359902381897,
+      "aot_selector": {
+        "selector_index": 0,
+        "requested_key": [
+          2048,
+          256000
+        ],
+        "selected_tuned_key": null,
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/cross_entropy/_helion_aot_cross_entropy_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              16384
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "HAZ5UNMR73WTRKI2YHACDTK4E6AORF5WFNADUL6OUN35QHIFWDMA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x256000/seed.py",
+            "sha256": "97f28d19434b346a36976a50a0e78414b2ba5ecdfb15d9ff71611d7483c11c82",
+            "lines": 88,
+            "bytes": 5083
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x256000/seed.ptx",
+            "sha256": "238998fc6a96c75e6c4ff788a3a4ab5c458cb3af75af281d8221a872ee51feaf",
+            "bytes": 43262
+          },
+          "triton_metadata": {
+            "hash": "3833da3591feed38a91ac1c021cd5c2780e897b62b403a2fcea377d81d05b0d8",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 43,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:43 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 43,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 43 registers, used 1 barriers\nptxas info    : Compile time = 20.942 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              32768
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "last",
+              "first",
+              "last",
+              "first",
+              "first"
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "UYZ54CUTJI2RMY23FSWGJS3KAP2QPRLDMG5FEPICJ5G2C24ONCMQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x256000/aot_sm90.py",
+            "sha256": "99f4df3d37bd173252758d5c516d1c6c05235f63876d2d82f4973f77a477192a",
+            "lines": 88,
+            "bytes": 5205
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__2048x256000/aot_sm90.ptx",
+            "sha256": "e2d11c96bc564b2f6c0b3204fd1c48bb4311dd718dc3a361bdcf64ffb8968a01",
+            "bytes": 59379
+          },
+          "triton_metadata": {
+            "hash": "a633de0a934a3516635b2cac64cb6a03f507c56361ba523d024f4da16b8e6899",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 60,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:60 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 60,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 60 registers, used 1 barriers\nptxas info    : Compile time = 37.265 ms\n"
+        }
+      }
+    },
+    {
+      "kernel": "cross_entropy",
+      "shape": [
+        1024,
+        256000
+      ],
+      "G_aot": 0.8946053890487545,
+      "seed_us": 409.88799929618835,
+      "aot_sm90_us": 366.6880130767822,
+      "aot_selector": {
+        "selector_index": 0,
+        "requested_key": [
+          1024,
+          256000
+        ],
+        "selected_tuned_key": null,
+        "exact_tuned_key": true,
+        "tuning_sweep_member": true,
+        "selector_file": "pretuned_kernels/cross_entropy/_helion_aot_cross_entropy_cuda_sm90.py"
+      },
+      "arms": {
+        "seed": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              16384
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "HAZ5UNMR73WTRKI2YHACDTK4E6AORF5WFNADUL6OUN35QHIFWDMA",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__1024x256000/seed.py",
+            "sha256": "4d6b48785484a9c7de5c81ac579091e0903499394712c3d779258077af011b2f",
+            "lines": 88,
+            "bytes": 5083
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__1024x256000/seed.ptx",
+            "sha256": "238998fc6a96c75e6c4ff788a3a4ab5c458cb3af75af281d8221a872ee51feaf",
+            "bytes": 43262
+          },
+          "triton_metadata": {
+            "hash": "3833da3591feed38a91ac1c021cd5c2780e897b62b403a2fcea377d81d05b0d8",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 43,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:43 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 43,
+            "binary": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 43 registers, used 1 barriers\nptxas info    : Compile time = 20.694 ms\n"
+        },
+        "aot_sm90": {
+          "config": {
+            "block_sizes": [
+              1
+            ],
+            "reduction_loops": [
+              32768
+            ],
+            "range_unroll_factors": [
+              0
+            ],
+            "range_warp_specializes": [],
+            "range_num_stages": [
+              0
+            ],
+            "range_multi_buffers": [
+              null
+            ],
+            "range_flattens": [
+              null
+            ],
+            "load_eviction_policies": [
+              "last",
+              "first",
+              "last",
+              "first",
+              "first"
+            ],
+            "num_warps": 32,
+            "num_stages": 1,
+            "indexing": [
+              "pointer",
+              "tensor_descriptor",
+              "pointer",
+              "tensor_descriptor",
+              "tensor_descriptor",
+              "pointer"
+            ],
+            "atomic_indexing": [],
+            "pid_type": "flat"
+          },
+          "backend_cache_key": "UYZ54CUTJI2RMY23FSWGJS3KAP2QPRLDMG5FEPICJ5G2C24ONCMQ",
+          "emitted_code": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__1024x256000/aot_sm90.py",
+            "sha256": "9f7f37245a5cb64faf0a780055ca6bf37e031f3afb935c8c56712aeaa91e1482",
+            "lines": 88,
+            "bytes": 5205
+          },
+          "ptx": {
+            "path": "/home/dev/local/helion-h100-reduction-audit/perf-repro/h100-reduction-audit/results/investigation_codegen/cross_entropy__1024x256000/aot_sm90.ptx",
+            "sha256": "e2d11c96bc564b2f6c0b3204fd1c48bb4311dd718dc3a361bdcf64ffb8968a01",
+            "bytes": 59379
+          },
+          "triton_metadata": {
+            "hash": "a633de0a934a3516635b2cac64cb6a03f507c56361ba523d024f4da16b8e6899",
+            "target": {
+              "backend": "cuda",
+              "arch": 90,
+              "warp_size": 32
+            },
+            "num_warps": 32,
+            "num_ctas": 1,
+            "num_stages": 1,
+            "warp_size": 32,
+            "maxnreg": null,
+            "ptx_version": null,
+            "ptx_options": null,
+            "ir_override": null,
+            "enable_fp_fusion": true,
+            "enable_reflect_ftz": true,
+            "launch_cooperative_grid": false,
+            "launch_pdl": false,
+            "supported_fp8_dtypes": [
+              "fp8e4b15",
+              "fp8e4nv",
+              "fp8e5"
+            ],
+            "deprecated_fp8_dot_operand_dtypes": [
+              "fp8e4b15"
+            ],
+            "default_dot_input_precision": "tf32",
+            "allowed_dot_input_precisions": [
+              "tf32",
+              "tf32x3",
+              "ieee",
+              "bf16x3",
+              "bf16x6"
+            ],
+            "max_num_imprecise_acc_default": 1073741824,
+            "extern_libs": [
+              [
+                "libdevice",
+                "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/lib/libdevice.10.bc"
+              ]
+            ],
+            "debug": false,
+            "backend_name": "cuda",
+            "sanitize_overflow": true,
+            "arch": "sm90",
+            "instrumentation_mode": "",
+            "triton_version": "3.7.0",
+            "tensordesc_meta": [],
+            "shared": 128,
+            "tmem_size": 0,
+            "global_scratch_size": 0,
+            "global_scratch_align": 1,
+            "profile_scratch_size": 0,
+            "profile_scratch_align": 1,
+            "name": "_helion_cross_entropy"
+          },
+          "cuobjdump_resources": [
+            {
+              "name": "_helion_cross_entropy",
+              "registers": 60,
+              "stack_bytes": 0,
+              "shared_bytes": 1024,
+              "local_bytes": 0
+            }
+          ],
+          "cuobjdump_output": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _helion_cross_entropy:\n  REG:60 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:576 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+          "ptxas": {
+            "stack_bytes": 0,
+            "spill_store_bytes": 0,
+            "spill_load_bytes": 0,
+            "registers": 60,
+            "binary": "/usr/local/lib/python3.12/dist-packages/torch/bin/ptxas"
+          },
+          "ptxas_output": "$ /usr/local/lib/python3.12/dist-packages/torch/bin/ptxas\nptxas info    : 11 bytes gmem\nptxas info    : Compiling entry function '_helion_cross_entropy' for 'sm_90a'\nptxas info    : Function properties for _helion_cross_entropy\n    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads\nptxas info    : Used 60 registers, used 1 barriers\nptxas info    : Compile time = 37.206 ms\n"
+        }
+      }
+    }
+  ]
+}
