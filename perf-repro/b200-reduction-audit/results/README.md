@@ -8,6 +8,13 @@ GPU 1 (`NVIDIA B200`, SM100) with `CUDA_VISIBLE_DEVICES=1`.
 - `full/raw/`: one complete JSON record per measured cell
 - `smoke/raw/`: one validation record per kernel, including Dynamo graph counts
 
+## Charts
+
+- [All cohorts](charts/all_cohorts_relative_performance.png)
+- [General AOT](charts/general_aot_relative_performance.png)
+- [Original kernels](charts/original_relative_performance.png)
+- [vLLM](charts/vllm_relative_performance.png)
+
 Ratios above 1 mean the reduction seed is faster.
 
 | Cohort | vs default | vs `torch.compile` | vs SM100 AOT |
@@ -37,6 +44,7 @@ CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. \
   --force --timeout-seconds 1800
 
 python perf-repro/b200-reduction-audit/aggregate.py
+python perf-repro/b200-reduction-audit/plot_performance.py
 ```
 
 The raw records identify Helion commit `2d753a5c6`, PyTorch
