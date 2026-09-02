@@ -6,6 +6,8 @@ reduction, and pointwise heuristics. Unless stated otherwise, ratios above
 
 The linear-attention and held-out matmul/multi-matmul inputs are listed in the
 [benchmark shape inventory](PYTORCH_BLOG_BENCHMARK_SHAPES.md).
+Per-cell latencies and ratios normalized to the selected default are in the
+[raw data exports](PYTORCH_BLOG_RAW_DATA/README.md).
 
 ## Recommended Sources
 
