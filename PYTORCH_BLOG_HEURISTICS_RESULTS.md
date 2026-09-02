@@ -4,6 +4,9 @@ This document indexes the benchmark results for the matmul, multi-matmul,
 reduction, and pointwise heuristics. Unless stated otherwise, ratios above
 `1.0x` mean the heuristic is faster than the named baseline.
 
+The linear-attention and held-out matmul/multi-matmul inputs are listed in the
+[benchmark shape inventory](PYTORCH_BLOG_BENCHMARK_SHAPES.md).
+
 ## Recommended Sources
 
 | Area | Human-readable report | Raw data / figures |
